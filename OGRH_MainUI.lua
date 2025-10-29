@@ -1,0 +1,139 @@
+-- OGRH_MainUI.lua
+local Main = CreateFrame("Frame","OGRH_Main",UIParent)
+Main:SetWidth(140); Main:SetHeight(84)
+Main:SetPoint("CENTER", UIParent, "CENTER", -380, 120)
+Main:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
+Main:SetBackdropColor(0,0,0,0.85)
+Main:EnableMouse(true); Main:SetMovable(true)
+Main:RegisterForDrag("LeftButton")
+Main:SetScript("OnDragStart", function() if not OGRH_SV.ui.locked then Main:StartMoving() end end)
+Main:SetScript("OnDragStop", function()
+  Main:StopMovingOrSizing()
+  if not OGRH_SV.ui then OGRH_SV.ui = {} end
+  local p,_,r,x,y = Main:GetPoint()
+  OGRH_SV.ui.point, OGRH_SV.ui.relPoint, OGRH_SV.ui.x, OGRH_SV.ui.y = p, r, x, y
+end)
+
+local H = CreateFrame("Frame", nil, Main)
+H:SetPoint("TOPLEFT", Main, "TOPLEFT", 4, -4)
+H:SetPoint("TOPRIGHT", Main, "TOPRIGHT", -4, -4)
+H:SetHeight(20)
+local title = H:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+title:SetPoint("LEFT", H, "LEFT", 4, 0); title:SetText("|cffffff00OGRH|r")
+
+local btnMin = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnMin:SetWidth(20); btnMin:SetHeight(16); btnMin:SetText("-"); btnMin:SetPoint("RIGHT", H, "RIGHT", -46, 0)
+local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(28); btnLock:SetHeight(16); btnLock:SetText("Lock"); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0)
+
+local Content = CreateFrame("Frame", nil, Main); Content:SetPoint("TOPLEFT", Main, "TOPLEFT", 6, -26); Content:SetPoint("BOTTOMRIGHT", Main, "BOTTOMRIGHT", -6, 6)
+local function makeBtn(text, anchorTo)
+  local b=CreateFrame("Button", nil, Content, "UIPanelButtonTemplate")
+  b:SetWidth(110); b:SetHeight(20); b:SetText(text)
+  if not anchorTo then b:SetPoint("TOP", Content, "TOP", 0, 0) else b:SetPoint("TOP", anchorTo, "BOTTOM", 0, -6) end
+  return b
+end
+local bHelper = makeBtn("Helper", nil)
+local bTrade  = makeBtn("Trade", bHelper)
+
+function OGRH_ShowBoard() if OGRH.ShowRolesUI then OGRH.ShowRolesUI() else OGRH.Msg("Roles UI not yet loaded.") end end
+bHelper:SetScript("OnClick", function()
+  if OGRH.ShowRolesUI then OGRH.ShowRolesUI()
+  else OGRH.Msg("Roles UI not yet loaded. If this persists after /reload, a Lua error prevented it from loading.");
+  end
+end)
+
+bTrade:RegisterForClicks("LeftButtonUp","RightButtonUp")
+bTrade:SetScript("OnClick", function()
+  local btn = arg1 or "LeftButton"
+  -- Both left and right click show/hide the menu
+  if not OGRH_TradeMenu then
+      local M = CreateFrame("Frame","OGRH_TradeMenu",UIParent)
+      M:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
+      M:SetBackdropColor(0,0,0,0.95); M:SetWidth(120); M:SetHeight(1); M:Hide()
+      M.items = { "Sand", "Runes", "GFPP", "GAPP", "GSPP", "Invis" }
+      M.btns = {}
+      local i
+      for i=1,6 do
+        local it = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
+        it:SetWidth(100); it:SetHeight(18)
+        if i==1 then it:SetPoint("TOPLEFT", M, "TOPLEFT", 10, -10) else it:SetPoint("TOPLEFT", M.btns[i-1], "BOTTOMLEFT", 0, -6) end
+        local fs = it:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall"); fs:SetAllPoints(); fs:SetJustifyH("CENTER"); it.fs=fs
+        local label = M.items[i]
+        local itemType = string.lower(label)
+        local btnIndex = i  -- Capture index in closure
+        
+        -- Sand is enabled, others are disabled
+        if i==1 then 
+          fs:SetText(label) 
+        else 
+          fs:SetText("|cff888888"..label.."|r") 
+        end
+        
+        it:SetScript("OnClick", function() 
+          if btnIndex==1 then 
+            if OGRH.SetTradeType then 
+              OGRH.SetTradeType("sand")
+            end
+          end
+          M:Hide() 
+        end)
+        M.btns[i]=it
+      end
+      M:SetHeight(10 + 6*18 + 5*6 + 10)
+    end
+    local M = OGRH_TradeMenu
+    
+    -- Toggle menu visibility
+    if M:IsVisible() then
+      M:Hide()
+      return
+    end
+    
+    -- Update button colors based on current selection
+    local currentType = OGRH.GetTradeType and OGRH.GetTradeType() or nil
+    local j
+    for j=1,6 do
+      local btnLabel = M.items[j]
+      local itemType = string.lower(btnLabel)
+      if j==1 then
+        -- Sand is always enabled
+        if currentType == "sand" then
+          M.btns[j].fs:SetText("|cff00ff00" .. btnLabel .. "|r")
+        else
+          M.btns[j].fs:SetText(btnLabel)
+        end
+      else
+        -- Other items are disabled
+        M.btns[j].fs:SetText("|cff888888" .. btnLabel .. "|r")
+      end
+    end
+    
+    M:ClearAllPoints(); M:SetPoint("TOPLEFT", bTrade, "BOTTOMLEFT", 0, -2); M:Show()
+end)
+
+local function applyMinimized(mini) if mini then Content:Hide(); Main:SetHeight(28); btnMin:SetText("+") else Content:Show(); Main:SetHeight(84); btnMin:SetText("-") end end
+btnMin:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.minimized = not OGRH_SV.ui.minimized; applyMinimized(OGRH_SV.ui.minimized) end)
+local function applyLocked(lock) btnLock:SetText("Lock") end
+btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)
+
+local function restoreMain()
+  ensureSV()
+  local ui=OGRH_SV.ui or {}
+  if ui.point and ui.x and ui.y then Main:ClearAllPoints(); Main:SetPoint(ui.point, UIParent, ui.relPoint or ui.point, ui.x, ui.y) end
+  applyMinimized(ui.minimized); applyLocked(ui.locked)
+end
+local _loader = CreateFrame("Frame"); _loader:RegisterEvent("VARIABLES_LOADED"); _loader:SetScript("OnEvent", function() restoreMain() end)
+
+SlashCmdList[string.upper(OGRH.CMD)] = function(m)
+  local sub = string.lower(OGRH.Trim(m or ""))
+  if sub=="sand" then 
+    if OGRH.SetTradeType and OGRH.ExecuteTrade then 
+      OGRH.SetTradeType("sand")
+      OGRH.ExecuteTrade()
+    else 
+      OGRH.Msg("Trade helper not loaded.") 
+    end
+  else OGRH.Msg("Usage: /"..OGRH.CMD.." sand") end
+end
+_G["SLASH_"..string.upper(OGRH.CMD).."1"] = "/"..OGRH.CMD
+
+OGRH.Msg(OGRH.ADDON.." v1.14.0 loaded. Use /"..OGRH.CMD.." roles or the OGRH window.")
