@@ -1,4 +1,9 @@
 -- OGRH_MainUI.lua
+if not OGRH then
+  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Error: OGRH_MainUI requires OGRH_Core to be loaded first!|r")
+  return
+end
+
 local Main = CreateFrame("Frame","OGRH_Main",UIParent)
 Main:SetWidth(140); Main:SetHeight(84)
 Main:SetPoint("CENTER", UIParent, "CENTER", -380, 120)
@@ -21,8 +26,15 @@ H:SetHeight(20)
 local title = H:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
 title:SetPoint("LEFT", H, "LEFT", 4, 0); title:SetText("|cffffff00OGRH|r")
 
-local btnMin = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnMin:SetWidth(20); btnMin:SetHeight(16); btnMin:SetText("-"); btnMin:SetPoint("RIGHT", H, "RIGHT", -46, 0)
-local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(28); btnLock:SetHeight(16); btnLock:SetText("Lock"); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0)
+local btnMin = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnMin:SetWidth(20); btnMin:SetHeight(16); btnMin:SetText("-"); btnMin:SetPoint("RIGHT", H, "RIGHT", -26, 0)
+local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(16); btnLock:SetText("L"); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0)
+
+-- ReAnnounce button
+local reAnnounce = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); reAnnounce:SetWidth(20); reAnnounce:SetHeight(16); reAnnounce:SetText("RA"); reAnnounce:SetPoint("RIGHT", btnMin, "LEFT", -2, 0)
+reAnnounce:Disable()  -- Disabled until first announcement
+
+-- ReadyCheck button
+local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(20); readyCheck:SetHeight(16); readyCheck:SetText("RC"); readyCheck:SetPoint("RIGHT", reAnnounce, "LEFT", -2, 0)
 
 local Content = CreateFrame("Frame", nil, Main); Content:SetPoint("TOPLEFT", Main, "TOPLEFT", 6, -26); Content:SetPoint("BOTTOMRIGHT", Main, "BOTTOMRIGHT", -6, 6)
 local function makeBtn(text, anchorTo)
@@ -112,8 +124,29 @@ end)
 
 local function applyMinimized(mini) if mini then Content:Hide(); Main:SetHeight(28); btnMin:SetText("+") else Content:Show(); Main:SetHeight(84); btnMin:SetText("-") end end
 btnMin:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.minimized = not OGRH_SV.ui.minimized; applyMinimized(OGRH_SV.ui.minimized) end)
-local function applyLocked(lock) btnLock:SetText("Lock") end
+local function applyLocked(lock) btnLock:SetText("L") end
 btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)
+
+-- ReAnnounce button handler
+reAnnounce:SetScript("OnClick", function()
+  if OGRH.ReAnnounce then
+    OGRH.ReAnnounce()
+  else
+    OGRH.Msg("No announcement to repeat.")
+  end
+end)
+
+-- ReadyCheck button handler
+readyCheck:SetScript("OnClick", function()
+  if OGRH.DoReadyCheck then
+    OGRH.DoReadyCheck()
+  else
+    OGRH.Msg("Ready check functionality not loaded.")
+  end
+end)
+
+-- Expose reAnnounce button for external access
+OGRH.reAnnounceButton = reAnnounce
 
 local function restoreMain()
   ensureSV()
@@ -136,4 +169,6 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
 end
 _G["SLASH_"..string.upper(OGRH.CMD).."1"] = "/"..OGRH.CMD
 
-OGRH.Msg(OGRH.ADDON.." v1.14.0 loaded. Use /"..OGRH.CMD.." roles or the OGRH window.")
+if OGRH and OGRH.Msg then
+  OGRH.Msg(OGRH.ADDON.." v1.14.0 loaded. Use /"..OGRH.CMD.." roles or the OGRH window.")
+end

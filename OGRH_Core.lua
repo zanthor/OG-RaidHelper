@@ -2,6 +2,7 @@
 OGRH = OGRH or {}
 OGRH.ADDON = "OG-RaidHelper"
 OGRH.CMD   = "ogrh"
+OGRH.ADDON_PREFIX = "OGRH"
 
 -- Standard announcement colors
 OGRH.COLOR = {
@@ -47,6 +48,47 @@ function OGRH.Trim(s) return string.gsub(s or "", "^%s*(.-)%s*$", "%1") end
 function OGRH.Mod1(n,t) return math.mod(n-1, t)+1 end
 function OGRH.CanRW() if IsRaidLeader and IsRaidLeader()==1 then return true end if IsRaidOfficer and IsRaidOfficer()==1 then return true end return false end
 function OGRH.SayRW(text) if OGRH.CanRW() then SendChatMessage(text, "RAID_WARNING") else SendChatMessage(text, "RAID") end end
+
+-- Ready Check functionality
+function OGRH.DoReadyCheck()
+  -- Check if in a raid
+  local numRaid = GetNumRaidMembers() or 0
+  if numRaid == 0 then
+    OGRH.Msg("You are not in a raid.")
+    return
+  end
+  
+  -- Check if player is raid leader
+  if IsRaidLeader and IsRaidLeader() == 1 then
+    DoReadyCheck()
+  -- Check if player is raid assistant
+  elseif IsRaidOfficer and IsRaidOfficer() == 1 then
+    -- Send addon message to raid asking leader to start ready check
+    SendAddonMessage(OGRH.ADDON_PREFIX, "READYCHECK_REQUEST", "RAID")
+    OGRH.Msg("Ready check request sent to raid leader.")
+  else
+    OGRH.Msg("You must be raid leader or assistant to start a ready check.")
+  end
+end
+
+-- Handle incoming addon messages
+local addonFrame = CreateFrame("Frame")
+addonFrame:RegisterEvent("CHAT_MSG_ADDON")
+addonFrame:SetScript("OnEvent", function()
+  if event == "CHAT_MSG_ADDON" then
+    local prefix, message, distribution, sender = arg1, arg2, arg3, arg4
+    
+    if prefix == OGRH.ADDON_PREFIX then
+      -- Handle ready check request from assistant
+      if message == "READYCHECK_REQUEST" then
+        -- Only process if we are the raid leader
+        if IsRaidLeader and IsRaidLeader() == 1 then
+          DoReadyCheck()
+        end
+      end
+    end
+  end
+end)
 
 -- Helper functions for colored text
 function OGRH.Header(text) return OGRH.COLOR.HEADER .. text .. OGRH.COLOR.RESET end
