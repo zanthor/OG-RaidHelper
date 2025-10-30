@@ -21,14 +21,15 @@ local function InitializeSavedVars()
   end
 end
 
--- Function to show BWL Encounter Management Window
+-- Function to show Encounter Planning Window
 function OGRH.ShowBWLEncounterWindow(encounterName)
   -- Create or show the window
   if not OGRH_BWLEncounterFrame then
     local frame = CreateFrame("Frame", "OGRH_BWLEncounterFrame", UIParent)
     frame:SetWidth(800)
-    frame:SetHeight(450)  -- Adjusted to fit player selection panel (380) + title/close (50) + bottom margin (20)
+    frame:SetHeight(450)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("HIGH")
     frame:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -47,7 +48,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     -- Title bar
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", frame, "TOP", 0, -10)
-    title:SetText("BWL - Razorgore")
+    title:SetText("Encounter Planning")
     frame.title = title
     
     -- Close button
@@ -58,10 +59,10 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     closeBtn:SetText("Close")
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
-    -- Left panel: Player selector
+    -- Left panel: Raids and Encounters selection
     local leftPanel = CreateFrame("Frame", nil, frame)
-    leftPanel:SetWidth(175)  -- 50% of original 350
-    leftPanel:SetHeight(380)  -- Height for selector button + 15 players (24 + 10 + 15*22 + margins)
+    leftPanel:SetWidth(175)
+    leftPanel:SetHeight(390)
     leftPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -50)
     leftPanel:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -74,205 +75,284 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     leftPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
     frame.leftPanel = leftPanel
     
-    -- Role selector dropdown button
-    local selectedRole = "Tanks"
+    -- Raids label
+    local raidsLabel = leftPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    raidsLabel:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 10, -10)
+    raidsLabel:SetText("Raids:")
     
-    local roleSelectorBtn = CreateFrame("Button", nil, leftPanel, "UIPanelButtonTemplate")
-    roleSelectorBtn:SetWidth(155)  -- 50% of original 330, adjusted for panel width
-    roleSelectorBtn:SetHeight(24)
-    roleSelectorBtn:SetPoint("TOP", leftPanel, "TOP", 0, -10)
-    roleSelectorBtn:SetText("Select Role: " .. selectedRole)
-    
-    -- Create role menu
-    local roleMenu = CreateFrame("Frame", nil, UIParent)
-    roleMenu:SetWidth(155)  -- Match button width
-    roleMenu:SetHeight(100)
-    roleMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-    roleMenu:SetBackdrop({
+    -- Raids list frame
+    local raidsListFrame = CreateFrame("Frame", nil, leftPanel)
+    raidsListFrame:SetPoint("TOPLEFT", raidsLabel, "BOTTOMLEFT", 0, -5)
+    raidsListFrame:SetWidth(155)
+    raidsListFrame:SetHeight(165)
+    raidsListFrame:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
       edgeSize = 12,
-      insets = {left = 4, right = 4, top = 4, bottom = 4}
-    })
-    roleMenu:SetBackdropColor(0, 0, 0, 0.95)
-    roleMenu:Hide()
-    
-    local roleMenuButtons = {}
-    local roleNames = {"Tanks", "Healers", "Melee", "Ranged"}
-    
-    local function UpdateRoleSelection(role)
-      selectedRole = role
-      roleSelectorBtn:SetText("Select Role: " .. role)
-      roleMenu:Hide()
-      -- Refresh player list
-      if frame.RefreshPlayerList then
-        frame.RefreshPlayerList()
-      end
-    end
-    
-    for i, roleName in ipairs(roleNames) do
-      local btn = CreateFrame("Button", nil, roleMenu, "UIPanelButtonTemplate")
-      btn:SetWidth(145)  -- Adjusted for new menu width
-      btn:SetHeight(20)
-      if i == 1 then
-        btn:SetPoint("TOPLEFT", roleMenu, "TOPLEFT", 5, -5)
-      else
-        btn:SetPoint("TOP", roleMenuButtons[i-1], "BOTTOM", 0, -2)
-      end
-      btn:SetText(roleName)
-      local capturedRole = roleName
-      btn:SetScript("OnClick", function()
-        UpdateRoleSelection(capturedRole)
-      end)
-      table.insert(roleMenuButtons, btn)
-    end
-    
-    roleMenu:SetHeight(15 + (table.getn(roleMenuButtons) * 20) + ((table.getn(roleMenuButtons) - 1) * 2) + 5)
-    
-    roleSelectorBtn:SetScript("OnClick", function()
-      if roleMenu:IsVisible() then
-        roleMenu:Hide()
-      else
-        roleMenu:ClearAllPoints()
-        roleMenu:SetPoint("TOPLEFT", roleSelectorBtn, "BOTTOMLEFT", 0, -2)
-        roleMenu:Show()
-      end
-    end)
-    
-    -- Player list scroll area
-    local playerListScrollFrame = CreateFrame("ScrollFrame", nil, leftPanel)
-    playerListScrollFrame:SetPoint("TOPLEFT", roleSelectorBtn, "BOTTOMLEFT", 0, -10)
-    playerListScrollFrame:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", -10, 10)
-    
-    -- Create scroll child frame
-    local playerListFrame = CreateFrame("Frame", nil, playerListScrollFrame)
-    playerListFrame:SetWidth(145)
-    playerListFrame:SetHeight(1)  -- Will be adjusted based on content
-    playerListScrollFrame:SetScrollChild(playerListFrame)
-    frame.playerListFrame = playerListFrame
-    frame.playerListScrollFrame = playerListScrollFrame
-    
-    -- Create scroll bar
-    local scrollBar = CreateFrame("Slider", nil, playerListScrollFrame)
-    scrollBar:SetPoint("TOPRIGHT", playerListScrollFrame, "TOPRIGHT", 0, -16)
-    scrollBar:SetPoint("BOTTOMRIGHT", playerListScrollFrame, "BOTTOMRIGHT", 0, 16)
-    scrollBar:SetWidth(16)
-    scrollBar:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 8,
       insets = {left = 3, right = 3, top = 3, bottom = 3}
     })
-    scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    scrollBar:SetOrientation("VERTICAL")
-    scrollBar:SetMinMaxValues(0, 1)
-    scrollBar:SetValue(0)
-    scrollBar:SetValueStep(22)
-    scrollBar:Hide()  -- Hidden by default
-    frame.playerScrollBar = scrollBar
+    raidsListFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
     
-    scrollBar:SetScript("OnValueChanged", function()
-      playerListScrollFrame:SetVerticalScroll(this:GetValue())
-    end)
+    -- Create scroll frame for raids
+    local raidsScrollFrame = CreateFrame("ScrollFrame", nil, raidsListFrame)
+    raidsScrollFrame:SetPoint("TOPLEFT", raidsListFrame, "TOPLEFT", 5, -5)
+    raidsScrollFrame:SetPoint("BOTTOMRIGHT", raidsListFrame, "BOTTOMRIGHT", -5, 5)
     
-    -- Enable mouse wheel scrolling
-    playerListScrollFrame:EnableMouseWheel(true)
-    playerListScrollFrame:SetScript("OnMouseWheel", function()
+    local raidsScrollChild = CreateFrame("Frame", nil, raidsScrollFrame)
+    raidsScrollChild:SetWidth(145)
+    raidsScrollChild:SetHeight(1)
+    raidsScrollFrame:SetScrollChild(raidsScrollChild)
+    frame.raidsScrollChild = raidsScrollChild
+    frame.raidsScrollFrame = raidsScrollFrame
+    
+    -- Enable mouse wheel scrolling for raids list
+    raidsScrollFrame:EnableMouseWheel(true)
+    raidsScrollFrame:SetScript("OnMouseWheel", function()
       local delta = arg1
-      local current = scrollBar:GetValue()
-      local minVal, maxVal = scrollBar:GetMinMaxValues()
+      local current = raidsScrollFrame:GetVerticalScroll()
+      local maxScroll = raidsScrollChild:GetHeight() - raidsScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
       
-      if delta > 0 then
-        scrollBar:SetValue(math.max(minVal, current - 22))
-      else
-        scrollBar:SetValue(math.min(maxVal, current + 22))
+      local newScroll = current - (delta * 20)
+      if newScroll < 0 then
+        newScroll = 0
+      elseif newScroll > maxScroll then
+        newScroll = maxScroll
       end
+      raidsScrollFrame:SetVerticalScroll(newScroll)
     end)
     
-    -- Function to refresh player list based on selected role
-    function frame.RefreshPlayerList()
-      -- Clear existing player buttons
-      if frame.playerButtons then
-        for _, btn in ipairs(frame.playerButtons) do
+    -- Encounters label
+    local encountersLabel = leftPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    encountersLabel:SetPoint("TOPLEFT", raidsListFrame, "BOTTOMLEFT", 0, -10)
+    encountersLabel:SetText("Encounters:")
+    
+    -- Encounters list frame
+    local encountersListFrame = CreateFrame("Frame", nil, leftPanel)
+    encountersListFrame:SetPoint("TOPLEFT", encountersLabel, "BOTTOMLEFT", 0, -5)
+    encountersListFrame:SetWidth(155)
+    encountersListFrame:SetHeight(165)
+    encountersListFrame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    encountersListFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+    
+    -- Create scroll frame for encounters
+    local encountersScrollFrame = CreateFrame("ScrollFrame", nil, encountersListFrame)
+    encountersScrollFrame:SetPoint("TOPLEFT", encountersListFrame, "TOPLEFT", 5, -5)
+    encountersScrollFrame:SetPoint("BOTTOMRIGHT", encountersListFrame, "BOTTOMRIGHT", -5, 5)
+    
+    local encountersScrollChild = CreateFrame("Frame", nil, encountersScrollFrame)
+    encountersScrollChild:SetWidth(145)
+    encountersScrollChild:SetHeight(1)
+    encountersScrollFrame:SetScrollChild(encountersScrollChild)
+    frame.encountersScrollChild = encountersScrollChild
+    frame.encountersScrollFrame = encountersScrollFrame
+    
+    -- Enable mouse wheel scrolling for encounters list
+    encountersScrollFrame:EnableMouseWheel(true)
+    encountersScrollFrame:SetScript("OnMouseWheel", function()
+      local delta = arg1
+      local current = encountersScrollFrame:GetVerticalScroll()
+      local maxScroll = encountersScrollChild:GetHeight() - encountersScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      
+      local newScroll = current - (delta * 20)
+      if newScroll < 0 then
+        newScroll = 0
+      elseif newScroll > maxScroll then
+        newScroll = maxScroll
+      end
+      encountersScrollFrame:SetVerticalScroll(newScroll)
+    end)
+    
+    -- Track selected raid and encounter
+    frame.selectedRaid = nil
+    frame.selectedEncounter = nil
+    
+    -- Function to refresh raids list
+    local function RefreshRaidsList()
+      -- Clear existing buttons
+      if frame.raidButtons then
+        for _, btn in ipairs(frame.raidButtons) do
           btn:Hide()
           btn:SetParent(nil)
         end
       end
-      frame.playerButtons = {}
+      frame.raidButtons = {}
       
-      -- Get players from selected role
-      local players = {}
-      if OGRH.Roles and OGRH.Roles.columns then
-        local roleIndex = 1
-        if selectedRole == "Healers" then roleIndex = 2
-        elseif selectedRole == "Melee" then roleIndex = 3
-        elseif selectedRole == "Ranged" then roleIndex = 4
-        end
-        
-        if OGRH.Roles.columns[roleIndex] then
-          for _, playerName in ipairs(OGRH.Roles.columns[roleIndex].players) do
-            table.insert(players, playerName)
+      -- Validate that the selected raid still exists
+      if frame.selectedRaid then
+        local raidExists = false
+        for _, raidName in ipairs(OGRH_SV.encounterMgmt.raids) do
+          if raidName == frame.selectedRaid then
+            raidExists = true
+            break
           end
+        end
+        if not raidExists then
+          frame.selectedRaid = nil
+          frame.selectedEncounter = nil
         end
       end
       
-      -- Create player buttons
       local yOffset = -5
-      for _, playerName in ipairs(players) do
-        local playerBtn = CreateFrame("Button", nil, playerListFrame)
-        playerBtn:SetWidth(145)  -- Adjusted for new panel width
-        playerBtn:SetHeight(20)
-        playerBtn:SetPoint("TOPLEFT", playerListFrame, "TOPLEFT", 5, yOffset)
+      local scrollChild = frame.raidsScrollChild
+      
+      -- Add existing raids
+      for i, raidName in ipairs(OGRH_SV.encounterMgmt.raids) do
+        local raidBtn = CreateFrame("Button", nil, scrollChild)
+        raidBtn:SetWidth(145)
+        raidBtn:SetHeight(20)
+        raidBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
         
         -- Background
-        local bg = playerBtn:CreateTexture(nil, "BACKGROUND")
+        local bg = raidBtn:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
         bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-        
-        -- Player name text
-        local nameText = playerBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        nameText:SetPoint("LEFT", playerBtn, "LEFT", 5, 0)
-        local class = OGRH.Roles.nameClass and OGRH.Roles.nameClass[playerName]
-        if class and OGRH.ClassColorHex then
-          nameText:SetText(OGRH.ClassColorHex(class) .. playerName .. "|r")
+        if frame.selectedRaid == raidName then
+          bg:SetVertexColor(0.2, 0.4, 0.2, 0.8)
         else
-          nameText:SetText(playerName)
+          bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
         end
+        raidBtn.bg = bg
         
-        -- TODO: Add drag functionality
+        -- Raid name text
+        local nameText = raidBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        nameText:SetPoint("LEFT", raidBtn, "LEFT", 5, 0)
+        nameText:SetText(raidName)
+        nameText:SetWidth(135)
+        nameText:SetJustifyH("LEFT")
         
-        table.insert(frame.playerButtons, playerBtn)
+        -- Click to select raid
+        local capturedRaidName = raidName
+        raidBtn:SetScript("OnClick", function()
+          frame.selectedRaid = capturedRaidName
+          RefreshRaidsList()
+          if frame.RefreshEncountersList then
+            frame.RefreshEncountersList()
+          end
+        end)
+        
+        table.insert(frame.raidButtons, raidBtn)
         yOffset = yOffset - 22
       end
       
-      -- Update scroll frame height
+      -- Update scroll child height
       local contentHeight = math.abs(yOffset) + 5
-      playerListFrame:SetHeight(contentHeight)
-      
-      -- Update scrollbar
-      local scrollFrame = frame.playerListScrollFrame
-      local scrollBar = frame.playerScrollBar
-      local scrollFrameHeight = scrollFrame:GetHeight()
-      
-      if contentHeight > scrollFrameHeight then
-        -- Show scrollbar and adjust scroll range
-        scrollBar:Show()
-        scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
-        scrollBar:SetValue(0)
-        scrollFrame:SetVerticalScroll(0)
-      else
-        -- Hide scrollbar
-        scrollBar:Hide()
-        scrollFrame:SetVerticalScroll(0)
-      end
+      scrollChild:SetHeight(contentHeight)
     end
     
-    -- Right panel: Role containers
+    frame.RefreshRaidsList = RefreshRaidsList
+    
+    -- Function to refresh encounters list
+    local function RefreshEncountersList()
+      -- Clear existing buttons
+      if frame.encounterButtons then
+        for _, btn in ipairs(frame.encounterButtons) do
+          if btn.placeholder then
+            btn.placeholder:SetParent(nil)
+            btn.placeholder = nil
+          else
+            btn:Hide()
+            btn:SetParent(nil)
+          end
+        end
+      end
+      frame.encounterButtons = {}
+      
+      local scrollChild = frame.encountersScrollChild
+      
+      if not frame.selectedRaid then
+        -- Show placeholder
+        local placeholderText = encountersListFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        placeholderText:SetPoint("CENTER", encountersListFrame, "CENTER", 0, 0)
+        placeholderText:SetText("|cff888888Select a raid|r")
+        placeholderText:SetJustifyH("CENTER")
+        table.insert(frame.encounterButtons, {placeholder = placeholderText})
+        return
+      end
+      
+      -- Ensure encounter storage exists
+      if not OGRH_SV.encounterMgmt.encounters[frame.selectedRaid] then
+        OGRH_SV.encounterMgmt.encounters[frame.selectedRaid] = {}
+      end
+      
+      -- Validate that the selected encounter still exists
+      if frame.selectedEncounter then
+        local encounterExists = false
+        local encounters = OGRH_SV.encounterMgmt.encounters[frame.selectedRaid]
+        for _, encounterName in ipairs(encounters) do
+          if encounterName == frame.selectedEncounter then
+            encounterExists = true
+            break
+          end
+        end
+        if not encounterExists then
+          frame.selectedEncounter = nil
+        end
+      end
+      
+      local yOffset = -5
+      local encounters = OGRH_SV.encounterMgmt.encounters[frame.selectedRaid]
+      
+      for i, encounterName in ipairs(encounters) do
+        local encounterBtn = CreateFrame("Button", nil, scrollChild)
+        encounterBtn:SetWidth(145)
+        encounterBtn:SetHeight(20)
+        encounterBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
+        
+        -- Background
+        local bg = encounterBtn:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        if frame.selectedEncounter == encounterName then
+          bg:SetVertexColor(0.2, 0.4, 0.2, 0.8)
+        else
+          bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+        end
+        encounterBtn.bg = bg
+        
+        -- Encounter name text
+        local nameText = encounterBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        nameText:SetPoint("LEFT", encounterBtn, "LEFT", 5, 0)
+        nameText:SetText(encounterName)
+        nameText:SetWidth(135)
+        nameText:SetJustifyH("LEFT")
+        
+        -- Click to select encounter
+        local capturedEncounterName = encounterName
+        encounterBtn:SetScript("OnClick", function()
+          frame.selectedEncounter = capturedEncounterName
+          RefreshEncountersList()
+          if frame.RefreshRoleContainers then
+            frame.RefreshRoleContainers()
+          end
+        end)
+        
+        table.insert(frame.encounterButtons, encounterBtn)
+        yOffset = yOffset - 22
+      end
+      
+      -- Update scroll child height
+      local contentHeight = math.abs(yOffset) + 5
+      scrollChild:SetHeight(contentHeight)
+    end
+    
+    frame.RefreshEncountersList = RefreshEncountersList
+    
+    -- Right panel: Role assignment area
     local rightPanel = CreateFrame("Frame", nil, frame)
-    rightPanel:SetWidth(595)  -- Increased to use more horizontal space
-    rightPanel:SetHeight(380)  -- Match left panel height
-    rightPanel:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 10, 0)  -- Position relative to left panel
+    rightPanel:SetWidth(595)
+    rightPanel:SetHeight(390)
+    rightPanel:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 10, 0)
     rightPanel:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -284,106 +364,247 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     rightPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
     frame.rightPanel = rightPanel
     
-    -- Create role containers
-    local roleContainers = {}
+    -- Placeholder text when no encounter selected
+    local placeholderText = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    placeholderText:SetPoint("CENTER", rightPanel, "CENTER", 0, 0)
+    placeholderText:SetText("|cff888888Select a raid and encounter|r")
+    frame.placeholderText = placeholderText
     
-    local function CreateRoleContainer(parent, title, maxPlayers, xPos, yPos, width)
-      local container = CreateFrame("Frame", nil, parent)
-      container:SetWidth(width)
-      container:SetHeight(40 + (maxPlayers * 22))
-      container:SetPoint("TOPLEFT", parent, "TOPLEFT", xPos, yPos)
-      container:SetBackdrop({
-        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 8,
-        insets = {left = 2, right = 2, top = 2, bottom = 2}
-      })
-      container:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+    -- Store role containers (will be created dynamically)
+    frame.roleContainers = {}
+    
+    -- Function to refresh role containers based on selected encounter
+    local function RefreshRoleContainers()
+      -- Clear existing role containers
+      for _, container in pairs(frame.roleContainers) do
+        container:Hide()
+        container:SetParent(nil)
+      end
+      frame.roleContainers = {}
       
-      -- Title
-      local titleText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-      titleText:SetPoint("TOP", container, "TOP", 0, -10)
-      titleText:SetText(title)
-      
-      -- Player slots
-      container.slots = {}
-      for i = 1, maxPlayers do
-        local slot = CreateFrame("Frame", nil, container)
-        slot:SetWidth(width - 20)
-        slot:SetHeight(20)
-        slot:SetPoint("TOP", container, "TOP", 0, -30 - ((i-1) * 22))
-        
-        -- Background
-        local bg = slot:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        bg:SetVertexColor(0.1, 0.1, 0.1, 0.8)
-        
-        -- Mark button (raid target icon)
-        local markBtn = CreateFrame("Button", nil, slot)
-        markBtn:SetWidth(16)
-        markBtn:SetHeight(16)
-        markBtn:SetPoint("LEFT", slot, "LEFT", 5, 0)
-        local markBg = markBtn:CreateTexture(nil, "BACKGROUND")
-        markBg:SetAllPoints()
-        markBg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        markBg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-        slot.markBtn = markBtn
-        
-        -- Player name text
-        local nameText = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        nameText:SetPoint("LEFT", markBtn, "RIGHT", 5, 0)
-        nameText:SetText("|cff888888[Empty]|r")
-        slot.nameText = nameText
-        
-        -- Only show up/down buttons if maxPlayers > 1
-        if maxPlayers > 1 then
-          -- Up button
-          local upBtn = CreateFrame("Button", nil, slot)
-          upBtn:SetWidth(20)
-          upBtn:SetHeight(20)
-          upBtn:SetPoint("RIGHT", slot, "RIGHT", -25, 0)
-          upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-          upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
-          upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-          slot.upBtn = upBtn
-          
-          -- Down button
-          local downBtn = CreateFrame("Button", nil, slot)
-          downBtn:SetWidth(20)
-          downBtn:SetHeight(20)
-          downBtn:SetPoint("RIGHT", slot, "RIGHT", -5, 0)
-          downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-          downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
-          downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
-          slot.downBtn = downBtn
-        end
-        
-        table.insert(container.slots, slot)
+      -- Show/hide placeholder
+      if not frame.selectedRaid or not frame.selectedEncounter then
+        placeholderText:Show()
+        return
       end
       
-      return container
+      placeholderText:Hide()
+      
+      -- Get role configuration for this encounter
+      local roles = OGRH_SV.encounterMgmt.roles
+      if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
+        -- No roles configured yet
+        local noRolesText = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        noRolesText:SetPoint("CENTER", rightPanel, "CENTER", 0, 0)
+        noRolesText:SetText("|cffff8888No roles configured for this encounter|r\n|cff888888Configure roles in Encounter Setup|r")
+        frame.roleContainers.noRolesText = noRolesText
+        return
+      end
+      
+      local encounterRoles = roles[frame.selectedRaid][frame.selectedEncounter]
+      local column1 = encounterRoles.column1 or {}
+      local column2 = encounterRoles.column2 or {}
+      
+      -- Helper function to create role container
+      local function CreateRoleContainer(parent, role, roleIndex, xPos, yPos, width)
+        local maxPlayers = role.slots or 1
+        local container = CreateFrame("Frame", nil, parent)
+        container:SetWidth(width)
+        container:SetHeight(40 + (maxPlayers * 22))
+        container:SetPoint("TOPLEFT", parent, "TOPLEFT", xPos, yPos)
+        container:SetBackdrop({
+          bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+          edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+          tile = true,
+          tileSize = 16,
+          edgeSize = 8,
+          insets = {left = 2, right = 2, top = 2, bottom = 2}
+        })
+        container:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+        
+        -- Role index label (top left)
+        local indexLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        indexLabel:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -5)
+        indexLabel:SetText("R" .. roleIndex)
+        indexLabel:SetTextColor(0.7, 0.7, 0.7)
+        
+        -- Role name (centered)
+        local titleText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        titleText:SetPoint("TOP", container, "TOP", 0, -10)
+        titleText:SetText(role.name or "Unknown Role")
+        
+        -- Pool button (top right)
+        local poolBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
+        poolBtn:SetWidth(40)
+        poolBtn:SetHeight(18)
+        poolBtn:SetPoint("TOPRIGHT", container, "TOPRIGHT", -5, -5)
+        poolBtn:SetText("Pool")
+        poolBtn:SetScript("OnClick", function()
+          -- TODO: Open player pool interface
+          DEFAULT_CHAT_FRAME:AddMessage("Player pool not yet implemented")
+        end)
+        
+        -- Player slots
+        container.slots = {}
+        for i = 1, maxPlayers do
+          local slot = CreateFrame("Frame", nil, container)
+          slot:SetWidth(width - 20)
+          slot:SetHeight(20)
+          slot:SetPoint("TOP", container, "TOP", 0, -30 - ((i-1) * 22))
+          
+          -- Background
+          local bg = slot:CreateTexture(nil, "BACKGROUND")
+          bg:SetAllPoints()
+          bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+          bg:SetVertexColor(0.1, 0.1, 0.1, 0.8)
+          
+          -- Raid icon dropdown button - only if showRaidIcons is true
+          if role.showRaidIcons then
+            local iconBtn = CreateFrame("Button", nil, slot)
+            iconBtn:SetWidth(16)
+            iconBtn:SetHeight(16)
+            iconBtn:SetPoint("LEFT", slot, "LEFT", 5, 0)
+            
+            -- Background for icon button
+            local iconBg = iconBtn:CreateTexture(nil, "BACKGROUND")
+            iconBg:SetAllPoints()
+            iconBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+            iconBg:SetVertexColor(0.3, 0.3, 0.3, 0.8)
+            
+            -- Icon texture (will show selected raid icon)
+            local iconTex = iconBtn:CreateTexture(nil, "OVERLAY")
+            iconTex:SetWidth(12)
+            iconTex:SetHeight(12)
+            iconTex:SetPoint("CENTER", iconBtn, "CENTER")
+            iconTex:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+            iconTex:Hide()  -- Hidden until icon is selected
+            iconBtn.iconTex = iconTex
+            
+            -- Current icon index (0 = none)
+            iconBtn.iconIndex = 0
+            
+            -- Click to cycle through raid icons
+            iconBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            iconBtn:SetScript("OnClick", function()
+              local button = arg1 or "LeftButton"
+              local currentIndex = iconBtn.iconIndex
+              
+              if button == "LeftButton" then
+                -- Cycle forward: none -> 8 -> 7 -> ... -> 1 -> none
+                if currentIndex == 0 then
+                  currentIndex = 8
+                elseif currentIndex == 1 then
+                  currentIndex = 0
+                else
+                  currentIndex = currentIndex - 1
+                end
+              else
+                -- Right click: Cycle backward: none -> 1 -> 2 -> ... -> 8 -> none
+                if currentIndex == 0 then
+                  currentIndex = 1
+                elseif currentIndex == 8 then
+                  currentIndex = 0
+                else
+                  currentIndex = currentIndex + 1
+                end
+              end
+              
+              iconBtn.iconIndex = currentIndex
+              
+              if currentIndex == 0 then
+                iconTex:Hide()
+              else
+                -- Set texture coordinates for the selected icon
+                -- Texture coordinates from RolesUI
+                local coords = {
+                  [1] = {0, 0.25, 0, 0.25},       -- Star
+                  [2] = {0.25, 0.5, 0, 0.25},     -- Circle
+                  [3] = {0.5, 0.75, 0, 0.25},     -- Diamond
+                  [4] = {0.75, 1, 0, 0.25},       -- Triangle
+                  [5] = {0, 0.25, 0.25, 0.5},     -- Moon
+                  [6] = {0.25, 0.5, 0.25, 0.5},   -- Square
+                  [7] = {0.5, 0.75, 0.25, 0.5},   -- Cross
+                  [8] = {0.75, 1, 0.25, 0.5},     -- Skull
+                }
+                local c = coords[currentIndex]
+                iconTex:SetTexCoord(c[1], c[2], c[3], c[4])
+                iconTex:Show()
+              end
+            end)
+            
+            slot.iconBtn = iconBtn
+          end
+          
+          -- Player name text
+          local nameText = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+          if role.showRaidIcons then
+            nameText:SetPoint("LEFT", slot.iconBtn, "RIGHT", 5, 0)
+          else
+            nameText:SetPoint("LEFT", slot, "LEFT", 5, 0)
+          end
+          nameText:SetText("|cff888888[Empty]|r")
+          slot.nameText = nameText
+          
+          table.insert(container.slots, slot)
+        end
+        
+        return container
+      end
+      
+      -- Create role containers from both columns
+      local yOffset = -10
+      local columnWidth = 282
+      
+      -- Interleave columns in 2-column layout
+      local maxRoles = math.max(table.getn(column1), table.getn(column2))
+      local roleIndex = 1
+      
+      for i = 1, maxRoles do
+        -- Left column role
+        if column1[i] then
+          local container = CreateRoleContainer(rightPanel, column1[i], roleIndex, 10, yOffset, columnWidth)
+          table.insert(frame.roleContainers, container)
+          roleIndex = roleIndex + 1
+        end
+        
+        -- Right column role
+        if column2[i] then
+          local container = CreateRoleContainer(rightPanel, column2[i], roleIndex, 302, yOffset, columnWidth)
+          table.insert(frame.roleContainers, container)
+          roleIndex = roleIndex + 1
+        end
+        
+        -- Calculate offset for next row based on tallest container in this row
+        local leftHeight = column1[i] and (40 + ((column1[i].slots or 1) * 22)) or 0
+        local rightHeight = column2[i] and (40 + ((column2[i].slots or 1) * 22)) or 0
+        yOffset = yOffset - math.max(leftHeight, rightHeight) - 10
+      end
     end
     
-    -- Create the four role containers in 2x2 layout
-    -- Top row: Main Tank (left) and Orb Control (right)
-    roleContainers.mainTank = CreateRoleContainer(rightPanel, "Main Tank", 1, 10, -10, 282)
-    roleContainers.orbControl = CreateRoleContainer(rightPanel, "Orb Control", 1, 302, -10, 282)
+    frame.RefreshRoleContainers = RefreshRoleContainers
     
-    -- Bottom row: Near Side (left) and Far Side (right)
-    roleContainers.nearSide = CreateRoleContainer(rightPanel, "Near Side", 5, 10, -80, 282)
-    roleContainers.farSide = CreateRoleContainer(rightPanel, "Far Side", 5, 302, -80, 282)
-    
-    frame.roleContainers = roleContainers
-    
-    -- Initialize with selected role
-    UpdateRoleSelection("Tanks")
+    -- Initialize lists
+    RefreshRaidsList()
   end
   
-  frame:Show()
-  frame.RefreshPlayerList()
+  -- Show the frame
+  OGRH_BWLEncounterFrame:Show()
+  
+  -- Refresh the raids list (this will validate and clear selectedRaid/selectedEncounter if needed)
+  OGRH_BWLEncounterFrame.RefreshRaidsList()
+  
+  -- Refresh the encounters list (this will validate and clear selectedEncounter if needed)
+  if OGRH_BWLEncounterFrame.RefreshEncountersList then
+    OGRH_BWLEncounterFrame.RefreshEncountersList()
+  end
+  
+  -- If an encounter is still selected after validation, refresh the role containers
+  -- to pick up any changes made in the Setup window
+  if OGRH_BWLEncounterFrame.selectedRaid and OGRH_BWLEncounterFrame.selectedEncounter then
+    if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+      OGRH_BWLEncounterFrame.RefreshRoleContainers()
+    end
+  end
 end
 
 -- Function to show Encounter Setup Window

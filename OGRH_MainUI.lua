@@ -80,16 +80,20 @@ bEncounters:SetScript("OnClick", function()
     -- Raid structure
     local raids = {
       {
-        name = "BWL",
-        encounters = {
-          {text = "Razorgore", handler = function() 
-            if OGRH.ShowBWLEncounterWindow then 
-              OGRH.ShowBWLEncounterWindow("Razorgore") 
-            else
-              DEFAULT_CHAT_FRAME:AddMessage("BWL Encounter window not yet implemented")
-            end
-          end}
-        }
+        name = "Manage",
+        encounters = nil,
+        handler = function()
+          -- Close Setup window if open
+          if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame:IsVisible() then
+            OGRH_EncounterSetupFrame:Hide()
+          end
+          
+          if OGRH.ShowBWLEncounterWindow then 
+            OGRH.ShowBWLEncounterWindow() 
+          else
+            DEFAULT_CHAT_FRAME:AddMessage("Encounter Planning window not yet implemented")
+          end
+        end
       }
     }
     
@@ -108,44 +112,66 @@ bEncounters:SetScript("OnClick", function()
       local yOffset = -5
       
       for _, raid in ipairs(raids) do
-        local isExpanded = expandedRaids[raid.name]
-        
-        -- Create raid header button
-        local raidBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
-        raidBtn:SetWidth(130)
-        raidBtn:SetHeight(20)
-        raidBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
-        
-        local expandIcon = isExpanded and "[-] " or "[+] "
-        raidBtn:SetText(expandIcon .. raid.name)
-        
-        -- Capture raid.name in local variable for closure
-        local raidName = raid.name
-        raidBtn:SetScript("OnClick", function()
-          expandedRaids[raidName] = not expandedRaids[raidName]
-          RebuildMenu()
-        end)
-        table.insert(menuButtons, raidBtn)
-        yOffset = yOffset - 22
-        
-        -- If expanded, show encounters
-        if isExpanded then
-          for _, encounter in ipairs(raid.encounters) do
-            local encBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
-            encBtn:SetWidth(120)
-            encBtn:SetHeight(18)
-            encBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 15, yOffset)
-            encBtn:SetText(encounter.text)
-            
-            -- Capture handler in local variable for closure
-            local encounterHandler = encounter.handler
-            encBtn:SetScript("OnClick", function()
-              menu:Hide()
-              encounterHandler()
-            end)
-            table.insert(menuButtons, encBtn)
-            yOffset = yOffset - 20
+        -- Check if this raid has encounters or a direct handler
+        if raid.encounters then
+          -- Expandable raid with encounters
+          local isExpanded = expandedRaids[raid.name]
+          
+          -- Create raid header button
+          local raidBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+          raidBtn:SetWidth(130)
+          raidBtn:SetHeight(20)
+          raidBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
+          
+          local expandIcon = isExpanded and "[-] " or "[+] "
+          raidBtn:SetText(expandIcon .. raid.name)
+          
+          -- Capture raid.name in local variable for closure
+          local raidName = raid.name
+          raidBtn:SetScript("OnClick", function()
+            expandedRaids[raidName] = not expandedRaids[raidName]
+            RebuildMenu()
+          end)
+          table.insert(menuButtons, raidBtn)
+          yOffset = yOffset - 22
+          
+          -- If expanded, show encounters
+          if isExpanded then
+            for _, encounter in ipairs(raid.encounters) do
+              local encBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+              encBtn:SetWidth(120)
+              encBtn:SetHeight(18)
+              encBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 15, yOffset)
+              encBtn:SetText(encounter.text)
+              
+              -- Capture handler in local variable for closure
+              local encounterHandler = encounter.handler
+              encBtn:SetScript("OnClick", function()
+                menu:Hide()
+                encounterHandler()
+              end)
+              table.insert(menuButtons, encBtn)
+              yOffset = yOffset - 20
+            end
           end
+        else
+          -- Direct handler button (no encounters)
+          local raidBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+          raidBtn:SetWidth(130)
+          raidBtn:SetHeight(20)
+          raidBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
+          raidBtn:SetText(raid.name)
+          
+          -- Capture handler in local variable for closure
+          local raidHandler = raid.handler
+          raidBtn:SetScript("OnClick", function()
+            menu:Hide()
+            if raidHandler then
+              raidHandler()
+            end
+          end)
+          table.insert(menuButtons, raidBtn)
+          yOffset = yOffset - 22
         end
       end
       
@@ -157,18 +183,24 @@ bEncounters:SetScript("OnClick", function()
         setupButton = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
         setupButton:SetWidth(130)
         setupButton:SetHeight(20)
+        setupButton:SetScript("OnClick", function()
+          menu:Hide()
+          
+          -- Close Manage window if open
+          if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
+            OGRH_BWLEncounterFrame:Hide()
+          end
+          
+          if OGRH.ShowEncounterSetup then
+            OGRH.ShowEncounterSetup()
+          else
+            DEFAULT_CHAT_FRAME:AddMessage("Encounter Setup not yet implemented")
+          end
+        end)
       end
       setupButton:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
       setupButton:SetText("Setup")
-      setupButton:SetScript("OnClick", function()
-        menu:Hide()
-        if OGRH.ShowEncounterSetup then
-          OGRH.ShowEncounterSetup()
-        else
-          DEFAULT_CHAT_FRAME:AddMessage("Encounter Setup not yet implemented")
-        end
-      end)
-      table.insert(menuButtons, setupButton)
+      setupButton:Show()
       
       totalHeight = totalHeight + 22
       menu:SetHeight(totalHeight)
