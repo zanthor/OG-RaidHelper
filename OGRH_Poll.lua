@@ -141,6 +141,54 @@ eventFrame:SetScript("OnEvent", function()
         OGRH.EnsureSV() -- Ensure saved variables exist
         OGRH.AddTo(activePoll.currentRole, playerName)
         
+        -- Check if player is already in the Assigned side (ROLE_COLUMNS)
+        local isInAssigned = false
+        if OGRH.GetRolePlayers then
+            local rolePlayers = OGRH.GetRolePlayers(activePoll.currentRole)
+            for i = 1, table.getn(rolePlayers) do
+                if rolePlayers[i] == playerName then
+                    isInAssigned = true
+                    break
+                end
+            end
+        end
+        
+        -- If not in assigned, add to Pool Defaults
+        if not isInAssigned then
+            -- Map role name to pool defaults index
+            local roleToIndex = {
+                TANKS = 1,
+                HEALERS = 2,
+                MELEE = 3,
+                RANGED = 4
+            }
+            
+            local poolIndex = roleToIndex[activePoll.currentRole]
+            if poolIndex then
+                -- Ensure pool defaults structure exists
+                if not OGRH_SV.poolDefaults then
+                    OGRH_SV.poolDefaults = {}
+                end
+                if not OGRH_SV.poolDefaults[poolIndex] then
+                    OGRH_SV.poolDefaults[poolIndex] = {}
+                end
+                
+                -- Check if player is already in pool defaults
+                local alreadyInPool = false
+                for i = 1, table.getn(OGRH_SV.poolDefaults[poolIndex]) do
+                    if OGRH_SV.poolDefaults[poolIndex][i] == playerName then
+                        alreadyInPool = true
+                        break
+                    end
+                end
+                
+                -- Add to pool defaults if not already there
+                if not alreadyInPool then
+                    table.insert(OGRH_SV.poolDefaults[poolIndex], playerName)
+                end
+            end
+        end
+        
         -- Force UI refresh
         if OGRH.rolesFrame and OGRH.rolesFrame:GetScript("OnEvent") then
             OGRH.rolesFrame:GetScript("OnEvent")()

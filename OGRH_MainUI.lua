@@ -49,6 +49,14 @@ local bTrade  = makeBtn("Trade", bEncounters)
 
 function OGRH_ShowBoard() if OGRH.ShowRolesUI then OGRH.ShowRolesUI() else OGRH.Msg("Roles UI not yet loaded.") end end
 bRoles:SetScript("OnClick", function()
+  -- Close encounter windows if they're open
+  if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
+    OGRH_BWLEncounterFrame:Hide()
+  end
+  if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame:IsVisible() then
+    OGRH_EncounterSetupFrame:Hide()
+  end
+  
   if OGRH.ShowRolesUI then OGRH.ShowRolesUI()
   else OGRH.Msg("Roles UI not yet loaded. If this persists after /reload, a Lua error prevented it from loading.");
   end

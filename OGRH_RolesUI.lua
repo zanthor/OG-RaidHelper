@@ -378,6 +378,28 @@ local function CreateRolesFrame()
                                     
                                     OGRH_SV.roles[draggedName] = newRole
                                     
+                                    -- Add to Pool Defaults if not already there
+                                    if not OGRH_SV.poolDefaults then
+                                        OGRH_SV.poolDefaults = {}
+                                    end
+                                    if not OGRH_SV.poolDefaults[colIndex] then
+                                        OGRH_SV.poolDefaults[colIndex] = {}
+                                    end
+                                    
+                                    -- Check if player is already in pool defaults
+                                    local alreadyInPool = false
+                                    for i = 1, table.getn(OGRH_SV.poolDefaults[colIndex]) do
+                                        if OGRH_SV.poolDefaults[colIndex][i] == draggedName then
+                                            alreadyInPool = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    -- Add to pool defaults if not already there
+                                    if not alreadyInPool then
+                                        table.insert(OGRH_SV.poolDefaults[colIndex], draggedName)
+                                    end
+                                    
                                     -- Refresh display
                                     RefreshColumnDisplays()
                                 end

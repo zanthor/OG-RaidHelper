@@ -257,10 +257,17 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         -- Click to select raid
         local capturedRaidName = raidName
         raidBtn:SetScript("OnClick", function()
+          -- Clear encounter selection when switching raids
+          if frame.selectedRaid ~= capturedRaidName then
+            frame.selectedEncounter = nil
+          end
           frame.selectedRaid = capturedRaidName
           RefreshRaidsList()
           if frame.RefreshEncountersList then
             frame.RefreshEncountersList()
+          end
+          if frame.RefreshRoleContainers then
+            frame.RefreshRoleContainers()
           end
         end)
         
@@ -371,10 +378,10 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     
     frame.RefreshEncountersList = RefreshEncountersList
     
-    -- Right panel: Role assignment area
+    -- Top right panel: Role assignment area (60% of original height = 234px)
     local rightPanel = CreateFrame("Frame", nil, frame)
     rightPanel:SetWidth(595)
-    rightPanel:SetHeight(390)
+    rightPanel:SetHeight(234)
     rightPanel:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 10, 0)
     rightPanel:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -387,11 +394,349 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     rightPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
     frame.rightPanel = rightPanel
     
+    -- Create scroll frame for role containers
+    local rolesScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel)
+    rolesScrollFrame:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 5, -5)
+    rolesScrollFrame:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", -22, 5)
+    
+    local rolesScrollChild = CreateFrame("Frame", nil, rolesScrollFrame)
+    rolesScrollChild:SetWidth(565)
+    rolesScrollChild:SetHeight(1)
+    rolesScrollFrame:SetScrollChild(rolesScrollChild)
+    frame.rolesScrollFrame = rolesScrollFrame
+    frame.rolesScrollChild = rolesScrollChild
+    
+    -- Create scrollbar for roles
+    local rolesScrollBar = CreateFrame("Slider", nil, rolesScrollFrame)
+    rolesScrollBar:SetPoint("TOPRIGHT", rightPanel, "TOPRIGHT", -5, -16)
+    rolesScrollBar:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", -5, 16)
+    rolesScrollBar:SetWidth(16)
+    rolesScrollBar:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    rolesScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    rolesScrollBar:SetOrientation("VERTICAL")
+    rolesScrollBar:SetMinMaxValues(0, 1)
+    rolesScrollBar:SetValue(0)
+    rolesScrollBar:SetValueStep(22)
+    rolesScrollBar:Hide()
+    frame.rolesScrollBar = rolesScrollBar
+    
+    rolesScrollBar:SetScript("OnValueChanged", function()
+      rolesScrollFrame:SetVerticalScroll(this:GetValue())
+    end)
+    
+    -- Enable mouse wheel scrolling
+    rolesScrollFrame:EnableMouseWheel(true)
+    rolesScrollFrame:SetScript("OnMouseWheel", function()
+      if not rolesScrollBar:IsShown() then
+        return
+      end
+      
+      local delta = arg1
+      local current = rolesScrollBar:GetValue()
+      local minVal, maxVal = rolesScrollBar:GetMinMaxValues()
+      
+      if delta > 0 then
+        rolesScrollBar:SetValue(math.max(minVal, current - 22))
+      else
+        rolesScrollBar:SetValue(math.min(maxVal, current + 22))
+      end
+    end)
+    
     -- Placeholder text when no encounter selected
     local placeholderText = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     placeholderText:SetPoint("CENTER", rightPanel, "CENTER", 0, 0)
     placeholderText:SetText("|cff888888Select a raid and encounter|r")
     frame.placeholderText = placeholderText
+    
+    -- Bottom right panel: Additional info area (fills remaining space = 146px)
+    local bottomPanel = CreateFrame("Frame", nil, frame)
+    bottomPanel:SetWidth(595)
+    bottomPanel:SetHeight(146)
+    bottomPanel:SetPoint("TOPLEFT", rightPanel, "BOTTOMLEFT", 0, -10)
+    bottomPanel:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    bottomPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    frame.bottomPanel = bottomPanel
+    
+    -- Auto Assign button
+    local autoAssignBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    autoAssignBtn:SetWidth(120)
+    autoAssignBtn:SetHeight(30)
+    autoAssignBtn:SetPoint("TOPLEFT", bottomPanel, "TOPLEFT", 10, -10)
+    autoAssignBtn:SetText("Auto Assign")
+    frame.autoAssignBtn = autoAssignBtn
+    
+    -- Auto Assign functionality
+    autoAssignBtn:SetScript("OnClick", function()
+      if not frame.selectedRaid or not frame.selectedEncounter then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
+        return
+      end
+      
+      -- Get role configuration
+      local roles = OGRH_SV.encounterMgmt.roles
+      if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
+        return
+      end
+      
+      local encounterRoles = roles[frame.selectedRaid][frame.selectedEncounter]
+      local column1 = encounterRoles.column1 or {}
+      local column2 = encounterRoles.column2 or {}
+      
+      -- Build ordered list of all roles (interleaved by row)
+      local allRoles = {}
+      local maxRoles = math.max(table.getn(column1), table.getn(column2))
+      
+      for i = 1, maxRoles do
+        if column1[i] then
+          table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+        end
+        if column2[i] then
+          table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+        end
+      end
+      
+      -- Track assigned players
+      local assignedPlayers = {}  -- playerName -> first roleIndex assigned
+      local roleAssignments = {}  -- roleIndex -> {player1, player2, ...}
+      local assignmentCount = 0
+      
+      -- Process each role in order
+      for _, roleData in ipairs(allRoles) do
+        local role = roleData.role
+        local roleIndex = roleData.roleIndex
+        local maxPlayers = role.slots or 1
+        
+        roleAssignments[roleIndex] = {}
+        
+        -- Get pool for this role
+        if not OGRH_SV.encounterPools then
+          OGRH_SV.encounterPools = {}
+        end
+        if not OGRH_SV.encounterPools[frame.selectedRaid] then
+          OGRH_SV.encounterPools[frame.selectedRaid] = {}
+        end
+        if not OGRH_SV.encounterPools[frame.selectedRaid][frame.selectedEncounter] then
+          OGRH_SV.encounterPools[frame.selectedRaid][frame.selectedEncounter] = {}
+        end
+        if not OGRH_SV.encounterPools[frame.selectedRaid][frame.selectedEncounter][roleIndex] then
+          OGRH_SV.encounterPools[frame.selectedRaid][frame.selectedEncounter][roleIndex] = {}
+        end
+        
+        local pool = OGRH_SV.encounterPools[frame.selectedRaid][frame.selectedEncounter][roleIndex]
+        
+        -- Try to assign players from the pool
+        local slotsAssigned = 0
+        for i = 1, table.getn(pool) do
+          if slotsAssigned >= maxPlayers then
+            break
+          end
+          
+          local playerName = pool[i]
+          
+          -- Check if player is already assigned
+          local canAssign = true
+          if assignedPlayers[playerName] then
+            -- Player is already assigned to at least one role
+            -- They can only be reused if ALL roles they're assigned to have allowOtherRoles = true
+            canAssign = false
+            
+            local allRolesAllowReuse = true
+            -- Check all roles this player is currently assigned to
+            for checkRoleIndex, players in pairs(roleAssignments) do
+              for _, assignedPlayer in ipairs(players) do
+                if assignedPlayer == playerName then
+                  -- Found this player in a role, check if that role allows other roles
+                  local roleAllowsReuse = false
+                  for _, checkRoleData in ipairs(allRoles) do
+                    if checkRoleData.roleIndex == checkRoleIndex then
+                      if checkRoleData.role.allowOtherRoles then
+                        roleAllowsReuse = true
+                      end
+                      break
+                    end
+                  end
+                  
+                  if not roleAllowsReuse then
+                    -- This player is in a role that doesn't allow reuse
+                    allRolesAllowReuse = false
+                    break
+                  end
+                end
+              end
+              
+              if not allRolesAllowReuse then
+                break
+              end
+            end
+            
+            if allRolesAllowReuse then
+              canAssign = true
+            end
+          end
+          
+          if canAssign then
+            -- Check if player is in raid and online
+            local inRaid = false
+            local isOnline = false
+            
+            for j = 1, GetNumRaidMembers() do
+              local name, _, _, _, _, _, _, online = GetRaidRosterInfo(j)
+              if name == playerName then
+                inRaid = true
+                isOnline = online
+                break
+              end
+            end
+            
+            if inRaid and isOnline then
+              -- Assign this player to the role
+              if not assignedPlayers[playerName] then
+                assignedPlayers[playerName] = roleIndex
+              end
+              table.insert(roleAssignments[roleIndex], playerName)
+              slotsAssigned = slotsAssigned + 1
+              assignmentCount = assignmentCount + 1
+            end
+          end
+        end
+      end
+      
+      -- Store assignments (roleIndex -> {player1, player2, ...})
+      if not OGRH_SV.encounterAssignments then
+        OGRH_SV.encounterAssignments = {}
+      end
+      if not OGRH_SV.encounterAssignments[frame.selectedRaid] then
+        OGRH_SV.encounterAssignments[frame.selectedRaid] = {}
+      end
+      
+      OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = roleAssignments
+      
+      -- Refresh the display
+      if frame.RefreshRoleContainers then
+        frame.RefreshRoleContainers()
+      end
+      
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-assigned " .. assignmentCount .. " players.")
+    end)
+    
+    -- Announce button (below Auto Assign)
+    local announceBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    announceBtn:SetWidth(120)
+    announceBtn:SetHeight(30)
+    announceBtn:SetPoint("TOPLEFT", autoAssignBtn, "BOTTOMLEFT", 0, -10)
+    announceBtn:SetText("Announce")
+    frame.announceBtn = announceBtn
+    
+    -- Announce functionality (placeholder for now)
+    announceBtn:SetScript("OnClick", function()
+      -- Will be connected later
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announce functionality coming soon...")
+    end)
+    
+    -- Announcement Builder label
+    local announcementLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    announcementLabel:SetPoint("TOPLEFT", bottomPanel, "TOPLEFT", 145, -10)
+    announcementLabel:SetText("Announcement Builder:")
+    
+    -- Announcement Builder container
+    local announcementFrame = CreateFrame("Frame", nil, bottomPanel)
+    announcementFrame:SetWidth(430)
+    announcementFrame:SetHeight(106)
+    announcementFrame:SetPoint("TOPLEFT", announcementLabel, "BOTTOMLEFT", 0, -5)
+    announcementFrame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    announcementFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    
+    -- Create individual edit boxes for each line (5 lines)
+    frame.announcementLines = {}
+    local numLines = 5
+    local lineHeight = 18
+    local lineSpacing = 2
+    
+    for i = 1, numLines do
+      local lineFrame = CreateFrame("Frame", nil, announcementFrame)
+      lineFrame:SetWidth(410)
+      lineFrame:SetHeight(lineHeight)
+      lineFrame:SetPoint("TOPLEFT", announcementFrame, "TOPLEFT", 10, -5 - ((i - 1) * (lineHeight + lineSpacing)))
+      lineFrame:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = false,
+        tileSize = 0,
+        edgeSize = 8,
+        insets = {left = 2, right = 2, top = 2, bottom = 2}
+      })
+      lineFrame:SetBackdropColor(0.0, 0.0, 0.0, 0.8)
+      lineFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+      
+      local editBox = CreateFrame("EditBox", nil, lineFrame)
+      editBox:SetWidth(395)
+      editBox:SetHeight(lineHeight - 4)
+      editBox:SetPoint("LEFT", lineFrame, "LEFT", 5, 0)
+      editBox:SetFontObject(GameFontHighlight)
+      editBox:SetAutoFocus(false)
+      editBox:SetMaxLetters(255)
+      
+      editBox:SetScript("OnEscapePressed", function()
+        this:ClearFocus()
+      end)
+      
+      editBox:SetScript("OnEnterPressed", function()
+        this:ClearFocus()
+        -- Move to next line if not the last one
+        if i < numLines then
+          frame.announcementLines[i + 1]:SetFocus()
+        end
+      end)
+      
+      editBox:SetScript("OnTabPressed", function()
+        -- Move to next line
+        if i < numLines then
+          frame.announcementLines[i + 1]:SetFocus()
+        else
+          frame.announcementLines[1]:SetFocus()
+        end
+      end)
+      
+      -- Save text changes to SavedVariables
+      local capturedIndex = i
+      editBox:SetScript("OnTextChanged", function()
+        if frame.selectedRaid and frame.selectedEncounter then
+          if not OGRH_SV.encounterAnnouncements then
+            OGRH_SV.encounterAnnouncements = {}
+          end
+          if not OGRH_SV.encounterAnnouncements[frame.selectedRaid] then
+            OGRH_SV.encounterAnnouncements[frame.selectedRaid] = {}
+          end
+          if not OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter] then
+            OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter] = {}
+          end
+          
+          OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter][capturedIndex] = this:GetText()
+        end
+      end)
+      
+      frame.announcementLines[i] = editBox
+    end
     
     -- Store role containers (will be created dynamically)
     frame.roleContainers = {}
@@ -405,13 +750,53 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       end
       frame.roleContainers = {}
       
-      -- Show/hide placeholder
+      -- Show/hide placeholder and bottom panel controls
       if not frame.selectedRaid or not frame.selectedEncounter then
         placeholderText:Show()
+        
+        -- Hide bottom panel controls when no encounter is selected
+        frame.autoAssignBtn:Hide()
+        frame.announceBtn:Hide()
+        announcementLabel:Hide()
+        announcementFrame:Hide()
+        
+        -- Clear announcement lines when no encounter is selected
+        if frame.announcementLines then
+          for i = 1, table.getn(frame.announcementLines) do
+            frame.announcementLines[i]:SetText("")
+            frame.announcementLines[i]:ClearFocus()
+          end
+        end
+        
         return
       end
       
       placeholderText:Hide()
+      
+      -- Show bottom panel controls when encounter is selected
+      frame.autoAssignBtn:Show()
+      frame.announceBtn:Show()
+      announcementLabel:Show()
+      announcementFrame:Show()
+      
+      -- Load saved announcement text for this encounter
+      if not OGRH_SV.encounterAnnouncements then
+        OGRH_SV.encounterAnnouncements = {}
+      end
+      if not OGRH_SV.encounterAnnouncements[frame.selectedRaid] then
+        OGRH_SV.encounterAnnouncements[frame.selectedRaid] = {}
+      end
+      if not OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter] then
+        OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter] = {}
+      end
+      
+      local savedAnnouncements = OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter]
+      if frame.announcementLines then
+        for i = 1, table.getn(frame.announcementLines) do
+          local savedText = savedAnnouncements[i] or ""
+          frame.announcementLines[i]:SetText(savedText)
+        end
+      end
       
       -- Get role configuration for this encounter
       local roles = OGRH_SV.encounterMgmt.roles
@@ -567,18 +952,74 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           else
             nameText:SetPoint("LEFT", slot, "LEFT", 5, 0)
           end
-          nameText:SetText("|cff888888[Empty]|r")
           slot.nameText = nameText
+          
+          -- Store slot info for assignment lookup
+          slot.roleIndex = capturedRoleIndex
+          slot.slotIndex = i
           
           table.insert(container.slots, slot)
         end
+        
+        -- Update slot assignments after creating all slots
+        local function UpdateSlotAssignments()
+          -- Get assignments for this encounter
+          local assignedPlayers = {}
+          if OGRH_SV.encounterAssignments and 
+             OGRH_SV.encounterAssignments[frame.selectedRaid] and
+             OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] and
+             OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] then
+            assignedPlayers = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex]
+          end
+          
+          -- Update slot displays
+          for slotIdx, slot in ipairs(container.slots) do
+            local playerName = assignedPlayers[slotIdx]
+            
+            if playerName then
+              -- Get player's class color
+              local class = nil
+              for j = 1, GetNumRaidMembers() do
+                local name, _, _, _, playerClass = GetRaidRosterInfo(j)
+                if name == playerName then
+                  class = playerClass
+                  break
+                end
+              end
+              
+              local colorCode = "|cffffffff"
+              if class then
+                local classColors = {
+                  WARRIOR = "|cffC79C6E",
+                  PALADIN = "|cffF58CBA",
+                  HUNTER = "|cffABD473",
+                  ROGUE = "|cffFFF569",
+                  PRIEST = "|cffFFFFFF",
+                  SHAMAN = "|cff0070DE",
+                  MAGE = "|cff69CCF0",
+                  WARLOCK = "|cff9482C9",
+                  DRUID = "|cffFF7D0A"
+                }
+                colorCode = classColors[string.upper(class)] or "|cffffffff"
+              end
+              
+              slot.nameText:SetText(colorCode .. playerName .. "|r")
+            else
+              slot.nameText:SetText("|cff888888[Empty]|r")
+            end
+          end
+        end
+        
+        UpdateSlotAssignments()
+        container.UpdateSlotAssignments = UpdateSlotAssignments
         
         return container
       end
       
       -- Create role containers from both columns
-      local yOffset = -10
-      local columnWidth = 282
+      local scrollChild = frame.rolesScrollChild
+      local yOffset = -5
+      local columnWidth = 272
       
       -- Interleave columns in 2-column layout
       local maxRoles = math.max(table.getn(column1), table.getn(column2))
@@ -587,14 +1028,14 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       for i = 1, maxRoles do
         -- Left column role
         if column1[i] then
-          local container = CreateRoleContainer(rightPanel, column1[i], roleIndex, 10, yOffset, columnWidth)
+          local container = CreateRoleContainer(scrollChild, column1[i], roleIndex, 5, yOffset, columnWidth)
           table.insert(frame.roleContainers, container)
           roleIndex = roleIndex + 1
         end
         
         -- Right column role
         if column2[i] then
-          local container = CreateRoleContainer(rightPanel, column2[i], roleIndex, 302, yOffset, columnWidth)
+          local container = CreateRoleContainer(scrollChild, column2[i], roleIndex, 287, yOffset, columnWidth)
           table.insert(frame.roleContainers, container)
           roleIndex = roleIndex + 1
         end
@@ -604,12 +1045,36 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         local rightHeight = column2[i] and (40 + ((column2[i].slots or 1) * 22)) or 0
         yOffset = yOffset - math.max(leftHeight, rightHeight) - 10
       end
+      
+      -- Update scroll child height
+      local contentHeight = math.abs(yOffset) + 5
+      scrollChild:SetHeight(math.max(1, contentHeight))
+      
+      -- Update scrollbar visibility
+      local scrollFrame = frame.rolesScrollFrame
+      local scrollBar = frame.rolesScrollBar
+      local scrollFrameHeight = scrollFrame:GetHeight()
+      
+      if contentHeight > scrollFrameHeight then
+        scrollBar:Show()
+        scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+        scrollBar:SetValue(0)
+        scrollFrame:SetVerticalScroll(0)
+      else
+        scrollBar:Hide()
+        scrollFrame:SetVerticalScroll(0)
+      end
     end
     
     frame.RefreshRoleContainers = RefreshRoleContainers
     
     -- Initialize lists
     RefreshRaidsList()
+  end
+  
+  -- Close Roles window if it's open
+  if OGRH.rolesFrame and OGRH.rolesFrame:IsVisible() then
+    OGRH.rolesFrame:Hide()
   end
   
   -- Show the frame
@@ -623,7 +1088,12 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     OGRH_BWLEncounterFrame.RefreshEncountersList()
   end
   
-  -- If an encounter is still selected after validation, refresh the role containers
+  -- Refresh role containers to set initial visibility state of buttons
+  if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+    OGRH_BWLEncounterFrame.RefreshRoleContainers()
+  end
+  
+  -- If an encounter is still selected after validation, refresh again
   -- to pick up any changes made in the Setup window
   if OGRH_BWLEncounterFrame.selectedRaid and OGRH_BWLEncounterFrame.selectedEncounter then
     if OGRH_BWLEncounterFrame.RefreshRoleContainers then
@@ -1732,6 +2202,11 @@ function OGRH.ShowEncounterSetup()
     RefreshRolesList()
   end
   
+  -- Close Roles window if it's open
+  if OGRH.rolesFrame and OGRH.rolesFrame:IsVisible() then
+    OGRH.rolesFrame:Hide()
+  end
+  
   local frame = OGRH_EncounterSetupFrame
   frame:Show()
   frame.RefreshRaidsList()
@@ -1972,6 +2447,17 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     raidIconsCheckbox:SetHeight(24)
     frame.raidIconsCheckbox = raidIconsCheckbox
     
+    -- Allow Other Roles Checkbox
+    local allowOtherRolesLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    allowOtherRolesLabel:SetPoint("LEFT", raidIconsCheckbox, "RIGHT", 10, 0)
+    allowOtherRolesLabel:SetText("Allow Other Roles:")
+    
+    local allowOtherRolesCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    allowOtherRolesCheckbox:SetPoint("LEFT", allowOtherRolesLabel, "RIGHT", 5, 0)
+    allowOtherRolesCheckbox:SetWidth(24)
+    allowOtherRolesCheckbox:SetHeight(24)
+    frame.allowOtherRolesCheckbox = allowOtherRolesCheckbox
+    
     -- Player Count Label
     local countLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     countLabel:SetPoint("TOPLEFT", raidIconsLabel, "BOTTOMLEFT", 0, -15)
@@ -2066,6 +2552,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   -- Populate fields with current role data
   frame.nameEditBox:SetText(roleData.name or "")
   frame.raidIconsCheckbox:SetChecked(roleData.showRaidIcons or false)
+  frame.allowOtherRolesCheckbox:SetChecked(roleData.allowOtherRoles or false)
   frame.countEditBox:SetText(tostring(roleData.slots or 1))
   
   -- Set default roles checkboxes
@@ -2080,6 +2567,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     -- Update role data
     roleData.name = frame.nameEditBox:GetText()
     roleData.showRaidIcons = frame.raidIconsCheckbox:GetChecked()
+    roleData.allowOtherRoles = frame.allowOtherRolesCheckbox:GetChecked()
     roleData.slots = tonumber(frame.countEditBox:GetText()) or 1
     
     -- Update default roles
@@ -2654,9 +3142,9 @@ function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
     sourceDropdown:SetWidth(180)
     sourceDropdown:SetHeight(24)
     sourceDropdown:SetPoint("TOP", title, "BOTTOM", 0, -10)
-    sourceDropdown:SetText("Current Raid")
+    sourceDropdown:SetText("Tanks")
     frame.sourceDropdown = sourceDropdown
-    frame.selectedSource = "raid"
+    frame.selectedSource = "role_tanks"
     
     sourceDropdown:SetScript("OnClick", function()
       if not frame.sourceMenu then
@@ -2677,7 +3165,10 @@ function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
         frame.sourceMenu = menu
         
         local sourceOptions = {
-          {text = "Current Raid", value = "raid"},
+          {text = "Tanks", value = "role_tanks"},
+          {text = "Healers", value = "role_healers"},
+          {text = "Melee", value = "role_melee"},
+          {text = "Ranged", value = "role_ranged"},
           {text = "Default: Tanks", value = "default_tanks"},
           {text = "Default: Healers", value = "default_healers"},
           {text = "Default: Melee", value = "default_melee"},
@@ -2928,45 +3419,43 @@ function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
       -- Get available players based on selected source
       local availablePlayers = {}
       
-      if frame.selectedSource == "raid" then
-        -- Get players from current raid
-        if OGRH.GetRolePlayers and frame.currentRole.defaultRoles then
-          local allPlayers = {}
-          
-          if frame.currentRole.defaultRoles.tanks then
-            local tanks = OGRH.GetRolePlayers("TANKS")
-            for i = 1, table.getn(tanks) do
-              table.insert(allPlayers, tanks[i])
+      if frame.selectedSource == "role_tanks" then
+        -- Get players from Tanks role in RolesUI
+        if OGRH.GetRolePlayers then
+          local tanks = OGRH.GetRolePlayers("TANKS")
+          for i = 1, table.getn(tanks) do
+            if not poolLookup[tanks[i]] then
+              table.insert(availablePlayers, tanks[i])
             end
           end
-          
-          if frame.currentRole.defaultRoles.healers then
-            local healers = OGRH.GetRolePlayers("HEALERS")
-            for i = 1, table.getn(healers) do
-              table.insert(allPlayers, healers[i])
+        end
+      elseif frame.selectedSource == "role_healers" then
+        -- Get players from Healers role in RolesUI
+        if OGRH.GetRolePlayers then
+          local healers = OGRH.GetRolePlayers("HEALERS")
+          for i = 1, table.getn(healers) do
+            if not poolLookup[healers[i]] then
+              table.insert(availablePlayers, healers[i])
             end
           end
-          
-          if frame.currentRole.defaultRoles.ranged then
-            local ranged = OGRH.GetRolePlayers("RANGED")
-            for i = 1, table.getn(ranged) do
-              table.insert(allPlayers, ranged[i])
+        end
+      elseif frame.selectedSource == "role_melee" then
+        -- Get players from Melee role in RolesUI
+        if OGRH.GetRolePlayers then
+          local melee = OGRH.GetRolePlayers("MELEE")
+          for i = 1, table.getn(melee) do
+            if not poolLookup[melee[i]] then
+              table.insert(availablePlayers, melee[i])
             end
           end
-          
-          if frame.currentRole.defaultRoles.dps then
-            local melee = OGRH.GetRolePlayers("MELEE")
-            for i = 1, table.getn(melee) do
-              table.insert(allPlayers, melee[i])
-            end
-          end
-          
-          -- Remove duplicates
-          local seen = {}
-          for i = 1, table.getn(allPlayers) do
-            if not seen[allPlayers[i]] and not poolLookup[allPlayers[i]] then
-              seen[allPlayers[i]] = true
-              table.insert(availablePlayers, allPlayers[i])
+        end
+      elseif frame.selectedSource == "role_ranged" then
+        -- Get players from Ranged role in RolesUI
+        if OGRH.GetRolePlayers then
+          local ranged = OGRH.GetRolePlayers("RANGED")
+          for i = 1, table.getn(ranged) do
+            if not poolLookup[ranged[i]] then
+              table.insert(availablePlayers, ranged[i])
             end
           end
         end
@@ -3166,9 +3655,9 @@ function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
   -- Update title
   frame.title:SetText("Player Pool - " .. (role.name or "Unknown"))
   
-  -- Reset to default source (current raid)
-  frame.selectedSource = "raid"
-  frame.sourceDropdown:SetText("Current Raid")
+  -- Reset to default source (Tanks role)
+  frame.selectedSource = "role_tanks"
+  frame.sourceDropdown:SetText("Tanks")
   
   -- Refresh guild roster to update class colors
   GuildRoster()
