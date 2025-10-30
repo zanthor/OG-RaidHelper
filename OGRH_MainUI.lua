@@ -5,7 +5,7 @@ if not OGRH then
 end
 
 local Main = CreateFrame("Frame","OGRH_Main",UIParent)
-Main:SetWidth(140); Main:SetHeight(84)
+Main:SetWidth(140); Main:SetHeight(124)  -- Increased height for new button
 Main:SetPoint("CENTER", UIParent, "CENTER", -380, 120)
 Main:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
 Main:SetBackdropColor(0,0,0,0.85)
@@ -43,13 +43,148 @@ local function makeBtn(text, anchorTo)
   if not anchorTo then b:SetPoint("TOP", Content, "TOP", 0, 0) else b:SetPoint("TOP", anchorTo, "BOTTOM", 0, -6) end
   return b
 end
-local bHelper = makeBtn("Helper", nil)
-local bTrade  = makeBtn("Trade", bHelper)
+local bRoles = makeBtn("Roles", nil)
+local bEncounters = makeBtn("Encounters", bRoles)
+local bTrade  = makeBtn("Trade", bEncounters)
 
 function OGRH_ShowBoard() if OGRH.ShowRolesUI then OGRH.ShowRolesUI() else OGRH.Msg("Roles UI not yet loaded.") end end
-bHelper:SetScript("OnClick", function()
+bRoles:SetScript("OnClick", function()
   if OGRH.ShowRolesUI then OGRH.ShowRolesUI()
   else OGRH.Msg("Roles UI not yet loaded. If this persists after /reload, a Lua error prevented it from loading.");
+  end
+end)
+
+-- Encounters button with collapsible menu
+bEncounters:SetScript("OnClick", function()
+  if not OGRH_EncountersMenu then
+    -- Create encounter menu
+    local menu = CreateFrame("Frame", "OGRH_EncountersMenu", UIParent)
+    menu:SetWidth(140)
+    menu:SetHeight(100)
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      edgeSize = 12,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    menu:SetBackdropColor(0, 0, 0, 0.95)
+    menu:Hide()
+    
+    -- Track expanded raids
+    local expandedRaids = {}
+    
+    -- Store all menu buttons for cleanup
+    local menuButtons = {}
+    
+    -- Raid structure
+    local raids = {
+      {
+        name = "BWL",
+        encounters = {
+          {text = "Razorgore", handler = function() 
+            if OGRH.ShowBWLEncounterWindow then 
+              OGRH.ShowBWLEncounterWindow("Razorgore") 
+            else
+              DEFAULT_CHAT_FRAME:AddMessage("BWL Encounter window not yet implemented")
+            end
+          end}
+        }
+      }
+    }
+    
+    -- Add Setup option at the end
+    local setupButton = nil
+    
+    -- Function to rebuild menu
+    local function RebuildMenu()
+      -- Clear existing buttons
+      for _, btn in ipairs(menuButtons) do
+        btn:Hide()
+        btn:SetParent(nil)
+      end
+      menuButtons = {}
+      
+      local yOffset = -5
+      
+      for _, raid in ipairs(raids) do
+        local isExpanded = expandedRaids[raid.name]
+        
+        -- Create raid header button
+        local raidBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+        raidBtn:SetWidth(130)
+        raidBtn:SetHeight(20)
+        raidBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
+        
+        local expandIcon = isExpanded and "[-] " or "[+] "
+        raidBtn:SetText(expandIcon .. raid.name)
+        
+        -- Capture raid.name in local variable for closure
+        local raidName = raid.name
+        raidBtn:SetScript("OnClick", function()
+          expandedRaids[raidName] = not expandedRaids[raidName]
+          RebuildMenu()
+        end)
+        table.insert(menuButtons, raidBtn)
+        yOffset = yOffset - 22
+        
+        -- If expanded, show encounters
+        if isExpanded then
+          for _, encounter in ipairs(raid.encounters) do
+            local encBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+            encBtn:SetWidth(120)
+            encBtn:SetHeight(18)
+            encBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 15, yOffset)
+            encBtn:SetText(encounter.text)
+            
+            -- Capture handler in local variable for closure
+            local encounterHandler = encounter.handler
+            encBtn:SetScript("OnClick", function()
+              menu:Hide()
+              encounterHandler()
+            end)
+            table.insert(menuButtons, encBtn)
+            yOffset = yOffset - 20
+          end
+        end
+      end
+      
+      -- Update menu height
+      local totalHeight = math.abs(yOffset) + 10
+      
+      -- Add Setup button at the bottom
+      if not setupButton then
+        setupButton = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+        setupButton:SetWidth(130)
+        setupButton:SetHeight(20)
+      end
+      setupButton:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
+      setupButton:SetText("Setup")
+      setupButton:SetScript("OnClick", function()
+        menu:Hide()
+        if OGRH.ShowEncounterSetup then
+          OGRH.ShowEncounterSetup()
+        else
+          DEFAULT_CHAT_FRAME:AddMessage("Encounter Setup not yet implemented")
+        end
+      end)
+      table.insert(menuButtons, setupButton)
+      
+      totalHeight = totalHeight + 22
+      menu:SetHeight(totalHeight)
+    end
+    
+    menu.Rebuild = RebuildMenu
+  end
+  
+  local menu = OGRH_EncountersMenu
+  if menu:IsVisible() then
+    menu:Hide()
+  else
+    menu.Rebuild()
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", bEncounters, "BOTTOMLEFT", 0, -2)
+    menu:Show()
   end
 end)
 
@@ -122,7 +257,7 @@ bTrade:SetScript("OnClick", function()
     M:ClearAllPoints(); M:SetPoint("TOPLEFT", bTrade, "BOTTOMLEFT", 0, -2); M:Show()
 end)
 
-local function applyMinimized(mini) if mini then Content:Hide(); Main:SetHeight(28); btnMin:SetText("+") else Content:Show(); Main:SetHeight(84); btnMin:SetText("-") end end
+local function applyMinimized(mini) if mini then Content:Hide(); Main:SetHeight(28); btnMin:SetText("+") else Content:Show(); Main:SetHeight(124); btnMin:SetText("-") end end
 btnMin:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.minimized = not OGRH_SV.ui.minimized; applyMinimized(OGRH_SV.ui.minimized) end)
 local function applyLocked(lock) btnLock:SetText("L") end
 btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)
