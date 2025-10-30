@@ -394,6 +394,7 @@ function OGRH.ShowEncounterSetup()
     frame:SetWidth(600)
     frame:SetHeight(500)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("HIGH")
     frame:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
