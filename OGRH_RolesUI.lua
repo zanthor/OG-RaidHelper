@@ -478,7 +478,7 @@ local function CreateRolesFrame()
     
     -- Create encounter menu
     local encounterMenu = CreateFrame("Frame", "OGRH_EncounterMenu", UIParent)
-    encounterMenu:SetWidth(120)
+    encounterMenu:SetWidth(140)
     encounterMenu:SetHeight(100)
     encounterMenu:SetFrameStrata("FULLSCREEN_DIALOG")
     encounterMenu:SetBackdrop({
@@ -490,75 +490,110 @@ local function CreateRolesFrame()
     encounterMenu:SetBackdropColor(0, 0, 0, 0.95)
     encounterMenu:Hide()
 
-    -- Create encounter menu buttons
-    local buttons = {}
+    -- Track expanded raids
+    local expandedRaids = {}
     
-    -- Helper function to add menu button
-    local function AddEncounterButton(text, handler)
-        local i = table.getn(buttons) + 1
-        local btn = CreateFrame("Button", nil, encounterMenu, "UIPanelButtonTemplate")
-        btn:SetWidth(110)
-        btn:SetHeight(20)
-        if i == 1 then
-            btn:SetPoint("TOPLEFT", encounterMenu, "TOPLEFT", 5, -5)
-        else
-            btn:SetPoint("TOPLEFT", buttons[i-1], "BOTTOMLEFT", 0, -2)
+    -- Store all menu buttons for cleanup
+    local menuButtons = {}
+    
+    -- Raid structure: {name, encounters[]}
+    local raids = {
+        {
+            name = "BWL",
+            encounters = {
+                {text = "Razorgore", handler = function() OGRH.ShowRazorgorePanel() end},
+                {text = "Firemaw", handler = function() OGRH.ShowFiremawPanel() end},
+                {text = "Nefarion", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: BWL - Nefarion") end}
+            }
+        },
+        {
+            name = "AQ40",
+            encounters = {
+                {text = "Skeram", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Skeram") end},
+                {text = "Bug Trio", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Bug Trio") end},
+                {text = "Twins", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Twins") end},
+                {text = "C'Thun", handler = function() OGRH.ShowCThunPanel() end}
+            }
+        },
+        {
+            name = "Naxx",
+            encounters = {
+                {text = "Gothik", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Gothik") end},
+                {text = "4HM", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - 4HM") end},
+                {text = "Kel'Thuzad", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Kel'Thuzad") end}
+            }
+        },
+        {
+            name = "K40",
+            encounters = {
+                {text = "Coming Soon", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: K40") end}
+            }
+        }
+    }
+    
+    -- Function to rebuild menu
+    local function RebuildEncounterMenu()
+        -- Clear existing buttons
+        for _, btn in ipairs(menuButtons) do
+            btn:Hide()
+            btn:SetParent(nil)
         end
-        btn:SetText(text)
-        btn:SetScript("OnClick", function()
-            encounterMenu:Hide()
-            handler()
-        end)
-        table.insert(buttons, btn)
+        menuButtons = {}
+        
+        local yOffset = -5
+        
+        for _, raid in ipairs(raids) do
+            local isExpanded = expandedRaids[raid.name]
+            
+            -- Create raid header button
+            local raidBtn = CreateFrame("Button", nil, encounterMenu, "UIPanelButtonTemplate")
+            raidBtn:SetWidth(130)
+            raidBtn:SetHeight(20)
+            raidBtn:SetPoint("TOPLEFT", encounterMenu, "TOPLEFT", 5, yOffset)
+            
+            local expandIcon = isExpanded and "[-] " or "[+] "
+            raidBtn:SetText(expandIcon .. raid.name)
+            
+            -- Capture raid.name in local variable for closure
+            local raidName = raid.name
+            raidBtn:SetScript("OnClick", function()
+                expandedRaids[raidName] = not expandedRaids[raidName]
+                RebuildEncounterMenu()
+            end)
+            table.insert(menuButtons, raidBtn)
+            yOffset = yOffset - 22
+            
+            -- If expanded, show encounters
+            if isExpanded then
+                for _, encounter in ipairs(raid.encounters) do
+                    local encBtn = CreateFrame("Button", nil, encounterMenu, "UIPanelButtonTemplate")
+                    encBtn:SetWidth(120)
+                    encBtn:SetHeight(18)
+                    encBtn:SetPoint("TOPLEFT", encounterMenu, "TOPLEFT", 15, yOffset)
+                    encBtn:SetText(encounter.text)
+                    
+                    -- Capture handler in local variable for closure
+                    local encounterHandler = encounter.handler
+                    encBtn:SetScript("OnClick", function()
+                        encounterMenu:Hide()
+                        encounterHandler()
+                    end)
+                    table.insert(menuButtons, encBtn)
+                    yOffset = yOffset - 20
+                end
+            end
+        end
+        
+        -- Update menu height
+        local totalHeight = math.abs(yOffset) + 10
+        encounterMenu:SetHeight(totalHeight)
     end
-
-    -- Add each encounter button
-    AddEncounterButton("BWL - Razorgore", function()
-        OGRH.ShowRazorgorePanel()
-    end)
-    
-    AddEncounterButton("BWL - Firemaw", function()
-        OGRH.ShowFiremawPanel()
-    end)
-    
-    AddEncounterButton("BWL - Nefarion", function()
-        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: BWL - Nefarion")
-    end)
-    
-    AddEncounterButton("AQ40 - Skeram", function()
-        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Skeram")
-    end)
-    
-    AddEncounterButton("AQ40 - Bug Trio", function()
-        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Bug Trio")
-    end)
-    
-    AddEncounterButton("AQ40 - Twins", function()
-        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Twins")
-    end)
-    
-    AddEncounterButton("AQ40 - C'Thun", function()
-        OGRH.ShowCThunPanel()
-    end)
-    
-    AddEncounterButton("Naxx - Gothik", function()
-        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Gothik")
-    end)
-    
-    AddEncounterButton("Naxx - 4HM", function()
-        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - 4HM")
-    end)
-    
-    AddEncounterButton("Naxx - Kel'Thuzad", function()
-        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Kel'Thuzad")
-    end)
-    
-    encounterMenu:SetHeight(15 + (table.getn(buttons) * 20) + ((table.getn(buttons) - 1) * 2) + 5)
 
     encounterBtn:SetScript("OnClick", function()
         if encounterMenu:IsVisible() then
             encounterMenu:Hide()
         else
+            RebuildEncounterMenu()
             encounterMenu:ClearAllPoints()
             encounterMenu:SetPoint("TOPLEFT", encounterBtn, "BOTTOMLEFT", 0, -2)
             encounterMenu:Show()
