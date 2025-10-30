@@ -550,6 +550,7 @@ function OGRH.ShowEncounterSetup()
         
         -- Click to select raid
         local capturedRaidName = raidName
+        local capturedIndex = i
         raidBtn:SetScript("OnClick", function()
           frame.selectedRaid = capturedRaidName
           RefreshRaidsList()
@@ -578,7 +579,6 @@ function OGRH.ShowEncounterSetup()
         deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
         deleteHighlight:SetBlendMode("ADD")
         
-        local capturedRaidName = raidName
         deleteBtn:SetScript("OnClick", function()
           StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"].text_arg1 = capturedRaidName
           StaticPopup_Show("OGRH_CONFIRM_DELETE_RAID", capturedRaidName)
@@ -610,7 +610,6 @@ function OGRH.ShowEncounterSetup()
         upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
         upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
         upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-        local capturedIndex = i
         upBtn:SetScript("OnClick", function()
           if capturedIndex > 1 then
             -- Swap with previous
@@ -823,6 +822,8 @@ function OGRH.ShowEncounterSetup()
         
         -- Click to select encounter
         local capturedEncounterName = encounterName
+        local capturedIndex = i
+        local capturedRaid = frame.selectedRaid
         encounterBtn:SetScript("OnClick", function()
           frame.selectedEncounter = capturedEncounterName
           RefreshEncountersList()
@@ -851,11 +852,10 @@ function OGRH.ShowEncounterSetup()
         deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
         deleteHighlight:SetBlendMode("ADD")
         
-        local capturedEncName = encounterName
         deleteBtn:SetScript("OnClick", function()
-          StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1 = capturedEncName
+          StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1 = capturedEncounterName
           StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg2 = capturedRaid
-          StaticPopup_Show("OGRH_CONFIRM_DELETE_ENCOUNTER", capturedEncName)
+          StaticPopup_Show("OGRH_CONFIRM_DELETE_ENCOUNTER", capturedEncounterName)
         end)
         
         -- Down button
@@ -883,8 +883,6 @@ function OGRH.ShowEncounterSetup()
         upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
         upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
         upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-        local capturedIndex = i
-        local capturedRaid = frame.selectedRaid
         upBtn:SetScript("OnClick", function()
           if capturedIndex > 1 then
             local temp = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex - 1]
@@ -1251,8 +1249,14 @@ function OGRH.ShowEncounterSetup()
         
         -- Click to edit role
         roleBtn:SetScript("OnClick", function()
-          -- TODO: Open role edit interface
-          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Edit role (coming soon)")
+          OGRH.ShowEditRoleDialog(
+            frame.selectedRaid,
+            frame.selectedEncounter,
+            role,
+            columnRoles,
+            roleIndex,
+            RefreshRolesList
+          )
         end)
         
         -- Drag handlers
@@ -1293,6 +1297,10 @@ function OGRH.ShowEncounterSetup()
             RefreshRolesList()
           end
         end)
+        
+        -- Capture variables for button closures
+        local capturedRoles = columnRoles
+        local capturedIdx = roleIndex
         
         -- Delete button (rightmost)
         local deleteBtn = CreateFrame("Button", nil, roleBtn)
@@ -1345,9 +1353,6 @@ function OGRH.ShowEncounterSetup()
         upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
         upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
         upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-        
-        local capturedRoles = columnRoles
-        local capturedIdx = roleIndex
         upBtn:SetScript("OnClick", function()
           if capturedIdx > 1 then
             local temp = capturedRoles[capturedIdx - 1]
@@ -1655,6 +1660,202 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
   whileDead = 1,
   hideOnEscape = 1
 }
+
+-- Function to show edit role dialog
+function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles, roleIndex, refreshCallback)
+  -- Create or reuse frame
+  if not OGRH_EditRoleFrame then
+    local frame = CreateFrame("Frame", "OGRH_EditRoleFrame", UIParent)
+    frame:SetWidth(350)
+    frame:SetHeight(280)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    frame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.9)
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+    frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", frame, "TOP", 0, -10)
+    title:SetText("Edit Role")
+    
+    -- Role Name Label
+    local nameLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    nameLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -40)
+    nameLabel:SetText("Role Name:")
+    
+    -- Role Name EditBox
+    local nameEditBox = CreateFrame("EditBox", nil, frame)
+    nameEditBox:SetWidth(250)
+    nameEditBox:SetHeight(20)
+    nameEditBox:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", 5, -5)
+    nameEditBox:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 8,
+      insets = {left = 2, right = 2, top = 2, bottom = 2}
+    })
+    nameEditBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    nameEditBox:SetFontObject("GameFontHighlight")
+    nameEditBox:SetAutoFocus(false)
+    nameEditBox:SetMaxLetters(50)
+    nameEditBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    frame.nameEditBox = nameEditBox
+    
+    -- Raid Icons Checkbox
+    local raidIconsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    raidIconsLabel:SetPoint("TOPLEFT", nameEditBox, "BOTTOMLEFT", -5, -15)
+    raidIconsLabel:SetText("Show Raid Icons:")
+    
+    local raidIconsCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    raidIconsCheckbox:SetPoint("LEFT", raidIconsLabel, "RIGHT", 5, 0)
+    raidIconsCheckbox:SetWidth(24)
+    raidIconsCheckbox:SetHeight(24)
+    frame.raidIconsCheckbox = raidIconsCheckbox
+    
+    -- Player Count Label
+    local countLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    countLabel:SetPoint("TOPLEFT", raidIconsLabel, "BOTTOMLEFT", 0, -15)
+    countLabel:SetText("Player Count:")
+    
+    -- Player Count EditBox
+    local countEditBox = CreateFrame("EditBox", nil, frame)
+    countEditBox:SetWidth(60)
+    countEditBox:SetHeight(20)
+    countEditBox:SetPoint("LEFT", countLabel, "RIGHT", 10, 0)
+    countEditBox:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 8,
+      insets = {left = 2, right = 2, top = 2, bottom = 2}
+    })
+    countEditBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    countEditBox:SetFontObject("GameFontHighlight")
+    countEditBox:SetAutoFocus(false)
+    countEditBox:SetMaxLetters(2)
+    countEditBox:SetNumeric(true)
+    countEditBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    frame.countEditBox = countEditBox
+    
+    -- Default Player Roles Label
+    local rolesLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rolesLabel:SetPoint("TOPLEFT", countLabel, "BOTTOMLEFT", 0, -15)
+    rolesLabel:SetText("Default Player Roles:")
+    
+    -- Role checkboxes
+    local tankCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    tankCheck:SetPoint("TOPLEFT", rolesLabel, "BOTTOMLEFT", 10, -5)
+    tankCheck:SetWidth(24)
+    tankCheck:SetHeight(24)
+    local tankLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    tankLabel:SetPoint("LEFT", tankCheck, "RIGHT", 5, 0)
+    tankLabel:SetText("Tanks")
+    frame.tankCheck = tankCheck
+    
+    local healerCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    healerCheck:SetPoint("TOPLEFT", tankCheck, "BOTTOMLEFT", 0, -5)
+    healerCheck:SetWidth(24)
+    healerCheck:SetHeight(24)
+    local healerLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    healerLabel:SetPoint("LEFT", healerCheck, "RIGHT", 5, 0)
+    healerLabel:SetText("Healers")
+    frame.healerCheck = healerCheck
+    
+    local rangedCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    rangedCheck:SetPoint("LEFT", tankCheck, "LEFT", 120, 0)
+    rangedCheck:SetWidth(24)
+    rangedCheck:SetHeight(24)
+    local rangedLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rangedLabel:SetPoint("LEFT", rangedCheck, "RIGHT", 5, 0)
+    rangedLabel:SetText("Ranged")
+    frame.rangedCheck = rangedCheck
+    
+    local dpsCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    dpsCheck:SetPoint("TOPLEFT", rangedCheck, "BOTTOMLEFT", 0, -5)
+    dpsCheck:SetWidth(24)
+    dpsCheck:SetHeight(24)
+    local dpsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    dpsLabel:SetPoint("LEFT", dpsCheck, "RIGHT", 5, 0)
+    dpsLabel:SetText("DPS")
+    frame.dpsCheck = dpsCheck
+    
+    -- Save Button
+    local saveBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    saveBtn:SetWidth(80)
+    saveBtn:SetHeight(24)
+    saveBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOM", -5, 15)
+    saveBtn:SetText("Save")
+    frame.saveBtn = saveBtn
+    
+    -- Cancel Button
+    local cancelBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    cancelBtn:SetWidth(80)
+    cancelBtn:SetHeight(24)
+    cancelBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOM", 5, 15)
+    cancelBtn:SetText("Cancel")
+    cancelBtn:SetScript("OnClick", function()
+      frame:Hide()
+    end)
+    
+    OGRH_EditRoleFrame = frame
+  end
+  
+  local frame = OGRH_EditRoleFrame
+  
+  -- Populate fields with current role data
+  frame.nameEditBox:SetText(roleData.name or "")
+  frame.raidIconsCheckbox:SetChecked(roleData.showRaidIcons or false)
+  frame.countEditBox:SetText(tostring(roleData.slots or 1))
+  
+  -- Set default roles checkboxes
+  local defaultRoles = roleData.defaultRoles or {}
+  frame.tankCheck:SetChecked(defaultRoles.tanks or false)
+  frame.healerCheck:SetChecked(defaultRoles.healers or false)
+  frame.rangedCheck:SetChecked(defaultRoles.ranged or false)
+  frame.dpsCheck:SetChecked(defaultRoles.dps or false)
+  
+  -- Save button handler
+  frame.saveBtn:SetScript("OnClick", function()
+    -- Update role data
+    roleData.name = frame.nameEditBox:GetText()
+    roleData.showRaidIcons = frame.raidIconsCheckbox:GetChecked()
+    roleData.slots = tonumber(frame.countEditBox:GetText()) or 1
+    
+    -- Update default roles
+    if not roleData.defaultRoles then
+      roleData.defaultRoles = {}
+    end
+    roleData.defaultRoles.tanks = frame.tankCheck:GetChecked()
+    roleData.defaultRoles.healers = frame.healerCheck:GetChecked()
+    roleData.defaultRoles.ranged = frame.rangedCheck:GetChecked()
+    roleData.defaultRoles.dps = frame.dpsCheck:GetChecked()
+    
+    -- Refresh the roles list
+    if refreshCallback then
+      refreshCallback()
+    end
+    
+    frame:Hide()
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Role updated")
+  end)
+  
+  frame:Show()
+end
 
 -- Initialize SavedVariables when addon loads
 InitializeSavedVars()
