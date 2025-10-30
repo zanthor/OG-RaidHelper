@@ -51,6 +51,16 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     title:SetText("Encounter Planning")
     frame.title = title
     
+    -- Role Defaults button (top left)
+    local roleDefaultsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    roleDefaultsBtn:SetWidth(100)
+    roleDefaultsBtn:SetHeight(24)
+    roleDefaultsBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
+    roleDefaultsBtn:SetText("Role Defaults")
+    roleDefaultsBtn:SetScript("OnClick", function()
+      OGRH.ShowRoleDefaultsWindow()
+    end)
+    
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     closeBtn:SetWidth(60)
@@ -439,9 +449,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         poolBtn:SetHeight(18)
         poolBtn:SetPoint("TOPRIGHT", container, "TOPRIGHT", -5, -5)
         poolBtn:SetText("Pool")
+        
+        local capturedRole = role
+        local capturedRoleIndex = roleIndex
         poolBtn:SetScript("OnClick", function()
-          -- TODO: Open player pool interface
-          DEFAULT_CHAT_FRAME:AddMessage("Player pool not yet implemented")
+          OGRH.ShowEncounterPoolWindow(frame.selectedRaid, frame.selectedEncounter, capturedRole, capturedRoleIndex)
         end)
         
         -- Player slots
@@ -2076,6 +2088,1078 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   end)
   
   frame:Show()
+end
+
+-- Function to show Role Defaults management window
+function OGRH.ShowRoleDefaultsWindow()
+  -- Create window if it doesn't exist
+  if not OGRH_RoleDefaultsFrame then
+    local frame = CreateFrame("Frame", "OGRH_RoleDefaultsFrame", UIParent)
+    frame:SetWidth(500)
+    frame:SetHeight(450)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    frame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.95)
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+    frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", frame, "TOP", 0, -15)
+    title:SetText("Role Defaults")
+    
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    closeBtn:SetWidth(60)
+    closeBtn:SetHeight(24)
+    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+    closeBtn:SetText("Close")
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+    
+    -- Role selection dropdown
+    local roleDropdown = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    roleDropdown:SetWidth(150)
+    roleDropdown:SetHeight(24)
+    roleDropdown:SetPoint("TOP", title, "BOTTOM", 0, -10)
+    roleDropdown:SetText("Tanks")
+    frame.roleDropdown = roleDropdown
+    frame.selectedRole = 1
+    frame.selectedRoleName = "Tanks"
+    
+    roleDropdown:SetScript("OnClick", function()
+      if not frame.roleMenu then
+        local menu = CreateFrame("Frame", nil, frame)
+        menu:SetWidth(150)
+        menu:SetHeight(100)
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetBackdrop({
+          bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+          edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+          tile = true,
+          tileSize = 16,
+          edgeSize = 12,
+          insets = {left = 3, right = 3, top = 3, bottom = 3}
+        })
+        menu:SetBackdropColor(0, 0, 0, 0.95)
+        menu:Hide()
+        frame.roleMenu = menu
+        
+        local roleNames = {"Tanks", "Healers", "Melee", "Ranged"}
+        local yOffset = -5
+        
+        for i, roleName in ipairs(roleNames) do
+          local btn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+          btn:SetWidth(140)
+          btn:SetHeight(20)
+          btn:SetPoint("TOP", menu, "TOP", 0, yOffset)
+          btn:SetText(roleName)
+          
+          local capturedIndex = i
+          local capturedName = roleName
+          btn:SetScript("OnClick", function()
+            frame.selectedRole = capturedIndex
+            frame.selectedRoleName = capturedName
+            roleDropdown:SetText(capturedName)
+            menu:Hide()
+            -- Refresh the lists based on selected role
+            if frame.RefreshGuildList and frame.RefreshAssignedList then
+              frame.RefreshGuildList()
+              frame.RefreshAssignedList()
+            end
+          end)
+          
+          yOffset = yOffset - 22
+        end
+      end
+      
+      if frame.roleMenu:IsVisible() then
+        frame.roleMenu:Hide()
+      else
+        frame.roleMenu:ClearAllPoints()
+        frame.roleMenu:SetPoint("TOP", roleDropdown, "BOTTOM", 0, -2)
+        frame.roleMenu:Show()
+      end
+    end)
+    
+    -- Left panel: Guild members
+    local leftPanel = CreateFrame("Frame", nil, frame)
+    leftPanel:SetWidth(225)
+    leftPanel:SetHeight(340)
+    leftPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -80)
+    leftPanel:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    leftPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    
+    -- Guild label
+    local guildLabel = leftPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    guildLabel:SetPoint("TOP", leftPanel, "TOP", 0, -8)
+    guildLabel:SetText("Guild")
+    
+    -- Guild scroll frame
+    local guildScrollFrame = CreateFrame("ScrollFrame", nil, leftPanel)
+    guildScrollFrame:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 5, -30)
+    guildScrollFrame:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", -20, 5)
+    
+    local guildScrollChild = CreateFrame("Frame", nil, guildScrollFrame)
+    guildScrollChild:SetWidth(195)
+    guildScrollChild:SetHeight(1)
+    guildScrollFrame:SetScrollChild(guildScrollChild)
+    frame.guildScrollChild = guildScrollChild
+    
+    -- Guild scroll bar
+    local guildScrollBar = CreateFrame("Slider", nil, leftPanel)
+    guildScrollBar:SetOrientation("VERTICAL")
+    guildScrollBar:SetPoint("TOPRIGHT", leftPanel, "TOPRIGHT", -5, -30)
+    guildScrollBar:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", -5, 5)
+    guildScrollBar:SetWidth(16)
+    guildScrollBar:SetBackdrop({
+      bgFile = "Interface/Buttons/WHITE8X8",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 8,
+      edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    guildScrollBar:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+    guildScrollBar:SetMinMaxValues(0, 100)
+    guildScrollBar:SetValue(0)
+    guildScrollBar:SetValueStep(1)
+    
+    local guildThumb = guildScrollBar:CreateTexture(nil, "OVERLAY")
+    guildThumb:SetTexture("Interface/Buttons/UI-ScrollBar-Knob")
+    guildThumb:SetWidth(16)
+    guildThumb:SetHeight(24)
+    guildScrollBar:SetThumbTexture(guildThumb)
+    
+    guildScrollBar:SetScript("OnValueChanged", function()
+      local value = guildScrollBar:GetValue()
+      guildScrollFrame:SetVerticalScroll(value)
+    end)
+    
+    -- Enable mouse wheel scrolling for guild
+    guildScrollFrame:EnableMouseWheel(true)
+    guildScrollFrame:SetScript("OnMouseWheel", function()
+      local delta = arg1
+      local current = guildScrollFrame:GetVerticalScroll()
+      local maxScroll = guildScrollChild:GetHeight() - guildScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      
+      local newScroll = current - (delta * 20)
+      if newScroll < 0 then
+        newScroll = 0
+      elseif newScroll > maxScroll then
+        newScroll = maxScroll
+      end
+      guildScrollFrame:SetVerticalScroll(newScroll)
+      guildScrollBar:SetValue(newScroll)
+    end)
+    
+    frame.guildScrollBar = guildScrollBar
+    
+    -- Right panel: Assigned members
+    local rightPanel = CreateFrame("Frame", nil, frame)
+    rightPanel:SetWidth(225)
+    rightPanel:SetHeight(340)
+    rightPanel:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -80)
+    rightPanel:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    rightPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    
+    -- Assigned label
+    local assignedLabel = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    assignedLabel:SetPoint("TOP", rightPanel, "TOP", 0, -8)
+    assignedLabel:SetText("Assigned")
+    
+    -- Assigned scroll frame
+    local assignedScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel)
+    assignedScrollFrame:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 5, -30)
+    assignedScrollFrame:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", -20, 5)
+    
+    local assignedScrollChild = CreateFrame("Frame", nil, assignedScrollFrame)
+    assignedScrollChild:SetWidth(195)
+    assignedScrollChild:SetHeight(1)
+    assignedScrollFrame:SetScrollChild(assignedScrollChild)
+    frame.assignedScrollChild = assignedScrollChild
+    
+    -- Assigned scroll bar
+    local assignedScrollBar = CreateFrame("Slider", nil, rightPanel)
+    assignedScrollBar:SetOrientation("VERTICAL")
+    assignedScrollBar:SetPoint("TOPRIGHT", rightPanel, "TOPRIGHT", -5, -30)
+    assignedScrollBar:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", -5, 5)
+    assignedScrollBar:SetWidth(16)
+    assignedScrollBar:SetBackdrop({
+      bgFile = "Interface/Buttons/WHITE8X8",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 8,
+      edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    assignedScrollBar:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+    assignedScrollBar:SetMinMaxValues(0, 100)
+    assignedScrollBar:SetValue(0)
+    assignedScrollBar:SetValueStep(1)
+    
+    local assignedThumb = assignedScrollBar:CreateTexture(nil, "OVERLAY")
+    assignedThumb:SetTexture("Interface/Buttons/UI-ScrollBar-Knob")
+    assignedThumb:SetWidth(16)
+    assignedThumb:SetHeight(24)
+    assignedScrollBar:SetThumbTexture(assignedThumb)
+    
+    assignedScrollBar:SetScript("OnValueChanged", function()
+      local value = assignedScrollBar:GetValue()
+      assignedScrollFrame:SetVerticalScroll(value)
+    end)
+    
+    -- Enable mouse wheel scrolling for assigned
+    assignedScrollFrame:EnableMouseWheel(true)
+    assignedScrollFrame:SetScript("OnMouseWheel", function()
+      local delta = arg1
+      local current = assignedScrollFrame:GetVerticalScroll()
+      local maxScroll = assignedScrollChild:GetHeight() - assignedScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      
+      local newScroll = current - (delta * 20)
+      if newScroll < 0 then
+        newScroll = 0
+      elseif newScroll > maxScroll then
+        newScroll = maxScroll
+      end
+      assignedScrollFrame:SetVerticalScroll(newScroll)
+      assignedScrollBar:SetValue(newScroll)
+    end)
+    
+    frame.assignedScrollBar = assignedScrollBar
+    
+    -- Function to update guild scroll bar range
+    frame.updateGuildScrollBar = function()
+      local maxScroll = guildScrollChild:GetHeight() - guildScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      guildScrollBar:SetMinMaxValues(0, maxScroll)
+    end
+    
+    -- Function to update assigned scroll bar range
+    frame.updateAssignedScrollBar = function()
+      local maxScroll = assignedScrollChild:GetHeight() - assignedScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      assignedScrollBar:SetMinMaxValues(0, maxScroll)
+    end
+    
+    -- Function to refresh guild members list
+    frame.RefreshGuildList = function()
+      -- Clear existing buttons
+      local children = {guildScrollChild:GetChildren()}
+      for i = 1, table.getn(children) do
+        if children[i] then
+          children[i]:Hide()
+          children[i]:SetParent(nil)
+        end
+      end
+      
+      -- Define class filters for each role
+      local roleClasses = {
+        {name = "Tanks", classes = {"WARRIOR", "DRUID", "PALADIN", "SHAMAN"}},
+        {name = "Healers", classes = {"PALADIN", "PRIEST", "DRUID", "SHAMAN"}},
+        {name = "Melee", classes = {"ROGUE", "WARRIOR", "PALADIN", "DRUID", "HUNTER", "SHAMAN"}},
+        {name = "Ranged", classes = {"DRUID", "HUNTER", "SHAMAN", "MAGE", "WARLOCK"}}
+      }
+      
+      local currentRoleData = roleClasses[frame.selectedRole]
+      if not currentRoleData then return end
+      
+      -- Get guild roster
+      local numGuildMembers = GetNumGuildMembers()
+      local onlinePlayers = {}
+      local offlinePlayers = {}
+      local fourteenDaysInSeconds = 14 * 24 * 60 * 60
+      
+      -- Get assigned players for this role from SavedVariables
+      if not OGRH_SV.roleDefaults then
+        OGRH_SV.roleDefaults = {}
+      end
+      if not OGRH_SV.roleDefaults[frame.selectedRole] then
+        OGRH_SV.roleDefaults[frame.selectedRole] = {}
+      end
+      local assignedPlayers = OGRH_SV.roleDefaults[frame.selectedRole]
+      
+      -- Build assigned lookup table
+      local assignedLookup = {}
+      for i = 1, table.getn(assignedPlayers) do
+        assignedLookup[assignedPlayers[i]] = true
+      end
+      
+      for i = 1, numGuildMembers do
+        local name, _, _, level, class, _, _, _, online, _, _, _, _, _, _, _, lastOnline = GetGuildRosterInfo(i)
+        
+        if name and level == 60 then
+          -- Check if class is in the allowed list for this role
+          local classAllowed = false
+          for j = 1, table.getn(currentRoleData.classes) do
+            if string.upper(class) == currentRoleData.classes[j] then
+              classAllowed = true
+              break
+            end
+          end
+          
+          if classAllowed then
+            -- Store class info for color coding
+            local upperClass = string.upper(class)
+            if not OGRH.Roles then OGRH.Roles = {} end
+            if not OGRH.Roles.nameClass then OGRH.Roles.nameClass = {} end
+            OGRH.Roles.nameClass[name] = upperClass
+            
+            -- Check if player has been online in the past 14 days
+            local includePlayer = true
+            if not online then
+              if lastOnline and lastOnline > fourteenDaysInSeconds then
+                includePlayer = false
+              end
+            end
+            
+            -- Only include if not already assigned and meets activity requirement
+            if includePlayer and not assignedLookup[name] then
+              if online then
+                table.insert(onlinePlayers, {name = name, class = upperClass})
+              else
+                table.insert(offlinePlayers, {name = name, class = upperClass})
+              end
+            end
+          end
+        end
+      end
+      
+      -- Sort alphabetically
+      local function sortByName(a, b)
+        return a.name < b.name
+      end
+      
+      table.sort(onlinePlayers, sortByName)
+      table.sort(offlinePlayers, sortByName)
+      
+      -- Combine: online first, then offline
+      local allPlayers = {}
+      for i = 1, table.getn(onlinePlayers) do
+        table.insert(allPlayers, {name = onlinePlayers[i].name, online = true})
+      end
+      for i = 1, table.getn(offlinePlayers) do
+        table.insert(allPlayers, {name = offlinePlayers[i].name, online = false})
+      end
+      
+      -- Create player buttons
+      local yOffset = 0
+      for i, playerData in ipairs(allPlayers) do
+        local btn = CreateFrame("Button", nil, guildScrollChild)
+        btn:SetWidth(200)
+        btn:SetHeight(18)
+        btn:SetPoint("TOPLEFT", guildScrollChild, "TOPLEFT", 0, -yOffset)
+        
+        local bg = btn:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+        
+        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        text:SetPoint("LEFT", btn, "LEFT", 5, 0)
+        
+        -- Apply class color
+        local displayName = playerData.name
+        if OGRH.ClassColorHex and OGRH.Roles.nameClass[playerData.name] then
+          local class = OGRH.Roles.nameClass[playerData.name]
+          displayName = OGRH.ClassColorHex(class) .. playerData.name .. "|r"
+        end
+        
+        if not playerData.online then
+          displayName = displayName .. " |cFF888888(Offline)|r"
+        end
+        text:SetText(displayName)
+        
+        -- Click to assign
+        local capturedName = playerData.name
+        btn:SetScript("OnClick", function()
+          table.insert(OGRH_SV.roleDefaults[frame.selectedRole], capturedName)
+          frame.RefreshGuildList()
+          frame.RefreshAssignedList()
+        end)
+        
+        yOffset = yOffset + 20
+      end
+      
+      guildScrollChild:SetHeight(math.max(1, yOffset))
+      frame.updateGuildScrollBar()
+    end
+    
+    -- Function to refresh assigned members list
+    frame.RefreshAssignedList = function()
+      -- Clear existing buttons
+      local children = {assignedScrollChild:GetChildren()}
+      for i = 1, table.getn(children) do
+        if children[i] then
+          children[i]:Hide()
+          children[i]:SetParent(nil)
+        end
+      end
+      
+      -- Get assigned players for this role
+      if not OGRH_SV.roleDefaults then
+        OGRH_SV.roleDefaults = {}
+      end
+      if not OGRH_SV.roleDefaults[frame.selectedRole] then
+        OGRH_SV.roleDefaults[frame.selectedRole] = {}
+      end
+      local assignedPlayers = OGRH_SV.roleDefaults[frame.selectedRole]
+      
+      -- Sort alphabetically
+      table.sort(assignedPlayers, function(a, b)
+        return a < b
+      end)
+      
+      -- Create player buttons
+      local yOffset = 0
+      for i, playerName in ipairs(assignedPlayers) do
+        local playerFrame = CreateFrame("Frame", nil, assignedScrollChild)
+        playerFrame:SetWidth(220)
+        playerFrame:SetHeight(20)
+        playerFrame:SetPoint("TOPLEFT", assignedScrollChild, "TOPLEFT", 0, -yOffset)
+        
+        local bg = playerFrame:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+        
+        -- Remove button
+        local removeBtn = CreateFrame("Button", nil, playerFrame, "UIPanelButtonTemplate")
+        removeBtn:SetWidth(16)
+        removeBtn:SetHeight(16)
+        removeBtn:SetPoint("LEFT", playerFrame, "LEFT", 2, 0)
+        removeBtn:SetText("X")
+        
+        local currentIndex = i
+        removeBtn:SetScript("OnClick", function()
+          table.remove(OGRH_SV.roleDefaults[frame.selectedRole], currentIndex)
+          frame.RefreshGuildList()
+          frame.RefreshAssignedList()
+        end)
+        
+        -- Player name with class color
+        local nameText = playerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        nameText:SetPoint("LEFT", removeBtn, "RIGHT", 5, 0)
+        
+        if OGRH.ClassColorHex and OGRH.Roles and OGRH.Roles.nameClass then
+          local class = OGRH.Roles.nameClass[playerName]
+          if class then
+            nameText:SetText(OGRH.ClassColorHex(class) .. playerName .. "|r")
+          else
+            nameText:SetText(playerName)
+          end
+        else
+          nameText:SetText(playerName)
+        end
+        
+        yOffset = yOffset + 22
+      end
+      
+      assignedScrollChild:SetHeight(math.max(1, yOffset))
+      frame.updateAssignedScrollBar()
+    end
+    
+    OGRH_RoleDefaultsFrame = frame
+  end
+  
+  -- Show the window and refresh lists
+  OGRH_RoleDefaultsFrame:Show()
+  OGRH_RoleDefaultsFrame.RefreshGuildList()
+  OGRH_RoleDefaultsFrame.RefreshAssignedList()
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00OGRH:|r Role Defaults window opened")
+end
+
+-- Function to show Encounter Pool management window
+function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
+  -- Create window if it doesn't exist
+  if not OGRH_EncounterPoolFrame then
+    local frame = CreateFrame("Frame", "OGRH_EncounterPoolFrame", UIParent)
+    frame:SetWidth(500)
+    frame:SetHeight(450)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    frame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.95)
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+    frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", frame, "TOP", 0, -15)
+    frame.title = title
+    
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    closeBtn:SetWidth(60)
+    closeBtn:SetHeight(24)
+    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+    closeBtn:SetText("Close")
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+    
+    -- Source selection dropdown
+    local sourceDropdown = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    sourceDropdown:SetWidth(180)
+    sourceDropdown:SetHeight(24)
+    sourceDropdown:SetPoint("TOP", title, "BOTTOM", 0, -10)
+    sourceDropdown:SetText("Current Raid")
+    frame.sourceDropdown = sourceDropdown
+    frame.selectedSource = "raid"
+    
+    sourceDropdown:SetScript("OnClick", function()
+      if not frame.sourceMenu then
+        local menu = CreateFrame("Frame", nil, frame)
+        menu:SetWidth(180)
+        menu:SetHeight(150)
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetBackdrop({
+          bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+          edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+          tile = true,
+          tileSize = 16,
+          edgeSize = 12,
+          insets = {left = 3, right = 3, top = 3, bottom = 3}
+        })
+        menu:SetBackdropColor(0, 0, 0, 0.95)
+        menu:Hide()
+        frame.sourceMenu = menu
+        
+        local sourceOptions = {
+          {text = "Current Raid", value = "raid"},
+          {text = "Default: Tanks", value = "default_tanks"},
+          {text = "Default: Healers", value = "default_healers"},
+          {text = "Default: Melee", value = "default_melee"},
+          {text = "Default: Ranged", value = "default_ranged"}
+        }
+        local yOffset = -5
+        
+        for i, option in ipairs(sourceOptions) do
+          local btn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+          btn:SetWidth(170)
+          btn:SetHeight(24)
+          btn:SetPoint("TOP", menu, "TOP", 0, yOffset)
+          btn:SetText(option.text)
+          
+          local capturedValue = option.value
+          local capturedText = option.text
+          btn:SetScript("OnClick", function()
+            frame.selectedSource = capturedValue
+            sourceDropdown:SetText(capturedText)
+            menu:Hide()
+            -- Refresh the available players list
+            if frame.RefreshAvailableList then
+              frame.RefreshAvailableList()
+            end
+          end)
+          
+          yOffset = yOffset - 28
+        end
+      end
+      
+      if frame.sourceMenu:IsVisible() then
+        frame.sourceMenu:Hide()
+      else
+        frame.sourceMenu:ClearAllPoints()
+        frame.sourceMenu:SetPoint("TOP", sourceDropdown, "BOTTOM", 0, -2)
+        frame.sourceMenu:Show()
+      end
+    end)
+    
+    -- Left panel: Available players
+    local leftPanel = CreateFrame("Frame", nil, frame)
+    leftPanel:SetWidth(225)
+    leftPanel:SetHeight(340)
+    leftPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -80)
+    leftPanel:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    leftPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    
+    -- Available label
+    local availableLabel = leftPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    availableLabel:SetPoint("TOP", leftPanel, "TOP", 0, -8)
+    availableLabel:SetText("Available")
+    
+    -- Available scroll frame
+    local availScrollFrame = CreateFrame("ScrollFrame", nil, leftPanel)
+    availScrollFrame:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 5, -30)
+    availScrollFrame:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", -20, 5)
+    
+    local availScrollChild = CreateFrame("Frame", nil, availScrollFrame)
+    availScrollChild:SetWidth(195)
+    availScrollChild:SetHeight(1)
+    availScrollFrame:SetScrollChild(availScrollChild)
+    frame.availScrollChild = availScrollChild
+    
+    -- Available scroll bar
+    local availScrollBar = CreateFrame("Slider", nil, leftPanel)
+    availScrollBar:SetOrientation("VERTICAL")
+    availScrollBar:SetPoint("TOPRIGHT", leftPanel, "TOPRIGHT", -5, -30)
+    availScrollBar:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", -5, 5)
+    availScrollBar:SetWidth(16)
+    availScrollBar:SetBackdrop({
+      bgFile = "Interface/Buttons/WHITE8X8",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 8,
+      edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    availScrollBar:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+    availScrollBar:SetMinMaxValues(0, 100)
+    availScrollBar:SetValue(0)
+    availScrollBar:SetValueStep(1)
+    
+    local availThumb = availScrollBar:CreateTexture(nil, "OVERLAY")
+    availThumb:SetTexture("Interface/Buttons/UI-ScrollBar-Knob")
+    availThumb:SetWidth(16)
+    availThumb:SetHeight(24)
+    availScrollBar:SetThumbTexture(availThumb)
+    
+    availScrollBar:SetScript("OnValueChanged", function()
+      local value = availScrollBar:GetValue()
+      availScrollFrame:SetVerticalScroll(value)
+    end)
+    
+    -- Enable mouse wheel scrolling for available
+    availScrollFrame:EnableMouseWheel(true)
+    availScrollFrame:SetScript("OnMouseWheel", function()
+      local delta = arg1
+      local current = availScrollFrame:GetVerticalScroll()
+      local maxScroll = availScrollChild:GetHeight() - availScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      
+      local newScroll = current - (delta * 20)
+      if newScroll < 0 then
+        newScroll = 0
+      elseif newScroll > maxScroll then
+        newScroll = maxScroll
+      end
+      availScrollFrame:SetVerticalScroll(newScroll)
+      availScrollBar:SetValue(newScroll)
+    end)
+    
+    frame.availScrollBar = availScrollBar
+    
+    -- Right panel: Pool members
+    local rightPanel = CreateFrame("Frame", nil, frame)
+    rightPanel:SetWidth(225)
+    rightPanel:SetHeight(340)
+    rightPanel:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -80)
+    rightPanel:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    rightPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    
+    -- Pool label
+    local poolLabel = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    poolLabel:SetPoint("TOP", rightPanel, "TOP", 0, -8)
+    poolLabel:SetText("Pool")
+    
+    -- Pool scroll frame
+    local poolScrollFrame = CreateFrame("ScrollFrame", nil, rightPanel)
+    poolScrollFrame:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 5, -30)
+    poolScrollFrame:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", -20, 5)
+    
+    local poolScrollChild = CreateFrame("Frame", nil, poolScrollFrame)
+    poolScrollChild:SetWidth(195)
+    poolScrollChild:SetHeight(1)
+    poolScrollFrame:SetScrollChild(poolScrollChild)
+    frame.poolScrollChild = poolScrollChild
+    
+    -- Pool scroll bar
+    local poolScrollBar = CreateFrame("Slider", nil, rightPanel)
+    poolScrollBar:SetOrientation("VERTICAL")
+    poolScrollBar:SetPoint("TOPRIGHT", rightPanel, "TOPRIGHT", -5, -30)
+    poolScrollBar:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", -5, 5)
+    poolScrollBar:SetWidth(16)
+    poolScrollBar:SetBackdrop({
+      bgFile = "Interface/Buttons/WHITE8X8",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 8,
+      edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    poolScrollBar:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+    poolScrollBar:SetMinMaxValues(0, 100)
+    poolScrollBar:SetValue(0)
+    poolScrollBar:SetValueStep(1)
+    
+    local poolThumb = poolScrollBar:CreateTexture(nil, "OVERLAY")
+    poolThumb:SetTexture("Interface/Buttons/UI-ScrollBar-Knob")
+    poolThumb:SetWidth(16)
+    poolThumb:SetHeight(24)
+    poolScrollBar:SetThumbTexture(poolThumb)
+    
+    poolScrollBar:SetScript("OnValueChanged", function()
+      local value = poolScrollBar:GetValue()
+      poolScrollFrame:SetVerticalScroll(value)
+    end)
+    
+    -- Enable mouse wheel scrolling for pool
+    poolScrollFrame:EnableMouseWheel(true)
+    poolScrollFrame:SetScript("OnMouseWheel", function()
+      local delta = arg1
+      local current = poolScrollFrame:GetVerticalScroll()
+      local maxScroll = poolScrollChild:GetHeight() - poolScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      
+      local newScroll = current - (delta * 20)
+      if newScroll < 0 then
+        newScroll = 0
+      elseif newScroll > maxScroll then
+        newScroll = maxScroll
+      end
+      poolScrollFrame:SetVerticalScroll(newScroll)
+      poolScrollBar:SetValue(newScroll)
+    end)
+    
+    frame.poolScrollBar = poolScrollBar
+    
+    -- Function to update scroll bar ranges
+    frame.updateAvailScrollBar = function()
+      local maxScroll = availScrollChild:GetHeight() - availScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      availScrollBar:SetMinMaxValues(0, maxScroll)
+    end
+    
+    frame.updatePoolScrollBar = function()
+      local maxScroll = poolScrollChild:GetHeight() - poolScrollFrame:GetHeight()
+      if maxScroll < 0 then maxScroll = 0 end
+      poolScrollBar:SetMinMaxValues(0, maxScroll)
+    end
+    
+    -- Function to refresh available players list
+    frame.RefreshAvailableList = function()
+      -- Clear existing buttons
+      local children = {availScrollChild:GetChildren()}
+      for i = 1, table.getn(children) do
+        if children[i] then
+          children[i]:Hide()
+          children[i]:SetParent(nil)
+        end
+      end
+      
+      -- Get pool data
+      if not OGRH_SV.encounterPools then
+        OGRH_SV.encounterPools = {}
+      end
+      if not OGRH_SV.encounterPools[frame.currentRaid] then
+        OGRH_SV.encounterPools[frame.currentRaid] = {}
+      end
+      if not OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter] then
+        OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter] = {}
+      end
+      if not OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter][frame.currentRoleIndex] then
+        OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter][frame.currentRoleIndex] = {}
+      end
+      
+      local pool = OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter][frame.currentRoleIndex]
+      
+      -- Build pool lookup table
+      local poolLookup = {}
+      for i = 1, table.getn(pool) do
+        poolLookup[pool[i]] = true
+      end
+      
+      -- Get available players based on selected source
+      local availablePlayers = {}
+      
+      if frame.selectedSource == "raid" then
+        -- Get players from current raid
+        if OGRH.GetRolePlayers and frame.currentRole.defaultRoles then
+          local allPlayers = {}
+          
+          if frame.currentRole.defaultRoles.tanks then
+            local tanks = OGRH.GetRolePlayers("TANKS")
+            for i = 1, table.getn(tanks) do
+              table.insert(allPlayers, tanks[i])
+            end
+          end
+          
+          if frame.currentRole.defaultRoles.healers then
+            local healers = OGRH.GetRolePlayers("HEALERS")
+            for i = 1, table.getn(healers) do
+              table.insert(allPlayers, healers[i])
+            end
+          end
+          
+          if frame.currentRole.defaultRoles.ranged then
+            local ranged = OGRH.GetRolePlayers("RANGED")
+            for i = 1, table.getn(ranged) do
+              table.insert(allPlayers, ranged[i])
+            end
+          end
+          
+          if frame.currentRole.defaultRoles.dps then
+            local melee = OGRH.GetRolePlayers("MELEE")
+            for i = 1, table.getn(melee) do
+              table.insert(allPlayers, melee[i])
+            end
+          end
+          
+          -- Remove duplicates
+          local seen = {}
+          for i = 1, table.getn(allPlayers) do
+            if not seen[allPlayers[i]] and not poolLookup[allPlayers[i]] then
+              seen[allPlayers[i]] = true
+              table.insert(availablePlayers, allPlayers[i])
+            end
+          end
+        end
+      elseif frame.selectedSource == "default_tanks" and OGRH_SV.roleDefaults and OGRH_SV.roleDefaults[1] then
+        for i = 1, table.getn(OGRH_SV.roleDefaults[1]) do
+          if not poolLookup[OGRH_SV.roleDefaults[1][i]] then
+            table.insert(availablePlayers, OGRH_SV.roleDefaults[1][i])
+          end
+        end
+      elseif frame.selectedSource == "default_healers" and OGRH_SV.roleDefaults and OGRH_SV.roleDefaults[2] then
+        for i = 1, table.getn(OGRH_SV.roleDefaults[2]) do
+          if not poolLookup[OGRH_SV.roleDefaults[2][i]] then
+            table.insert(availablePlayers, OGRH_SV.roleDefaults[2][i])
+          end
+        end
+      elseif frame.selectedSource == "default_melee" and OGRH_SV.roleDefaults and OGRH_SV.roleDefaults[3] then
+        for i = 1, table.getn(OGRH_SV.roleDefaults[3]) do
+          if not poolLookup[OGRH_SV.roleDefaults[3][i]] then
+            table.insert(availablePlayers, OGRH_SV.roleDefaults[3][i])
+          end
+        end
+      elseif frame.selectedSource == "default_ranged" and OGRH_SV.roleDefaults and OGRH_SV.roleDefaults[4] then
+        for i = 1, table.getn(OGRH_SV.roleDefaults[4]) do
+          if not poolLookup[OGRH_SV.roleDefaults[4][i]] then
+            table.insert(availablePlayers, OGRH_SV.roleDefaults[4][i])
+          end
+        end
+      end
+      
+      -- Sort alphabetically
+      table.sort(availablePlayers)
+      
+      -- Create player buttons
+      local yOffset = 0
+      for i, playerName in ipairs(availablePlayers) do
+        local btn = CreateFrame("Button", nil, availScrollChild)
+        btn:SetWidth(200)
+        btn:SetHeight(18)
+        btn:SetPoint("TOPLEFT", availScrollChild, "TOPLEFT", 0, -yOffset)
+        
+        local bg = btn:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+        
+        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        text:SetPoint("LEFT", btn, "LEFT", 5, 0)
+        
+        -- Apply class color
+        local displayName = playerName
+        if OGRH.ClassColorHex and OGRH.Roles and OGRH.Roles.nameClass and OGRH.Roles.nameClass[playerName] then
+          local class = OGRH.Roles.nameClass[playerName]
+          displayName = OGRH.ClassColorHex(class) .. playerName .. "|r"
+        end
+        text:SetText(displayName)
+        
+        -- Click to add to pool
+        local capturedName = playerName
+        btn:SetScript("OnClick", function()
+          table.insert(pool, capturedName)
+          frame.RefreshAvailableList()
+          frame.RefreshPoolList()
+        end)
+        
+        yOffset = yOffset + 20
+      end
+      
+      availScrollChild:SetHeight(math.max(1, yOffset))
+      frame.updateAvailScrollBar()
+    end
+    
+    -- Function to refresh pool list
+    frame.RefreshPoolList = function()
+      -- Clear existing buttons
+      local children = {poolScrollChild:GetChildren()}
+      for i = 1, table.getn(children) do
+        if children[i] then
+          children[i]:Hide()
+          children[i]:SetParent(nil)
+        end
+      end
+      
+      -- Get pool data
+      if not OGRH_SV.encounterPools then
+        OGRH_SV.encounterPools = {}
+      end
+      if not OGRH_SV.encounterPools[frame.currentRaid] then
+        OGRH_SV.encounterPools[frame.currentRaid] = {}
+      end
+      if not OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter] then
+        OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter] = {}
+      end
+      if not OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter][frame.currentRoleIndex] then
+        OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter][frame.currentRoleIndex] = {}
+      end
+      
+      local pool = OGRH_SV.encounterPools[frame.currentRaid][frame.currentEncounter][frame.currentRoleIndex]
+      
+      -- Don't sort - maintain manual order for priority
+      
+      -- Create player buttons
+      local yOffset = 0
+      for i, playerName in ipairs(pool) do
+        local playerFrame = CreateFrame("Frame", nil, poolScrollChild)
+        playerFrame:SetWidth(220)
+        playerFrame:SetHeight(20)
+        playerFrame:SetPoint("TOPLEFT", poolScrollChild, "TOPLEFT", 0, -yOffset)
+        
+        local bg = playerFrame:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+        
+        -- Up button
+        local upBtn = CreateFrame("Button", nil, playerFrame)
+        upBtn:SetWidth(16)
+        upBtn:SetHeight(16)
+        upBtn:SetPoint("LEFT", playerFrame, "LEFT", 2, 0)
+        upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
+        upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
+        upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
+        
+        local currentIndex = i
+        upBtn:SetScript("OnClick", function()
+          if currentIndex > 1 then
+            local temp = pool[currentIndex]
+            pool[currentIndex] = pool[currentIndex - 1]
+            pool[currentIndex - 1] = temp
+            frame.RefreshPoolList()
+          end
+        end)
+        
+        -- Down button
+        local downBtn = CreateFrame("Button", nil, playerFrame)
+        downBtn:SetWidth(16)
+        downBtn:SetHeight(16)
+        downBtn:SetPoint("LEFT", upBtn, "RIGHT", 0, 0)
+        downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+        downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
+        downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
+        
+        downBtn:SetScript("OnClick", function()
+          if currentIndex < table.getn(pool) then
+            local temp = pool[currentIndex]
+            pool[currentIndex] = pool[currentIndex + 1]
+            pool[currentIndex + 1] = temp
+            frame.RefreshPoolList()
+          end
+        end)
+        
+        -- Remove button
+        local removeBtn = CreateFrame("Button", nil, playerFrame, "UIPanelButtonTemplate")
+        removeBtn:SetWidth(16)
+        removeBtn:SetHeight(16)
+        removeBtn:SetPoint("LEFT", downBtn, "RIGHT", 2, 0)
+        removeBtn:SetText("X")
+        
+        removeBtn:SetScript("OnClick", function()
+          table.remove(pool, currentIndex)
+          frame.RefreshAvailableList()
+          frame.RefreshPoolList()
+        end)
+        
+        -- Player name with class color
+        local nameText = playerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        nameText:SetPoint("LEFT", removeBtn, "RIGHT", 5, 0)
+        
+        if OGRH.ClassColorHex and OGRH.Roles and OGRH.Roles.nameClass then
+          local class = OGRH.Roles.nameClass[playerName]
+          if class then
+            nameText:SetText(OGRH.ClassColorHex(class) .. playerName .. "|r")
+          else
+            nameText:SetText(playerName)
+          end
+        else
+          nameText:SetText(playerName)
+        end
+        
+        yOffset = yOffset + 22
+      end
+      
+      poolScrollChild:SetHeight(math.max(1, yOffset))
+      frame.updatePoolScrollBar()
+    end
+    
+    OGRH_EncounterPoolFrame = frame
+  end
+  
+  local frame = OGRH_EncounterPoolFrame
+  
+  -- Store current context
+  frame.currentRaid = raidName
+  frame.currentEncounter = encounterName
+  frame.currentRole = role
+  frame.currentRoleIndex = roleIndex
+  
+  -- Update title
+  frame.title:SetText("Player Pool - " .. (role.name or "Unknown"))
+  
+  -- Reset to default source (current raid)
+  frame.selectedSource = "raid"
+  frame.sourceDropdown:SetText("Current Raid")
+  
+  -- Show the window and refresh lists
+  frame:Show()
+  frame.RefreshAvailableList()
+  frame.RefreshPoolList()
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00OGRH:|r Encounter pool window opened")
 end
 
 -- Initialize SavedVariables when addon loads
