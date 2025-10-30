@@ -11,8 +11,21 @@ OGRH.EncounterMgmt = OGRH.EncounterMgmt or {}
 -- Storage for encounter assignments
 local encounterData = {}
 
+-- Migrate old roleDefaults to poolDefaults (one-time migration)
+local function MigrateRoleDefaultsToPoolDefaults()
+  if OGRH_SV.roleDefaults and not OGRH_SV.poolDefaults then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Migrating Role Defaults to Pool Defaults...")
+    OGRH_SV.poolDefaults = OGRH_SV.roleDefaults
+    OGRH_SV.roleDefaults = nil
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Migration complete!")
+  end
+end
+
 -- Initialize SavedVariables structure
 local function InitializeSavedVars()
+  -- Run migration first
+  MigrateRoleDefaultsToPoolDefaults()
+  
   if not OGRH_SV.encounterMgmt then
     OGRH_SV.encounterMgmt = {
       raids = {},
@@ -51,14 +64,14 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     title:SetText("Encounter Planning")
     frame.title = title
     
-    -- Role Defaults button (top left)
-    local roleDefaultsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    roleDefaultsBtn:SetWidth(100)
-    roleDefaultsBtn:SetHeight(24)
-    roleDefaultsBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
-    roleDefaultsBtn:SetText("Role Defaults")
-    roleDefaultsBtn:SetScript("OnClick", function()
-      OGRH.ShowRoleDefaultsWindow()
+    -- Pool Defaults button (top left)
+    local poolDefaultsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    poolDefaultsBtn:SetWidth(100)
+    poolDefaultsBtn:SetHeight(24)
+    poolDefaultsBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
+    poolDefaultsBtn:SetText("Pool Defaults")
+    poolDefaultsBtn:SetScript("OnClick", function()
+      OGRH.ShowPoolDefaultsWindow()
     end)
     
     -- Close button
@@ -2090,11 +2103,11 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   frame:Show()
 end
 
--- Function to show Role Defaults management window
-function OGRH.ShowRoleDefaultsWindow()
+-- Function to show Pool Defaults management window
+function OGRH.ShowPoolDefaultsWindow()
   -- Create window if it doesn't exist
-  if not OGRH_RoleDefaultsFrame then
-    local frame = CreateFrame("Frame", "OGRH_RoleDefaultsFrame", UIParent)
+  if not OGRH_PoolDefaultsFrame then
+    local frame = CreateFrame("Frame", "OGRH_PoolDefaultsFrame", UIParent)
     frame:SetWidth(500)
     frame:SetHeight(450)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -2397,13 +2410,13 @@ function OGRH.ShowRoleDefaultsWindow()
       local fourteenDaysInSeconds = 14 * 24 * 60 * 60
       
       -- Get assigned players for this role from SavedVariables
-      if not OGRH_SV.roleDefaults then
-        OGRH_SV.roleDefaults = {}
+      if not OGRH_SV.poolDefaults then
+        OGRH_SV.poolDefaults = {}
       end
-      if not OGRH_SV.roleDefaults[frame.selectedRole] then
-        OGRH_SV.roleDefaults[frame.selectedRole] = {}
+      if not OGRH_SV.poolDefaults[frame.selectedRole] then
+        OGRH_SV.poolDefaults[frame.selectedRole] = {}
       end
-      local assignedPlayers = OGRH_SV.roleDefaults[frame.selectedRole]
+      local assignedPlayers = OGRH_SV.poolDefaults[frame.selectedRole]
       
       -- Build assigned lookup table
       local assignedLookup = {}
@@ -2499,7 +2512,7 @@ function OGRH.ShowRoleDefaultsWindow()
         -- Click to assign
         local capturedName = playerData.name
         btn:SetScript("OnClick", function()
-          table.insert(OGRH_SV.roleDefaults[frame.selectedRole], capturedName)
+          table.insert(OGRH_SV.poolDefaults[frame.selectedRole], capturedName)
           frame.RefreshGuildList()
           frame.RefreshAssignedList()
         end)
@@ -2523,13 +2536,13 @@ function OGRH.ShowRoleDefaultsWindow()
       end
       
       -- Get assigned players for this role
-      if not OGRH_SV.roleDefaults then
-        OGRH_SV.roleDefaults = {}
+      if not OGRH_SV.poolDefaults then
+        OGRH_SV.poolDefaults = {}
       end
-      if not OGRH_SV.roleDefaults[frame.selectedRole] then
-        OGRH_SV.roleDefaults[frame.selectedRole] = {}
+      if not OGRH_SV.poolDefaults[frame.selectedRole] then
+        OGRH_SV.poolDefaults[frame.selectedRole] = {}
       end
-      local assignedPlayers = OGRH_SV.roleDefaults[frame.selectedRole]
+      local assignedPlayers = OGRH_SV.poolDefaults[frame.selectedRole]
       
       -- Sort alphabetically
       table.sort(assignedPlayers, function(a, b)
@@ -2558,7 +2571,7 @@ function OGRH.ShowRoleDefaultsWindow()
         
         local currentIndex = i
         removeBtn:SetScript("OnClick", function()
-          table.remove(OGRH_SV.roleDefaults[frame.selectedRole], currentIndex)
+          table.remove(OGRH_SV.poolDefaults[frame.selectedRole], currentIndex)
           frame.RefreshGuildList()
           frame.RefreshAssignedList()
         end)
@@ -2585,13 +2598,16 @@ function OGRH.ShowRoleDefaultsWindow()
       frame.updateAssignedScrollBar()
     end
     
-    OGRH_RoleDefaultsFrame = frame
+    OGRH_PoolDefaultsFrame = frame
   end
   
+  -- Refresh guild roster to update class colors
+  GuildRoster()
+  
   -- Show the window and refresh lists
-  OGRH_RoleDefaultsFrame:Show()
-  OGRH_RoleDefaultsFrame.RefreshGuildList()
-  OGRH_RoleDefaultsFrame.RefreshAssignedList()
+  OGRH_PoolDefaultsFrame:Show()
+  OGRH_PoolDefaultsFrame.RefreshGuildList()
+  OGRH_PoolDefaultsFrame.RefreshAssignedList()
   
   DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00OGRH:|r Role Defaults window opened")
 end
@@ -2954,28 +2970,28 @@ function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
             end
           end
         end
-      elseif frame.selectedSource == "default_tanks" and OGRH_SV.roleDefaults and OGRH_SV.roleDefaults[1] then
-        for i = 1, table.getn(OGRH_SV.roleDefaults[1]) do
-          if not poolLookup[OGRH_SV.roleDefaults[1][i]] then
-            table.insert(availablePlayers, OGRH_SV.roleDefaults[1][i])
+      elseif frame.selectedSource == "default_tanks" and OGRH_SV.poolDefaults and OGRH_SV.poolDefaults[1] then
+        for i = 1, table.getn(OGRH_SV.poolDefaults[1]) do
+          if not poolLookup[OGRH_SV.poolDefaults[1][i]] then
+            table.insert(availablePlayers, OGRH_SV.poolDefaults[1][i])
           end
         end
-      elseif frame.selectedSource == "default_healers" and OGRH_SV.roleDefaults and OGRH_SV.roleDefaults[2] then
-        for i = 1, table.getn(OGRH_SV.roleDefaults[2]) do
-          if not poolLookup[OGRH_SV.roleDefaults[2][i]] then
-            table.insert(availablePlayers, OGRH_SV.roleDefaults[2][i])
+      elseif frame.selectedSource == "default_healers" and OGRH_SV.poolDefaults and OGRH_SV.poolDefaults[2] then
+        for i = 1, table.getn(OGRH_SV.poolDefaults[2]) do
+          if not poolLookup[OGRH_SV.poolDefaults[2][i]] then
+            table.insert(availablePlayers, OGRH_SV.poolDefaults[2][i])
           end
         end
-      elseif frame.selectedSource == "default_melee" and OGRH_SV.roleDefaults and OGRH_SV.roleDefaults[3] then
-        for i = 1, table.getn(OGRH_SV.roleDefaults[3]) do
-          if not poolLookup[OGRH_SV.roleDefaults[3][i]] then
-            table.insert(availablePlayers, OGRH_SV.roleDefaults[3][i])
+      elseif frame.selectedSource == "default_melee" and OGRH_SV.poolDefaults and OGRH_SV.poolDefaults[3] then
+        for i = 1, table.getn(OGRH_SV.poolDefaults[3]) do
+          if not poolLookup[OGRH_SV.poolDefaults[3][i]] then
+            table.insert(availablePlayers, OGRH_SV.poolDefaults[3][i])
           end
         end
-      elseif frame.selectedSource == "default_ranged" and OGRH_SV.roleDefaults and OGRH_SV.roleDefaults[4] then
-        for i = 1, table.getn(OGRH_SV.roleDefaults[4]) do
-          if not poolLookup[OGRH_SV.roleDefaults[4][i]] then
-            table.insert(availablePlayers, OGRH_SV.roleDefaults[4][i])
+      elseif frame.selectedSource == "default_ranged" and OGRH_SV.poolDefaults and OGRH_SV.poolDefaults[4] then
+        for i = 1, table.getn(OGRH_SV.poolDefaults[4]) do
+          if not poolLookup[OGRH_SV.poolDefaults[4][i]] then
+            table.insert(availablePlayers, OGRH_SV.poolDefaults[4][i])
           end
         end
       end
@@ -3153,6 +3169,9 @@ function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
   -- Reset to default source (current raid)
   frame.selectedSource = "raid"
   frame.sourceDropdown:SetText("Current Raid")
+  
+  -- Refresh guild roster to update class colors
+  GuildRoster()
   
   -- Show the window and refresh lists
   frame:Show()
