@@ -1,7 +1,3 @@
--- OG-RaidHelper BWL Encounters
--- Author: Will + ChatGPT
--- Version: 1.14.0
-
 local _G = getfenv(0)
 local OGRH = _G.OGRH
 
@@ -312,6 +308,290 @@ local function CreateRazorgorePanel(parent, encounterBtn)
     return panel
 end
 
+-- Create Firemaw UI elements
+local function CreateFiremawPanel(parent, encounterBtn)
+    -- Get ROLE_COLUMNS from the parent frame
+    ROLE_COLUMNS = parent.ROLE_COLUMNS
+    
+    local panel = CreateFrame("Frame", nil, parent)
+    panel:SetWidth(484)  -- 100px wider than original (384 + 100)
+    panel:SetHeight(60)  -- Original height
+    panel:SetPoint("TOPLEFT", parent, "TOPLEFT", 210, -20)  -- Align with Healers column (20 + 190)
+    panel:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    panel:SetBackdropColor(0, 0, 0, 0.5)
+    panel:Hide()
+
+    local function CreateIconLabel(parent, iconId1, iconId2, text, xOffset, yOffset)
+        local container = CreateFrame("Frame", nil, parent)
+        container:SetWidth(120)
+        container:SetHeight(30)
+        container:SetPoint("TOPLEFT", parent, "TOPLEFT", xOffset, yOffset)
+
+        -- First icon if provided
+        if iconId1 then
+            local icon1 = container:CreateTexture(nil, "ARTWORK")
+            icon1:SetWidth(16)
+            icon1:SetHeight(16)
+            icon1:SetPoint("LEFT", container, "LEFT", 0, 0)
+            SetRaidTargetIconTexture(icon1, iconId1)
+        end
+
+        -- Second icon if provided
+        if iconId2 then
+            local icon2 = container:CreateTexture(nil, "ARTWORK")
+            icon2:SetWidth(16)
+            icon2:SetHeight(16)
+            icon2:SetPoint("LEFT", container, "LEFT", 20, 0)
+            SetRaidTargetIconTexture(icon2, iconId2)
+        end
+
+        local label = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        label:SetPoint("LEFT", container, "LEFT", iconId2 and 40 or 20, 0)
+        label:SetText(text)
+    end
+
+    -- Create layout with proper spacing
+    -- Warlock (Skull+Cross) at x=8
+    CreateIconLabel(panel, 8, 7, "Warlock", 8, -4)
+    -- Spellbinder (Diamond+Star) below Warlock
+    CreateIconLabel(panel, 3, 1, "Spellbinder (Magic Immune)", 8, -24)
+    
+    -- Overseer (Circle) 15px after Warlock ends (8 + 120 + 15 = 143)
+    CreateIconLabel(panel, 2, nil, "Overseer", 100, -4)
+    
+    -- Techies (Triangle) 15px after Overseer ends (143 + 120 + 15 = 278)
+    CreateIconLabel(panel, 4, nil, "Techies", 165, -4)
+
+    -- Helper function to create non-functional control display
+    local function CreateControlDisplay(parent, xOffset, yOffset, highlightMarkBox)
+        local controlFrame = CreateFrame("Frame", nil, parent)
+        controlFrame:SetWidth(80)
+        controlFrame:SetHeight(16)
+        controlFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", xOffset, yOffset)
+        
+        -- Mark button (16x16)
+        local markBtn = CreateFrame("Frame", nil, controlFrame)
+        markBtn:SetWidth(16)
+        markBtn:SetHeight(16)
+        markBtn:SetPoint("LEFT", controlFrame, "LEFT", 0, 0)
+        local markBg = markBtn:CreateTexture(nil, "BACKGROUND")
+        markBg:SetAllPoints(markBtn)
+        markBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        if highlightMarkBox then
+            markBg:SetVertexColor(0, 1, 0, 1)  -- Bright green
+        else
+            markBg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+        end
+        
+        -- Up button (25x25)
+        local upBtn = CreateFrame("Frame", nil, controlFrame)
+        upBtn:SetWidth(25)
+        upBtn:SetHeight(25)
+        upBtn:SetPoint("LEFT", markBtn, "RIGHT", 2, 0)
+        local upTexture = upBtn:CreateTexture(nil, "ARTWORK")
+        upTexture:SetAllPoints(upBtn)
+        upTexture:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
+        
+        -- Down button (25x25)
+        local downBtn = CreateFrame("Frame", nil, controlFrame)
+        downBtn:SetWidth(25)
+        downBtn:SetHeight(25)
+        downBtn:SetPoint("LEFT", upBtn, "RIGHT", -8, 0)
+        local downTexture = downBtn:CreateTexture(nil, "ARTWORK")
+        downTexture:SetAllPoints(downBtn)
+        downTexture:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+        
+        -- Assignment button (16x16)
+        local assignBtn = CreateFrame("Frame", nil, controlFrame)
+        assignBtn:SetWidth(16)
+        assignBtn:SetHeight(16)
+        assignBtn:SetPoint("LEFT", downBtn, "RIGHT", 2, 0)
+        local assignBg = assignBtn:CreateTexture(nil, "BACKGROUND")
+        assignBg:SetAllPoints(assignBtn)
+        assignBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        if not highlightMarkBox then
+            assignBg:SetVertexColor(0, 1, 0, 1)  -- Bright green
+        else
+            assignBg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+        end
+        
+        return controlFrame
+    end
+    
+    -- Add control display for Firemaw button (Mark box highlighted)
+    CreateControlDisplay(panel, 305, -8, true)
+    
+    -- Add Firemaw Announce button (top)
+    local firemawBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    firemawBtn:SetWidth(80)
+    firemawBtn:SetHeight(24)
+    firemawBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -4)
+    firemawBtn:SetText("Firemaw")
+    firemawBtn:SetScript("OnClick", function()
+        -- Check for OGRH
+        if not OGRH then return end
+        
+        -- Collect announcement lines
+        local announcementLines = {}
+        
+        -- Helper to get player data by mark
+        local function FindPlayersByMarks(markIds)
+            local players = {}
+            for _, column in ipairs(ROLE_COLUMNS) do
+                for _, playerName in ipairs(column.players) do
+                    local markId = OGRH.GetPlayerMark(playerName)
+                    if markId then
+                        for _, targetMark in ipairs(markIds) do
+                            if markId == targetMark then
+                                table.insert(players, {
+                                    name = playerName,
+                                    class = OGRH.Roles.nameClass[playerName],
+                                    mark = markId
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+            return players
+        end
+        
+        -- First Tanks: Player marked Skull, Player marked X
+        local firstTanks = FindPlayersByMarks({8, 7}) -- Skull and Cross
+        if table.getn(firstTanks) > 0 then
+            local tankParts = {}
+            for _, player in ipairs(firstTanks) do
+                table.insert(tankParts, OGRH.ClassColorHex(player.class) .. player.name .. "|r")
+            end
+            table.insert(announcementLines, OGRH.Header("First Tanks: ") .. table.concat(tankParts, ", "))
+        end
+        
+        -- Second Tanks: Players marked Diamond, Player marked Star
+        local secondTanks = FindPlayersByMarks({3, 1}) -- Diamond and Star
+        if table.getn(secondTanks) > 0 then
+            local tankParts = {}
+            for _, player in ipairs(secondTanks) do
+                table.insert(tankParts, OGRH.ClassColorHex(player.class) .. player.name .. "|r")
+            end
+            table.insert(announcementLines, OGRH.Header("Second Tanks: ") .. table.concat(tankParts, ", "))
+        end
+        
+        -- Use the helper function to send and store announcements
+        if OGRH.SendAnnouncement then
+            OGRH.SendAnnouncement(announcementLines, OGRH.testMode)
+        end
+    end)
+
+    -- Add control display for Techies button (Assignment box highlighted)
+    CreateControlDisplay(panel, 305, -35, false)
+    
+    -- Add Techies Announce button (bottom)
+    local techiesBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    techiesBtn:SetWidth(80)
+    techiesBtn:SetHeight(24)
+    techiesBtn:SetPoint("TOP", firemawBtn, "BOTTOM", 0, -2)
+    techiesBtn:SetText("Techies")
+    techiesBtn:SetScript("OnClick", function()
+        -- Check for OGRH
+        if not OGRH then return end
+        
+        -- Collect announcement lines
+        local announcementLines = {}
+        
+        -- Helper to get players with specific assignments
+        local function FindPlayersByAssignment(iconValue)
+            local players = {}
+            for _, column in ipairs(ROLE_COLUMNS) do
+                for _, playerName in ipairs(column.players) do
+                    local assignData = OGRH.GetPlayerAssignment(playerName)
+                    if assignData and assignData.type == "icon" and assignData.value == iconValue then
+                        table.insert(players, {
+                            name = playerName,
+                            class = OGRH.Roles.nameClass[playerName],
+                            mark = OGRH_SV and OGRH_SV.raidTargets and OGRH_SV.raidTargets[playerName]
+                        })
+                    end
+                end
+            end
+            return players
+        end
+        
+        -- Warlocks: Player assigned Skull (Skull), Player assigned X (X)
+        local skullWarlocks = FindPlayersByAssignment(8) -- Skull assignment
+        local crossWarlocks = FindPlayersByAssignment(7) -- Cross assignment
+        
+        if table.getn(skullWarlocks) > 0 or table.getn(crossWarlocks) > 0 then
+            local warlockParts = {}
+            
+            for _, player in ipairs(skullWarlocks) do
+                table.insert(warlockParts, OGRH.ClassColorHex(player.class) .. player.name .. "|r " .. OGRH.GetColoredMarkName(8))
+            end
+            
+            for _, player in ipairs(crossWarlocks) do
+                table.insert(warlockParts, OGRH.ClassColorHex(player.class) .. player.name .. "|r " .. OGRH.GetColoredMarkName(7))
+            end
+            
+            if table.getn(warlockParts) > 0 then
+                table.insert(announcementLines, OGRH.Header("Warlocks: ") .. table.concat(warlockParts, ", "))
+            end
+        end
+        
+        -- Spellbinders: Player assigned Diamond, Player assigned Star
+        local diamondSpellbinders = FindPlayersByAssignment(3) -- Diamond assignment
+        local starSpellbinders = FindPlayersByAssignment(1) -- Star assignment
+        
+        if table.getn(diamondSpellbinders) > 0 or table.getn(starSpellbinders) > 0 then
+            local spellbinderParts = {}
+            
+            for _, player in ipairs(diamondSpellbinders) do
+                table.insert(spellbinderParts, OGRH.ClassColorHex(player.class) .. player.name .. "|r " .. OGRH.GetColoredMarkName(3))
+            end
+            
+            for _, player in ipairs(starSpellbinders) do
+                table.insert(spellbinderParts, OGRH.ClassColorHex(player.class) .. player.name .. "|r " .. OGRH.GetColoredMarkName(1))
+            end
+            
+            if table.getn(spellbinderParts) > 0 then
+                table.insert(announcementLines, OGRH.Header("Spellbinders: ") .. table.concat(spellbinderParts, ", "))
+            end
+        end
+        
+        -- Overseer: Player assigned Circle
+        local overseers = FindPlayersByAssignment(2) -- Circle assignment
+        if table.getn(overseers) > 0 then
+            local overseerParts = {}
+            for _, player in ipairs(overseers) do
+                table.insert(overseerParts, OGRH.ClassColorHex(player.class) .. player.name .. "|r " .. OGRH.GetColoredMarkName(2))
+            end
+            table.insert(announcementLines, OGRH.Header("Overseer: ") .. table.concat(overseerParts, ", "))
+        end
+        
+        -- Techies: Player assigned Triangle
+        local techies = FindPlayersByAssignment(4) -- Triangle assignment
+        if table.getn(techies) > 0 then
+            local techiesParts = {}
+            for _, player in ipairs(techies) do
+                table.insert(techiesParts, OGRH.ClassColorHex(player.class) .. player.name .. "|r")
+            end
+            table.insert(announcementLines, OGRH.Header("Techies: ") .. table.concat(techiesParts, ", "))
+        end
+        
+        -- Use the helper function to send and store announcements
+        if OGRH.SendAnnouncement then
+            OGRH.SendAnnouncement(announcementLines, OGRH.testMode)
+        end
+    end)
+
+    return panel
+end
+
 -- Initialize immediately
 if not OGRH then
     print("Error: OGRH_E_BWL requires OGRH_Core to be loaded first!")
@@ -320,5 +600,6 @@ end
 
 -- Add our functions to the OGRH namespace
 OGRH.BWL = {
-    CreateRazorgorePanel = CreateRazorgorePanel
+    CreateRazorgorePanel = CreateRazorgorePanel,
+    CreateFiremawPanel = CreateFiremawPanel
 }

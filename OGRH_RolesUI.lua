@@ -1,7 +1,3 @@
--- OG-RaidHelper Roles UI
--- Author: Will + ChatGPT
--- Version: 1.14.0
-
 -- Local Variables
 local _G = getfenv(0)
 local OGRH = _G.OGRH
@@ -42,6 +38,20 @@ local PLAYER_RAID_TARGETS = {}
 
 -- Global test mode state for module
 OGRH.testMode = false
+
+-- Function to get player mark (checks PLAYER_RAID_TARGETS in test mode, OGRH_SV otherwise)
+function OGRH.GetPlayerMark(playerName)
+    -- First check PLAYER_RAID_TARGETS (works in both test and normal mode)
+    local mark = PLAYER_RAID_TARGETS[playerName]
+    if mark then
+        return mark
+    end
+    -- Fall back to saved variables (only populated in normal mode)
+    if OGRH_SV and OGRH_SV.raidTargets then
+        return OGRH_SV.raidTargets[playerName]
+    end
+    return nil
+end
 
 local ROLE_COLUMNS = {
     {name = "Tanks", players = {}},
@@ -507,16 +517,40 @@ local function CreateRolesFrame()
         OGRH.ShowRazorgorePanel()
     end)
     
+    AddEncounterButton("BWL - Firemaw", function()
+        OGRH.ShowFiremawPanel()
+    end)
+    
+    AddEncounterButton("BWL - Nefarion", function()
+        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: BWL - Nefarion")
+    end)
+    
+    AddEncounterButton("AQ40 - Skeram", function()
+        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Skeram")
+    end)
+    
+    AddEncounterButton("AQ40 - Bug Trio", function()
+        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Bug Trio")
+    end)
+    
+    AddEncounterButton("AQ40 - Twins", function()
+        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Twins")
+    end)
+    
     AddEncounterButton("AQ40 - C'Thun", function()
         OGRH.ShowCThunPanel()
+    end)
+    
+    AddEncounterButton("Naxx - Gothik", function()
+        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Gothik")
     end)
     
     AddEncounterButton("Naxx - 4HM", function()
         DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - 4HM")
     end)
     
-    AddEncounterButton("Naxx - Nefarian", function()
-        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Nefarian")
+    AddEncounterButton("Naxx - Kel'Thuzad", function()
+        DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Kel'Thuzad")
     end)
     
     encounterMenu:SetHeight(15 + (table.getn(buttons) * 20) + ((table.getn(buttons) - 1) * 2) + 5)
@@ -1130,11 +1164,12 @@ local function CreateRolesFrame()
     end
 
     -- Create encounter panels
-    local razorgorePanel, cthunPanel
+    local razorgorePanel, firemawPanel, cthunPanel
     
     -- Create BWL panels
     if OGRH.BWL then
         razorgorePanel = OGRH.BWL.CreateRazorgorePanel(frame, encounterBtn)
+        firemawPanel = OGRH.BWL.CreateFiremawPanel(frame, encounterBtn)
     else
         print("|cFFFFFF00OGRH:|r Error: BWL module not found!")
     end
@@ -1148,6 +1183,7 @@ local function CreateRolesFrame()
 
     local function HideAllPanels()
         if razorgorePanel then razorgorePanel:Hide() end
+        if firemawPanel then firemawPanel:Hide() end
         if cthunPanel then cthunPanel:Hide() end
     end
 
@@ -1157,6 +1193,15 @@ local function CreateRolesFrame()
             razorgorePanel:Show()
         else
             print("|cFFFFFF00OGRH:|r Error: Razorgore panel could not be created!")
+        end
+    end
+
+    OGRH.ShowFiremawPanel = function()
+        HideAllPanels()
+        if firemawPanel then
+            firemawPanel:Show()
+        else
+            print("|cFFFFFF00OGRH:|r Error: Firemaw panel could not be created!")
         end
     end
 

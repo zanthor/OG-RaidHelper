@@ -1,7 +1,3 @@
--- OG-RaidHelper Trade Module
--- Author: Will + ChatGPT
--- Version: 1.14.0
-
 local _G = getfenv(0)
 local OGRH = _G.OGRH
 
