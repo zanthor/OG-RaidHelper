@@ -485,6 +485,11 @@ function OGRH.ShowEncounterSetup()
     
     raidsScrollFrame:EnableMouseWheel(true)
     raidsScrollFrame:SetScript("OnMouseWheel", function()
+      -- Only scroll if scrollbar is visible
+      if not raidsScrollBar:IsShown() then
+        return
+      end
+      
       local delta = arg1
       local current = raidsScrollBar:GetValue()
       local minVal, maxVal = raidsScrollBar:GetMinMaxValues()
@@ -729,6 +734,11 @@ function OGRH.ShowEncounterSetup()
     
     encountersScrollFrame:EnableMouseWheel(true)
     encountersScrollFrame:SetScript("OnMouseWheel", function()
+      -- Only scroll if scrollbar is visible
+      if not encountersScrollBar:IsShown() then
+        return
+      end
+      
       local delta = arg1
       local current = encountersScrollBar:GetValue()
       local minVal, maxVal = encountersScrollBar:GetMinMaxValues()
@@ -1019,6 +1029,11 @@ function OGRH.ShowEncounterSetup()
     
     rolesScrollFrame:EnableMouseWheel(true)
     rolesScrollFrame:SetScript("OnMouseWheel", function()
+      -- Only scroll if scrollbar is visible
+      if not rolesScrollBar:IsShown() then
+        return
+      end
+      
       local delta = arg1
       local current = rolesScrollBar:GetValue()
       local minVal, maxVal = rolesScrollBar:GetMinMaxValues()
@@ -1111,6 +1126,11 @@ function OGRH.ShowEncounterSetup()
     
     rolesScrollFrame2:EnableMouseWheel(true)
     rolesScrollFrame2:SetScript("OnMouseWheel", function()
+      -- Only scroll if scrollbar is visible
+      if not rolesScrollBar2:IsShown() then
+        return
+      end
+      
       local delta = arg1
       local current = rolesScrollBar2:GetValue()
       local minVal, maxVal = rolesScrollBar2:GetMinMaxValues()
