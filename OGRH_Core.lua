@@ -60,6 +60,13 @@ function OGRH.DoReadyCheck()
   
   -- Check if player is raid leader
   if IsRaidLeader and IsRaidLeader() == 1 then
+    -- Initialize ready check tracking
+    OGRH.readyCheckResponses = {
+      ready = {},
+      notReady = {},
+      noResponse = {}
+    }
+    OGRH.readyCheckInProgress = true
     DoReadyCheck()
   -- Check if player is raid assistant
   elseif IsRaidOfficer and IsRaidOfficer() == 1 then
@@ -140,6 +147,9 @@ end
 -- Handle incoming addon messages
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("CHAT_MSG_ADDON")
+addonFrame:RegisterEvent("READY_CHECK")
+addonFrame:RegisterEvent("READY_CHECK_CONFIRM")
+addonFrame:RegisterEvent("READY_CHECK_FINISHED")
 addonFrame:SetScript("OnEvent", function()
   if event == "CHAT_MSG_ADDON" then
     local prefix, message, distribution, sender = arg1, arg2, arg3, arg4
@@ -149,6 +159,13 @@ addonFrame:SetScript("OnEvent", function()
       if message == "READYCHECK_REQUEST" then
         -- Only process if we are the raid leader
         if IsRaidLeader and IsRaidLeader() == 1 then
+          -- Initialize ready check tracking
+          OGRH.readyCheckResponses = {
+            ready = {},
+            notReady = {},
+            noResponse = {}
+          }
+          OGRH.readyCheckInProgress = true
           DoReadyCheck()
         end
       -- Handle announcement broadcast
@@ -180,6 +197,64 @@ addonFrame:SetScript("OnEvent", function()
             timestamp = time()
           }
         end
+      end
+    end
+  elseif event == "READY_CHECK" then
+    -- Ready check started
+    if OGRH.readyCheckInProgress and IsRaidLeader() == 1 then
+      -- Initialize all raid members as no response
+      local numRaid = GetNumRaidMembers()
+      for i = 1, numRaid do
+        local name, _, _, _, _, _, _, _, _, _, _ = GetRaidRosterInfo(i)
+        if name then
+          table.insert(OGRH.readyCheckResponses.noResponse, name)
+        end
+      end
+    end
+  elseif event == "READY_CHECK_CONFIRM" then
+    -- Someone responded to ready check
+    if OGRH.readyCheckInProgress and IsRaidLeader() == 1 then
+      local name = arg1
+      local isReady = arg2  -- 1 = ready, 0 = not ready
+      
+      if name then
+        -- Remove from noResponse list
+        for i = table.getn(OGRH.readyCheckResponses.noResponse), 1, -1 do
+          if OGRH.readyCheckResponses.noResponse[i] == name then
+            table.remove(OGRH.readyCheckResponses.noResponse, i)
+          end
+        end
+        
+        -- Add to appropriate list
+        if isReady == 1 then
+          table.insert(OGRH.readyCheckResponses.ready, name)
+        else
+          table.insert(OGRH.readyCheckResponses.notReady, name)
+        end
+      end
+    end
+  elseif event == "READY_CHECK_FINISHED" then
+    -- Ready check finished
+    if OGRH.readyCheckInProgress and IsRaidLeader() == 1 then
+      OGRH.readyCheckInProgress = false
+      
+      -- Build summary message
+      local ready = table.getn(OGRH.readyCheckResponses.ready)
+      local notReady = table.getn(OGRH.readyCheckResponses.notReady)
+      local noResponse = table.getn(OGRH.readyCheckResponses.noResponse)
+      local total = ready + notReady + noResponse
+      
+      -- Send to raid warning
+      OGRH.SayRW(string.format("Ready Check: %d/%d ready (%d not ready, %d no response)", ready, total, notReady, noResponse))
+      
+      -- Optionally list those not ready or no response
+      if notReady > 0 then
+        local names = table.concat(OGRH.readyCheckResponses.notReady, ", ")
+        OGRH.SayRW("Not Ready: " .. names)
+      end
+      if noResponse > 0 then
+        local names = table.concat(OGRH.readyCheckResponses.noResponse, ", ")
+        OGRH.SayRW("No Response: " .. names)
       end
     end
   end
