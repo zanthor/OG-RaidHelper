@@ -71,6 +71,72 @@ function OGRH.DoReadyCheck()
   end
 end
 
+-- Announcement storage and re-announce functionality
+OGRH.storedAnnouncement = nil  -- Stores {lines = {...}, timestamp = time()}
+
+-- Store announcement lines and broadcast to raid
+function OGRH.StoreAndBroadcastAnnouncement(lines)
+  if not lines or table.getn(lines) == 0 then return end
+  
+  -- Store locally (with single pipes for color codes)
+  OGRH.storedAnnouncement = {
+    lines = lines,
+    timestamp = time()
+  }
+  
+  -- Broadcast to other addon users in raid
+  -- Use a different delimiter (semicolon) to avoid pipe confusion
+  local message = "ANNOUNCE;" .. table.concat(lines, ";")
+  SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
+end
+
+-- Helper function: Send announcement lines and store for re-announce
+-- This is the recommended way to send announcements from any module
+function OGRH.SendAnnouncement(lines, testMode)
+  if not lines or table.getn(lines) == 0 then return end
+  
+  -- Store and broadcast for re-announce functionality
+  OGRH.StoreAndBroadcastAnnouncement(lines)
+  
+  -- Send each line to chat
+  local canRW = OGRH.CanRW()
+  for _, line in ipairs(lines) do
+    if testMode then
+      -- In test mode, display to local chat frame
+      DEFAULT_CHAT_FRAME:AddMessage(OGRH.Announce("OGRH: ") .. line)
+    else
+      -- Send to raid warning or raid chat
+      if canRW then
+        SendChatMessage(line, "RAID_WARNING")
+      else
+        SendChatMessage(line, "RAID")
+      end
+    end
+  end
+end
+
+-- Re-announce stored announcement
+function OGRH.ReAnnounce()
+  if not OGRH.storedAnnouncement then
+    OGRH.Msg("No announcement to repeat.")
+    return
+  end
+  
+  -- Check if we can send raid warnings
+  local canRW = OGRH.CanRW()
+  
+  -- Send each line (no escaping needed for SendChatMessage)
+  for _, line in ipairs(OGRH.storedAnnouncement.lines) do
+    if canRW then
+      SendChatMessage(line, "RAID_WARNING")
+    else
+      SendChatMessage(line, "RAID")
+    end
+  end
+  
+  OGRH.Msg("Re-announced " .. table.getn(OGRH.storedAnnouncement.lines) .. " line(s).")
+end
+
 -- Handle incoming addon messages
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("CHAT_MSG_ADDON")
@@ -84,6 +150,35 @@ addonFrame:SetScript("OnEvent", function()
         -- Only process if we are the raid leader
         if IsRaidLeader and IsRaidLeader() == 1 then
           DoReadyCheck()
+        end
+      -- Handle announcement broadcast
+      elseif string.sub(message, 1, 9) == "ANNOUNCE;" then
+        -- Parse the announcement lines (semicolon delimited)
+        local content = string.sub(message, 10)
+        local lines = {}
+        local lastPos = 1
+        local pos = 1
+        
+        -- Split by semicolon delimiter
+        while pos <= string.len(content) do
+          local found = string.find(content, ";", pos, true)
+          if found then
+            table.insert(lines, string.sub(content, lastPos, found - 1))
+            lastPos = found + 1
+            pos = found + 1
+          else
+            -- Last segment
+            table.insert(lines, string.sub(content, lastPos))
+            break
+          end
+        end
+        
+        -- Store the announcement
+        if table.getn(lines) > 0 then
+          OGRH.storedAnnouncement = {
+            lines = lines,
+            timestamp = time()
+          }
         end
       end
     end

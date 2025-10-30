@@ -31,7 +31,7 @@ local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:
 
 -- ReAnnounce button
 local reAnnounce = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); reAnnounce:SetWidth(20); reAnnounce:SetHeight(16); reAnnounce:SetText("RA"); reAnnounce:SetPoint("RIGHT", btnMin, "LEFT", -2, 0)
-reAnnounce:Disable()  -- Disabled until first announcement
+reAnnounce:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- ReadyCheck button
 local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(20); readyCheck:SetHeight(16); readyCheck:SetText("RC"); readyCheck:SetPoint("RIGHT", reAnnounce, "LEFT", -2, 0)
@@ -129,10 +129,35 @@ btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH
 
 -- ReAnnounce button handler
 reAnnounce:SetScript("OnClick", function()
-  if OGRH.ReAnnounce then
-    OGRH.ReAnnounce()
+  local btn = arg1 or "LeftButton"
+  
+  if btn == "RightButton" then
+    -- Test stub: Stage a multi-line announcement with timestamp
+    local timestamp = date("%H:%M:%S")
+    local testLines = {
+      "|cff00ff00[Test Announcement " .. timestamp .. "]|r",
+      "|cff00ff00[Main Tank]:|r |cFFC79C6ETankPlayer|r",
+      "|cff00ff00[Near]:|r |cFFC79C6ETank1|r, |cFFC79C6ETank2|r - |cff00ff00Healers:|r |cFFFFFFFFHealer1|r |cFFFFFFFFHealer2|r",
+      "|cff00ff00[Far]:|r |cFFC79C6ETank3|r, |cFFC79C6ETank4|r - |cff00ff00Healers:|r |cFFFFFFFFHealer3|r |cFFFFFFFFHealer4|r"
+    }
+    
+    if OGRH and OGRH.StoreAndBroadcastAnnouncement then
+      OGRH.StoreAndBroadcastAnnouncement(testLines)
+      if OGRH.Msg then
+        OGRH.Msg("Test announcement staged. Left-click RA to announce.")
+      end
+    else
+      if OGRH and OGRH.Msg then
+        OGRH.Msg("StoreAndBroadcastAnnouncement not loaded.")
+      end
+    end
   else
-    OGRH.Msg("No announcement to repeat.")
+    -- Left click: Re-announce
+    if OGRH and OGRH.ReAnnounce then
+      OGRH.ReAnnounce()
+    elseif OGRH and OGRH.Msg then
+      OGRH.Msg("No announcement to repeat.")
+    end
   end
 end)
 

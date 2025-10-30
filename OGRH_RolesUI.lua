@@ -506,10 +506,6 @@ local function CreateRolesFrame()
     AddEncounterButton("BWL - Razorgore", function()
         OGRH.ShowRazorgorePanel()
     end)
-
-    AddEncounterButton("BWL - Vael Trash", function()
-        OGRH.ShowVaelTrashPanel()
-    end)
     
     AddEncounterButton("AQ40 - C'Thun", function()
         OGRH.ShowCThunPanel()
@@ -634,6 +630,9 @@ local function CreateRolesFrame()
                 print("OGRH: Announcing raid marks")
             end
             
+            -- Collect announcement lines
+            local announcementLines = {}
+            
             -- First, collect tanks by their marks
             local markGroups = {}
             for _, playerName in ipairs(ROLE_COLUMNS[1].players) do
@@ -672,7 +671,7 @@ local function CreateRolesFrame()
             end
             table.sort(sortedGroups, function(a, b) return a.mark < b.mark end)
             
-            -- Announce mark groups
+            -- Build announcement lines for each mark group
             for _, group in ipairs(sortedGroups) do
                 -- Build tank names list
                 local tankNames = {}
@@ -693,12 +692,12 @@ local function CreateRolesFrame()
                     msg = msg .. table.concat(healerList, " ")
                 end
                 
-                -- In test mode, just print to chat. In normal mode, send raid warning
-                if OGRH.testMode then
-                    DEFAULT_CHAT_FRAME:AddMessage(OGRH.Announce("OGRH: ") .. msg)
-                else
-                    SendChatMessage(msg, "RAID_WARNING")
-                end
+                table.insert(announcementLines, msg)
+            end
+            
+            -- Use the helper function to send and store announcements
+            if OGRH.SendAnnouncement then
+                OGRH.SendAnnouncement(announcementLines, OGRH.testMode)
             end
             
         else
@@ -1131,12 +1130,11 @@ local function CreateRolesFrame()
     end
 
     -- Create encounter panels
-    local razorgorePanel, vaelTrashPanel, cthunPanel
+    local razorgorePanel, cthunPanel
     
     -- Create BWL panels
     if OGRH.BWL then
         razorgorePanel = OGRH.BWL.CreateRazorgorePanel(frame, encounterBtn)
-        vaelTrashPanel = OGRH.BWL.CreateVaelTrashPanel(frame, encounterBtn)
     else
         print("|cFFFFFF00OGRH:|r Error: BWL module not found!")
     end
@@ -1150,7 +1148,6 @@ local function CreateRolesFrame()
 
     local function HideAllPanels()
         if razorgorePanel then razorgorePanel:Hide() end
-        if vaelTrashPanel then vaelTrashPanel:Hide() end
         if cthunPanel then cthunPanel:Hide() end
     end
 
@@ -1160,15 +1157,6 @@ local function CreateRolesFrame()
             razorgorePanel:Show()
         else
             print("|cFFFFFF00OGRH:|r Error: Razorgore panel could not be created!")
-        end
-    end
-
-    OGRH.ShowVaelTrashPanel = function()
-        HideAllPanels()
-        if vaelTrashPanel then
-            vaelTrashPanel:Show()
-        else
-            print("|cFFFFFF00OGRH:|r Error: Vael Trash panel could not be created!")
         end
     end
 
