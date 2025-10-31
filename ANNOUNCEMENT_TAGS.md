@@ -49,15 +49,17 @@ Gnuzmas has {Star}
 
 ## Raid Mark Symbols
 
-When using `[Rx.My]` tags, the following symbols are returned:
-- `{Star}` - Yellow Star (1)
-- `{Circle}` - Orange Circle (2)
-- `{Diamond}` - Purple Diamond (3)
-- `{Triangle}` - Green Triangle (4)
-- `{Moon}` - Silver Moon (5)
-- `{Square}` - Blue Square (6)
-- `{Cross}` - Red Cross (7)
-- `{Skull}` - White Skull (8)
+When using `[Rx.My]` tags, the following raid icon symbols are inserted into chat:
+- `{rt1}` - Yellow Star
+- `{rt2}` - Orange Circle
+- `{rt3}` - Purple Diamond
+- `{rt4}` - Green Triangle
+- `{rt5}` - Silver Moon
+- `{rt6}` - Blue Square
+- `{rt7}` - Red Cross
+- `{rt8}` - White Skull
+
+These will display as the actual raid marker icons in WoW chat.
 
 ## Complete Example
 
@@ -72,9 +74,9 @@ Line 4: Kill priority: [R3.M1] then [R3.M2]
 **Actual Output (when Announce is clicked):**
 ```
 Main Tank: Tankmedady
-Off Tanks: Gnuzmas {Star}, Zanthor {Circle}
+Off Tanks: Gnuzmas {rt1}, Zanthor {rt2}
 Healers: Fatherkaii and Lightbringer
-Kill priority: {Skull} then {Cross}
+Kill priority: {rt8} then {rt7}
 ```
 
 ## Role Numbering
@@ -103,8 +105,8 @@ Wrap text in square brackets `[content with [tags]]`. The block will:
 ```
 
 **Outputs:**
-- If only R3.P1 assigned: `Near Side Tanks {Cross} Tankmedady healed by Gnuzmas`
-- If both R3.P1 and R3.P2 assigned: `Near Side Tanks {Cross} Tankmedady, {Skull} Zanthor healed by Gnuzmas`
+- If only R3.P1 assigned: `Near Side Tanks {rt7} Tankmedady healed by Gnuzmas`
+- If both R3.P1 and R3.P2 assigned: `Near Side Tanks {rt7} Tankmedady, {rt8} Zanthor healed by Gnuzmas`
 
 ### AND Logic (& Prefix)
 
@@ -119,8 +121,8 @@ Start the block with `&` to use AND logic `[&content with [tags]]`. The block wi
 ```
 
 **Outputs:**
-- If only R3.P1 assigned: `Near Side Tanks {Cross} Tankmedady healed by Gnuzmas` (entire `, [R3.M2] [R3.P2]` block removed)
-- If both R3.P1 and R3.P2 assigned: `Near Side Tanks {Cross} Tankmedady, {Skull} Zanthor healed by Gnuzmas`
+- If only R3.P1 assigned: `Near Side Tanks {rt7} Tankmedady healed by Gnuzmas` (entire `, [R3.M2] [R3.P2]` block removed)
+- If both R3.P1 and R3.P2 assigned: `Near Side Tanks {rt7} Tankmedady, {rt8} Zanthor healed by Gnuzmas`
 
 ### Nested Conditionals
 

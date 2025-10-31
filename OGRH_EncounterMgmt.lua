@@ -874,17 +874,16 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         if not tagStart then break end
         
         local roleIndex = tonumber(roleNum)
-        local replacement = "[R" .. roleNum .. ".T]"
-        local color = OGRH.COLOR.ROLE
-        local isValid = false
         
         if roles and roles[roleIndex] then
-          replacement = roles[roleIndex].name or "Unknown"
-          color = OGRH.COLOR.HEADER
-          isValid = true
+          local replacement = roles[roleIndex].name or "Unknown"
+          local color = OGRH.COLOR.HEADER
+          AddReplacement(tagStart, tagEnd, replacement, color, true)
+        else
+          -- Invalid tag - replace with empty string
+          AddReplacement(tagStart, tagEnd, "", "", false)
         end
         
-        AddReplacement(tagStart, tagEnd, replacement, color, isValid)
         pos = tagEnd + 1
       end
       
@@ -896,23 +895,22 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         
         local roleIndex = tonumber(roleNum)
         local playerIndex = tonumber(playerNum)
-        local replacement = "[R" .. roleNum .. ".P" .. playerNum .. "]"
-        local color = OGRH.COLOR.ROLE
-        local isValid = false
         
         if assignments and assignments[roleIndex] and assignments[roleIndex][playerIndex] then
           local playerName = assignments[roleIndex][playerIndex]
           local playerClass = GetPlayerClass(playerName)
+          local color = OGRH.COLOR.ROLE
           
           if playerClass and OGRH.COLOR.CLASS[string.upper(playerClass)] then
             color = OGRH.COLOR.CLASS[string.upper(playerClass)]
           end
           
-          replacement = playerName
-          isValid = true
+          AddReplacement(tagStart, tagEnd, playerName, color, true)
+        else
+          -- Invalid tag - replace with empty string
+          AddReplacement(tagStart, tagEnd, "", "", false)
         end
         
-        AddReplacement(tagStart, tagEnd, replacement, color, isValid)
         pos = tagEnd + 1
       end
       
@@ -924,9 +922,6 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         
         local roleIndex = tonumber(roleNum)
         local playerIndex = tonumber(playerNum)
-        local replacement = "[R" .. roleNum .. ".M" .. playerNum .. "]"
-        local color = OGRH.COLOR.ROLE
-        local isValid = false
         
         -- Raid mark names
         local markNames = {
@@ -943,13 +938,17 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         if raidMarks and raidMarks[roleIndex] and raidMarks[roleIndex][playerIndex] then
           local markIndex = raidMarks[roleIndex][playerIndex]
           if markIndex ~= 0 and markNames[markIndex] then
-            replacement = markNames[markIndex]
-            color = OGRH.COLOR.MARK[markIndex] or OGRH.COLOR.ROLE
-            isValid = true
+            local color = OGRH.COLOR.MARK[markIndex] or OGRH.COLOR.ROLE
+            AddReplacement(tagStart, tagEnd, markNames[markIndex], color, true)
+          else
+            -- Mark is 0 (none) - replace with empty string
+            AddReplacement(tagStart, tagEnd, "", "", false)
           end
+        else
+          -- Invalid tag - replace with empty string
+          AddReplacement(tagStart, tagEnd, "", "", false)
         end
         
-        AddReplacement(tagStart, tagEnd, replacement, color, isValid)
         pos = tagEnd + 1
       end
       
@@ -960,7 +959,14 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       for _, repl in ipairs(replacements) do
         local before = string.sub(result, 1, repl.startPos - 1)
         local after = string.sub(result, repl.endPos + 1)
-        result = before .. repl.color .. repl.text .. OGRH.COLOR.RESET .. after
+        
+        if repl.text == "" then
+          -- Empty replacement - just remove the tag
+          result = before .. after
+        else
+          -- Non-empty replacement - add with color codes
+          result = before .. repl.color .. repl.text .. OGRH.COLOR.RESET .. after
+        end
       end
       
       -- Color any plain text with ROLE color
