@@ -1,3 +1,30 @@
+-- OG-RaidHelper Roles UI
+-- Author: Will + ChatGPT
+-- Version: 1.15.0
+
+--[[
+  SIMPLIFIED ROLES UI
+  
+  This UI provides basic role column management with drag/drop functionality.
+  Players are displayed alphabetically within each role column.
+  
+  REMOVED FEATURES (functionality exists elsewhere):
+  - Encounter button: Use OGRH.ShowEncounterManagementWindow() directly
+  - Marks button: Mark management integrated into Encounter system
+  - Assignments button: Assignment system integrated into Encounter system
+  - Test button: Test mode removed
+  - Raid target icons: Marking handled by Encounter system
+  - Tank assignment icons: Assignment handled by Encounter system
+  - Up/Down arrows: Manual ordering replaced with alphabetical sort
+  
+  ACTIVE FEATURES:
+  - Poll button: Start/cancel role polls (left/right click)
+  - Drag/drop: Move players between role columns
+  - Alphabetical sorting: Players automatically sorted A-Z in each column
+  - Class colors: Player names colored by class
+  - Role persistence: Assigned roles saved in OGRH_SV.roles
+--]]
+
 -- Local Variables
 local _G = getfenv(0)
 local OGRH = _G.OGRH
@@ -33,25 +60,8 @@ local function SetRaidTargetIconTexture(texture, iconId)
 end
 
 -- Role columns
--- Storage for player raid target icons
+-- Storage for player raid target icons (kept for compatibility with other modules)
 local PLAYER_RAID_TARGETS = {}
-
--- Global test mode state for module
-OGRH.testMode = false
-
--- Function to get player mark (checks PLAYER_RAID_TARGETS in test mode, OGRH_SV otherwise)
-function OGRH.GetPlayerMark(playerName)
-    -- First check PLAYER_RAID_TARGETS (works in both test and normal mode)
-    local mark = PLAYER_RAID_TARGETS[playerName]
-    if mark then
-        return mark
-    end
-    -- Fall back to saved variables (only populated in normal mode)
-    if OGRH_SV and OGRH_SV.raidTargets then
-        return OGRH_SV.raidTargets[playerName]
-    end
-    return nil
-end
 
 local ROLE_COLUMNS = {
     {name = "Tanks", players = {}},
@@ -88,219 +98,11 @@ local function CreateRolesFrame()
                     playerFrame:SetHeight(20)
                     playerFrame:SetPoint("TOPLEFT", 0, -yOffset)
                     
-                    -- Raid Target Icon
-                    local targetIconBtn = CreateFrame("Button", nil, playerFrame)
-                    targetIconBtn:SetWidth(16)
-                    targetIconBtn:SetHeight(16)
-                    targetIconBtn:SetPoint("LEFT", 0, 0)
-                    
-                    -- Create background for empty state
-                    local background = targetIconBtn:CreateTexture(nil, "BACKGROUND")
-                    background:SetAllPoints(targetIconBtn)
-                    background:SetTexture("Interface\\Buttons\\WHITE8X8")
-                    background:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-                    
-                    -- Create icon texture
-                    local targetIconTexture = targetIconBtn:CreateTexture(nil, "ARTWORK")
-                    targetIconTexture:SetAllPoints(targetIconBtn)
-                    
-                    -- Create text for "None" state
-                    local noneText = targetIconBtn:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-                    noneText:SetPoint("CENTER", targetIconBtn, "CENTER", 0, 0)
-                    noneText:SetText("O")
-                    
-                    -- Function to update icon display
-                    local function UpdateIconDisplay(iconId)
-                        if iconId then
-                            targetIconTexture:Show()
-                            noneText:Hide()
-                            SetRaidTargetIconTexture(targetIconTexture, iconId)
-                        else
-                            targetIconTexture:Hide()
-                            noneText:Show()
-                        end
-                        
-                        -- Save state if it changed
-                        if PLAYER_RAID_TARGETS[playerName] ~= iconId then
-                            PLAYER_RAID_TARGETS[playerName] = iconId
-                            if not OGRH.testMode then
-                                -- Only save to SavedVariables and set raid target when not in test mode
-                                if not OGRH_SV then OGRH_SV = {} end
-                                if not OGRH_SV.raidTargets then OGRH_SV.raidTargets = {} end
-                                OGRH_SV.raidTargets[playerName] = iconId
-                                -- Try to find unit in raid and set mark
-                                for i = 1, GetNumRaidMembers() do
-                                    if GetRaidRosterInfo(i) == playerName then
-                                        SetRaidTarget("raid"..i, iconId or 0)
-                                        break
-                                    end
-                                end
-                            end
-                        end
-                    end
-                    
-                    -- Set initial state
-                    UpdateIconDisplay(PLAYER_RAID_TARGETS[playerName])
-                    
-                    -- Handle clicks to cycle through icons
-                    targetIconBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-                    targetIconBtn:SetScript("OnClick", function()
-                        local button = arg1 or "LeftButton"
-                        --print("OGRH Debug: Icon clicked with " .. button)
-                        local currentIcon = PLAYER_RAID_TARGETS[playerName]
-                        
-                        if button == "LeftButton" then
-                            -- Cycle forward (nil->8->7->...->1)
-                            if not currentIcon then
-                                UpdateIconDisplay(8)
-                            elseif currentIcon == 1 then
-                                UpdateIconDisplay(nil)
-                            else
-                                UpdateIconDisplay(currentIcon - 1)
-                            end
-                        elseif button == "RightButton" then
-                            -- Cycle backward (1->2->...->8->nil)
-                            if not currentIcon then
-                                UpdateIconDisplay(1)
-                            elseif currentIcon == 8 then
-                                UpdateIconDisplay(nil)
-                            else
-                                UpdateIconDisplay(currentIcon + 1)
-                            end
-                        end
-                    end)
-                    
-                    -- Up button
-                    local upBtn = CreateFrame("Button", nil, playerFrame)
-                    upBtn:SetWidth(25)
-                    upBtn:SetHeight(25)
-                    upBtn:SetPoint("LEFT", targetIconBtn, "RIGHT", 2, 0)
-                    upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-                    upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
-                    upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-                    
-                    local currentIndex = playerIndex
-                    local currentColumn = column  -- Store column reference for closure
-                    upBtn:SetScript("OnClick", function()
-                        if currentIndex > 1 then
-                            local temp = currentColumn.players[currentIndex]
-                            currentColumn.players[currentIndex] = currentColumn.players[currentIndex-1]
-                            currentColumn.players[currentIndex-1] = temp
-                            RefreshColumnDisplays()
-                        end
-                    end)
-                    
-                    -- Down button
-                    local downBtn = CreateFrame("Button", nil, playerFrame)
-                    downBtn:SetWidth(25)
-                    downBtn:SetHeight(25)
-                    downBtn:SetPoint("LEFT", upBtn, "RIGHT", -8, 0)
-                    downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-                    downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
-                    downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
-                    
-                    downBtn:SetScript("OnClick", function()
-                        if currentIndex < table.getn(currentColumn.players) then
-                            local temp = currentColumn.players[currentIndex]
-                            currentColumn.players[currentIndex] = currentColumn.players[currentIndex+1]
-                            currentColumn.players[currentIndex+1] = temp
-                            RefreshColumnDisplays()
-                        end
-                    end)
-                    
-                    -- Player assignment button (for all roles)
-                    local assignBtn = CreateFrame("Button", nil, playerFrame)
-                    assignBtn:SetWidth(16)
-                    assignBtn:SetHeight(16)
-                    assignBtn:SetPoint("LEFT", downBtn, "RIGHT", 2, 0)
-                    
-                    -- Create background for empty state
-                    local assignBackground = assignBtn:CreateTexture(nil, "BACKGROUND")
-                    assignBackground:SetAllPoints(assignBtn)
-                    assignBackground:SetTexture("Interface\\Buttons\\WHITE8X8")
-                    assignBackground:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-                    
-                    -- Create icon texture for raid icons (1-8)
-                    local assignTexture = assignBtn:CreateTexture(nil, "ARTWORK")
-                    assignTexture:SetAllPoints(assignBtn)
-                    
-                    -- Create text for "None" state and numbers (0-9)
-                    local assignText = assignBtn:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-                    assignText:SetPoint("CENTER", assignBtn, "CENTER", 0, 0)
-                    assignText:SetText("O")
-                    
-                    -- Function to update assignment display
-                    local function UpdateAssignDisplay(assignData)
-                        if assignData and assignData.type == "icon" and assignData.value >= 1 and assignData.value <= 8 then
-                            -- Display as raid icon
-                            assignTexture:Show()
-                            assignText:Hide()
-                            SetRaidTargetIconTexture(assignTexture, assignData.value)
-                        elseif assignData and assignData.type == "number" and assignData.value >= 0 and assignData.value <= 9 then
-                            -- Display as number (0-9)
-                            assignTexture:Hide()
-                            assignText:Show()
-                            assignText:SetText(tostring(assignData.value))
-                        else
-                            -- Display as empty/none
-                            assignTexture:Hide()
-                            assignText:Show()
-                            assignText:SetText("O")
-                        end
-                        
-                        -- Save state (always save, even in test mode)
-                        OGRH.SetPlayerAssignment(playerName, assignData)
-                    end
-                    
-                    -- Set initial state
-                    local initialValue = OGRH.GetPlayerAssignment(playerName)
-                    UpdateAssignDisplay(initialValue)
-                    
-                    -- Handle clicks to cycle through values
-                    -- Cycle order: nil -> {icon,8} -> {icon,7} -> ... -> {icon,1} -> {num,9} -> {num,8} -> ... -> {num,0} -> nil
-                    assignBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-                    assignBtn:SetScript("OnClick", function()
-                        local button = arg1 or "LeftButton"
-                        local currentValue = OGRH.GetPlayerAssignment(playerName)
-                        
-                        if button == "LeftButton" then
-                            -- Cycle forward (nil->{icon,8}->{icon,7}->...{icon,1}->{num,9}->{num,8}->...{num,0}->nil)
-                            if not currentValue then
-                                UpdateAssignDisplay({type = "icon", value = 8})
-                            elseif currentValue.type == "icon" and currentValue.value == 1 then
-                                UpdateAssignDisplay({type = "number", value = 9})
-                            elseif currentValue.type == "icon" and currentValue.value > 1 then
-                                UpdateAssignDisplay({type = "icon", value = currentValue.value - 1})
-                            elseif currentValue.type == "number" and currentValue.value == 0 then
-                                UpdateAssignDisplay(nil)
-                            elseif currentValue.type == "number" and currentValue.value > 0 then
-                                UpdateAssignDisplay({type = "number", value = currentValue.value - 1})
-                            else
-                                UpdateAssignDisplay(nil)
-                            end
-                        elseif button == "RightButton" then
-                            -- Cycle backward (nil->{num,0}->{num,1}->...{num,9}->{icon,1}->{icon,2}->...{icon,8}->nil)
-                            if not currentValue then
-                                UpdateAssignDisplay({type = "number", value = 0})
-                            elseif currentValue.type == "number" and currentValue.value == 9 then
-                                UpdateAssignDisplay({type = "icon", value = 1})
-                            elseif currentValue.type == "number" and currentValue.value < 9 then
-                                UpdateAssignDisplay({type = "number", value = currentValue.value + 1})
-                            elseif currentValue.type == "icon" and currentValue.value == 8 then
-                                UpdateAssignDisplay(nil)
-                            elseif currentValue.type == "icon" and currentValue.value < 8 then
-                                UpdateAssignDisplay({type = "icon", value = currentValue.value + 1})
-                            else
-                                UpdateAssignDisplay(nil)
-                            end
-                        end
-                    end)
-                    
                     -- Player name text with class color and drag functionality
                     local nameButton = CreateFrame("Button", nil, playerFrame)
-                    nameButton:SetWidth(columnWidth - 100)  -- Adjust width for all columns now have assignBtn
+                    nameButton:SetWidth(columnWidth - 40)
                     nameButton:SetHeight(20)
-                    nameButton:SetPoint("LEFT", assignBtn, "RIGHT", 4, 0)
+                    nameButton:SetPoint("LEFT", 0, 0)
                     
                     -- Make it look like text but clickable
                     local nameText = nameButton:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -378,28 +180,6 @@ local function CreateRolesFrame()
                                     
                                     OGRH_SV.roles[draggedName] = newRole
                                     
-                                    -- Add to Pool Defaults if not already there
-                                    if not OGRH_SV.poolDefaults then
-                                        OGRH_SV.poolDefaults = {}
-                                    end
-                                    if not OGRH_SV.poolDefaults[colIndex] then
-                                        OGRH_SV.poolDefaults[colIndex] = {}
-                                    end
-                                    
-                                    -- Check if player is already in pool defaults
-                                    local alreadyInPool = false
-                                    for i = 1, table.getn(OGRH_SV.poolDefaults[colIndex]) do
-                                        if OGRH_SV.poolDefaults[colIndex][i] == draggedName then
-                                            alreadyInPool = true
-                                            break
-                                        end
-                                    end
-                                    
-                                    -- Add to pool defaults if not already there
-                                    if not alreadyInPool then
-                                        table.insert(OGRH_SV.poolDefaults[colIndex], draggedName)
-                                    end
-                                    
                                     -- Refresh display
                                     RefreshColumnDisplays()
                                 end
@@ -457,16 +237,16 @@ local function CreateRolesFrame()
     frame:EnableMouse(true)
     frame:SetMovable(true)
     
-    -- Background (matching MainUI border style)
+    -- Background
     frame:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         tile = true,
         tileSize = 16,
-        edgeSize = 12,
+        edgeSize = 16,
         insets = {left = 4, right = 4, top = 4, bottom = 4}
     })
-    frame:SetBackdropColor(0, 0, 0, 0.85)
+    frame:SetBackdropColor(0, 0, 0, 0.9)
     
     -- Make frame draggable
     frame:SetScript("OnMouseDown", function()
@@ -491,136 +271,6 @@ local function CreateRolesFrame()
     pollBtn:SetPoint("TOPLEFT", 20, -20)
     pollBtn:SetText("Poll")
     
-    -- Create Encounters button and menu
-    local encounterBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    encounterBtn:SetWidth(80)
-    encounterBtn:SetHeight(24)
-    encounterBtn:SetPoint("LEFT", pollBtn, "RIGHT", 5, 0)
-    encounterBtn:SetText("Encounter")
-    
-    -- Create encounter menu
-    local encounterMenu = CreateFrame("Frame", "OGRH_EncounterMenu", UIParent)
-    encounterMenu:SetWidth(140)
-    encounterMenu:SetHeight(100)
-    encounterMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-    encounterMenu:SetBackdrop({
-        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left = 4, right = 4, top = 4, bottom = 4}
-    })
-    encounterMenu:SetBackdropColor(0, 0, 0, 0.95)
-    encounterMenu:Hide()
-
-    -- Track expanded raids
-    local expandedRaids = {}
-    
-    -- Store all menu buttons for cleanup
-    local menuButtons = {}
-    
-    -- Raid structure: {name, encounters[]}
-    local raids = {
-        {
-            name = "BWL",
-            encounters = {
-                {text = "Razorgore", handler = function() OGRH.ShowRazorgorePanel() end},
-                {text = "Firemaw", handler = function() OGRH.ShowFiremawPanel() end},
-                {text = "Nefarion", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: BWL - Nefarion") end}
-            }
-        },
-        {
-            name = "AQ40",
-            encounters = {
-                {text = "Skeram", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Skeram") end},
-                {text = "Bug Trio", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Bug Trio") end},
-                {text = "Twins", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: AQ40 - Twins") end},
-                {text = "C'Thun", handler = function() OGRH.ShowCThunPanel() end}
-            }
-        },
-        {
-            name = "Naxx",
-            encounters = {
-                {text = "Gothik", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Gothik") end},
-                {text = "4HM", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - 4HM") end},
-                {text = "Kel'Thuzad", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: Naxx - Kel'Thuzad") end}
-            }
-        },
-        {
-            name = "K40",
-            encounters = {
-                {text = "Coming Soon", handler = function() DEFAULT_CHAT_FRAME:AddMessage("Coming soon: K40") end}
-            }
-        }
-    }
-    
-    -- Function to rebuild menu
-    local function RebuildEncounterMenu()
-        -- Clear existing buttons
-        for _, btn in ipairs(menuButtons) do
-            btn:Hide()
-            btn:SetParent(nil)
-        end
-        menuButtons = {}
-        
-        local yOffset = -5
-        
-        for _, raid in ipairs(raids) do
-            local isExpanded = expandedRaids[raid.name]
-            
-            -- Create raid header button
-            local raidBtn = CreateFrame("Button", nil, encounterMenu, "UIPanelButtonTemplate")
-            raidBtn:SetWidth(130)
-            raidBtn:SetHeight(20)
-            raidBtn:SetPoint("TOPLEFT", encounterMenu, "TOPLEFT", 5, yOffset)
-            
-            local expandIcon = isExpanded and "[-] " or "[+] "
-            raidBtn:SetText(expandIcon .. raid.name)
-            
-            -- Capture raid.name in local variable for closure
-            local raidName = raid.name
-            raidBtn:SetScript("OnClick", function()
-                expandedRaids[raidName] = not expandedRaids[raidName]
-                RebuildEncounterMenu()
-            end)
-            table.insert(menuButtons, raidBtn)
-            yOffset = yOffset - 22
-            
-            -- If expanded, show encounters
-            if isExpanded then
-                for _, encounter in ipairs(raid.encounters) do
-                    local encBtn = CreateFrame("Button", nil, encounterMenu, "UIPanelButtonTemplate")
-                    encBtn:SetWidth(120)
-                    encBtn:SetHeight(18)
-                    encBtn:SetPoint("TOPLEFT", encounterMenu, "TOPLEFT", 15, yOffset)
-                    encBtn:SetText(encounter.text)
-                    
-                    -- Capture handler in local variable for closure
-                    local encounterHandler = encounter.handler
-                    encBtn:SetScript("OnClick", function()
-                        encounterMenu:Hide()
-                        encounterHandler()
-                    end)
-                    table.insert(menuButtons, encBtn)
-                    yOffset = yOffset - 20
-                end
-            end
-        end
-        
-        -- Update menu height
-        local totalHeight = math.abs(yOffset) + 10
-        encounterMenu:SetHeight(totalHeight)
-    end
-
-    encounterBtn:SetScript("OnClick", function()
-        if encounterMenu:IsVisible() then
-            encounterMenu:Hide()
-        else
-            RebuildEncounterMenu()
-            encounterMenu:ClearAllPoints()
-            encounterMenu:SetPoint("TOPLEFT", encounterBtn, "BOTTOMLEFT", 0, -2)
-            encounterMenu:Show()
-        end
-    end)
     pollBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     local function UpdatePollButtonText()
         -- Double check to ensure OGRH.Poll exists
@@ -674,183 +324,6 @@ local function CreateRolesFrame()
     -- Set initial button text
     UpdatePollButtonText()
     
-    -- Add Marks button below Poll
-    local marksBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    -- Helper function to get colored mark name - make it available to other modules
-    OGRH.GetColoredMarkName = function(markId)
-        local markColors = {
-            [1] = "ffff00", -- Star (Yellow)
-            [2] = "ff8000", -- Circle (Orange)
-            [3] = "ff00ff", -- Diamond (Purple)
-            [4] = "00ff00", -- Triangle (Green)
-            [5] = "ffffff", -- Moon (White)
-            [6] = "00ffff", -- Square (Blue)
-            [7] = "ff0000", -- Cross (Red)
-            [8] = "ffffff", -- Skull (White)
-        }
-        local markNames = {
-            [1] = "Star",
-            [2] = "Circle",
-            [3] = "Diamond",
-            [4] = "Triangle",
-            [5] = "Moon",
-            [6] = "Square",
-            [7] = "Cross",
-            [8] = "Skull"
-        }
-        if markId and markNames[markId] then
-            return "|cff" .. markColors[markId] .. markNames[markId] .. "|r"
-        end
-        return "None"
-    end
-    -- Create a local reference for use in this file
-    local GetColoredMarkName = OGRH.GetColoredMarkName
-
-    marksBtn:SetWidth(80)
-    marksBtn:SetHeight(24)
-    marksBtn:SetPoint("TOPLEFT", pollBtn, "BOTTOMLEFT", 0, -5)  -- 5 pixels gap below Poll button
-    marksBtn:SetText("Marks")
-    marksBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    marksBtn:SetScript("OnClick", function()
-        local button = arg1 or "LeftButton"
-        if button == "LeftButton" then
-            -- Announce all marks
-            if OGRH.testMode then
-                print("|cFFFFFF00OGRH:|r Announcing test raid marks")
-            else
-                print("OGRH: Announcing raid marks")
-            end
-            
-            -- Collect announcement lines
-            local announcementLines = {}
-            
-            -- First, collect tanks by their marks
-            local markGroups = {}
-            for _, playerName in ipairs(ROLE_COLUMNS[1].players) do
-                local markId = PLAYER_RAID_TARGETS[playerName]
-                if markId then
-                    if not markGroups[markId] then
-                        markGroups[markId] = {
-                            tanks = {},
-                            healers = {},
-                            mark = markId
-                        }
-                    end
-                    table.insert(markGroups[markId].tanks, {
-                        name = playerName,
-                        class = OGRH.Roles.nameClass[playerName]
-                    })
-                end
-            end
-            
-            -- Then collect healers and their assignments
-            for _, playerName in ipairs(ROLE_COLUMNS[2].players) do
-                local assignData = OGRH.GetPlayerAssignment(playerName)
-                local tankMarkId = assignData and assignData.type == "icon" and assignData.value
-                if tankMarkId and markGroups[tankMarkId] then
-                    table.insert(markGroups[tankMarkId].healers, {
-                        name = playerName,
-                        class = OGRH.Roles.nameClass[playerName]
-                    })
-                end
-            end
-            
-            -- Sort mark groups by mark ID
-            local sortedGroups = {}
-            for _, group in pairs(markGroups) do
-                table.insert(sortedGroups, group)
-            end
-            table.sort(sortedGroups, function(a, b) return a.mark < b.mark end)
-            
-            -- Build announcement lines for each mark group
-            for _, group in ipairs(sortedGroups) do
-                -- Build tank names list
-                local tankNames = {}
-                for _, tank in ipairs(group.tanks) do
-                    table.insert(tankNames, OGRH.ClassColorHex(tank.class) .. tank.name .. "|r")
-                end
-                
-                -- Format: Tank: Player Healer(s): Player
-                local msg = OGRH.Header("Tank: ") .. table.concat(tankNames, ", ") .. " " .. GetColoredMarkName(group.mark)
-                
-                if table.getn(group.healers) > 0 then
-                    local healerList = {}
-                    for _, healer in ipairs(group.healers) do
-                        table.insert(healerList, OGRH.ClassColorHex(healer.class) .. healer.name .. "|r")
-                    end
-                    
-                    msg = msg .. OGRH.Header("  ->  ") .. OGRH.Role(table.getn(group.healers) == 1 and "Healer: " or "Healers: ")
-                    msg = msg .. table.concat(healerList, " ")
-                end
-                
-                table.insert(announcementLines, msg)
-            end
-            
-            -- Use the helper function to send and store announcements
-            if OGRH.SendAnnouncement then
-                OGRH.SendAnnouncement(announcementLines, OGRH.testMode)
-            end
-            
-        else
-            -- Right click: Clear all marks and assignments
-            print("OGRH: Clearing all marks and assignments")
-            
-            -- Clear saved mark assignments
-            PLAYER_RAID_TARGETS = {}
-            
-            -- Only clear raid marks and saved variables if not in test mode
-            if not OGRH.testMode then
-                -- Clear actual raid marks
-                local numRaidMembers = GetNumRaidMembers()
-                for i = 1, numRaidMembers do
-                    SetRaidTarget("raid" .. i, 0)
-                end
-                
-                -- Clear saved assignments
-                if OGRH_SV then
-                    OGRH_SV.raidTargets = {}
-                    OGRH_SV.playerAssignments = {}
-                end
-            end
-            
-            -- Refresh the UI
-            RefreshColumnDisplays()
-            print("OGRH: All marks and assignments cleared")
-        end
-    end)
-    
-    -- Add Assignments button to the right of Marks and below Encounter
-    local assignmentsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    assignmentsBtn:SetWidth(80)
-    assignmentsBtn:SetHeight(24)
-    assignmentsBtn:SetPoint("LEFT", marksBtn, "RIGHT", 5, 0)
-    assignmentsBtn:SetText("Assignments")
-    assignmentsBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    assignmentsBtn:SetScript("OnClick", function()
-        local button = arg1 or "LeftButton"
-        if button == "LeftButton" then
-            -- Left-click functionality to be added
-            print("|cFFFFFF00OGRH:|r Assignments announce functionality coming soon")
-        else
-            -- Right-click: Clear all assignments
-            print("|cFFFFFF00OGRH:|r Clearing all player assignments")
-            
-            if not OGRH.testMode then
-                -- Clear saved assignments in SavedVariables
-                if OGRH_SV then
-                    OGRH_SV.playerAssignments = {}
-                end
-            else
-                -- In test mode, still clear the assignments
-                OGRH.ClearAllAssignments()
-            end
-            
-            -- Refresh the UI to show cleared assignments
-            RefreshColumnDisplays()
-            print("|cFFFFFF00OGRH:|r All player assignments cleared")
-        end
-    end)
-    
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     closeBtn:SetWidth(80)
     closeBtn:SetHeight(24)
@@ -860,219 +333,6 @@ local function CreateRolesFrame()
         frame:Hide()
     end)
 
-    -- Add Test button and menu
-    local testBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    testBtn:SetWidth(80)
-    testBtn:SetHeight(24)
-    testBtn:SetPoint("TOPLEFT", closeBtn, "BOTTOMLEFT", 0, -5)
-    testBtn:SetText("Test")
-    
-    -- Create test menu
-    local testMenu = CreateFrame("Frame", "OGRH_TestMenu", UIParent)
-    testMenu:SetWidth(80)
-    testMenu:SetHeight(85)
-    testMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-    testMenu:SetBackdrop({
-        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left = 4, right = 4, top = 4, bottom = 4}
-    })
-    testMenu:SetBackdropColor(0, 0, 0, 0.95)
-    testMenu:Hide()
-
-    -- Create test menu buttons
-    local lastButton = nil
-    local function CreateTestButton(text, size)
-        local btn = CreateFrame("Button", nil, testMenu, "UIPanelButtonTemplate")
-        btn:SetWidth(70)
-        btn:SetHeight(20)
-        if text == "15" then
-            btn:SetPoint("TOPLEFT", testMenu, "TOPLEFT", 5, -5)
-        else
-            btn:SetPoint("TOPLEFT", lastButton, "BOTTOMLEFT", 0, -2)
-        end
-        lastButton = btn
-        btn:SetText(text)
-        btn:SetScript("OnClick", function()
-            OGRH.testMode = true
-            testMenu:Hide()
-            
-            -- Clear current lists
-            for i = 1, table.getn(ROLE_COLUMNS) do
-                ROLE_COLUMNS[i].players = {}
-            end
-            
-            -- Test data setup with class role distribution
-            local classRoles = {
-                WARRIOR = {
-                    roles = {"TANKS", "MELEE"},
-                    weights = {0.4, 0.6}  -- 40% tanks, 60% melee
-                },
-                PRIEST = {
-                    roles = {"HEALERS", "RANGED"},
-                    weights = {0.8, 0.2}  -- 80% healers, 20% ranged
-                },
-                DRUID = {
-                    roles = {"TANKS", "HEALERS", "RANGED"},
-                    weights = {0.2, 0.5, 0.3}  -- 20% tanks, 50% healers, 30% ranged
-                },
-                SHAMAN = {
-                    roles = {"HEALERS", "MELEE", "RANGED"},
-                    weights = {0.5, 0.3, 0.2}  -- 50% healers, 30% melee, 20% ranged
-                },
-                ROGUE = {
-                    roles = {"MELEE"},
-                    weights = {1.0}  -- 100% melee
-                },
-                WARLOCK = {
-                    roles = {"RANGED"},
-                    weights = {1.0}  -- 100% ranged
-                },
-                MAGE = {
-                    roles = {"RANGED"},
-                    weights = {1.0}  -- 100% ranged
-                },
-                HUNTER = {
-                    roles = {"RANGED", "MELEE"},
-                    weights = {0.8, 0.2}  -- 80% ranged, 20% melee
-                },
-                PALADIN = {
-                    roles = {"TANKS", "HEALERS", "MELEE"},
-                    weights = {0.2, 0.5, 0.3}  -- 20% tanks, 50% healers, 30% melee
-                }
-            }
-
-            -- Define class list for random selection
-            local classList = {
-                "WARRIOR", "WARRIOR", "WARRIOR",  -- 15%
-                "PRIEST", "PRIEST",               -- 10%
-                "DRUID", "DRUID",                -- 10%
-                "SHAMAN", "SHAMAN",              -- 10%
-                "ROGUE", "ROGUE",                -- 10%
-                "WARLOCK", "WARLOCK",            -- 10%
-                "MAGE", "MAGE", "MAGE",          -- 15%
-                "HUNTER", "HUNTER",              -- 10%
-                "PALADIN", "PALADIN"             -- 10%
-            }
-
-            local testPlayers = {}
-            
-            -- Set required numbers based on raid size
-            local requiredTanks = 2  -- default for 15
-            local requiredHealers = 3 -- default for 15
-            if size == 25 then
-                requiredTanks = 4
-                requiredHealers = 6
-            elseif size == 40 then
-                requiredTanks = 8
-                requiredHealers = 12
-            end
-
-            local tankCount = 0
-            local healerCount = 0
-            local testNames = {}
-            local tankCapableClasses = {"WARRIOR", "DRUID", "PALADIN"}
-            local healerCapableClasses = {"PRIEST", "DRUID", "SHAMAN", "PALADIN"}
-
-            -- Generate all names and their classes
-            for i = 1, size do
-                local name = "Test"
-                if i < 10 then
-                    name = name.."0"..i
-                else
-                    name = name..i
-                end
-                
-                -- Select class based on position
-                local selectedClass
-                if i <= requiredTanks then
-                    -- Assign tank-capable class
-                    local tankClassIndex = math.random(1, table.getn(tankCapableClasses))
-                    selectedClass = tankCapableClasses[tankClassIndex]
-                elseif i <= (requiredTanks + requiredHealers) then
-                    -- Assign healer-capable class
-                    local healerClassIndex = math.random(1, table.getn(healerCapableClasses))
-                    selectedClass = healerCapableClasses[healerClassIndex]
-                else
-                    -- Random class for remaining positions
-                    local classIndex = math.random(1, table.getn(classList))
-                    selectedClass = classList[classIndex]
-                end
-
-                -- Store name and class
-                OGRH.Roles.nameClass[name] = selectedClass
-                table.insert(testNames, {name = name, class = selectedClass})
-            end
-
-            -- Assign roles based on position
-            for i = 1, table.getn(testNames) do
-                local name = testNames[i].name
-                local class = testNames[i].class
-                local selectedRole
-                local roleColumn
-
-                if i <= requiredTanks then
-                    selectedRole = "TANKS"
-                    roleColumn = 1
-                elseif i <= (requiredTanks + requiredHealers) then
-                    selectedRole = "HEALERS"
-                    roleColumn = 2
-                else
-                    -- Determine DPS role based on class
-                    if class == "WARRIOR" or class == "ROGUE" or class == "PALADIN" or 
-                       (class == "SHAMAN" and math.random(1, 10) <= 6) then
-                        selectedRole = "MELEE"
-                        roleColumn = 3
-                    else
-                        selectedRole = "RANGED"
-                        roleColumn = 4
-                    end
-                end
-
-                -- Add to appropriate column
-                table.insert(ROLE_COLUMNS[roleColumn].players, name)
-
-                -- Save role assignment
-                if not OGRH_SV.roles then 
-                    OGRH_SV.roles = {} 
-                end
-                OGRH_SV.roles[name] = selectedRole
-            end            -- Removed redundant role distribution code as roles are now assigned during player generation
-            
-            -- Refresh display
-            RefreshColumnDisplays()
-            print("|cFFFFFF00OGRH:|r Test mode enabled with " .. size .. " players")
-        end)
-        return btn
-    end
-
-    CreateTestButton("15", 15)
-    CreateTestButton("25", 25)
-    CreateTestButton("40", 40)
-
-    testBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    testBtn:SetScript("OnClick", function()
-        local button = arg1 or "LeftButton"
-        if button == "LeftButton" then
-            if testMenu:IsVisible() then
-                testMenu:Hide()
-            else
-                testMenu:ClearAllPoints()
-                testMenu:SetPoint("TOPRIGHT", testBtn, "BOTTOMRIGHT", 0, -2)
-                testMenu:Show()
-            end
-        else
-            -- Right click disables test mode
-            if OGRH.testMode then
-                OGRH.testMode = false
-                if OGRH.rolesFrame and OGRH.rolesFrame.UpdatePlayerLists then
-                    OGRH.rolesFrame.UpdatePlayerLists() -- Refresh with real raid data
-                end
-                print("|cFFFFFF00OGRH:|r Test mode disabled")
-            end
-        end
-    end)
     
     -- Create Role Columns
     local columnStartY = -80
@@ -1158,6 +418,13 @@ local function CreateRolesFrame()
             end
         end
         
+        -- Sort all columns alphabetically
+        for i = 1, table.getn(ROLE_COLUMNS) do
+            table.sort(ROLE_COLUMNS[i].players, function(a, b) 
+                return string.upper(a) < string.upper(b)
+            end)
+        end
+        
         RefreshColumnDisplays()
     end
     
@@ -1221,12 +488,12 @@ local function CreateRolesFrame()
     end
 
     -- Create encounter panels
-    local razorgorePanel, firemawPanel, cthunPanel
+    local razorgorePanel, vaelTrashPanel, cthunPanel
     
     -- Create BWL panels
     if OGRH.BWL then
         razorgorePanel = OGRH.BWL.CreateRazorgorePanel(frame, encounterBtn)
-        firemawPanel = OGRH.BWL.CreateFiremawPanel(frame, encounterBtn)
+        vaelTrashPanel = OGRH.BWL.CreateVaelTrashPanel(frame, encounterBtn)
     else
         print("|cFFFFFF00OGRH:|r Error: BWL module not found!")
     end
@@ -1240,7 +507,7 @@ local function CreateRolesFrame()
 
     local function HideAllPanels()
         if razorgorePanel then razorgorePanel:Hide() end
-        if firemawPanel then firemawPanel:Hide() end
+        if vaelTrashPanel then vaelTrashPanel:Hide() end
         if cthunPanel then cthunPanel:Hide() end
     end
 
@@ -1253,12 +520,12 @@ local function CreateRolesFrame()
         end
     end
 
-    OGRH.ShowFiremawPanel = function()
+    OGRH.ShowVaelTrashPanel = function()
         HideAllPanels()
-        if firemawPanel then
-            firemawPanel:Show()
+        if vaelTrashPanel then
+            vaelTrashPanel:Show()
         else
-            print("|cFFFFFF00OGRH:|r Error: Firemaw panel could not be created!")
+            print("|cFFFFFF00OGRH:|r Error: Vael Trash panel could not be created!")
         end
     end
 

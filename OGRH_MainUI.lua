@@ -56,6 +56,10 @@ bRoles:SetScript("OnClick", function()
   if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame:IsVisible() then
     OGRH_EncounterSetupFrame:Hide()
   end
+  -- Close encounters menu if it's open
+  if OGRH_EncountersMenu and OGRH_EncountersMenu:IsVisible() then
+    OGRH_EncountersMenu:Hide()
+  end
   
   if OGRH.ShowRolesUI then OGRH.ShowRolesUI()
   else OGRH.Msg("Roles UI not yet loaded. If this persists after /reload, a Lua error prevented it from loading.");
