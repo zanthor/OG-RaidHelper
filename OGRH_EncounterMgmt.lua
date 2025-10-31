@@ -1139,6 +1139,121 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       end
     end)
     
+    -- Mark Players button (below Announce)
+    local markPlayersBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    markPlayersBtn:SetWidth(120)
+    markPlayersBtn:SetHeight(30)
+    markPlayersBtn:SetPoint("TOPLEFT", announceBtn, "BOTTOMLEFT", 0, -10)
+    markPlayersBtn:SetText("Mark Players")
+    frame.markPlayersBtn = markPlayersBtn
+    
+    -- Mark Players functionality
+    markPlayersBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    markPlayersBtn:SetScript("OnClick", function()
+      local button = arg1 or "LeftButton"
+      
+      -- Check if in raid
+      if GetNumRaidMembers() == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to mark players.")
+        return
+      end
+      
+      -- Clear all raid marks first
+      local clearedCount = 0
+      for j = 1, GetNumRaidMembers() do
+        SetRaidTarget("raid"..j, 0)
+        clearedCount = clearedCount + 1
+      end
+      
+      -- Right click: just clear marks and exit
+      if button == "RightButton" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Cleared marks on " .. clearedCount .. " raid members.")
+        return
+      end
+      
+      -- Left click: clear then apply marks
+      if not frame.selectedRaid or not frame.selectedEncounter then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
+        return
+      end
+      
+      -- Get role configuration
+      local roles = OGRH_SV.encounterMgmt.roles
+      if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
+        return
+      end
+      
+      local encounterRoles = roles[frame.selectedRaid][frame.selectedEncounter]
+      local column1 = encounterRoles.column1 or {}
+      local column2 = encounterRoles.column2 or {}
+      
+      -- Build ordered list of all roles (interleaved by row)
+      local allRoles = {}
+      local maxRoles = math.max(table.getn(column1), table.getn(column2))
+      
+      for i = 1, maxRoles do
+        if column1[i] then
+          table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+        end
+        if column2[i] then
+          table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+        end
+      end
+      
+      -- Get assignments
+      local assignments = {}
+      if OGRH_SV.encounterAssignments and 
+         OGRH_SV.encounterAssignments[frame.selectedRaid] and
+         OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] then
+        assignments = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter]
+      end
+      
+      -- Get raid marks
+      local raidMarks = {}
+      if OGRH_SV.encounterRaidMarks and
+         OGRH_SV.encounterRaidMarks[frame.selectedRaid] and
+         OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter] then
+        raidMarks = OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter]
+      end
+      
+      -- Iterate through roles and apply marks
+      local markedCount = 0
+      
+      for _, roleData in ipairs(allRoles) do
+        local role = roleData.role
+        local roleIndex = roleData.roleIndex
+        
+        -- Get assigned players for this role
+        local assignedPlayers = assignments[roleIndex] or {}
+        local roleMarks = raidMarks[roleIndex] or {}
+        
+        -- Iterate through slots
+        for slotIndex = 1, table.getn(assignedPlayers) do
+          local playerName = assignedPlayers[slotIndex]
+          local markIndex = roleMarks[slotIndex]
+          
+          if playerName and markIndex and markIndex ~= 0 then
+            -- Only apply marks if role has markPlayer enabled
+            if role.markPlayer then
+              -- Find player in raid
+              for j = 1, GetNumRaidMembers() do
+                local name = GetRaidRosterInfo(j)
+                if name == playerName then
+                  -- Set raid target icon (1-8)
+                  SetRaidTarget("raid"..j, markIndex)
+                  markedCount = markedCount + 1
+                  break
+                end
+              end
+            end
+          end
+        end
+      end
+      
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Marked " .. markedCount .. " players.")
+    end)
+    
     -- Announcement Builder label
     local announcementLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     announcementLabel:SetPoint("TOPLEFT", bottomPanel, "TOPLEFT", 145, -10)
@@ -1250,6 +1365,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         -- Hide bottom panel controls when no encounter is selected
         frame.autoAssignBtn:Hide()
         frame.announceBtn:Hide()
+        frame.markPlayersBtn:Hide()
         announcementLabel:Hide()
         announcementFrame:Hide()
         
@@ -1269,6 +1385,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       -- Show bottom panel controls when encounter is selected
       frame.autoAssignBtn:Show()
       frame.announceBtn:Show()
+      frame.markPlayersBtn:Show()
       announcementLabel:Show()
       announcementFrame:Show()
       
@@ -3131,6 +3248,17 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     showAssignmentCheckbox:SetHeight(24)
     frame.showAssignmentCheckbox = showAssignmentCheckbox
     
+    -- Mark Player Checkbox
+    local markPlayerLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    markPlayerLabel:SetPoint("LEFT", showAssignmentCheckbox, "RIGHT", 10, 0)
+    markPlayerLabel:SetText("Mark Player:")
+    
+    local markPlayerCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    markPlayerCheckbox:SetPoint("LEFT", markPlayerLabel, "RIGHT", 5, 0)
+    markPlayerCheckbox:SetWidth(24)
+    markPlayerCheckbox:SetHeight(24)
+    frame.markPlayerCheckbox = markPlayerCheckbox
+    
     -- Allow Other Roles Checkbox
     local allowOtherRolesLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     allowOtherRolesLabel:SetPoint("LEFT", raidIconsCheckbox, "RIGHT", 10, 0)
@@ -3237,6 +3365,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   frame.nameEditBox:SetText(roleData.name or "")
   frame.raidIconsCheckbox:SetChecked(roleData.showRaidIcons or false)
   frame.showAssignmentCheckbox:SetChecked(roleData.showAssignment or false)
+  frame.markPlayerCheckbox:SetChecked(roleData.markPlayer or false)
   frame.allowOtherRolesCheckbox:SetChecked(roleData.allowOtherRoles or false)
   frame.countEditBox:SetText(tostring(roleData.slots or 1))
   
@@ -3253,6 +3382,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     roleData.name = frame.nameEditBox:GetText()
     roleData.showRaidIcons = frame.raidIconsCheckbox:GetChecked()
     roleData.showAssignment = frame.showAssignmentCheckbox:GetChecked()
+    roleData.markPlayer = frame.markPlayerCheckbox:GetChecked()
     roleData.allowOtherRoles = frame.allowOtherRolesCheckbox:GetChecked()
     roleData.slots = tonumber(frame.countEditBox:GetText()) or 1
     
