@@ -640,10 +640,446 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     announceBtn:SetText("Announce")
     frame.announceBtn = announceBtn
     
-    -- Announce functionality (placeholder for now)
+    -- Function to replace tags in announcement text with colored output
+    local function ReplaceTags(text, roles, assignments, raidMarks)
+      if not text or text == "" then
+        return ""
+      end
+      
+      -- Helper function to get player class
+      local function GetPlayerClass(playerName)
+        for j = 1, GetNumRaidMembers() do
+          local name, _, _, _, playerClass = GetRaidRosterInfo(j)
+          if name == playerName then
+            return playerClass
+          end
+        end
+        return nil
+      end
+      
+      -- Helper function to check if a tag is valid (has a value)
+      local function IsTagValid(tagText)
+        -- Check [Rx.T] tags
+        local roleNum = string.match(tagText, "^%[R(%d+)%.T%]$")
+        if roleNum then
+          local roleIndex = tonumber(roleNum)
+          return roles and roles[roleIndex] ~= nil
+        end
+        
+        -- Check [Rx.Py] tags
+        local roleNum, playerNum = string.match(tagText, "^%[R(%d+)%.P(%d+)%]$")
+        if roleNum and playerNum then
+          local roleIndex = tonumber(roleNum)
+          local playerIndex = tonumber(playerNum)
+          return assignments and assignments[roleIndex] and assignments[roleIndex][playerIndex] ~= nil
+        end
+        
+        -- Check [Rx.My] tags
+        roleNum, playerNum = string.match(tagText, "^%[R(%d+)%.M(%d+)%]$")
+        if roleNum and playerNum then
+          local roleIndex = tonumber(roleNum)
+          local playerIndex = tonumber(playerNum)
+          if not raidMarks or not raidMarks[roleIndex] or not raidMarks[roleIndex][playerIndex] then
+            return false
+          end
+          local markIndex = raidMarks[roleIndex][playerIndex]
+          return markIndex ~= 0
+        end
+        
+        return true -- Not a tag, consider it valid
+      end
+      
+      -- Process conditional blocks: [text with [tags]]
+      -- Default is OR: show block if ANY tag is valid, hide if ALL are invalid
+      -- If first char after [ is &, it's AND: show block only if ALL tags are valid
+      local function ProcessConditionals(inputText)
+        local result = inputText
+        local maxIterations = 100 -- Prevent infinite loops
+        local iterations = 0
+        
+        while iterations < maxIterations do
+          iterations = iterations + 1
+          local foundBlock = false
+          
+          -- Find innermost conditional blocks
+          -- Look for patterns like [text [Rx.T] more text] where there's at least one tag
+          local searchPos = 1
+          local bestStart, bestEnd, bestContent = nil, nil, nil
+          
+          while searchPos <= string.len(result) do
+            -- Find opening bracket
+            local openBracket = string.find(result, "%[", searchPos)
+            if not openBracket then break end
+            
+            -- Find matching closing bracket (innermost one)
+            local closeBracket = openBracket + 1
+            local nestLevel = 0
+            local foundClose = false
+            
+            while closeBracket <= string.len(result) do
+              local char = string.sub(result, closeBracket, closeBracket)
+              if char == "[" then
+                nestLevel = nestLevel + 1
+              elseif char == "]" then
+                if nestLevel == 0 then
+                  foundClose = true
+                  break
+                else
+                  nestLevel = nestLevel - 1
+                end
+              end
+              closeBracket = closeBracket + 1
+            end
+            
+            if foundClose then
+              local content = string.sub(result, openBracket + 1, closeBracket - 1)
+              
+              -- Check if this block contains at least one tag
+              if string.find(content, "%[R%d+%.[TPM]%d*%]") then
+                -- This is a conditional block
+                bestStart = openBracket
+                bestEnd = closeBracket
+                bestContent = content
+                foundBlock = true
+                break
+              end
+            end
+            
+            searchPos = openBracket + 1
+          end
+          
+          if not foundBlock then
+            break
+          end
+          
+          -- Process this conditional block
+          local isAndBlock = false
+          local contentToCheck = bestContent
+          
+          if string.sub(bestContent, 1, 1) == "&" then
+            isAndBlock = true
+            contentToCheck = string.sub(bestContent, 2) -- Remove the & prefix
+          end
+          
+          -- Collect all tags and their validity
+          local tags = {}
+          local pos = 1
+          
+          while true do
+            local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPM]%d*%]", pos)
+            if not tagStart then break end
+            
+            local tagText = string.sub(contentToCheck, tagStart, tagEnd)
+            local valid = IsTagValid(tagText)
+            
+            table.insert(tags, {
+              text = tagText,
+              valid = valid,
+              startPos = tagStart,
+              endPos = tagEnd
+            })
+            
+            pos = tagEnd + 1
+          end
+          
+          -- Determine if block should be shown
+          local showBlock = false
+          
+          if isAndBlock then
+            -- AND logic: show only if ALL tags are valid
+            showBlock = true
+            for _, tag in ipairs(tags) do
+              if not tag.valid then
+                showBlock = false
+                break
+              end
+            end
+          else
+            -- OR logic: show if ANY tag is valid
+            showBlock = false
+            for _, tag in ipairs(tags) do
+              if tag.valid then
+                showBlock = true
+                break
+              end
+            end
+          end
+          
+          -- Replace the conditional block
+          local before = string.sub(result, 1, bestStart - 1)
+          local after = string.sub(result, bestEnd + 1)
+          
+          if showBlock then
+            -- For OR blocks, remove invalid tags from the content
+            if not isAndBlock then
+              -- Build cleaned content by removing invalid tags
+              local cleanedContent = ""
+              local lastPos = 1
+              
+              -- Sort tags by start position
+              table.sort(tags, function(a, b) return a.startPos < b.startPos end)
+              
+              for _, tag in ipairs(tags) do
+                if tag.valid then
+                  -- Keep everything up to and including this valid tag
+                  cleanedContent = cleanedContent .. string.sub(contentToCheck, lastPos, tag.endPos)
+                  lastPos = tag.endPos + 1
+                else
+                  -- Keep text before the invalid tag, skip the tag itself
+                  cleanedContent = cleanedContent .. string.sub(contentToCheck, lastPos, tag.startPos - 1)
+                  lastPos = tag.endPos + 1
+                end
+              end
+              
+              -- Add any remaining text after the last tag
+              if lastPos <= string.len(contentToCheck) then
+                cleanedContent = cleanedContent .. string.sub(contentToCheck, lastPos)
+              end
+              
+              result = before .. cleanedContent .. after
+            else
+              -- For AND blocks, keep all content as-is (all tags are valid)
+              result = before .. contentToCheck .. after
+            end
+          else
+            -- Remove the entire block
+            result = before .. after
+          end
+        end
+        
+        return result
+      end
+      
+      -- First, process conditional blocks
+      local result = ProcessConditionals(text)
+      
+      -- Build a table of tag replacements with their positions
+      local replacements = {}
+      
+      -- Helper to add a replacement
+      local function AddReplacement(startPos, endPos, replacement, color, isValid)
+        table.insert(replacements, {
+          startPos = startPos,
+          endPos = endPos,
+          text = replacement,
+          color = color,
+          isValid = isValid
+        })
+      end
+      
+      -- Find [Rx.T] tags (Role Title)
+      local pos = 1
+      while true do
+        local tagStart, tagEnd, roleNum = string.find(result, "%[R(%d+)%.T%]", pos)
+        if not tagStart then break end
+        
+        local roleIndex = tonumber(roleNum)
+        local replacement = "[R" .. roleNum .. ".T]"
+        local color = OGRH.COLOR.ROLE
+        local isValid = false
+        
+        if roles and roles[roleIndex] then
+          replacement = roles[roleIndex].name or "Unknown"
+          color = OGRH.COLOR.HEADER
+          isValid = true
+        end
+        
+        AddReplacement(tagStart, tagEnd, replacement, color, isValid)
+        pos = tagEnd + 1
+      end
+      
+      -- Find [Rx.Py] tags (Player Name)
+      pos = 1
+      while true do
+        local tagStart, tagEnd, roleNum, playerNum = string.find(result, "%[R(%d+)%.P(%d+)%]", pos)
+        if not tagStart then break end
+        
+        local roleIndex = tonumber(roleNum)
+        local playerIndex = tonumber(playerNum)
+        local replacement = "[R" .. roleNum .. ".P" .. playerNum .. "]"
+        local color = OGRH.COLOR.ROLE
+        local isValid = false
+        
+        if assignments and assignments[roleIndex] and assignments[roleIndex][playerIndex] then
+          local playerName = assignments[roleIndex][playerIndex]
+          local playerClass = GetPlayerClass(playerName)
+          
+          if playerClass and OGRH.COLOR.CLASS[string.upper(playerClass)] then
+            color = OGRH.COLOR.CLASS[string.upper(playerClass)]
+          end
+          
+          replacement = playerName
+          isValid = true
+        end
+        
+        AddReplacement(tagStart, tagEnd, replacement, color, isValid)
+        pos = tagEnd + 1
+      end
+      
+      -- Find [Rx.My] tags (Raid Mark)
+      pos = 1
+      while true do
+        local tagStart, tagEnd, roleNum, playerNum = string.find(result, "%[R(%d+)%.M(%d+)%]", pos)
+        if not tagStart then break end
+        
+        local roleIndex = tonumber(roleNum)
+        local playerIndex = tonumber(playerNum)
+        local replacement = "[R" .. roleNum .. ".M" .. playerNum .. "]"
+        local color = OGRH.COLOR.ROLE
+        local isValid = false
+        
+        -- Raid mark names
+        local markNames = {
+          [1] = "{Star}",
+          [2] = "{Circle}",
+          [3] = "{Diamond}",
+          [4] = "{Triangle}",
+          [5] = "{Moon}",
+          [6] = "{Square}",
+          [7] = "{Cross}",
+          [8] = "{Skull}"
+        }
+        
+        if raidMarks and raidMarks[roleIndex] and raidMarks[roleIndex][playerIndex] then
+          local markIndex = raidMarks[roleIndex][playerIndex]
+          if markIndex ~= 0 and markNames[markIndex] then
+            replacement = markNames[markIndex]
+            color = OGRH.COLOR.MARK[markIndex] or OGRH.COLOR.ROLE
+            isValid = true
+          end
+        end
+        
+        AddReplacement(tagStart, tagEnd, replacement, color, isValid)
+        pos = tagEnd + 1
+      end
+      
+      -- Sort replacements by position (descending) so we can replace from end to start
+      table.sort(replacements, function(a, b) return a.startPos > b.startPos end)
+      
+      -- Build result string by replacing tags from end to start
+      for _, repl in ipairs(replacements) do
+        local before = string.sub(result, 1, repl.startPos - 1)
+        local after = string.sub(result, repl.endPos + 1)
+        result = before .. repl.color .. repl.text .. OGRH.COLOR.RESET .. after
+      end
+      
+      -- Color any plain text with ROLE color
+      -- Split by color codes to identify plain text
+      local finalResult = ""
+      local lastPos = 1
+      
+      while true do
+        -- Find next color code
+        local colorStart = string.find(result, "|c%x%x%x%x%x%x%x%x", lastPos)
+        
+        if not colorStart then
+          -- No more color codes, add remaining text
+          local remaining = string.sub(result, lastPos)
+          if remaining ~= "" then
+            finalResult = finalResult .. OGRH.COLOR.ROLE .. remaining .. OGRH.COLOR.RESET
+          end
+          break
+        end
+        
+        -- Add plain text before color code
+        if colorStart > lastPos then
+          local plainText = string.sub(result, lastPos, colorStart - 1)
+          finalResult = finalResult .. OGRH.COLOR.ROLE .. plainText .. OGRH.COLOR.RESET
+        end
+        
+        -- Find the end of this colored section (next |r or end of string)
+        local resetPos = string.find(result, "|r", colorStart)
+        if not resetPos then
+          -- Add rest of string as-is
+          finalResult = finalResult .. string.sub(result, colorStart)
+          break
+        end
+        
+        -- Add colored section
+        finalResult = finalResult .. string.sub(result, colorStart, resetPos + 1)
+        lastPos = resetPos + 2
+      end
+      
+      return finalResult
+    end
+    
+    -- Announce functionality
     announceBtn:SetScript("OnClick", function()
-      -- Will be connected later
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announce functionality coming soon...")
+      if not frame.selectedRaid or not frame.selectedEncounter then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
+        return
+      end
+      
+      -- Get role configuration
+      local roles = OGRH_SV.encounterMgmt.roles
+      if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
+        return
+      end
+      
+      local encounterRoles = roles[frame.selectedRaid][frame.selectedEncounter]
+      local column1 = encounterRoles.column1 or {}
+      local column2 = encounterRoles.column2 or {}
+      
+      -- Build ordered list of roles for tag replacement
+      local orderedRoles = {}
+      local maxRoles = math.max(table.getn(column1), table.getn(column2))
+      
+      for i = 1, maxRoles do
+        if column1[i] then
+          table.insert(orderedRoles, column1[i])
+        end
+        if column2[i] then
+          table.insert(orderedRoles, column2[i])
+        end
+      end
+      
+      -- Get assignments
+      local assignments = {}
+      if OGRH_SV.encounterAssignments and 
+         OGRH_SV.encounterAssignments[frame.selectedRaid] and
+         OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] then
+        assignments = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter]
+      end
+      
+      -- Get raid marks
+      local raidMarks = {}
+      if OGRH_SV.encounterRaidMarks and
+         OGRH_SV.encounterRaidMarks[frame.selectedRaid] and
+         OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter] then
+        raidMarks = OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter]
+      end
+      
+      -- Get announcement text and replace tags
+      local announcementLines = {}
+      if frame.announcementLines then
+        for i = 1, table.getn(frame.announcementLines) do
+          local lineText = frame.announcementLines[i]:GetText()
+          if lineText and lineText ~= "" then
+            local processedText = ReplaceTags(lineText, orderedRoles, assignments, raidMarks)
+            table.insert(announcementLines, processedText)
+          end
+        end
+      end
+      
+      -- Send announcements to raid chat
+      if table.getn(announcementLines) == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No announcement text to send.")
+        return
+      end
+      
+      -- Check if in raid
+      if GetNumRaidMembers() == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to announce.")
+        return
+      end
+      
+      -- Send each line to raid chat
+      for _, line in ipairs(announcementLines) do
+        SendChatMessage(line, "RAID")
+      end
+      
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement sent to raid chat.")
     end)
     
     -- Announcement Builder label
@@ -893,7 +1329,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
             -- Current icon index (0 = none)
             iconBtn.iconIndex = 0
             
+            -- Store reference for loading
+            slot.iconBtn = iconBtn
+            
             -- Click to cycle through raid icons
+            local capturedSlotIndex = i
             iconBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             iconBtn:SetScript("OnClick", function()
               local button = arg1 or "LeftButton"
@@ -921,6 +1361,24 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
               
               iconBtn.iconIndex = currentIndex
               
+              -- Save the raid mark assignment
+              if frame.selectedRaid and frame.selectedEncounter then
+                if not OGRH_SV.encounterRaidMarks then
+                  OGRH_SV.encounterRaidMarks = {}
+                end
+                if not OGRH_SV.encounterRaidMarks[frame.selectedRaid] then
+                  OGRH_SV.encounterRaidMarks[frame.selectedRaid] = {}
+                end
+                if not OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter] then
+                  OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter] = {}
+                end
+                if not OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] then
+                  OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] = {}
+                end
+                
+                OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex][capturedSlotIndex] = currentIndex
+              end
+              
               if currentIndex == 0 then
                 iconTex:Hide()
               else
@@ -941,8 +1399,6 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
                 iconTex:Show()
               end
             end)
-            
-            slot.iconBtn = iconBtn
           end
           
           -- Player name text
@@ -975,6 +1431,37 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           -- Update slot displays
           for slotIdx, slot in ipairs(container.slots) do
             local playerName = assignedPlayers[slotIdx]
+            
+            -- Load saved raid mark for this slot
+            if slot.iconBtn then
+              local savedMark = 0
+              if OGRH_SV.encounterRaidMarks and
+                 OGRH_SV.encounterRaidMarks[frame.selectedRaid] and
+                 OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter] and
+                 OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] then
+                savedMark = OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex][slotIdx] or 0
+              end
+              
+              slot.iconBtn.iconIndex = savedMark
+              
+              if savedMark == 0 then
+                slot.iconBtn.iconTex:Hide()
+              else
+                local coords = {
+                  [1] = {0, 0.25, 0, 0.25},
+                  [2] = {0.25, 0.5, 0, 0.25},
+                  [3] = {0.5, 0.75, 0, 0.25},
+                  [4] = {0.75, 1, 0, 0.25},
+                  [5] = {0, 0.25, 0.25, 0.5},
+                  [6] = {0.25, 0.5, 0.25, 0.5},
+                  [7] = {0.5, 0.75, 0.25, 0.5},
+                  [8] = {0.75, 1, 0.25, 0.5},
+                }
+                local c = coords[savedMark]
+                slot.iconBtn.iconTex:SetTexCoord(c[1], c[2], c[3], c[4])
+                slot.iconBtn.iconTex:Show()
+              end
+            end
             
             if playerName then
               -- Get player's class color

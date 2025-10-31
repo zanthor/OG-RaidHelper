@@ -9,7 +9,32 @@ OGRH.COLOR = {
   HEADER = "|cff00ff00",   -- Bright Green
   ROLE = "|cffffcc00",     -- Bright Yellow
   ANNOUNCE = "|cffff8800", -- Orange
-  RESET = "|r"
+  RESET = "|r",
+  
+  -- Class colors
+  CLASS = {
+    WARRIOR = "|cffC79C6E",
+    PALADIN = "|cffF58CBA",
+    HUNTER = "|cffABD473",
+    ROGUE = "|cffFFF569",
+    PRIEST = "|cffFFFFFF",
+    SHAMAN = "|cff0070DE",
+    MAGE = "|cff69CCF0",
+    WARLOCK = "|cff9482C9",
+    DRUID = "|cffFF7D0A"
+  },
+  
+  -- Raid marker colors
+  MARK = {
+    [1] = "|cffFFFF00", -- Star - Yellow
+    [2] = "|cffFF7F00", -- Circle - Orange
+    [3] = "|cffFF00FF", -- Diamond - Purple/Magenta
+    [4] = "|cff00FF00", -- Triangle - Green
+    [5] = "|cffC0C0FF", -- Moon - Light Blue/Silver
+    [6] = "|cff0080FF", -- Square - Blue
+    [7] = "|cffFF0000", -- Cross - Red
+    [8] = "|cffFFFFFF"  -- Skull - White
+  }
 }
 
 function OGRH.EnsureSV()
