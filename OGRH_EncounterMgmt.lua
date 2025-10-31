@@ -1448,12 +1448,12 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         
         -- Role name (centered)
         local titleText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        titleText:SetPoint("TOP", container, "TOP", -10, -10)
+        titleText:SetPoint("TOP", container, "TOP", 5, -10)
         titleText:SetText(role.name or "Unknown Role")
         
-        -- Tag marker for title (Tx)
+        -- Tag marker for title (T) - positioned to the left of title
         local titleTag = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        titleTag:SetPoint("LEFT", titleText, "RIGHT", 3, 0)
+        titleTag:SetPoint("RIGHT", titleText, "LEFT", -3, 0)
         titleTag:SetText("|cff888888T|r")
         titleTag:SetTextColor(0.5, 0.5, 0.5)
         
