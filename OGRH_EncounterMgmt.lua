@@ -698,6 +698,24 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           return assignIndex ~= 0
         end
         
+        -- Check [Rx.A=y] tags (all players with assignment y in role x)
+        local roleNum, assignNum = string.match(tagText, "^%[R(%d+)%.A=(%d+)%]$")
+        if roleNum and assignNum then
+          local roleIndex = tonumber(roleNum)
+          local targetAssign = tonumber(assignNum)
+          
+          -- Check if any player in this role has this assignment
+          if assignmentNumbers and assignmentNumbers[roleIndex] and assignments and assignments[roleIndex] then
+            for slotIndex, playerName in pairs(assignments[roleIndex]) do
+              if playerName and assignmentNumbers[roleIndex][slotIndex] == targetAssign then
+                return true -- At least one player has this assignment
+              end
+            end
+          end
+          
+          return false -- No players with this assignment
+        end
+        
         return true -- Not a tag, consider it valid
       end
       
@@ -747,7 +765,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
               local content = string.sub(result, openBracket + 1, closeBracket - 1)
               
               -- Check if this block contains at least one tag
-              if string.find(content, "%[R%d+%.[TPMA]%d*%]") then
+              if string.find(content, "%[R%d+%.[TPMA]") then
                 -- This is a conditional block
                 bestStart = openBracket
                 bestEnd = closeBracket
@@ -778,7 +796,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           local pos = 1
           
           while true do
-            local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPMA]%d*%]", pos)
+            local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPMA][^%]]*%]", pos)
             if not tagStart then break end
             
             local tagText = string.sub(contentToCheck, tagStart, tagEnd)
@@ -984,6 +1002,49 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           end
         else
           -- Invalid tag - replace with empty string
+          AddReplacement(tagStart, tagEnd, "", "", false)
+        end
+        
+        pos = tagEnd + 1
+      end
+      
+      -- Find [Rx.A=y] tags (All players with assignment number y in role x)
+      pos = 1
+      while true do
+        local tagStart, tagEnd, roleNum, assignNum = string.find(result, "%[R(%d+)%.A=(%d+)%]", pos)
+        if not tagStart then break end
+        
+        local roleIndex = tonumber(roleNum)
+        local targetAssign = tonumber(assignNum)
+        
+        -- Build list of players with this assignment number with class colors
+        local matchingPlayers = {}
+        
+        if assignmentNumbers and assignmentNumbers[roleIndex] and assignments and assignments[roleIndex] then
+          -- Iterate through all slots in this role
+          for slotIndex, playerName in pairs(assignments[roleIndex]) do
+            if playerName and assignmentNumbers[roleIndex][slotIndex] == targetAssign then
+              -- Get player's class for coloring
+              local playerClass = GetPlayerClass(playerName)
+              local color = OGRH.COLOR.ROLE
+              
+              if playerClass and OGRH.COLOR.CLASS[string.upper(playerClass)] then
+                color = OGRH.COLOR.CLASS[string.upper(playerClass)]
+              end
+              
+              -- Add player with color code prefix only (no reset)
+              table.insert(matchingPlayers, color .. playerName)
+            end
+          end
+        end
+        
+        if table.getn(matchingPlayers) > 0 then
+          -- Join with space and reset code between each player
+          local playerList = table.concat(matchingPlayers, OGRH.COLOR.RESET .. " ")
+          -- Pass empty color and use the embedded colors
+          AddReplacement(tagStart, tagEnd, playerList, "", false)
+        else
+          -- No matching players - replace with empty string
           AddReplacement(tagStart, tagEnd, "", "", false)
         end
         
@@ -1259,12 +1320,12 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     announcementLabel:SetPoint("TOPLEFT", bottomPanel, "TOPLEFT", 145, -10)
     announcementLabel:SetText("Announcement Builder:")
     
-    -- Announcement Builder container
-    local announcementFrame = CreateFrame("Frame", nil, bottomPanel)
-    announcementFrame:SetWidth(430)
-    announcementFrame:SetHeight(106)
-    announcementFrame:SetPoint("TOPLEFT", announcementLabel, "BOTTOMLEFT", 0, -5)
-    announcementFrame:SetBackdrop({
+    -- Announcement Builder scroll frame
+    local announcementScrollFrame = CreateFrame("ScrollFrame", nil, bottomPanel)
+    announcementScrollFrame:SetWidth(430)
+    announcementScrollFrame:SetHeight(106)
+    announcementScrollFrame:SetPoint("TOPLEFT", announcementLabel, "BOTTOMLEFT", 0, -5)
+    announcementScrollFrame:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
       tile = true,
@@ -1272,19 +1333,66 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       edgeSize = 12,
       insets = {left = 3, right = 3, top = 3, bottom = 3}
     })
-    announcementFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    announcementScrollFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
     
-    -- Create individual edit boxes for each line (5 lines)
+    -- Scroll child frame
+    local announcementFrame = CreateFrame("Frame", nil, announcementScrollFrame)
+    announcementFrame:SetWidth(410)
+    announcementScrollFrame:SetScrollChild(announcementFrame)
+    
+    -- Scrollbar
+    local announcementScrollBar = CreateFrame("Slider", nil, announcementScrollFrame)
+    announcementScrollBar:SetPoint("TOPRIGHT", announcementScrollFrame, "TOPRIGHT", -5, -18)
+    announcementScrollBar:SetPoint("BOTTOMRIGHT", announcementScrollFrame, "BOTTOMRIGHT", -5, 18)
+    announcementScrollBar:SetWidth(16)
+    announcementScrollBar:SetOrientation("VERTICAL")
+    announcementScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    announcementScrollBar:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    announcementScrollBar:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+    announcementScrollBar:SetMinMaxValues(0, 1)
+    announcementScrollBar:SetValue(0)
+    announcementScrollBar:SetValueStep(1)
+    announcementScrollBar:SetScript("OnValueChanged", function()
+      announcementScrollFrame:SetVerticalScroll(this:GetValue())
+    end)
+    
+    -- Mouse wheel scroll support
+    announcementScrollFrame:EnableMouseWheel(true)
+    announcementScrollFrame:SetScript("OnMouseWheel", function()
+      local currentScroll = announcementScrollBar:GetValue()
+      local minScroll, maxScroll = announcementScrollBar:GetMinMaxValues()
+      local delta = arg1
+      
+      if delta > 0 then
+        -- Scroll up
+        announcementScrollBar:SetValue(math.max(minScroll, currentScroll - 20))
+      else
+        -- Scroll down
+        announcementScrollBar:SetValue(math.min(maxScroll, currentScroll + 20))
+      end
+    end)
+    
+    frame.announcementScrollFrame = announcementScrollFrame
+    frame.announcementScrollBar = announcementScrollBar
+    
+    -- Create individual edit boxes for each line (8 lines)
     frame.announcementLines = {}
-    local numLines = 5
+    local numLines = 8
     local lineHeight = 18
     local lineSpacing = 2
     
     for i = 1, numLines do
       local lineFrame = CreateFrame("Frame", nil, announcementFrame)
-      lineFrame:SetWidth(410)
+      lineFrame:SetWidth(390)
       lineFrame:SetHeight(lineHeight)
-      lineFrame:SetPoint("TOPLEFT", announcementFrame, "TOPLEFT", 10, -5 - ((i - 1) * (lineHeight + lineSpacing)))
+      lineFrame:SetPoint("TOPLEFT", announcementFrame, "TOPLEFT", 5, -5 - ((i - 1) * (lineHeight + lineSpacing)))
       lineFrame:SetBackdrop({
         bgFile = "Interface/Tooltips/UI-Tooltip-Background",
         edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -1297,7 +1405,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       lineFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
       
       local editBox = CreateFrame("EditBox", nil, lineFrame)
-      editBox:SetWidth(395)
+      editBox:SetWidth(375)
       editBox:SetHeight(lineHeight - 4)
       editBox:SetPoint("LEFT", lineFrame, "LEFT", 5, 0)
       editBox:SetFontObject(GameFontHighlight)
@@ -1325,6 +1433,23 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         end
       end)
       
+      -- Arrow key navigation
+      local capturedLineIndex = i
+      editBox:SetScript("OnKeyDown", function()
+        local key = arg1
+        if key == "UP" then
+          -- Move to previous line
+          if capturedLineIndex > 1 then
+            frame.announcementLines[capturedLineIndex - 1]:SetFocus()
+          end
+        elseif key == "DOWN" then
+          -- Move to next line
+          if capturedLineIndex < numLines then
+            frame.announcementLines[capturedLineIndex + 1]:SetFocus()
+          end
+        end
+      end)
+      
       -- Save text changes to SavedVariables
       local capturedIndex = i
       editBox:SetScript("OnTextChanged", function()
@@ -1344,6 +1469,20 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       end)
       
       frame.announcementLines[i] = editBox
+    end
+    
+    -- Set the scroll child height based on content
+    local contentHeight = (numLines * (lineHeight + lineSpacing)) + 10
+    announcementFrame:SetHeight(contentHeight)
+    
+    -- Update scrollbar
+    local scrollFrameHeight = announcementScrollFrame:GetHeight()
+    if contentHeight > scrollFrameHeight then
+      announcementScrollBar:Show()
+      announcementScrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+      announcementScrollBar:SetValue(0)
+    else
+      announcementScrollBar:Hide()
     end
     
     -- Store role containers (will be created dynamically)
@@ -1367,7 +1506,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         frame.announceBtn:Hide()
         frame.markPlayersBtn:Hide()
         announcementLabel:Hide()
-        announcementFrame:Hide()
+        announcementScrollFrame:Hide()
         
         -- Clear announcement lines when no encounter is selected
         if frame.announcementLines then
@@ -1387,7 +1526,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       frame.announceBtn:Show()
       frame.markPlayersBtn:Show()
       announcementLabel:Show()
-      announcementFrame:Show()
+      announcementScrollFrame:Show()
       
       -- Load saved announcement text for this encounter
       if not OGRH_SV.encounterAnnouncements then
