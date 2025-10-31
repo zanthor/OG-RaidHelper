@@ -47,19 +47,36 @@ Displays the raid mark assigned to player `y` in role `x`.
 Gnuzmas has {Star}
 ```
 
+### Assignment Number: `[Rx.Ay]`
+Displays the assignment number for player `y` in role `x`. Assignment numbers are 1-9 or 0 (shown as empty).
+
+**Example:**
+```
+[R1.P1] is assignment [R1.A1]
+```
+**Output:**
+```
+Tankmedady is assignment 1
+```
+
 ## Raid Mark Symbols
 
-When using `[Rx.My]` tags, the following raid icon symbols are inserted into chat:
-- `{rt1}` - Yellow Star
-- `{rt2}` - Orange Circle
-- `{rt3}` - Purple Diamond
-- `{rt4}` - Green Triangle
-- `{rt5}` - Silver Moon
-- `{rt6}` - Blue Square
-- `{rt7}` - Red Cross
-- `{rt8}` - White Skull
+When using `[Rx.My]` tags, the following symbols are returned:
+- `{Star}` - Yellow Star (1)
+- `{Circle}` - Orange Circle (2)
+- `{Diamond}` - Purple Diamond (3)
+- `{Triangle}` - Green Triangle (4)
+- `{Moon}` - Silver Moon (5)
+- `{Square}` - Blue Square (6)
+- `{Cross}` - Red Cross (7)
+- `{Skull}` - White Skull (8)
 
-These will display as the actual raid marker icons in WoW chat.
+## Assignment Numbers
+
+When using `[Rx.Ay]` tags, numbers 1-9 are displayed. 0 is treated as "not set" and displays as empty.
+- Enable assignment numbers by checking "Show Assignment" in the Role Edit window
+- Click the assignment button next to each player to set their number (left-click increments, right-click decrements)
+- Use assignment numbers for grouping, priorities, or any custom ordering system
 
 ## Complete Example
 
@@ -69,14 +86,16 @@ Line 1: [R1.T]: [R1.P1]
 Line 2: [R2.T]: [R2.P1] [R2.M1], [R2.P2] [R2.M2]
 Line 3: [R5.T]: [R5.P1] and [R5.P2]
 Line 4: Kill priority: [R3.M1] then [R3.M2]
+Line 5: Group [R1.A1]: [R1.P1], Group [R2.A1]: [R2.P1]
 ```
 
 **Actual Output (when Announce is clicked):**
 ```
 Main Tank: Tankmedady
-Off Tanks: Gnuzmas {rt1}, Zanthor {rt2}
+Off Tanks: Gnuzmas {Star}, Zanthor {Circle}
 Healers: Fatherkaii and Lightbringer
-Kill priority: {rt8} then {rt7}
+Kill priority: {Skull} then {Cross}
+Group 1: Tankmedady, Group 2: Gnuzmas
 ```
 
 ## Role Numbering
@@ -105,8 +124,8 @@ Wrap text in square brackets `[content with [tags]]`. The block will:
 ```
 
 **Outputs:**
-- If only R3.P1 assigned: `Near Side Tanks {rt7} Tankmedady healed by Gnuzmas`
-- If both R3.P1 and R3.P2 assigned: `Near Side Tanks {rt7} Tankmedady, {rt8} Zanthor healed by Gnuzmas`
+- If only R3.P1 assigned: `Near Side Tanks {Cross} Tankmedady healed by Gnuzmas`
+- If both R3.P1 and R3.P2 assigned: `Near Side Tanks {Cross} Tankmedady, {Skull} Zanthor healed by Gnuzmas`
 
 ### AND Logic (& Prefix)
 
@@ -121,8 +140,8 @@ Start the block with `&` to use AND logic `[&content with [tags]]`. The block wi
 ```
 
 **Outputs:**
-- If only R3.P1 assigned: `Near Side Tanks {rt7} Tankmedady healed by Gnuzmas` (entire `, [R3.M2] [R3.P2]` block removed)
-- If both R3.P1 and R3.P2 assigned: `Near Side Tanks {rt7} Tankmedady, {rt8} Zanthor healed by Gnuzmas`
+- If only R3.P1 assigned: `Near Side Tanks {Cross} Tankmedady healed by Gnuzmas` (entire `, [R3.M2] [R3.P2]` block removed)
+- If both R3.P1 and R3.P2 assigned: `Near Side Tanks {Cross} Tankmedady, {Skull} Zanthor healed by Gnuzmas`
 
 ### Nested Conditionals
 

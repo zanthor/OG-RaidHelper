@@ -641,7 +641,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     frame.announceBtn = announceBtn
     
     -- Function to replace tags in announcement text with colored output
-    local function ReplaceTags(text, roles, assignments, raidMarks)
+    local function ReplaceTags(text, roles, assignments, raidMarks, assignmentNumbers)
       if not text or text == "" then
         return ""
       end
@@ -658,7 +658,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       end
       
       -- Helper function to check if a tag is valid (has a value)
-      local function IsTagValid(tagText)
+      local function IsTagValid(tagText, assignmentNumbers)
         -- Check [Rx.T] tags
         local roleNum = string.match(tagText, "^%[R(%d+)%.T%]$")
         if roleNum then
@@ -684,6 +684,18 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           end
           local markIndex = raidMarks[roleIndex][playerIndex]
           return markIndex ~= 0
+        end
+        
+        -- Check [Rx.Ay] tags
+        roleNum, playerNum = string.match(tagText, "^%[R(%d+)%.A(%d+)%]$")
+        if roleNum and playerNum then
+          local roleIndex = tonumber(roleNum)
+          local playerIndex = tonumber(playerNum)
+          if not assignmentNumbers or not assignmentNumbers[roleIndex] or not assignmentNumbers[roleIndex][playerIndex] then
+            return false
+          end
+          local assignIndex = assignmentNumbers[roleIndex][playerIndex]
+          return assignIndex ~= 0
         end
         
         return true -- Not a tag, consider it valid
@@ -735,7 +747,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
               local content = string.sub(result, openBracket + 1, closeBracket - 1)
               
               -- Check if this block contains at least one tag
-              if string.find(content, "%[R%d+%.[TPM]%d*%]") then
+              if string.find(content, "%[R%d+%.[TPMA]%d*%]") then
                 -- This is a conditional block
                 bestStart = openBracket
                 bestEnd = closeBracket
@@ -766,11 +778,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           local pos = 1
           
           while true do
-            local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPM]%d*%]", pos)
+            local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPMA]%d*%]", pos)
             if not tagStart then break end
             
             local tagText = string.sub(contentToCheck, tagStart, tagEnd)
-            local valid = IsTagValid(tagText)
+            local valid = IsTagValid(tagText, assignmentNumbers)
             
             table.insert(tags, {
               text = tagText,
@@ -952,6 +964,32 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         pos = tagEnd + 1
       end
       
+      -- Find [Rx.Ay] tags (Assignment Number)
+      pos = 1
+      while true do
+        local tagStart, tagEnd, roleNum, playerNum = string.find(result, "%[R(%d+)%.A(%d+)%]", pos)
+        if not tagStart then break end
+        
+        local roleIndex = tonumber(roleNum)
+        local playerIndex = tonumber(playerNum)
+        
+        if assignmentNumbers and assignmentNumbers[roleIndex] and assignmentNumbers[roleIndex][playerIndex] then
+          local assignIndex = assignmentNumbers[roleIndex][playerIndex]
+          if assignIndex ~= 0 then
+            local color = OGRH.COLOR.ROLE
+            AddReplacement(tagStart, tagEnd, tostring(assignIndex), color, true)
+          else
+            -- Assignment is 0 (none) - replace with empty string
+            AddReplacement(tagStart, tagEnd, "", "", false)
+          end
+        else
+          -- Invalid tag - replace with empty string
+          AddReplacement(tagStart, tagEnd, "", "", false)
+        end
+        
+        pos = tagEnd + 1
+      end
+      
       -- Sort replacements by position (descending) so we can replace from end to start
       table.sort(replacements, function(a, b) return a.startPos > b.startPos end)
       
@@ -1056,13 +1094,21 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         raidMarks = OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter]
       end
       
+      -- Get assignment numbers
+      local assignmentNumbers = {}
+      if OGRH_SV.encounterAssignmentNumbers and
+         OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid] and
+         OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter] then
+        assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter]
+      end
+      
       -- Get announcement text and replace tags
       local announcementLines = {}
       if frame.announcementLines then
         for i = 1, table.getn(frame.announcementLines) do
           local lineText = frame.announcementLines[i]:GetText()
           if lineText and lineText ~= "" then
-            local processedText = ReplaceTags(lineText, orderedRoles, assignments, raidMarks)
+            local processedText = ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
             table.insert(announcementLines, processedText)
           end
         end
@@ -1080,12 +1126,17 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         return
       end
       
-      -- Send each line to raid chat
-      for _, line in ipairs(announcementLines) do
-        SendChatMessage(line, "RAID")
+      -- Send announcement and store for re-announce
+      if OGRH.SendAnnouncement then
+        OGRH.SendAnnouncement(announcementLines)
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement sent to raid chat and stored for RA button.")
+      else
+        -- Fallback if SendAnnouncement not loaded
+        for _, line in ipairs(announcementLines) do
+          SendChatMessage(line, "RAID")
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement sent to raid chat.")
       end
-      
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement sent to raid chat.")
     end)
     
     -- Announcement Builder label
@@ -1280,8 +1331,14 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         
         -- Role name (centered)
         local titleText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        titleText:SetPoint("TOP", container, "TOP", 0, -10)
+        titleText:SetPoint("TOP", container, "TOP", -10, -10)
         titleText:SetText(role.name or "Unknown Role")
+        
+        -- Tag marker for title (Tx)
+        local titleTag = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        titleTag:SetPoint("LEFT", titleText, "RIGHT", 3, 0)
+        titleTag:SetText("|cff888888T|r")
+        titleTag:SetTextColor(0.5, 0.5, 0.5)
         
         -- Pool button (top right)
         local poolBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
@@ -1312,10 +1369,17 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           
           -- Raid icon dropdown button - only if showRaidIcons is true
           if role.showRaidIcons then
+            -- Tag marker for raid mark (Mx) - positioned before the icon button
+            local markTag = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            markTag:SetPoint("LEFT", slot, "LEFT", 2, 0)
+            markTag:SetText("|cff888888M" .. i .. "|r")
+            markTag:SetTextColor(0.5, 0.5, 0.5)
+            slot.markTag = markTag
+            
             local iconBtn = CreateFrame("Button", nil, slot)
             iconBtn:SetWidth(16)
             iconBtn:SetHeight(16)
-            iconBtn:SetPoint("LEFT", slot, "LEFT", 5, 0)
+            iconBtn:SetPoint("LEFT", markTag, "RIGHT", 2, 0)
             
             -- Background for icon button
             local iconBg = iconBtn:CreateTexture(nil, "BACKGROUND")
@@ -1409,11 +1473,108 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           
           -- Player name text
           local nameText = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+          
+          -- Tag marker for player (Px) - positioned to the left of player name
+          local playerTag = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          playerTag:SetText("|cff888888P" .. i .. "|r")
+          playerTag:SetTextColor(0.5, 0.5, 0.5)
+          slot.playerTag = playerTag
+          
           if role.showRaidIcons then
-            nameText:SetPoint("LEFT", slot.iconBtn, "RIGHT", 5, 0)
+            playerTag:SetPoint("LEFT", slot.iconBtn, "RIGHT", 5, 0)
+            nameText:SetPoint("LEFT", playerTag, "RIGHT", 3, 0)
           else
-            nameText:SetPoint("LEFT", slot, "LEFT", 5, 0)
+            playerTag:SetPoint("LEFT", slot, "LEFT", 5, 0)
+            nameText:SetPoint("LEFT", playerTag, "RIGHT", 3, 0)
           end
+          
+          -- Assignment button - only if showAssignment is true
+          if role.showAssignment then
+            nameText:SetPoint("RIGHT", slot, "RIGHT", -25, 0)
+            
+            local assignBtn = CreateFrame("Button", nil, slot)
+            assignBtn:SetWidth(20)
+            assignBtn:SetHeight(16)
+            assignBtn:SetPoint("RIGHT", slot, "RIGHT", -3, 0)
+            
+            -- Background for assignment button
+            local assignBg = assignBtn:CreateTexture(nil, "BACKGROUND")
+            assignBg:SetAllPoints()
+            assignBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+            assignBg:SetVertexColor(0.3, 0.3, 0.3, 0.8)
+            
+            -- Assignment text (shows 1-9, 0, or empty)
+            local assignText = assignBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            assignText:SetPoint("CENTER", assignBtn, "CENTER")
+            assignText:SetText("")
+            assignBtn.assignText = assignText
+            
+            -- Current assignment index (0 = none/empty)
+            assignBtn.assignIndex = 0
+            
+            -- Store reference for loading
+            slot.assignBtn = assignBtn
+            
+            -- Tag marker for assignment (Ax) - positioned to the left of the button
+            local assignTag = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            assignTag:SetPoint("RIGHT", assignBtn, "LEFT", -4, 0)
+            assignTag:SetText("|cff888888A" .. i .. "|r")
+            assignTag:SetTextColor(0.5, 0.5, 0.5)
+            slot.assignTag = assignTag
+            
+            -- Click to cycle through assignments
+            local capturedSlotIndex = i
+            assignBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            assignBtn:SetScript("OnClick", function()
+              local button = arg1 or "LeftButton"
+              local currentIndex = assignBtn.assignIndex
+              
+              if button == "LeftButton" then
+                -- Cycle forward: 0 -> 1 -> 2 -> ... -> 9 -> 0
+                currentIndex = currentIndex + 1
+                if currentIndex > 9 then
+                  currentIndex = 0
+                end
+              else
+                -- Right click: Cycle backward: 0 -> 9 -> 8 -> ... -> 1 -> 0
+                currentIndex = currentIndex - 1
+                if currentIndex < 0 then
+                  currentIndex = 9
+                end
+              end
+              
+              assignBtn.assignIndex = currentIndex
+              
+              -- Save the assignment
+              if frame.selectedRaid and frame.selectedEncounter then
+                if not OGRH_SV.encounterAssignmentNumbers then
+                  OGRH_SV.encounterAssignmentNumbers = {}
+                end
+                if not OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid] then
+                  OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid] = {}
+                end
+                if not OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter] then
+                  OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter] = {}
+                end
+                if not OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] then
+                  OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] = {}
+                end
+                
+                OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex][capturedSlotIndex] = currentIndex
+              end
+              
+              -- Update display
+              if currentIndex == 0 then
+                assignText:SetText("")
+              else
+                assignText:SetText(tostring(currentIndex))
+              end
+            end)
+          else
+            nameText:SetPoint("RIGHT", slot, "RIGHT", -5, 0)
+          end
+          
+          nameText:SetJustifyH("LEFT")
           slot.nameText = nameText
           
           -- Store slot info for assignment lookup
@@ -1466,6 +1627,25 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
                 local c = coords[savedMark]
                 slot.iconBtn.iconTex:SetTexCoord(c[1], c[2], c[3], c[4])
                 slot.iconBtn.iconTex:Show()
+              end
+            end
+            
+            -- Load saved assignment number for this slot
+            if slot.assignBtn then
+              local savedAssign = 0
+              if OGRH_SV.encounterAssignmentNumbers and
+                 OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid] and
+                 OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter] and
+                 OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] then
+                savedAssign = OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex][slotIdx] or 0
+              end
+              
+              slot.assignBtn.assignIndex = savedAssign
+              
+              if savedAssign == 0 then
+                slot.assignBtn.assignText:SetText("")
+              else
+                slot.assignBtn.assignText:SetText(tostring(savedAssign))
               end
             end
             
@@ -2940,6 +3120,17 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     raidIconsCheckbox:SetHeight(24)
     frame.raidIconsCheckbox = raidIconsCheckbox
     
+    -- Show Assignment Checkbox
+    local showAssignmentLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    showAssignmentLabel:SetPoint("TOPLEFT", raidIconsLabel, "BOTTOMLEFT", 0, -10)
+    showAssignmentLabel:SetText("Show Assignment:")
+    
+    local showAssignmentCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    showAssignmentCheckbox:SetPoint("LEFT", showAssignmentLabel, "RIGHT", 5, 0)
+    showAssignmentCheckbox:SetWidth(24)
+    showAssignmentCheckbox:SetHeight(24)
+    frame.showAssignmentCheckbox = showAssignmentCheckbox
+    
     -- Allow Other Roles Checkbox
     local allowOtherRolesLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     allowOtherRolesLabel:SetPoint("LEFT", raidIconsCheckbox, "RIGHT", 10, 0)
@@ -2953,7 +3144,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     
     -- Player Count Label
     local countLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    countLabel:SetPoint("TOPLEFT", raidIconsLabel, "BOTTOMLEFT", 0, -15)
+    countLabel:SetPoint("TOPLEFT", showAssignmentLabel, "BOTTOMLEFT", 0, -15)
     countLabel:SetText("Player Count:")
     
     -- Player Count EditBox
@@ -3045,6 +3236,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   -- Populate fields with current role data
   frame.nameEditBox:SetText(roleData.name or "")
   frame.raidIconsCheckbox:SetChecked(roleData.showRaidIcons or false)
+  frame.showAssignmentCheckbox:SetChecked(roleData.showAssignment or false)
   frame.allowOtherRolesCheckbox:SetChecked(roleData.allowOtherRoles or false)
   frame.countEditBox:SetText(tostring(roleData.slots or 1))
   
@@ -3060,6 +3252,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     -- Update role data
     roleData.name = frame.nameEditBox:GetText()
     roleData.showRaidIcons = frame.raidIconsCheckbox:GetChecked()
+    roleData.showAssignment = frame.showAssignmentCheckbox:GetChecked()
     roleData.allowOtherRoles = frame.allowOtherRolesCheckbox:GetChecked()
     roleData.slots = tonumber(frame.countEditBox:GetText()) or 1
     
