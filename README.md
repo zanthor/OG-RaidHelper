@@ -92,7 +92,7 @@ The Roles Window displays your raid composition organized into four columns: **T
 - **Alphabetical Display** - Players are automatically sorted A-Z within each role
 - **Class Colors** - Player names are colored by their class
 - **Drag and Drop** - Click and drag players between role columns to reassign them
-- **Persistent Storage** - Role assignments are saved to `OGRH_SV.roles`
+- **Persistent Storage** - Role assignments are saved to `OGRH_SV.roles` and should retain between sessions.  Report a bug if this doesn't work
 
 ### Window Controls
 
@@ -127,6 +127,9 @@ The Roles Window displays your raid composition organized into four columns: **T
 - Names appear in the role column as they respond
 - You can manually drag/drop players between columns after polling
 
+**Known Issues**
+- Once you pop, you just can't stop.  A poll began will run the distance, I haven't been able to sort out stopping it.
+- In previous versions the drag/drop would randomly stop working for some units.  I suspect this had to do with other changes happening to the data behind the UI and this interface has been greatly simplified since this was a problem.
 ---
 
 ## Encounters System
@@ -582,7 +585,6 @@ OGRH_SV = {
 ## Credits
 
 - **Author:** Gnuzmas
-- **Contributors:** ChatGPT (code assistance)
 - **Community:** OG Guild on Turtle WoW
 
 ---
