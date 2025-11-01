@@ -26,8 +26,9 @@ A comprehensive raid management addon for organizing encounters, assigning roles
 ## Installation
 
 1. Extract the `OG-RaidHelper` folder to your `Interface\AddOns` directory
-2. Restart World of Warcraft or type `/reload` in-game
+2. Restart World of Warcraft or type `/reload` if you are just updating in-game
 3. You should see the OG-RaidHelper main window on your screen
+4. Seriously, skip all this and use the GIT Addon manager.
 
 ---
 
@@ -49,11 +50,10 @@ The compact main window provides quick access to all major features.
 ### Window Controls
 
 Located in the title bar:
-- **RC** - Performs a Ready Check (left-click) or announces "Ready Check in 5 seconds" (right-click)
+- **RC** - Performs a Ready Check (left-click), or toggle remote ready checks on/off (right-click)
 - **Announce** - Sends the current encounter's announcement to raid chat
 - **-** - Minimize/expand window
 - **L** - Lock/unlock window position (drag to move when unlocked)
-- **X** - Close window
 
 ### Main Buttons
 
@@ -83,14 +83,13 @@ The Roles Window displays your raid composition organized into four columns: **T
 
 - **Poll Button** (top-left) - Starts a sequential poll through all four roles
   - Click once to start: prompts Tanks → Healers → Melee → Ranged (10 seconds each)
-  - Click again to cancel the active poll
   
-- **Close Button** (top-right) - Closes the Roles Window
-
 - **Role Column Headers** (Tanks, Healers, Melee, Ranged) - Clickable headers for single-role polls
   - Click a header (e.g., "Tanks") to poll only that role
   - Header shows a poll is active for that role
   - Click the header again to cancel
+
+  - **Close Button** (top-right) - Closes the Roles Window
 
 ### Using the Poll System
 
