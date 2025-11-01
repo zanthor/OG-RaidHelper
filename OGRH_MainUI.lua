@@ -41,12 +41,13 @@ local Content = CreateFrame("Frame", nil, Main); Content:SetPoint("TOPLEFT", Mai
 local function makeBtn(text, anchorTo)
   local b=CreateFrame("Button", nil, Content, "UIPanelButtonTemplate")
   b:SetWidth(110); b:SetHeight(20); b:SetText(text)
-  if not anchorTo then b:SetPoint("TOP", Content, "TOP", 0, 0) else b:SetPoint("TOP", anchorTo, "BOTTOM", 0, -6) end
+  if not anchorTo then b:SetPoint("TOP", Content, "TOP", 0, 0) else b:SetPoint("TOP", anchorTo, "BOTTOM", 0, -4) end
   return b
 end
 local bRoles = makeBtn("Roles", nil)
 local bEncounters = makeBtn("Encounters", bRoles)
 local bTrade  = makeBtn("Trade", bEncounters)
+local bShare  = makeBtn("Share", bTrade)
 
 function OGRH_ShowBoard() if OGRH.ShowRolesUI then OGRH.ShowRolesUI() else OGRH.Msg("Roles UI not yet loaded.") end end
 bRoles:SetScript("OnClick", function()
@@ -412,6 +413,15 @@ readyCheck:SetScript("OnClick", function()
     else
       OGRH.Msg("Ready check functionality not loaded.")
     end
+  end
+end)
+
+-- Share button handler
+bShare:SetScript("OnClick", function()
+  if OGRH.ShowShareWindow then
+    OGRH.ShowShareWindow()
+  else
+    OGRH.Msg("Share functionality not loaded.")
   end
 end)
 

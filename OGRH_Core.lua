@@ -455,4 +455,275 @@ function OGRH.ClearAllAssignments()
   OGRH_SV.playerAssignments = {}
 end
 
+-- === Share Window for Import/Export ===
+function OGRH.ShowShareWindow()
+  -- Create window if it doesn't exist
+  if not OGRH_ShareFrame then
+    local frame = CreateFrame("Frame", "OGRH_ShareFrame", UIParent)
+    frame:SetWidth(600)
+    frame:SetHeight(400)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+    frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    
+    -- Backdrop
+    frame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      edgeSize = 12,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.85)
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -15)
+    title:SetText("Share Raid Data")
+    
+    -- Instructions
+    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    instructions:SetPoint("TOPLEFT", 20, -45)
+    instructions:SetText("Export: Click 'Export' to generate data. Copy from box below.")
+    
+    local instructions2 = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    instructions2:SetPoint("TOPLEFT", 20, -60)
+    instructions2:SetText("Import: Paste data in box below and click 'Import'.")
+    
+    -- Scroll frame backdrop
+    local scrollBackdrop = CreateFrame("Frame", nil, frame)
+    scrollBackdrop:SetPoint("TOPLEFT", 17, -80)
+    scrollBackdrop:SetPoint("BOTTOMRIGHT", -17, 50)
+    scrollBackdrop:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    scrollBackdrop:SetBackdropColor(0, 0, 0, 1)
+    scrollBackdrop:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    
+    -- Scroll frame
+    local scrollFrame = CreateFrame("ScrollFrame", "OGRH_ShareScrollFrame", scrollBackdrop, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 5, -6)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -28, 6)
+    
+    -- Scroll child
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollFrame:SetScrollChild(scrollChild)
+    scrollChild:SetWidth(scrollFrame:GetWidth())
+    scrollChild:SetHeight(400)
+    
+    -- Edit box
+    local editBox = CreateFrame("EditBox", nil, scrollChild)
+    editBox:SetPoint("TOPLEFT", 0, 0)
+    editBox:SetWidth(scrollChild:GetWidth())
+    editBox:SetHeight(400)
+    editBox:SetMultiLine(true)
+    editBox:SetAutoFocus(false)
+    editBox:SetFontObject(ChatFontNormal)
+    editBox:SetTextInsets(5, 5, 3, 3)
+    editBox:SetScript("OnEscapePressed", function() editBox:ClearFocus() end)
+    frame.editBox = editBox
+    
+    -- Update scroll child size when scroll frame resizes
+    scrollFrame:SetScript("OnSizeChanged", function()
+      scrollChild:SetWidth(scrollFrame:GetWidth())
+      editBox:SetWidth(scrollFrame:GetWidth())
+    end)
+    
+    -- Update scroll range when text changes
+    editBox:SetScript("OnTextChanged", function()
+      scrollFrame:UpdateScrollChildRect()
+    end)
+    
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    closeBtn:SetWidth(80)
+    closeBtn:SetHeight(25)
+    closeBtn:SetPoint("BOTTOMRIGHT", -20, 15)
+    closeBtn:SetText("Close")
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+    
+    -- Clear button
+    local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    clearBtn:SetWidth(80)
+    clearBtn:SetHeight(25)
+    clearBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
+    clearBtn:SetText("Clear")
+    clearBtn:SetScript("OnClick", function()
+      editBox:SetText("")
+      editBox:SetFocus()
+    end)
+    
+    -- Import button
+    local importBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    importBtn:SetWidth(100)
+    importBtn:SetHeight(25)
+    importBtn:SetPoint("RIGHT", clearBtn, "LEFT", -10, 0)
+    importBtn:SetText("Import")
+    importBtn:SetScript("OnClick", function()
+      local text = editBox:GetText()
+      if text and text ~= "" then
+        if OGRH.ImportShareData then
+          OGRH.ImportShareData(text)
+        end
+      else
+        OGRH.Msg("No data to import.")
+      end
+    end)
+    
+    -- Export button
+    local exportBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    exportBtn:SetWidth(100)
+    exportBtn:SetHeight(25)
+    exportBtn:SetPoint("BOTTOMLEFT", 20, 15)
+    exportBtn:SetText("Export")
+    exportBtn:SetScript("OnClick", function()
+      if OGRH.ExportShareData then
+        local data = OGRH.ExportShareData()
+        editBox:SetText(data)
+        editBox:HighlightText()
+        editBox:SetFocus()
+      end
+    end)
+    
+    OGRH_ShareFrame = frame
+  end
+  
+  OGRH_ShareFrame:Show()
+end
+
+-- Export data to string
+function OGRH.ExportShareData()
+  OGRH.EnsureSV()
+  
+  -- Collect all encounter management data
+  local exportData = {
+    version = "1.0",
+    encounterMgmt = OGRH_SV.encounterMgmt or { raids = {}, encounters = {} },
+    poolDefaults = OGRH_SV.poolDefaults or {},
+    encounterPools = OGRH_SV.encounterPools or {},
+    encounterAssignments = OGRH_SV.encounterAssignments or {},
+    encounterRaidMarks = OGRH_SV.encounterRaidMarks or {},
+    encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
+    encounterAnnouncements = OGRH_SV.encounterAnnouncements or {}
+  }
+  
+  -- Serialize to string (using a simple format)
+  local serialized = OGRH.Serialize(exportData)
+  return serialized
+end
+
+-- Import data from string
+function OGRH.ImportShareData(dataString)
+  if not dataString or dataString == "" then
+    OGRH.Msg("No data to import.")
+    return
+  end
+  
+  -- Deserialize
+  local success, importData = pcall(OGRH.Deserialize, dataString)
+  
+  if not success or not importData then
+    OGRH.Msg("|cffff0000Error:|r Failed to parse import data.")
+    return
+  end
+  
+  -- Validate version
+  if not importData.version then
+    OGRH.Msg("|cffff0000Error:|r Invalid data format.")
+    return
+  end
+  
+  OGRH.EnsureSV()
+  
+  -- Import all encounter management data
+  if importData.encounterMgmt then
+    OGRH_SV.encounterMgmt = importData.encounterMgmt
+  end
+  if importData.poolDefaults then
+    OGRH_SV.poolDefaults = importData.poolDefaults
+  end
+  if importData.encounterPools then
+    OGRH_SV.encounterPools = importData.encounterPools
+  end
+  if importData.encounterAssignments then
+    OGRH_SV.encounterAssignments = importData.encounterAssignments
+  end
+  if importData.encounterRaidMarks then
+    OGRH_SV.encounterRaidMarks = importData.encounterRaidMarks
+  end
+  if importData.encounterAssignmentNumbers then
+    OGRH_SV.encounterAssignmentNumbers = importData.encounterAssignmentNumbers
+  end
+  if importData.encounterAnnouncements then
+    OGRH_SV.encounterAnnouncements = importData.encounterAnnouncements
+  end
+  
+  OGRH.Msg("|cff00ff00Success:|r Encounter data imported.")
+  
+  -- Refresh any open windows
+  if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshAll then
+    OGRH_EncounterSetupFrame.RefreshAll()
+  end
+  if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshRaidsList then
+    OGRH_BWLEncounterFrame.RefreshRaidsList()
+  end
+end
+
+-- Simple serialization (converts table to string)
+function OGRH.Serialize(tbl)
+  local function serializeValue(v)
+    local t = type(v)
+    if t == "string" then
+      return string.format("%q", v)
+    elseif t == "number" or t == "boolean" then
+      return tostring(v)
+    elseif t == "table" then
+      return OGRH.SerializeTable(v)
+    else
+      return "nil"
+    end
+  end
+  
+  local function serializeTable(tbl)
+    local parts = {}
+    table.insert(parts, "{")
+    
+    for k, v in pairs(tbl) do
+      local keyStr
+      if type(k) == "string" then
+        keyStr = string.format("[%q]", k)
+      else
+        keyStr = "[" .. tostring(k) .. "]"
+      end
+      table.insert(parts, keyStr .. "=" .. serializeValue(v) .. ",")
+    end
+    
+    table.insert(parts, "}")
+    return table.concat(parts, "")
+  end
+  
+  OGRH.SerializeTable = serializeTable
+  return serializeTable(tbl)
+end
+
+-- Simple deserialization (converts string back to table)
+function OGRH.Deserialize(str)
+  if not str or str == "" then return nil end
+  
+  -- Use loadstring to evaluate the table string
+  local func = loadstring("return " .. str)
+  if not func then return nil end
+  
+  return func()
+end
+
+
 
