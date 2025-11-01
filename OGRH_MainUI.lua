@@ -35,6 +35,7 @@ reAnnounce:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- ReadyCheck button
 local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(20); readyCheck:SetHeight(16); readyCheck:SetText("RC"); readyCheck:SetPoint("RIGHT", reAnnounce, "LEFT", -2, 0)
+readyCheck:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 local Content = CreateFrame("Frame", nil, Main); Content:SetPoint("TOPLEFT", Main, "TOPLEFT", 6, -26); Content:SetPoint("BOTTOMRIGHT", Main, "BOTTOMRIGHT", -6, 6)
 local function makeBtn(text, anchorTo)
@@ -342,10 +343,75 @@ end)
 
 -- ReadyCheck button handler
 readyCheck:SetScript("OnClick", function()
-  if OGRH.DoReadyCheck then
-    OGRH.DoReadyCheck()
+  local btn = arg1 or "LeftButton"
+  
+  if btn == "RightButton" then
+    -- Show RC settings menu
+    if not OGRH_RCMenu then
+      local M = CreateFrame("Frame", "OGRH_RCMenu", UIParent)
+      M:SetFrameStrata("FULLSCREEN_DIALOG")
+      M:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
+      M:SetBackdropColor(0,0,0,0.95); M:SetWidth(180); M:SetHeight(50); M:Hide()
+      
+      local toggleBtn = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
+      toggleBtn:SetWidth(160); toggleBtn:SetHeight(20)
+      toggleBtn:SetPoint("TOPLEFT", M, "TOPLEFT", 10, -15)
+      
+      local fs = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      fs:SetAllPoints(); fs:SetJustifyH("CENTER")
+      toggleBtn.fs = fs
+      
+      toggleBtn:SetScript("OnClick", function()
+        OGRH.EnsureSV()
+        -- Toggle the setting
+        OGRH_SV.allowRemoteReadyCheck = not OGRH_SV.allowRemoteReadyCheck
+        
+        -- Update button text
+        if OGRH_SV.allowRemoteReadyCheck then
+          fs:SetText("|cff00ff00Allow Remote Readycheck|r")
+        else
+          fs:SetText("|cffff0000Allow Remote Readycheck|r")
+        end
+        
+        if OGRH and OGRH.Msg then
+          if OGRH_SV.allowRemoteReadyCheck then
+            OGRH.Msg("Remote ready checks |cff00ff00enabled|r.")
+          else
+            OGRH.Msg("Remote ready checks |cffff0000disabled|r.")
+          end
+        end
+        
+        -- Hide the menu after toggling
+        M:Hide()
+      end)
+      
+      M.toggleBtn = toggleBtn
+    end
+    
+    local M = OGRH_RCMenu
+    
+    -- Toggle menu visibility
+    if M:IsVisible() then
+      M:Hide()
+      return
+    end
+    
+    -- Update button text based on current setting
+    OGRH.EnsureSV()
+    if OGRH_SV.allowRemoteReadyCheck then
+      M.toggleBtn.fs:SetText("|cff00ff00Allow Remote Readycheck|r")
+    else
+      M.toggleBtn.fs:SetText("|cffff0000Allow Remote Readycheck|r")
+    end
+    
+    M:ClearAllPoints(); M:SetPoint("TOPLEFT", readyCheck, "BOTTOMLEFT", 0, -2); M:Show()
   else
-    OGRH.Msg("Ready check functionality not loaded.")
+    -- Left click: Do ready check
+    if OGRH.DoReadyCheck then
+      OGRH.DoReadyCheck()
+    else
+      OGRH.Msg("Ready check functionality not loaded.")
+    end
   end
 end)
 

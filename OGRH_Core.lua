@@ -38,7 +38,7 @@ OGRH.COLOR = {
 }
 
 function OGRH.EnsureSV()
-  if not OGRH_SV then OGRH_SV = { roles = {}, order = {}, pollTime = 5, tankCategory = {}, healerBoss = {}, ui = {}, tankIcon = {}, healerIcon = {}, rolesUI = {}, playerAssignments = {} } end
+  if not OGRH_SV then OGRH_SV = { roles = {}, order = {}, pollTime = 5, tankCategory = {}, healerBoss = {}, ui = {}, tankIcon = {}, healerIcon = {}, rolesUI = {}, playerAssignments = {}, allowRemoteReadyCheck = true } end
   if not OGRH_SV.roles then OGRH_SV.roles = {} end
   if not OGRH_SV.order then OGRH_SV.order = {} end
   if not OGRH_SV.order.TANKS then OGRH_SV.order.TANKS = {} end
@@ -53,6 +53,7 @@ function OGRH.EnsureSV()
   if not OGRH_SV.healerIcon then OGRH_SV.healerIcon = {} end
   if not OGRH_SV.rolesUI then OGRH_SV.rolesUI = {} end
   if not OGRH_SV.playerAssignments then OGRH_SV.playerAssignments = {} end
+  if OGRH_SV.allowRemoteReadyCheck == nil then OGRH_SV.allowRemoteReadyCheck = true end
   
   -- Migrate old healerTankAssigns to playerAssignments (as icons)
   if OGRH_SV.healerTankAssigns and not OGRH_SV._assignmentsMigrated then
@@ -177,9 +178,13 @@ addonFrame:SetScript("OnEvent", function()
       if message == "READYCHECK_REQUEST" then
         -- Only process if we are the raid leader
         if IsRaidLeader and IsRaidLeader() == 1 then
-          -- Set flag to capture AFK messages
-          OGRH.readyCheckInProgress = true
-          DoReadyCheck()
+          -- Check if remote ready checks are allowed
+          OGRH.EnsureSV()
+          if OGRH_SV.allowRemoteReadyCheck then
+            -- Set flag to capture AFK messages
+            OGRH.readyCheckInProgress = true
+            DoReadyCheck()
+          end
         end
       -- Handle announcement broadcast
       elseif string.sub(message, 1, 9) == "ANNOUNCE;" then
@@ -218,10 +223,73 @@ addonFrame:SetScript("OnEvent", function()
       local msg = arg1
       
       -- Check for "No players are AFK" or "The following players are AFK:"
-      if msg and (string.find(msg, "No players are AFK") or string.find(msg, "The following players are AFK:")) then
-        -- Echo to raid warning
-        OGRH.SayRW(msg)
-        -- Clear the flag after getting the AFK response
+      if msg and string.find(msg, "No players are AFK") then
+        -- Echo "No players are AFK" with header color
+        OGRH.SayRW(OGRH.Header("No players are AFK"))
+        OGRH.readyCheckInProgress = false
+      elseif msg and string.find(msg, "The following players are AFK:") then
+        -- Parse the player names from the message
+        local playersPart = string.gsub(msg, "The following players are AFK: ", "")
+        local players = {}
+        
+        -- Split by comma and space
+        local pos = 1
+        while pos <= string.len(playersPart) do
+          local commaPos = string.find(playersPart, ", ", pos, true)
+          local playerName
+          if commaPos then
+            playerName = string.sub(playersPart, pos, commaPos - 1)
+            pos = commaPos + 2
+          else
+            playerName = string.sub(playersPart, pos)
+            pos = string.len(playersPart) + 1
+          end
+          
+          -- Trim whitespace
+          playerName = string.gsub(playerName, "^%s*(.-)%s*$", "%1")
+          if playerName ~= "" then
+            table.insert(players, playerName)
+          end
+        end
+        
+        -- Build lookup table of raid members with class and online status
+        local raidInfo = {}
+        local numRaid = GetNumRaidMembers() or 0
+        for j = 1, numRaid do
+          local name, _, _, _, class, _, _, online = GetRaidRosterInfo(j)
+          if name then
+            raidInfo[name] = {class = class, online = online}
+          end
+        end
+        
+        -- Build colored message
+        local coloredPlayers = {}
+        for i = 1, table.getn(players) do
+          local playerName = players[i]
+          local info = raidInfo[playerName]
+          local coloredName
+          
+          if info and info.class then
+            -- Use the class from raid roster to color the name
+            local classUpper = string.upper(info.class)
+            local classColorHex = OGRH.ClassColorHex(classUpper)
+            coloredName = classColorHex .. playerName .. "|r"
+          else
+            -- Fallback to white if class not found
+            coloredName = playerName
+          end
+          
+          -- Add asterisk if offline
+          if info and not info.online then
+            coloredName = coloredName .. OGRH.COLOR.ROLE .. "*" .. OGRH.COLOR.RESET
+          end
+          
+          table.insert(coloredPlayers, coloredName)
+        end
+        
+        -- Build the final message
+        local coloredMsg = OGRH.Header("The following players are AFK:") .. " " .. table.concat(coloredPlayers, ", ")
+        OGRH.SayRW(coloredMsg)
         OGRH.readyCheckInProgress = false
       end
     end
