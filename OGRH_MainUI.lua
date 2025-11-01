@@ -62,6 +62,10 @@ bRoles:SetScript("OnClick", function()
   if OGRH_EncountersMenu and OGRH_EncountersMenu:IsVisible() then
     OGRH_EncountersMenu:Hide()
   end
+  -- Close Trade menu if it's open
+  if OGRH_TradeMenu and OGRH_TradeMenu:IsVisible() then
+    OGRH_TradeMenu:Hide()
+  end
   
   if OGRH.ShowRolesUI then OGRH.ShowRolesUI()
   else OGRH.Msg("Roles UI not yet loaded. If this persists after /reload, a Lua error prevented it from loading.");
@@ -70,6 +74,11 @@ end)
 
 -- Encounters button with collapsible menu
 bEncounters:SetScript("OnClick", function()
+  -- Close Trade menu if it's open
+  if OGRH_TradeMenu and OGRH_TradeMenu:IsVisible() then
+    OGRH_TradeMenu:Hide()
+  end
+  
   if not OGRH_EncountersMenu then
     -- Create encounter menu
     local menu = CreateFrame("Frame", "OGRH_EncountersMenu", UIParent)
@@ -237,9 +246,15 @@ end)
 bTrade:RegisterForClicks("LeftButtonUp","RightButtonUp")
 bTrade:SetScript("OnClick", function()
   local btn = arg1 or "LeftButton"
+  -- Close Encounters menu if it's open
+  if OGRH_EncountersMenu and OGRH_EncountersMenu:IsVisible() then
+    OGRH_EncountersMenu:Hide()
+  end
+  
   -- Both left and right click show/hide the menu
   if not OGRH_TradeMenu then
       local M = CreateFrame("Frame","OGRH_TradeMenu",UIParent)
+      M:SetFrameStrata("FULLSCREEN_DIALOG")
       M:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
       M:SetBackdropColor(0,0,0,0.95); M:SetWidth(120); M:SetHeight(1); M:Hide()
       M.items = { "Sand", "Runes", "GFPP", "GAPP", "GSPP", "Invis" }
@@ -418,6 +433,15 @@ end)
 
 -- Share button handler
 bShare:SetScript("OnClick", function()
+  -- Close Trade menu if it's open
+  if OGRH_TradeMenu and OGRH_TradeMenu:IsVisible() then
+    OGRH_TradeMenu:Hide()
+  end
+  -- Close Encounters menu if it's open
+  if OGRH_EncountersMenu and OGRH_EncountersMenu:IsVisible() then
+    OGRH_EncountersMenu:Hide()
+  end
+  
   if OGRH.ShowShareWindow then
     OGRH.ShowShareWindow()
   else
