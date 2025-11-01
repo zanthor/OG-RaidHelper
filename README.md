@@ -605,3 +605,9 @@ For bugs, feature requests, or questions:
 ---
 
 **Happy Raiding!**
+
+**ToDo**
+- Fix column layout on the raid management panel to reduce whitespace.
+- Add all existing encounters to default setup.
+- Fix Documentation
+- Raid
