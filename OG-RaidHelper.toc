@@ -7,13 +7,8 @@
 
 OGRH_Core.lua
 OGRH_MainUI.lua
-OGRH_E_BWL.lua
-OGRH_E_AQ40.lua
 OGRH_RolesUI.lua
 OGRH_EncounterMgmt.lua
 OGRH_Move.lua
 OGRH_Poll.lua
-OGRH_CThun.lua
-OGRH_4HM.lua
-OGRH_Healing.lua
 OGRH_Trade.lua

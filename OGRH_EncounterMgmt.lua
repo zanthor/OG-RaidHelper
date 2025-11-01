@@ -4604,7 +4604,7 @@ function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
       if not frame.sourceMenu then
         local menu = CreateFrame("Frame", nil, frame)
         menu:SetWidth(180)
-        menu:SetHeight(150)
+        menu:SetHeight(230)
         menu:SetFrameStrata("FULLSCREEN_DIALOG")
         menu:SetBackdrop({
           bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -4619,14 +4619,14 @@ function OGRH.ShowEncounterPoolWindow(raidName, encounterName, role, roleIndex)
         frame.sourceMenu = menu
         
         local sourceOptions = {
-          {text = "Tanks", value = "role_tanks"},
-          {text = "Healers", value = "role_healers"},
-          {text = "Melee", value = "role_melee"},
-          {text = "Ranged", value = "role_ranged"},
-          {text = "Default: Tanks", value = "default_tanks"},
-          {text = "Default: Healers", value = "default_healers"},
-          {text = "Default: Melee", value = "default_melee"},
-          {text = "Default: Ranged", value = "default_ranged"}
+          {text = "Raid: Tanks", value = "role_tanks"},
+          {text = "Raid: Healers", value = "role_healers"},
+          {text = "Raid: Melee", value = "role_melee"},
+          {text = "Raid: Ranged", value = "role_ranged"},
+          {text = "Guild: Tanks", value = "default_tanks"},
+          {text = "Guild: Healers", value = "default_healers"},
+          {text = "Guild: Melee", value = "default_melee"},
+          {text = "Guild: Ranged", value = "default_ranged"}
         }
         local yOffset = -5
         

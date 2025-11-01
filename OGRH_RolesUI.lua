@@ -18,7 +18,8 @@
   - Up/Down arrows: Manual ordering replaced with alphabetical sort
   
   ACTIVE FEATURES:
-  - Poll button: Start/cancel role polls (left/right click)
+  - Poll button: Start/cancel full role poll sequence (left click)
+  - Role column headers: Click any role header to poll that specific role
   - Drag/drop: Move players between role columns
   - Alphabetical sorting: Players automatically sorted A-Z in each column
   - Class colors: Player names colored by class
@@ -271,7 +272,7 @@ local function CreateRolesFrame()
     pollBtn:SetPoint("TOPLEFT", 20, -20)
     pollBtn:SetText("Poll")
     
-    pollBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    pollBtn:RegisterForClicks("LeftButtonUp")
     local function UpdatePollButtonText()
         -- Double check to ensure OGRH.Poll exists
         if not OGRH.Poll then return end
@@ -285,34 +286,19 @@ local function CreateRolesFrame()
     end
 
     pollBtn:SetScript("OnClick", function()
-        local button = arg1 or "LeftButton"
         if OGRH.Poll then
             if OGRH.Poll.IsActive and OGRH.Poll.IsActive() then
                 -- Cancel ongoing poll
                 if OGRH.Poll.StopPoll then
                     OGRH.Poll.StopPoll()
-                    if OGRH.Poll.menu then
-                        OGRH.Poll.menu:Hide()
-                    end
                     print("|cFFFFFF00OGRH:|r Poll cancelled.")
                 end
             else
-                if button == "LeftButton" then
-                    -- Start full role poll sequence
-                    if OGRH.Poll.StartRolePoll then
-                        OGRH.Poll.StartRolePoll()
-                    else
-                        print("Error: Poll functionality not loaded")
-                    end
+                -- Start full role poll sequence
+                if OGRH.Poll.StartRolePoll then
+                    OGRH.Poll.StartRolePoll()
                 else
-                    -- Show role selection menu
-                    if OGRH.Poll.menu then
-                        OGRH.Poll.menu:ClearAllPoints()
-                        OGRH.Poll.menu:SetPoint("TOPLEFT", pollBtn, "BOTTOMLEFT", 0, -2)
-                        OGRH.Poll.menu:Show()
-                    else
-                        print("Error: Poll menu not loaded")
-                    end
+                    print("Error: Poll functionality not loaded")
                 end
             end
             UpdatePollButtonText()
@@ -343,9 +329,55 @@ local function CreateRolesFrame()
         columnFrame:SetHeight(columnHeight)
         columnFrame:SetPoint("TOPLEFT", 20 + ((i-1) * columnWidth), columnStartY)
         
-        local headerText = columnFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-        headerText:SetPoint("TOP", 0, -8)  -- Added 5 pixels of padding at the top
+        -- Create clickable header button
+        local headerBtn = CreateFrame("Button", nil, columnFrame)
+        headerBtn:SetWidth(columnWidth - 16)
+        headerBtn:SetHeight(20)
+        headerBtn:SetPoint("TOP", 0, -4)
+        
+        local headerText = headerBtn:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        headerText:SetPoint("CENTER", 0, 0)
         headerText:SetText(column.name)
+        
+        -- Map column names to role constants used by poll system
+        local roleMap = {
+            ["Tanks"] = "TANKS",
+            ["Healers"] = "HEALERS",
+            ["Melee"] = "MELEE",
+            ["Ranged"] = "RANGED"
+        }
+        local pollRole = roleMap[column.name]
+        
+        -- Add click functionality to start role-specific poll
+        headerBtn:SetScript("OnClick", function()
+            if OGRH.Poll then
+                if OGRH.Poll.IsActive and OGRH.Poll.IsActive() then
+                    -- Poll is active, cancel it
+                    if OGRH.Poll.StopPoll then
+                        OGRH.Poll.StopPoll()
+                        print("|cFFFFFF00OGRH:|r Poll cancelled.")
+                    end
+                else
+                    -- Start role-specific poll
+                    if OGRH.Poll.StartRolePoll and pollRole then
+                        OGRH.Poll.StartRolePoll(pollRole)
+                    else
+                        print("Error: Poll functionality not loaded")
+                    end
+                end
+            else
+                print("Error: Poll functionality not loaded")
+            end
+        end)
+        
+        -- Add highlight on hover
+        headerBtn:SetScript("OnEnter", function()
+            headerText:SetTextColor(1, 1, 0)  -- Yellow on hover
+        end)
+        
+        headerBtn:SetScript("OnLeave", function()
+            headerText:SetTextColor(1, 1, 1)  -- White normally
+        end)
         
         columnFrame:SetBackdrop({
             bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
