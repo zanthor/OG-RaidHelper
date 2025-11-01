@@ -13,7 +13,8 @@ This addon is entirely vibe coded using Claude Sonnet 3.5 and 4.5.  I deliberate
 
 The documentation that follows is also entirely created by Claude, and I can tell you right now Claude did some acid at some point and he has hallucinations from time to time.  I already found and removed one blatant error in the documentation, but I'm sure there's more.
 
-That said it's 1:00AM and I've had about 5 hours of sleep a night for the past 4 nights working on this addon.
+That said it's 1:00AM and I've had about 5 hours of sleep a night for the past 4 nights working on this addon.'
+
 ---
 ## First Run
 In the addon folder you will find defaults.txt, when you first run the addon it's all empty.  If you open the share dialog you'll find a place you can paste the contents of defaults.txt which will give you a head start using the addon.
