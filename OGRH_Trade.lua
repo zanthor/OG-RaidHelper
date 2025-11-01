@@ -7,6 +7,8 @@ local SAND_COUNT = 5
 
 -- Current trade selection (does not persist between sessions)
 local currentTradeType = nil
+local currentTradeItemId = nil
+local currentTradeQuantity = nil
 
 -- Trade frame for automated trading
 local tradeFrame = CreateFrame("Frame", "OGRH_TradeFrame")
@@ -113,6 +115,81 @@ local function runSandTrade()
     tradeFrame:Show()
 end
 
+-- Generic trade function for any item ID and quantity
+local function runTrade(itemId, quantity)
+    if tradeFrame.state ~= "IDLE" then
+        OGRH.Msg("Trade already in progress.")
+        return
+    end
+    
+    -- Check if trade window is open
+    if not TradeFrame or not TradeFrame:IsShown() then
+        OGRH.Msg("Open the trade window first.")
+        return
+    end
+    
+    -- Try to find exact stack of the specified quantity
+    local bag, slot = findStackExact(itemId, quantity)
+    
+    if bag and slot then
+        -- We have a stack of the exact quantity, place it in trade
+        local tradeSlot = firstOpenTradeSlot()
+        if not tradeSlot then
+            OGRH.Msg("No free trade slot available.")
+            return
+        end
+        
+        PickupContainerItem(bag, slot)
+        local btn = tradeItemButton(tradeSlot)
+        if not btn then
+            ClearCursor()
+            return
+        end
+        
+        btn:Click()
+        OGRH.Msg("Item placed in trade. Click Trade button to complete.")
+    else
+        -- Need to split a stack
+        local sourceBag, sourceSlot = findSourceStack(itemId, quantity)
+        if not sourceBag then
+            OGRH.Msg("Not enough items found in bags (need " .. quantity .. ").")
+            return
+        end
+        
+        local emptyBag, emptySlot = findEmptySlot()
+        if not emptyBag then
+            OGRH.Msg("No empty bag slot available for splitting.")
+            return
+        end
+        
+        -- Split the stack
+        SplitContainerItem(sourceBag, sourceSlot, quantity)
+        PickupContainerItem(emptyBag, emptySlot)
+        
+        -- Wait a moment for split to complete, then place in trade
+        local waitFrame = CreateFrame("Frame")
+        waitFrame.elapsed = 0
+        waitFrame:SetScript("OnUpdate", function()
+            waitFrame.elapsed = waitFrame.elapsed + arg1
+            if waitFrame.elapsed > 0.5 then
+                local bag5, slot5 = findStackExact(itemId, quantity)
+                if bag5 and slot5 then
+                    local tradeSlot = firstOpenTradeSlot()
+                    if tradeSlot then
+                        PickupContainerItem(bag5, slot5)
+                        local btn = tradeItemButton(tradeSlot)
+                        if btn then
+                            btn:Click()
+                            OGRH.Msg("Item placed in trade. Click Trade button to complete.")
+                        end
+                    end
+                end
+                waitFrame:SetScript("OnUpdate", nil)
+            end
+        end)
+    end
+end
+
 -- OnUpdate handler for automated trading
 tradeFrame:SetScript("OnUpdate", function()
     local elapsed = arg1 or 0
@@ -198,9 +275,40 @@ OGRH.GetTradeType = function()
     return currentTradeType
 end
 
-OGRH.ExecuteTrade = function()
+OGRH.SetTradeItem = function(itemId, quantity)
+    currentTradeItemId = itemId
+    currentTradeQuantity = quantity
+    currentTradeType = nil  -- Clear old type when setting specific item
+    
+    -- Get item name for display
+    local itemName = GetItemInfo(itemId)
+    if itemName then
+        OGRH.Msg("Trade item set to: " .. itemName .. " x" .. quantity)
+    else
+        OGRH.Msg("Trade item set to: Item " .. itemId .. " x" .. quantity)
+    end
+end
+
+OGRH.GetCurrentTradeItemId = function()
+    return currentTradeItemId
+end
+
+OGRH.ExecuteTrade = function(itemId, quantity)
+    -- If called with itemId and quantity, trade those items directly
+    if itemId and quantity then
+        runTrade(itemId, quantity)
+        return
+    end
+    
+    -- Check if we have a stored trade item
+    if currentTradeItemId and currentTradeQuantity then
+        runTrade(currentTradeItemId, currentTradeQuantity)
+        return
+    end
+    
+    -- Legacy behavior: use currentTradeType
     if not currentTradeType then
-        OGRH.Msg("Please select a trade type first (right-click Trade button).")
+        OGRH.Msg("Please select a trade item first (click Trade button).")
         return
     end
     
@@ -240,7 +348,7 @@ local function CreateTradeButton()
     
     -- Show/hide with trade frame
     ogrhBtn:SetScript("OnShow", function()
-        if not currentTradeType then
+        if not currentTradeType and not currentTradeItemId then
             this:Disable()
         else
             this:Enable()

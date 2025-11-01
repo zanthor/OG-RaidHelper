@@ -256,37 +256,98 @@ bTrade:SetScript("OnClick", function()
       local M = CreateFrame("Frame","OGRH_TradeMenu",UIParent)
       M:SetFrameStrata("FULLSCREEN_DIALOG")
       M:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
-      M:SetBackdropColor(0,0,0,0.95); M:SetWidth(120); M:SetHeight(1); M:Hide()
-      M.items = { "Sand", "Runes", "GFPP", "GAPP", "GSPP", "Invis" }
+      M:SetBackdropColor(0,0,0,0.95); M:SetWidth(200); M:SetHeight(1); M:Hide()
+      
       M.btns = {}
-      local i
-      for i=1,6 do
-        local it = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
-        it:SetWidth(100); it:SetHeight(18)
-        if i==1 then it:SetPoint("TOPLEFT", M, "TOPLEFT", 10, -10) else it:SetPoint("TOPLEFT", M.btns[i-1], "BOTTOMLEFT", 0, -6) end
-        local fs = it:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall"); fs:SetAllPoints(); fs:SetJustifyH("CENTER"); it.fs=fs
-        local label = M.items[i]
-        local itemType = string.lower(label)
-        local btnIndex = i  -- Capture index in closure
+      M.Rebuild = function()
+        -- Clear existing buttons
+        if M.btns then
+          for _, btn in ipairs(M.btns) do
+            btn:Hide()
+            btn:SetParent(nil)
+          end
+        end
+        M.btns = {}
         
-        -- Sand is enabled, others are disabled
-        if i==1 then 
-          fs:SetText(label) 
-        else 
-          fs:SetText("|cff888888"..label.."|r") 
+        OGRH.EnsureSV()
+        local items = OGRH_SV.tradeItems
+        
+        -- Get current trade item info
+        local currentItemId = OGRH.GetCurrentTradeItemId and OGRH.GetCurrentTradeItemId() or nil
+        
+        local yOffset = -10
+        local buttonHeight = 18
+        local buttonSpacing = 6
+        
+        -- Create buttons for each trade item
+        for i, itemData in ipairs(items) do
+          local it = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
+          it:SetWidth(180)
+          it:SetHeight(buttonHeight)
+          
+          if i == 1 then
+            it:SetPoint("TOPLEFT", M, "TOPLEFT", 10, yOffset)
+          else
+            it:SetPoint("TOPLEFT", M.btns[i-1], "BOTTOMLEFT", 0, -buttonSpacing)
+          end
+          
+          local fs = it:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+          fs:SetAllPoints()
+          fs:SetJustifyH("CENTER")
+          it.fs = fs
+          
+          local label = itemData.name or ("Item " .. itemData.itemId)
+          
+          -- Highlight if this is the active trade item
+          if itemData.itemId == currentItemId then
+            fs:SetText(OGRH.COLOR.HEADER .. label .. OGRH.COLOR.RESET)
+          else
+            fs:SetText(label)
+          end
+          
+          local itemId = itemData.itemId
+          local quantity = itemData.quantity
+          
+          it:SetScript("OnClick", function()
+            if OGRH.SetTradeItem then
+              OGRH.SetTradeItem(itemId, quantity)
+            end
+            M:Hide()
+          end)
+          
+          table.insert(M.btns, it)
         end
         
-        it:SetScript("OnClick", function() 
-          if btnIndex==1 then 
-            if OGRH.SetTradeType then 
-              OGRH.SetTradeType("sand")
-            end
+        -- Add Settings button at the bottom
+        local settingsBtn = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
+        settingsBtn:SetWidth(180)
+        settingsBtn:SetHeight(buttonHeight)
+        
+        if table.getn(M.btns) > 0 then
+          settingsBtn:SetPoint("TOPLEFT", M.btns[table.getn(M.btns)], "BOTTOMLEFT", 0, -buttonSpacing)
+        else
+          settingsBtn:SetPoint("TOPLEFT", M, "TOPLEFT", 10, yOffset)
+        end
+        
+        local settingsFs = settingsBtn:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+        settingsFs:SetAllPoints()
+        settingsFs:SetJustifyH("CENTER")
+        settingsFs:SetText("|cff888888Settings|r")
+        
+        settingsBtn:SetScript("OnClick", function()
+          M:Hide()
+          if OGRH.ShowTradeSettings then
+            OGRH.ShowTradeSettings()
           end
-          M:Hide() 
         end)
-        M.btns[i]=it
+        
+        table.insert(M.btns, settingsBtn)
+        
+        -- Calculate menu height
+        local numButtons = table.getn(M.btns)
+        local totalHeight = 10 + numButtons * buttonHeight + (numButtons - 1) * buttonSpacing + 10
+        M:SetHeight(totalHeight)
       end
-      M:SetHeight(10 + 6*18 + 5*6 + 10)
     end
     local M = OGRH_TradeMenu
     
@@ -296,24 +357,8 @@ bTrade:SetScript("OnClick", function()
       return
     end
     
-    -- Update button colors based on current selection
-    local currentType = OGRH.GetTradeType and OGRH.GetTradeType() or nil
-    local j
-    for j=1,6 do
-      local btnLabel = M.items[j]
-      local itemType = string.lower(btnLabel)
-      if j==1 then
-        -- Sand is always enabled
-        if currentType == "sand" then
-          M.btns[j].fs:SetText("|cff00ff00" .. btnLabel .. "|r")
-        else
-          M.btns[j].fs:SetText(btnLabel)
-        end
-      else
-        -- Other items are disabled
-        M.btns[j].fs:SetText("|cff888888" .. btnLabel .. "|r")
-      end
-    end
+    -- Rebuild menu with current items
+    M.Rebuild()
     
     M:ClearAllPoints(); M:SetPoint("TOPLEFT", bTrade, "BOTTOMLEFT", 0, -2); M:Show()
 end)

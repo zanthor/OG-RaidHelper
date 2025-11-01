@@ -38,7 +38,7 @@ OGRH.COLOR = {
 }
 
 function OGRH.EnsureSV()
-  if not OGRH_SV then OGRH_SV = { roles = {}, order = {}, pollTime = 5, tankCategory = {}, healerBoss = {}, ui = {}, tankIcon = {}, healerIcon = {}, rolesUI = {}, playerAssignments = {}, allowRemoteReadyCheck = true } end
+  if not OGRH_SV then OGRH_SV = { roles = {}, order = {}, pollTime = 5, tankCategory = {}, healerBoss = {}, ui = {}, tankIcon = {}, healerIcon = {}, rolesUI = {}, playerAssignments = {}, allowRemoteReadyCheck = true, tradeItems = {} } end
   if not OGRH_SV.roles then OGRH_SV.roles = {} end
   if not OGRH_SV.order then OGRH_SV.order = {} end
   if not OGRH_SV.order.TANKS then OGRH_SV.order.TANKS = {} end
@@ -54,6 +54,7 @@ function OGRH.EnsureSV()
   if not OGRH_SV.rolesUI then OGRH_SV.rolesUI = {} end
   if not OGRH_SV.playerAssignments then OGRH_SV.playerAssignments = {} end
   if OGRH_SV.allowRemoteReadyCheck == nil then OGRH_SV.allowRemoteReadyCheck = true end
+  if not OGRH_SV.tradeItems then OGRH_SV.tradeItems = {} end
   
   -- Migrate old healerTankAssigns to playerAssignments (as icons)
   if OGRH_SV.healerTankAssigns and not OGRH_SV._assignmentsMigrated then
@@ -612,7 +613,8 @@ function OGRH.ExportShareData()
     encounterAssignments = OGRH_SV.encounterAssignments or {},
     encounterRaidMarks = OGRH_SV.encounterRaidMarks or {},
     encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
-    encounterAnnouncements = OGRH_SV.encounterAnnouncements or {}
+    encounterAnnouncements = OGRH_SV.encounterAnnouncements or {},
+    tradeItems = OGRH_SV.tradeItems or {}
   }
   
   -- Serialize to string (using a simple format)
@@ -665,12 +667,18 @@ function OGRH.ImportShareData(dataString)
   if importData.encounterAnnouncements then
     OGRH_SV.encounterAnnouncements = importData.encounterAnnouncements
   end
+  if importData.tradeItems then
+    OGRH_SV.tradeItems = importData.tradeItems
+  end
   
   OGRH.Msg("|cff00ff00Success:|r Encounter data imported.")
   
   -- Refresh any open windows
   if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshAll then
     OGRH_EncounterSetupFrame.RefreshAll()
+  end
+  if OGRH_TradeSettingsFrame and OGRH_TradeSettingsFrame.RefreshList then
+    OGRH_TradeSettingsFrame.RefreshList()
   end
   if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshRaidsList then
     OGRH_BWLEncounterFrame.RefreshRaidsList()
@@ -724,6 +732,434 @@ function OGRH.Deserialize(str)
   
   return func()
 end
+
+-- Trade Settings Window
+function OGRH.ShowTradeSettings()
+  OGRH.EnsureSV()
+  
+  if OGRH_TradeSettingsFrame then
+    OGRH_TradeSettingsFrame:Show()
+    OGRH.RefreshTradeSettings()
+    return
+  end
+  
+  local frame = CreateFrame("Frame", "OGRH_TradeSettingsFrame", UIParent)
+  frame:SetWidth(300)
+  frame:SetHeight(450)
+  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  frame:SetFrameStrata("DIALOG")
+  frame:EnableMouse(true)
+  frame:SetMovable(true)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+  frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+  
+  -- Backdrop
+  frame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  frame:SetBackdropColor(0, 0, 0, 0.85)
+  
+  -- Title
+  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -15)
+  title:SetText("Trade Settings")
+  
+  -- Close button
+  local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  closeBtn:SetWidth(60)
+  closeBtn:SetHeight(24)
+  closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+  closeBtn:SetText("Close")
+  closeBtn:SetScript("OnClick", function() frame:Hide() end)
+  
+  -- Instructions
+  local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  instructions:SetPoint("TOPLEFT", 20, -45)
+  instructions:SetText("Configure trade items and quantities:")
+  
+  -- List backdrop
+  local listBackdrop = CreateFrame("Frame", nil, frame)
+  listBackdrop:SetPoint("TOPLEFT", 17, -75)
+  listBackdrop:SetPoint("BOTTOMRIGHT", -17, 10)
+  listBackdrop:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  listBackdrop:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+  
+  -- Scroll frame
+  local scrollFrame = CreateFrame("ScrollFrame", nil, listBackdrop)
+  scrollFrame:SetPoint("TOPLEFT", listBackdrop, "TOPLEFT", 5, -5)
+  scrollFrame:SetPoint("BOTTOMRIGHT", listBackdrop, "BOTTOMRIGHT", -22, 5)
+  
+  -- Scroll child
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  scrollChild:SetWidth(235)
+  scrollChild:SetHeight(1)
+  scrollFrame:SetScrollChild(scrollChild)
+  frame.scrollChild = scrollChild
+  frame.scrollFrame = scrollFrame
+  
+  -- Create scrollbar
+  local scrollBar = CreateFrame("Slider", nil, scrollFrame)
+  scrollBar:SetPoint("TOPRIGHT", listBackdrop, "TOPRIGHT", -5, -16)
+  scrollBar:SetPoint("BOTTOMRIGHT", listBackdrop, "BOTTOMRIGHT", -5, 16)
+  scrollBar:SetWidth(16)
+  scrollBar:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 8,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollBar:SetOrientation("VERTICAL")
+  scrollBar:SetMinMaxValues(0, 1)
+  scrollBar:SetValue(0)
+  scrollBar:SetValueStep(22)
+  scrollBar:Hide()
+  frame.scrollBar = scrollBar
+  
+  scrollBar:SetScript("OnValueChanged", function()
+    scrollFrame:SetVerticalScroll(this:GetValue())
+  end)
+  
+  scrollFrame:EnableMouseWheel(true)
+  scrollFrame:SetScript("OnMouseWheel", function()
+    if not scrollBar:IsShown() then
+      return
+    end
+    
+    local delta = arg1
+    local current = scrollBar:GetValue()
+    local minVal, maxVal = scrollBar:GetMinMaxValues()
+    
+    if delta > 0 then
+      scrollBar:SetValue(math.max(minVal, current - 22))
+    else
+      scrollBar:SetValue(math.min(maxVal, current + 22))
+    end
+  end)
+  
+  frame:Show()
+  OGRH.RefreshTradeSettings()
+end
+
+-- Refresh the trade settings list
+function OGRH.RefreshTradeSettings()
+  if not OGRH_TradeSettingsFrame then return end
+  
+  local scrollChild = OGRH_TradeSettingsFrame.scrollChild
+  
+  -- Clear existing rows
+  if scrollChild.rows then
+    for _, row in ipairs(scrollChild.rows) do
+      row:Hide()
+      row:SetParent(nil)
+    end
+  end
+  scrollChild.rows = {}
+  
+  OGRH.EnsureSV()
+  local items = OGRH_SV.tradeItems
+  
+  local yOffset = -5
+  local rowHeight = 22
+  local rowSpacing = 2
+  
+  for i, itemData in ipairs(items) do
+    local row = CreateFrame("Button", nil, scrollChild)
+    row:SetWidth(235)
+    row:SetHeight(rowHeight)
+    row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
+    
+    -- Background
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+    row.bg = bg
+    
+    local idx = i
+    
+    -- Delete button (X mark - raid target icon 7)
+    local deleteBtn = CreateFrame("Button", nil, row)
+    deleteBtn:SetWidth(16)
+    deleteBtn:SetHeight(16)
+    deleteBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    
+    local deleteIcon = deleteBtn:CreateTexture(nil, "ARTWORK")
+    deleteIcon:SetWidth(16)
+    deleteIcon:SetHeight(16)
+    deleteIcon:SetAllPoints(deleteBtn)
+    deleteIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+    deleteIcon:SetTexCoord(0.5, 0.75, 0.25, 0.5)  -- Cross/X icon (raid mark 7)
+    
+    local deleteHighlight = deleteBtn:CreateTexture(nil, "HIGHLIGHT")
+    deleteHighlight:SetWidth(16)
+    deleteHighlight:SetHeight(16)
+    deleteHighlight:SetAllPoints(deleteBtn)
+    deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
+    deleteHighlight:SetBlendMode("ADD")
+    
+    deleteBtn:SetScript("OnClick", function()
+      table.remove(OGRH_SV.tradeItems, idx)
+      OGRH.RefreshTradeSettings()
+    end)
+    
+    -- Down button
+    local downBtn = CreateFrame("Button", nil, row)
+    downBtn:SetWidth(32)
+    downBtn:SetHeight(32)
+    downBtn:SetPoint("RIGHT", deleteBtn, "LEFT", 5, 0)
+    downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+    downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
+    downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
+    downBtn:SetScript("OnClick", function()
+      if idx < table.getn(OGRH_SV.tradeItems) then
+        local temp = OGRH_SV.tradeItems[idx + 1]
+        OGRH_SV.tradeItems[idx + 1] = OGRH_SV.tradeItems[idx]
+        OGRH_SV.tradeItems[idx] = temp
+        OGRH.RefreshTradeSettings()
+      end
+    end)
+    
+    -- Up button
+    local upBtn = CreateFrame("Button", nil, row)
+    upBtn:SetWidth(32)
+    upBtn:SetHeight(32)
+    upBtn:SetPoint("RIGHT", downBtn, "LEFT", 13, 0)
+    upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
+    upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
+    upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
+    upBtn:SetScript("OnClick", function()
+      if idx > 1 then
+        local temp = OGRH_SV.tradeItems[idx - 1]
+        OGRH_SV.tradeItems[idx - 1] = OGRH_SV.tradeItems[idx]
+        OGRH_SV.tradeItems[idx] = temp
+        OGRH.RefreshTradeSettings()
+      end
+    end)
+    
+    -- Quantity (positioned 10px from up arrow)
+    local qtyText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    qtyText:SetPoint("RIGHT", upBtn, "LEFT", -10, 0)
+    qtyText:SetText("x" .. (itemData.quantity or 1))
+    
+    -- Item name (fill remaining space)
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    nameText:SetPoint("LEFT", row, "LEFT", 5, 0)
+    nameText:SetPoint("RIGHT", qtyText, "LEFT", -5, 0)
+    nameText:SetJustifyH("LEFT")
+    nameText:SetText(itemData.name or ("Item " .. itemData.itemId))
+    upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
+    upBtn:SetScript("OnClick", function()
+      if idx > 1 then
+        local temp = OGRH_SV.tradeItems[idx - 1]
+        OGRH_SV.tradeItems[idx - 1] = OGRH_SV.tradeItems[idx]
+        OGRH_SV.tradeItems[idx] = temp
+        OGRH.RefreshTradeSettings()
+      end
+    end)
+    
+    table.insert(scrollChild.rows, row)
+    yOffset = yOffset - rowHeight - rowSpacing
+  end
+  
+  -- Add "Add Item" placeholder row at the bottom
+  local addItemBtn = CreateFrame("Button", nil, scrollChild)
+  addItemBtn:SetWidth(235)
+  addItemBtn:SetHeight(rowHeight)
+  addItemBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
+  
+  -- Background
+  local bg = addItemBtn:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+  bg:SetVertexColor(0.1, 0.3, 0.1, 0.5)
+  
+  -- Highlight
+  local highlight = addItemBtn:CreateTexture(nil, "HIGHLIGHT")
+  highlight:SetAllPoints()
+  highlight:SetTexture("Interface\\Buttons\\WHITE8X8")
+  highlight:SetVertexColor(0.2, 0.5, 0.2, 0.5)
+  
+  -- Text
+  local addText = addItemBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  addText:SetPoint("CENTER", addItemBtn, "CENTER", 0, 0)
+  addText:SetText("|cff00ff00Add Item|r")
+  
+  addItemBtn:SetScript("OnClick", function()
+    OGRH.ShowAddTradeItemDialog()
+  end)
+  
+  table.insert(scrollChild.rows, addItemBtn)
+  yOffset = yOffset - rowHeight
+  
+  -- Update scroll child height
+  local contentHeight = math.abs(yOffset) + 5
+  scrollChild:SetHeight(contentHeight)
+  
+  -- Update scrollbar visibility
+  local scrollFrame = OGRH_TradeSettingsFrame.scrollFrame
+  local scrollBar = OGRH_TradeSettingsFrame.scrollBar
+  local scrollFrameHeight = scrollFrame:GetHeight()
+  
+  if contentHeight > scrollFrameHeight then
+    scrollBar:Show()
+    scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+    scrollBar:SetValue(0)
+    scrollFrame:SetVerticalScroll(0)
+  else
+    scrollBar:Hide()
+    scrollFrame:SetVerticalScroll(0)
+  end
+end
+
+-- Show add trade item dialog
+function OGRH.ShowAddTradeItemDialog()
+  if OGRH_AddTradeItemDialog then
+    OGRH_AddTradeItemDialog:Show()
+    return
+  end
+  
+  local dialog = CreateFrame("Frame", "OGRH_AddTradeItemDialog", UIParent)
+  dialog:SetWidth(250)
+  dialog:SetHeight(160)
+  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+  dialog:EnableMouse(true)
+  dialog:SetMovable(true)
+  dialog:RegisterForDrag("LeftButton")
+  dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
+  dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
+  
+  -- Backdrop
+  dialog:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  dialog:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Title
+  local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -15)
+  title:SetText("Add Trade Item")
+  
+  -- Item ID label
+  local itemIdLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  itemIdLabel:SetPoint("TOPLEFT", 20, -50)
+  itemIdLabel:SetText("Item ID:")
+  
+  -- Item ID input
+  local itemIdInput = CreateFrame("EditBox", nil, dialog)
+  itemIdInput:SetPoint("LEFT", itemIdLabel, "RIGHT", 10, 0)
+  itemIdInput:SetWidth(120)
+  itemIdInput:SetHeight(25)
+  itemIdInput:SetAutoFocus(false)
+  itemIdInput:SetFontObject(ChatFontNormal)
+  itemIdInput:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  itemIdInput:SetBackdropColor(0, 0, 0, 0.8)
+  itemIdInput:SetTextInsets(8, 8, 0, 0)
+  itemIdInput:SetScript("OnEscapePressed", function() itemIdInput:ClearFocus() end)
+  dialog.itemIdInput = itemIdInput
+  
+  -- Quantity label
+  local qtyLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  qtyLabel:SetPoint("TOPLEFT", 20, -90)
+  qtyLabel:SetText("Quantity:")
+  
+  -- Quantity input
+  local qtyInput = CreateFrame("EditBox", nil, dialog)
+  qtyInput:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
+  qtyInput:SetWidth(120)
+  qtyInput:SetHeight(25)
+  qtyInput:SetAutoFocus(false)
+  qtyInput:SetFontObject(ChatFontNormal)
+  qtyInput:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  qtyInput:SetBackdropColor(0, 0, 0, 0.8)
+  qtyInput:SetTextInsets(8, 8, 0, 0)
+  qtyInput:SetText("1")
+  qtyInput:SetScript("OnEscapePressed", function() qtyInput:ClearFocus() end)
+  dialog.qtyInput = qtyInput
+  
+  -- Cancel button
+  local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  cancelBtn:SetWidth(80)
+  cancelBtn:SetHeight(25)
+  cancelBtn:SetPoint("BOTTOMRIGHT", -20, 15)
+  cancelBtn:SetText("Cancel")
+  cancelBtn:SetScript("OnClick", function()
+    dialog:Hide()
+  end)
+  
+  -- Add button
+  local addBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  addBtn:SetWidth(80)
+  addBtn:SetHeight(25)
+  addBtn:SetPoint("RIGHT", cancelBtn, "LEFT", -10, 0)
+  addBtn:SetText("Add")
+  addBtn:SetScript("OnClick", function()
+    local itemIdText = itemIdInput:GetText()
+    local qtyText = qtyInput:GetText()
+    
+    local itemId = tonumber(itemIdText)
+    local quantity = tonumber(qtyText)
+    
+    if not itemId or itemId <= 0 then
+      OGRH.Msg("Invalid Item ID. Please enter a valid number.")
+      return
+    end
+    
+    if not quantity or quantity <= 0 then
+      OGRH.Msg("Invalid Quantity. Please enter a valid number.")
+      return
+    end
+    
+    -- Get item name from game
+    local itemName, itemLink = GetItemInfo(itemId)
+    
+    -- Add to list
+    OGRH.EnsureSV()
+    table.insert(OGRH_SV.tradeItems, {
+      itemId = itemId,
+      name = itemName or ("Item " .. itemId),
+      quantity = quantity
+    })
+    
+    -- Clear inputs
+    itemIdInput:SetText("")
+    qtyInput:SetText("1")
+    
+    -- Refresh settings window
+    OGRH.RefreshTradeSettings()
+    
+    dialog:Hide()
+    OGRH.Msg("Added trade item: " .. (itemName or ("Item " .. itemId)))
+  end)
+  
+  dialog:Show()
+end
+
 
 
 
