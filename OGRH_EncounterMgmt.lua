@@ -2135,36 +2135,37 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       
       -- Create role containers from both columns
       local scrollChild = frame.rolesScrollChild
-      local yOffset = -5
+      local yOffsetLeft = -5
+      local yOffsetRight = -5
       local columnWidth = 272
       
-      -- Interleave columns in 2-column layout
-      local maxRoles = math.max(table.getn(column1), table.getn(column2))
+      -- Create each column independently to avoid unwanted whitespace
       local roleIndex = 1
       
-      for i = 1, maxRoles do
-        -- Left column role
-        if column1[i] then
-          local container = CreateRoleContainer(scrollChild, column1[i], roleIndex, 5, yOffset, columnWidth)
-          table.insert(frame.roleContainers, container)
-          roleIndex = roleIndex + 1
-        end
+      -- Left column
+      for i = 1, table.getn(column1) do
+        local container = CreateRoleContainer(scrollChild, column1[i], roleIndex, 5, yOffsetLeft, columnWidth)
+        table.insert(frame.roleContainers, container)
+        roleIndex = roleIndex + 1
         
-        -- Right column role
-        if column2[i] then
-          local container = CreateRoleContainer(scrollChild, column2[i], roleIndex, 287, yOffset, columnWidth)
-          table.insert(frame.roleContainers, container)
-          roleIndex = roleIndex + 1
-        end
-        
-        -- Calculate offset for next row based on tallest container in this row
-        local leftHeight = column1[i] and (40 + ((column1[i].slots or 1) * 22)) or 0
-        local rightHeight = column2[i] and (40 + ((column2[i].slots or 1) * 22)) or 0
-        yOffset = yOffset - math.max(leftHeight, rightHeight) - 10
+        -- Calculate offset for next role in left column
+        local containerHeight = 40 + ((column1[i].slots or 1) * 22)
+        yOffsetLeft = yOffsetLeft - containerHeight - 10
       end
       
-      -- Update scroll child height
-      local contentHeight = math.abs(yOffset) + 5
+      -- Right column
+      for i = 1, table.getn(column2) do
+        local container = CreateRoleContainer(scrollChild, column2[i], roleIndex, 287, yOffsetRight, columnWidth)
+        table.insert(frame.roleContainers, container)
+        roleIndex = roleIndex + 1
+        
+        -- Calculate offset for next role in right column
+        local containerHeight = 40 + ((column2[i].slots or 1) * 22)
+        yOffsetRight = yOffsetRight - containerHeight - 10
+      end
+      
+      -- Update scroll child height (based on the taller column)
+      local contentHeight = math.max(math.abs(yOffsetLeft), math.abs(yOffsetRight)) + 5
       scrollChild:SetHeight(math.max(1, contentHeight))
       
       -- Update scrollbar visibility
@@ -2381,14 +2382,23 @@ function OGRH.ShowEncounterSetup()
         nameText:SetWidth(80)
         nameText:SetJustifyH("LEFT")
         
-        -- Click to select raid
+        -- Click to select raid, right-click to rename
         local capturedRaidName = raidName
         local capturedIndex = i
+        raidBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         raidBtn:SetScript("OnClick", function()
-          frame.selectedRaid = capturedRaidName
-          RefreshRaidsList()
-          if frame.RefreshEncountersList then
-            frame.RefreshEncountersList()
+          local button = arg1 or "LeftButton"
+          if button == "RightButton" then
+            -- Right-click: Rename
+            StaticPopupDialogs["OGRH_RENAME_RAID"].text_arg1 = capturedRaidName
+            StaticPopup_Show("OGRH_RENAME_RAID", capturedRaidName)
+          else
+            -- Left-click: Select
+            frame.selectedRaid = capturedRaidName
+            RefreshRaidsList()
+            if frame.RefreshEncountersList then
+              frame.RefreshEncountersList()
+            end
           end
         end)
         
@@ -2653,15 +2663,25 @@ function OGRH.ShowEncounterSetup()
         nameText:SetWidth(80)
         nameText:SetJustifyH("LEFT")
         
-        -- Click to select encounter
+        -- Click to select encounter, right-click to rename
         local capturedEncounterName = encounterName
         local capturedIndex = i
         local capturedRaid = frame.selectedRaid
+        encounterBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         encounterBtn:SetScript("OnClick", function()
-          frame.selectedEncounter = capturedEncounterName
-          RefreshEncountersList()
-          if frame.RefreshRolesList then
-            frame.RefreshRolesList()
+          local button = arg1 or "LeftButton"
+          if button == "RightButton" then
+            -- Right-click: Rename
+            StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"].text_arg1 = capturedEncounterName
+            StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"].text_arg2 = capturedRaid
+            StaticPopup_Show("OGRH_RENAME_ENCOUNTER", capturedEncounterName)
+          else
+            -- Left-click: Select
+            frame.selectedEncounter = capturedEncounterName
+            RefreshEncountersList()
+            if frame.RefreshRolesList then
+              frame.RefreshRolesList()
+            end
           end
         end)
         
@@ -3493,6 +3513,251 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
       end
       DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter '" .. encounterName .. "' deleted")
     end
+  end,
+  timeout = 0,
+  whileDead = 1,
+  hideOnEscape = 1
+}
+
+StaticPopupDialogs["OGRH_RENAME_RAID"] = {
+  text = "Rename raid '%s':",
+  button1 = "Rename",
+  button2 = "Cancel",
+  hasEditBox = 1,
+  maxLetters = 32,
+  OnAccept = function()
+    local newName = getglobal(this:GetParent():GetName().."EditBox"):GetText()
+    local oldName = StaticPopupDialogs["OGRH_RENAME_RAID"].text_arg1
+    
+    if newName and newName ~= "" and oldName and newName ~= oldName then
+      InitializeSavedVars()
+      
+      -- Check if new name already exists
+      local exists = false
+      for _, name in ipairs(OGRH_SV.encounterMgmt.raids) do
+        if name == newName then
+          exists = true
+          break
+        end
+      end
+      
+      if not exists then
+        -- Update raid name in raids list
+        for i, name in ipairs(OGRH_SV.encounterMgmt.raids) do
+          if name == oldName then
+            OGRH_SV.encounterMgmt.raids[i] = newName
+            break
+          end
+        end
+        
+        -- Update encounters data structure
+        if OGRH_SV.encounterMgmt.encounters[oldName] then
+          OGRH_SV.encounterMgmt.encounters[newName] = OGRH_SV.encounterMgmt.encounters[oldName]
+          OGRH_SV.encounterMgmt.encounters[oldName] = nil
+        end
+        
+        -- Update roles data structure
+        if OGRH_SV.encounterMgmt.roles and OGRH_SV.encounterMgmt.roles[oldName] then
+          OGRH_SV.encounterMgmt.roles[newName] = OGRH_SV.encounterMgmt.roles[oldName]
+          OGRH_SV.encounterMgmt.roles[oldName] = nil
+        end
+        
+        -- Update player pools
+        if OGRH_SV.encounterPools and OGRH_SV.encounterPools[oldName] then
+          OGRH_SV.encounterPools[newName] = OGRH_SV.encounterPools[oldName]
+          OGRH_SV.encounterPools[oldName] = nil
+        end
+        
+        -- Update assignments
+        if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[oldName] then
+          OGRH_SV.encounterAssignments[newName] = OGRH_SV.encounterAssignments[oldName]
+          OGRH_SV.encounterAssignments[oldName] = nil
+        end
+        
+        -- Update raid marks
+        if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[oldName] then
+          OGRH_SV.encounterRaidMarks[newName] = OGRH_SV.encounterRaidMarks[oldName]
+          OGRH_SV.encounterRaidMarks[oldName] = nil
+        end
+        
+        -- Update assignment numbers
+        if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[oldName] then
+          OGRH_SV.encounterAssignmentNumbers[newName] = OGRH_SV.encounterAssignmentNumbers[oldName]
+          OGRH_SV.encounterAssignmentNumbers[oldName] = nil
+        end
+        
+        -- Update announcements
+        if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[oldName] then
+          OGRH_SV.encounterAnnouncements[newName] = OGRH_SV.encounterAnnouncements[oldName]
+          OGRH_SV.encounterAnnouncements[oldName] = nil
+        end
+        
+        -- Update selected raid in both windows
+        if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.selectedRaid == oldName then
+          OGRH_EncounterSetupFrame.selectedRaid = newName
+        end
+        if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedRaid == oldName then
+          OGRH_BWLEncounterFrame.selectedRaid = newName
+        end
+        
+        -- Refresh windows
+        if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
+          OGRH_EncounterSetupFrame.RefreshRaidsList()
+          if OGRH_EncounterSetupFrame.RefreshEncountersList then
+            OGRH_EncounterSetupFrame.RefreshEncountersList()
+          end
+        end
+        if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshRaidsList then
+          OGRH_BWLEncounterFrame.RefreshRaidsList()
+          if OGRH_BWLEncounterFrame.RefreshEncountersList then
+            OGRH_BWLEncounterFrame.RefreshEncountersList()
+          end
+        end
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Raid renamed from '" .. oldName .. "' to '" .. newName .. "'")
+      else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid '" .. newName .. "' already exists")
+      end
+    end
+  end,
+  OnShow = function()
+    local editBox = getglobal(this:GetName().."EditBox")
+    local oldName = StaticPopupDialogs["OGRH_RENAME_RAID"].text_arg1
+    editBox:SetText(oldName or "")
+    editBox:HighlightText()
+    editBox:SetFocus()
+  end,
+  OnHide = function()
+    getglobal(this:GetName().."EditBox"):SetText("")
+  end,
+  EditBoxOnEnterPressed = function()
+    local parent = this:GetParent()
+    StaticPopup_OnClick(parent, 1)
+  end,
+  EditBoxOnEscapePressed = function()
+    this:GetParent():Hide()
+  end,
+  timeout = 0,
+  whileDead = 1,
+  hideOnEscape = 1
+}
+
+StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
+  text = "Rename encounter '%s':",
+  button1 = "Rename",
+  button2 = "Cancel",
+  hasEditBox = 1,
+  maxLetters = 32,
+  OnAccept = function()
+    local newName = getglobal(this:GetParent():GetName().."EditBox"):GetText()
+    local oldName = StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"].text_arg1
+    local raidName = StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"].text_arg2
+    
+    if newName and newName ~= "" and oldName and raidName and newName ~= oldName then
+      InitializeSavedVars()
+      
+      -- Check if new name already exists in this raid
+      local exists = false
+      if OGRH_SV.encounterMgmt.encounters[raidName] then
+        for _, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
+          if name == newName then
+            exists = true
+            break
+          end
+        end
+      end
+      
+      if not exists then
+        -- Update encounter name in encounters list
+        if OGRH_SV.encounterMgmt.encounters[raidName] then
+          for i, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
+            if name == oldName then
+              OGRH_SV.encounterMgmt.encounters[raidName][i] = newName
+              break
+            end
+          end
+        end
+        
+        -- Update roles data structure
+        if OGRH_SV.encounterMgmt.roles and OGRH_SV.encounterMgmt.roles[raidName] and OGRH_SV.encounterMgmt.roles[raidName][oldName] then
+          OGRH_SV.encounterMgmt.roles[raidName][newName] = OGRH_SV.encounterMgmt.roles[raidName][oldName]
+          OGRH_SV.encounterMgmt.roles[raidName][oldName] = nil
+        end
+        
+        -- Update player pools
+        if OGRH_SV.encounterPools and OGRH_SV.encounterPools[raidName] and OGRH_SV.encounterPools[raidName][oldName] then
+          OGRH_SV.encounterPools[raidName][newName] = OGRH_SV.encounterPools[raidName][oldName]
+          OGRH_SV.encounterPools[raidName][oldName] = nil
+        end
+        
+        -- Update assignments
+        if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[raidName] and OGRH_SV.encounterAssignments[raidName][oldName] then
+          OGRH_SV.encounterAssignments[raidName][newName] = OGRH_SV.encounterAssignments[raidName][oldName]
+          OGRH_SV.encounterAssignments[raidName][oldName] = nil
+        end
+        
+        -- Update raid marks
+        if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[raidName] and OGRH_SV.encounterRaidMarks[raidName][oldName] then
+          OGRH_SV.encounterRaidMarks[raidName][newName] = OGRH_SV.encounterRaidMarks[raidName][oldName]
+          OGRH_SV.encounterRaidMarks[raidName][oldName] = nil
+        end
+        
+        -- Update assignment numbers
+        if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[raidName] and OGRH_SV.encounterAssignmentNumbers[raidName][oldName] then
+          OGRH_SV.encounterAssignmentNumbers[raidName][newName] = OGRH_SV.encounterAssignmentNumbers[raidName][oldName]
+          OGRH_SV.encounterAssignmentNumbers[raidName][oldName] = nil
+        end
+        
+        -- Update announcements
+        if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[raidName] and OGRH_SV.encounterAnnouncements[raidName][oldName] then
+          OGRH_SV.encounterAnnouncements[raidName][newName] = OGRH_SV.encounterAnnouncements[raidName][oldName]
+          OGRH_SV.encounterAnnouncements[raidName][oldName] = nil
+        end
+        
+        -- Update selected encounter in both windows
+        if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.selectedEncounter == oldName then
+          OGRH_EncounterSetupFrame.selectedEncounter = newName
+        end
+        if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedEncounter == oldName then
+          OGRH_BWLEncounterFrame.selectedEncounter = newName
+        end
+        
+        -- Refresh windows
+        if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshEncountersList then
+          OGRH_EncounterSetupFrame.RefreshEncountersList()
+          if OGRH_EncounterSetupFrame.RefreshRolesList then
+            OGRH_EncounterSetupFrame.RefreshRolesList()
+          end
+        end
+        if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshEncountersList then
+          OGRH_BWLEncounterFrame.RefreshEncountersList()
+          if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+            OGRH_BWLEncounterFrame.RefreshRoleContainers()
+          end
+        end
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter renamed from '" .. oldName .. "' to '" .. newName .. "'")
+      else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Encounter '" .. newName .. "' already exists in " .. raidName)
+      end
+    end
+  end,
+  OnShow = function()
+    local editBox = getglobal(this:GetName().."EditBox")
+    local oldName = StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"].text_arg1
+    editBox:SetText(oldName or "")
+    editBox:HighlightText()
+    editBox:SetFocus()
+  end,
+  OnHide = function()
+    getglobal(this:GetName().."EditBox"):SetText("")
+  end,
+  EditBoxOnEnterPressed = function()
+    local parent = this:GetParent()
+    StaticPopup_OnClick(parent, 1)
+  end,
+  EditBoxOnEscapePressed = function()
+    this:GetParent():Hide()
   end,
   timeout = 0,
   whileDead = 1,
