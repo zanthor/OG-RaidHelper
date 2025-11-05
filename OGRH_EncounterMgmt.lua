@@ -4432,9 +4432,54 @@ function OGRH.ShowPoolDefaultsWindow()
     guildLabel:SetPoint("TOP", leftPanel, "TOP", 0, -8)
     guildLabel:SetText("Guild")
     
+    -- Search/Filter text box
+    local searchBox = CreateFrame("EditBox", nil, leftPanel)
+    searchBox:SetWidth(200)
+    searchBox:SetHeight(20)
+    searchBox:SetPoint("TOP", guildLabel, "BOTTOM", 0, -5)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetFontObject(GameFontHighlight)
+    searchBox:SetTextInsets(5, 5, 0, 0)
+    
+    -- Search box background
+    local searchBg = searchBox:CreateTexture(nil, "BACKGROUND")
+    searchBg:SetAllPoints(searchBox)
+    searchBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    searchBg:SetVertexColor(0.1, 0.1, 0.1, 0.9)
+    
+    -- Search box border
+    local searchBorder = CreateFrame("Frame", nil, leftPanel)
+    searchBorder:SetWidth(210)
+    searchBorder:SetHeight(24)
+    searchBorder:SetPoint("CENTER", searchBox, "CENTER", 0, 0)
+    searchBorder:SetBackdrop({
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      edgeSize = 12,
+      insets = {left = 2, right = 2, top = 2, bottom = 2}
+    })
+    
+    frame.searchBox = searchBox
+    frame.searchFilter = ""
+    
+    -- Update filter when text changes
+    searchBox:SetScript("OnTextChanged", function()
+      frame.searchFilter = string.lower(searchBox:GetText() or "")
+      if frame.RefreshGuildList then
+        frame.RefreshGuildList()
+      end
+    end)
+    
+    searchBox:SetScript("OnEscapePressed", function()
+      searchBox:ClearFocus()
+    end)
+    
+    searchBox:SetScript("OnEnterPressed", function()
+      searchBox:ClearFocus()
+    end)
+    
     -- Guild scroll frame
     local guildScrollFrame = CreateFrame("ScrollFrame", nil, leftPanel)
-    guildScrollFrame:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 5, -30)
+    guildScrollFrame:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 5, -60)
     guildScrollFrame:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", -20, 5)
     
     local guildScrollChild = CreateFrame("Frame", nil, guildScrollFrame)
@@ -4446,7 +4491,7 @@ function OGRH.ShowPoolDefaultsWindow()
     -- Guild scroll bar
     local guildScrollBar = CreateFrame("Slider", nil, leftPanel)
     guildScrollBar:SetOrientation("VERTICAL")
-    guildScrollBar:SetPoint("TOPRIGHT", leftPanel, "TOPRIGHT", -5, -30)
+    guildScrollBar:SetPoint("TOPRIGHT", leftPanel, "TOPRIGHT", -5, -60)
     guildScrollBar:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", -5, 5)
     guildScrollBar:SetWidth(16)
     guildScrollBar:SetBackdrop({
@@ -4604,7 +4649,7 @@ function OGRH.ShowPoolDefaultsWindow()
         {name = "Tanks", classes = {"WARRIOR", "DRUID", "PALADIN", "SHAMAN"}},
         {name = "Healers", classes = {"PALADIN", "PRIEST", "DRUID", "SHAMAN"}},
         {name = "Melee", classes = {"ROGUE", "WARRIOR", "PALADIN", "DRUID", "HUNTER", "SHAMAN"}},
-        {name = "Ranged", classes = {"DRUID", "HUNTER", "SHAMAN", "MAGE", "WARLOCK"}}
+        {name = "Ranged", classes = {"DRUID", "HUNTER", "SHAMAN", "MAGE", "WARLOCK", "PRIEST"}}
       }
       
       local currentRoleData = roleClasses[frame.selectedRole]
@@ -4661,10 +4706,18 @@ function OGRH.ShowPoolDefaultsWindow()
             
             -- Only include if not already assigned and meets activity requirement
             if includePlayer and not assignedLookup[name] then
-              if online then
-                table.insert(onlinePlayers, {name = name, class = upperClass})
-              else
-                table.insert(offlinePlayers, {name = name, class = upperClass})
+              -- Apply search filter
+              local nameMatch = true
+              if frame.searchFilter and frame.searchFilter ~= "" then
+                nameMatch = string.find(string.lower(name), frame.searchFilter, 1, true) ~= nil
+              end
+              
+              if nameMatch then
+                if online then
+                  table.insert(onlinePlayers, {name = name, class = upperClass})
+                else
+                  table.insert(offlinePlayers, {name = name, class = upperClass})
+                end
               end
             end
           end
