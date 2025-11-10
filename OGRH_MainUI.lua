@@ -363,7 +363,90 @@ bTrade:SetScript("OnClick", function()
     M:ClearAllPoints(); M:SetPoint("TOPLEFT", bTrade, "BOTTOMLEFT", 0, -2); M:Show()
 end)
 
-local function applyMinimized(mini) if mini then Content:Hide(); Main:SetHeight(28); btnMin:SetText("+") else Content:Show(); Main:SetHeight(124); btnMin:SetText("-") end end
+-- Encounter navigation controls (shown when minimized)
+local encounterNav = CreateFrame("Frame", nil, Main)
+encounterNav:SetPoint("TOPLEFT", Main, "TOPLEFT", 6, -26)
+encounterNav:SetPoint("TOPRIGHT", Main, "TOPRIGHT", -6, -26)
+encounterNav:SetHeight(24)
+encounterNav:Hide()
+
+-- Previous Encounter button
+local prevEncBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
+prevEncBtn:SetWidth(20)
+prevEncBtn:SetHeight(20)
+prevEncBtn:SetPoint("LEFT", encounterNav, "LEFT", 0, 0)
+prevEncBtn:SetText("<")
+prevEncBtn:SetScript("OnClick", function()
+  if OGRH.NavigateToPreviousEncounter then
+    OGRH.NavigateToPreviousEncounter()
+  end
+end)
+encounterNav.prevEncBtn = prevEncBtn
+
+-- Announce button
+local announceBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
+announceBtn:SetWidth(20)
+announceBtn:SetHeight(20)
+announceBtn:SetPoint("LEFT", prevEncBtn, "RIGHT", 2, 0)
+announceBtn:SetText("A")
+announceBtn:SetScript("OnClick", function()
+  if OGRH.PrepareEncounterAnnouncement then
+    OGRH.PrepareEncounterAnnouncement()
+  end
+end)
+encounterNav.announceBtn = announceBtn
+
+-- Next Encounter button
+local nextEncBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
+nextEncBtn:SetWidth(20)
+nextEncBtn:SetHeight(20)
+nextEncBtn:SetPoint("RIGHT", encounterNav, "RIGHT", 0, 0)
+nextEncBtn:SetText(">")
+nextEncBtn:SetScript("OnClick", function()
+  if OGRH.NavigateToNextEncounter then
+    OGRH.NavigateToNextEncounter()
+  end
+end)
+encounterNav.nextEncBtn = nextEncBtn
+
+-- Encounter button (middle, fills remaining space)
+local encounterBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
+encounterBtn:SetHeight(20)
+encounterBtn:SetPoint("LEFT", announceBtn, "RIGHT", 2, 0)
+encounterBtn:SetPoint("RIGHT", nextEncBtn, "LEFT", -2, 0)
+encounterBtn:SetText("Select Raid")
+encounterBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+encounterBtn:SetScript("OnClick", function()
+  if arg1 == "RightButton" then
+    -- Show raid selection menu
+    if OGRH.ShowEncounterRaidMenu then
+      OGRH.ShowEncounterRaidMenu(encounterBtn)
+    end
+  else
+    -- Left click: Open Encounter Planning with selected encounter
+    if OGRH.OpenEncounterPlanning then
+      OGRH.OpenEncounterPlanning()
+    end
+  end
+end)
+encounterNav.encounterBtn = encounterBtn
+
+-- Store reference for external access
+OGRH.encounterNav = encounterNav
+
+local function applyMinimized(mini) 
+  if mini then 
+    Content:Hide()
+    encounterNav:Show()
+    Main:SetHeight(56)
+    btnMin:SetText("+")
+  else 
+    Content:Show()
+    encounterNav:Hide()
+    Main:SetHeight(124)
+    btnMin:SetText("-")
+  end
+end
 btnMin:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.minimized = not OGRH_SV.ui.minimized; applyMinimized(OGRH_SV.ui.minimized) end)
 local function applyLocked(lock) btnLock:SetText("L") end
 btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)

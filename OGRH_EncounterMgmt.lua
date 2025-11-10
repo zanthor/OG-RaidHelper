@@ -269,6 +269,9 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           if frame.RefreshRoleContainers then
             frame.RefreshRoleContainers()
           end
+          if OGRH.UpdateEncounterNavButton then
+            OGRH.UpdateEncounterNavButton()
+          end
         end)
         
         table.insert(frame.raidButtons, raidBtn)
@@ -364,6 +367,9 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           RefreshEncountersList()
           if frame.RefreshRoleContainers then
             frame.RefreshRoleContainers()
+          end
+          if OGRH.UpdateEncounterNavButton then
+            OGRH.UpdateEncounterNavButton()
           end
         end)
         
@@ -5593,5 +5599,254 @@ end
 
 -- Initialize SavedVariables when addon loads
 InitializeSavedVars()
+
+-- Functions for MainUI encounter navigation
+function OGRH.UpdateEncounterNavButton()
+  if not OGRH.encounterNav then return end
+  
+  local btn = OGRH.encounterNav.encounterBtn
+  local prevBtn = OGRH.encounterNav.prevEncBtn
+  local nextBtn = OGRH.encounterNav.nextEncBtn
+  
+  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid then
+    btn:SetText("Select Raid")
+    prevBtn:Disable()
+    nextBtn:Disable()
+    return
+  end
+  
+  local raidName = OGRH_BWLEncounterFrame.selectedRaid
+  local encounterName = OGRH_BWLEncounterFrame.selectedEncounter
+  
+  if encounterName then
+    -- Truncate encounter name if needed to fit
+    local displayName = encounterName
+    if string.len(displayName) > 15 then
+      displayName = string.sub(displayName, 1, 12) .. "..."
+    end
+    btn:SetText(displayName)
+  else
+    btn:SetText("No Encounter")
+  end
+  
+  -- Enable/disable prev/next buttons
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and 
+     OGRH_SV.encounterMgmt.encounters[raidName] then
+    local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+    local currentIndex = nil
+    
+    for i = 1, table.getn(encounters) do
+      if encounters[i] == encounterName then
+        currentIndex = i
+        break
+      end
+    end
+    
+    if currentIndex then
+      if currentIndex > 1 then
+        prevBtn:Enable()
+      else
+        prevBtn:Disable()
+      end
+      
+      if currentIndex < table.getn(encounters) then
+        nextBtn:Enable()
+      else
+        nextBtn:Disable()
+      end
+    else
+      prevBtn:Disable()
+      nextBtn:Disable()
+    end
+  else
+    prevBtn:Disable()
+    nextBtn:Disable()
+  end
+end
+
+function OGRH.NavigateToPreviousEncounter()
+  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid then
+    return
+  end
+  
+  local raidName = OGRH_BWLEncounterFrame.selectedRaid
+  local currentEncounter = OGRH_BWLEncounterFrame.selectedEncounter
+  
+  if not currentEncounter then return end
+  
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and 
+     OGRH_SV.encounterMgmt.encounters[raidName] then
+    local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+    
+    for i = 1, table.getn(encounters) do
+      if encounters[i] == currentEncounter and i > 1 then
+        OGRH_BWLEncounterFrame.selectedEncounter = encounters[i - 1]
+        if OGRH_BWLEncounterFrame.RefreshEncountersList then
+          OGRH_BWLEncounterFrame.RefreshEncountersList()
+        end
+        if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+          OGRH_BWLEncounterFrame.RefreshRoleContainers()
+        end
+        OGRH.UpdateEncounterNavButton()
+        break
+      end
+    end
+  end
+end
+
+function OGRH.NavigateToNextEncounter()
+  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid then
+    return
+  end
+  
+  local raidName = OGRH_BWLEncounterFrame.selectedRaid
+  local currentEncounter = OGRH_BWLEncounterFrame.selectedEncounter
+  
+  if not currentEncounter then return end
+  
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and 
+     OGRH_SV.encounterMgmt.encounters[raidName] then
+    local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+    
+    for i = 1, table.getn(encounters) do
+      if encounters[i] == currentEncounter and i < table.getn(encounters) then
+        OGRH_BWLEncounterFrame.selectedEncounter = encounters[i + 1]
+        if OGRH_BWLEncounterFrame.RefreshEncountersList then
+          OGRH_BWLEncounterFrame.RefreshEncountersList()
+        end
+        if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+          OGRH_BWLEncounterFrame.RefreshRoleContainers()
+        end
+        OGRH.UpdateEncounterNavButton()
+        break
+      end
+    end
+  end
+end
+
+function OGRH.PrepareEncounterAnnouncement()
+  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid or 
+     not OGRH_BWLEncounterFrame.selectedEncounter then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No encounter selected")
+    return
+  end
+  
+  -- Call the announce function but don't send it
+  if OGRH_BWLEncounterFrame.announceBtn then
+    -- Simulate clicking the announce button
+    local announceScript = OGRH_BWLEncounterFrame.announceBtn:GetScript("OnClick")
+    if announceScript then
+      announceScript()
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement prepared. Click RA to send.")
+    end
+  end
+end
+
+function OGRH.OpenEncounterPlanning()
+  if not OGRH_BWLEncounterFrame then
+    OGRH.ShowBWLEncounterWindow()
+    return
+  end
+  
+  if not OGRH_BWLEncounterFrame.selectedRaid then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No raid selected. Right-click to select a raid.")
+    return
+  end
+  
+  OGRH_BWLEncounterFrame:Show()
+end
+
+function OGRH.ShowEncounterRaidMenu(anchorBtn)
+  if not OGRH_EncounterRaidMenu then
+    local menu = CreateFrame("Frame", "OGRH_EncounterRaidMenu", UIParent)
+    menu:SetWidth(140)
+    menu:SetHeight(100)
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      edgeSize = 12,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    menu:SetBackdropColor(0, 0, 0, 0.95)
+    menu:Hide()
+    
+    menu.buttons = {}
+    
+    menu.Rebuild = function()
+      -- Clear existing buttons
+      for _, btn in ipairs(menu.buttons) do
+        btn:Hide()
+        btn:SetParent(nil)
+      end
+      menu.buttons = {}
+      
+      if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then
+        return
+      end
+      
+      local raids = OGRH_SV.encounterMgmt.raids
+      local yOffset = -5
+      
+      for i = 1, table.getn(raids) do
+        local raidName = raids[i]
+        local btn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+        btn:SetWidth(130)
+        btn:SetHeight(20)
+        btn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
+        btn:SetText(raidName)
+        
+        local capturedRaid = raidName
+        btn:SetScript("OnClick", function()
+          menu:Hide()
+          
+          -- Open or create the Encounter Planning window
+          if not OGRH_BWLEncounterFrame then
+            OGRH.ShowBWLEncounterWindow()
+          end
+          
+          -- Select this raid
+          OGRH_BWLEncounterFrame.selectedRaid = capturedRaid
+          
+          -- Select first encounter if available
+          if OGRH_SV.encounterMgmt.encounters and 
+             OGRH_SV.encounterMgmt.encounters[capturedRaid] and
+             table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
+            OGRH_BWLEncounterFrame.selectedEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
+          end
+          
+          -- Refresh the window
+          if OGRH_BWLEncounterFrame.RefreshRaidsList then
+            OGRH_BWLEncounterFrame.RefreshRaidsList()
+          end
+          if OGRH_BWLEncounterFrame.RefreshEncountersList then
+            OGRH_BWLEncounterFrame.RefreshEncountersList()
+          end
+          if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+            OGRH_BWLEncounterFrame.RefreshRoleContainers()
+          end
+          
+          OGRH.UpdateEncounterNavButton()
+        end)
+        
+        table.insert(menu.buttons, btn)
+        yOffset = yOffset - 22
+      end
+      
+      menu:SetHeight(math.max(50, math.abs(yOffset) + 10))
+    end
+  end
+  
+  local menu = OGRH_EncounterRaidMenu
+  
+  if menu:IsVisible() then
+    menu:Hide()
+  else
+    menu.Rebuild()
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", anchorBtn, "BOTTOMLEFT", 0, -2)
+    menu:Show()
+  end
+end
 
 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter Management loaded")
