@@ -9,6 +9,5 @@ OGRH_Core.lua
 OGRH_MainUI.lua
 OGRH_RolesUI.lua
 OGRH_EncounterMgmt.lua
-OGRH_Move.lua
 OGRH_Poll.lua
 OGRH_Trade.lua

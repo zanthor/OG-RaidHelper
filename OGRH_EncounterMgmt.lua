@@ -3803,11 +3803,36 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
     frame.roleFilterBtn = roleFilterBtn
     frame.selectedFilter = "all"
     
+    -- Raid Only checkbox
+    local raidOnlyCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    raidOnlyCheck:SetWidth(24)
+    raidOnlyCheck:SetHeight(24)
+    raidOnlyCheck:SetPoint("TOP", roleFilterBtn, "BOTTOM", -35, -5)
+    frame.raidOnlyCheck = raidOnlyCheck
+    
+    local raidOnlyLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    raidOnlyLabel:SetPoint("LEFT", raidOnlyCheck, "RIGHT", 5, 0)
+    raidOnlyLabel:SetText("Raid Only")
+    
+    -- Initialize persistent setting
+    if OGRH_SV.playerSelectionRaidOnly == nil then
+      OGRH_SV.playerSelectionRaidOnly = true
+    end
+    raidOnlyCheck:SetChecked(OGRH_SV.playerSelectionRaidOnly)
+    
+    frame.raidOnlyCheck = raidOnlyCheck
+    raidOnlyCheck:SetScript("OnClick", function()
+      OGRH_SV.playerSelectionRaidOnly = raidOnlyCheck:GetChecked()
+      if frame.RefreshPlayerList then
+        frame.RefreshPlayerList()
+      end
+    end)
+    
     -- Player list scroll frame
     local listFrame = CreateFrame("Frame", nil, frame)
     listFrame:SetWidth(320)
     listFrame:SetHeight(320)
-    listFrame:SetPoint("TOP", roleFilterBtn, "BOTTOM", 0, -10)
+    listFrame:SetPoint("TOP", raidOnlyCheck, "BOTTOM", 0, -10)
     listFrame:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -3862,9 +3887,56 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
   local frame = OGRH_PlayerSelectionFrame
   frame.selectedPlayer = nil
   
+  -- Determine which role filter to use based on targetRoleIndex
+  -- Get role configuration for this encounter
+  local roleFilterToSet = "all"
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and
+     OGRH_SV.encounterMgmt.roles[raidName] and
+     OGRH_SV.encounterMgmt.roles[raidName][encounterName] then
+    local encounterRoles = OGRH_SV.encounterMgmt.roles[raidName][encounterName]
+    local column1 = encounterRoles.column1 or {}
+    local column2 = encounterRoles.column2 or {}
+    
+    -- targetRoleIndex is 1-based across both columns
+    local targetRole = nil
+    if targetRoleIndex <= table.getn(column1) then
+      targetRole = column1[targetRoleIndex]
+    else
+      targetRole = column2[targetRoleIndex - table.getn(column1)]
+    end
+    
+    if targetRole and targetRole.name then
+      roleFilterToSet = targetRole.name
+    end
+  end
+  
+  frame.selectedFilter = roleFilterToSet
+  if frame.roleFilterBtn then
+    frame.roleFilterBtn:SetText(roleFilterToSet == "all" and "All Players" or roleFilterToSet)
+  end
+  
   -- Get raid members from current raid
   local function GetRaidMembers()
     local members = {}
+    local raidOnly = OGRH_SV.playerSelectionRaidOnly
+    
+    -- Helper function to check if player is in raid
+    local function IsInRaid(playerName)
+      if not raidOnly then
+        return true -- If raid only is off, include everyone
+      end
+      
+      local numRaidMembers = GetNumRaidMembers()
+      if numRaidMembers > 0 then
+        for i = 1, numRaidMembers do
+          local name = GetRaidRosterInfo(i)
+          if name == playerName then
+            return true
+          end
+        end
+      end
+      return false
+    end
     
     -- Map dropdown filter names to role constants (matching RolesUI exactly)
     local filterToRole = {
@@ -3878,35 +3950,83 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
     local selectedRoleConst = filterToRole[frame.selectedFilter]
     
     if frame.selectedFilter == "all" then
-      -- Show all raid members
-      for j = 1, GetNumRaidMembers() do
-        local name, _, _, _, class = GetRaidRosterInfo(j)
-        if name then
-          members[name] = {
-            name = name,
-            role = "All",
-            class = class
-          }
+      if raidOnly then
+        -- Show all raid members
+        for j = 1, GetNumRaidMembers() do
+          local name, _, _, _, class = GetRaidRosterInfo(j)
+          if name then
+            members[name] = {
+              name = name,
+              role = "All",
+              class = class
+            }
+          end
+        end
+      else
+        -- Show all players from all roles in RolesUI
+        if OGRH.GetRolePlayers then
+          local allRoles = {"TANKS", "HEALERS", "MELEE", "RANGED"}
+          for _, roleConst in ipairs(allRoles) do
+            local rolePlayers = OGRH.GetRolePlayers(roleConst)
+            if rolePlayers then
+              for i = 1, table.getn(rolePlayers) do
+                local name = rolePlayers[i]
+                if not members[name] then -- Avoid duplicates
+                  -- Try to get class from raid roster
+                  local class = nil
+                  for j = 1, GetNumRaidMembers() do
+                    local raidName, _, _, _, raidClass = GetRaidRosterInfo(j)
+                    if raidName == name then
+                      class = raidClass
+                      break
+                    end
+                  end
+                  -- Use stored class if not in raid
+                  if not class and OGRH.Roles and OGRH.Roles.nameClass then
+                    class = OGRH.Roles.nameClass[name]
+                  end
+                  members[name] = {
+                    name = name,
+                    role = "All",
+                    class = class
+                  }
+                end
+              end
+            end
+          end
         end
       end
-    elseif selectedRoleConst and OGRH.GetRolePlayers then
-      -- Use OGRH.GetRolePlayers to get players in the selected role (like Roll Pool does)
-      local rolePlayers = OGRH.GetRolePlayers(selectedRoleConst)
-      if rolePlayers then
-        for i = 1, table.getn(rolePlayers) do
-          local name = rolePlayers[i]
-          -- Get class info from raid roster
+    elseif selectedRoleConst then
+      -- Get pool for this encounter and role
+      local poolPlayers = {}
+      if OGRH_SV.encounterPools and OGRH_SV.encounterPools[raidName] and 
+         OGRH_SV.encounterPools[raidName][encounterName] and
+         OGRH_SV.encounterPools[raidName][encounterName][targetRoleIndex] then
+        poolPlayers = OGRH_SV.encounterPools[raidName][encounterName][targetRoleIndex]
+      end
+      
+      -- Add players from pool
+      for i = 1, table.getn(poolPlayers) do
+        local name = poolPlayers[i]
+        if IsInRaid(name) then
+          -- Get class info from raid roster or stored data
+          local class = nil
           for j = 1, GetNumRaidMembers() do
-            local raidName, _, _, _, class = GetRaidRosterInfo(j)
+            local raidName, _, _, _, raidClass = GetRaidRosterInfo(j)
             if raidName == name then
-              members[name] = {
-                name = name,
-                role = selectedRoleConst,
-                class = class
-              }
+              class = raidClass
               break
             end
           end
+          -- Use stored class if not in raid
+          if not class and OGRH.Roles and OGRH.Roles.nameClass then
+            class = OGRH.Roles.nameClass[name]
+          end
+          members[name] = {
+            name = name,
+            role = selectedRoleConst,
+            class = class
+          }
         end
       end
     end
@@ -3975,6 +4095,9 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
     
     frame.scrollChild:SetHeight(math.max(1, math.abs(yOffset) + 5))
   end
+  
+  -- Store RefreshPlayerList as frame method
+  frame.RefreshPlayerList = RefreshPlayerList
   
   -- Role filter dropdown functionality
   frame.roleFilterBtn:SetScript("OnClick", function()
