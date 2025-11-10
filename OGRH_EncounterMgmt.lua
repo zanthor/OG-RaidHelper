@@ -3831,8 +3831,10 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
     -- Player list scroll frame
     local listFrame = CreateFrame("Frame", nil, frame)
     listFrame:SetWidth(320)
-    listFrame:SetHeight(320)
+    listFrame:SetHeight(310)
     listFrame:SetPoint("TOP", raidOnlyCheck, "BOTTOM", 0, -10)
+    listFrame:SetPoint("LEFT", frame, "LEFT", 15, 0)
+    listFrame:SetPoint("RIGHT", frame, "RIGHT", -15, 0)
     listFrame:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -3890,6 +3892,7 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
   -- Determine which role filter to use based on targetRoleIndex
   -- Get role configuration for this encounter
   local roleFilterToSet = "all"
+  local targetRole = nil
   if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and
      OGRH_SV.encounterMgmt.roles[raidName] and
      OGRH_SV.encounterMgmt.roles[raidName][encounterName] then
@@ -3898,15 +3901,23 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
     local column2 = encounterRoles.column2 or {}
     
     -- targetRoleIndex is 1-based across both columns
-    local targetRole = nil
     if targetRoleIndex <= table.getn(column1) then
       targetRole = column1[targetRoleIndex]
     else
       targetRole = column2[targetRoleIndex - table.getn(column1)]
     end
     
-    if targetRole and targetRole.name then
-      roleFilterToSet = targetRole.name
+    -- Use the defaultRoles setting to determine which pool to show
+    if targetRole and targetRole.defaultRoles then
+      if targetRole.defaultRoles.tanks then
+        roleFilterToSet = "Tanks"
+      elseif targetRole.defaultRoles.healers then
+        roleFilterToSet = "Healers"
+      elseif targetRole.defaultRoles.melee then
+        roleFilterToSet = "Melee"
+      elseif targetRole.defaultRoles.ranged then
+        roleFilterToSet = "Ranged"
+      end
     end
   end
   
@@ -4346,8 +4357,17 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     healerLabel:SetText("Healers")
     frame.healerCheck = healerCheck
     
+    local meleeCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    meleeCheck:SetPoint("LEFT", tankCheck, "LEFT", 120, 0)
+    meleeCheck:SetWidth(24)
+    meleeCheck:SetHeight(24)
+    local meleeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    meleeLabel:SetPoint("LEFT", meleeCheck, "RIGHT", 5, 0)
+    meleeLabel:SetText("Melee")
+    frame.meleeCheck = meleeCheck
+    
     local rangedCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    rangedCheck:SetPoint("LEFT", tankCheck, "LEFT", 120, 0)
+    rangedCheck:SetPoint("TOPLEFT", meleeCheck, "BOTTOMLEFT", 0, -5)
     rangedCheck:SetWidth(24)
     rangedCheck:SetHeight(24)
     local rangedLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -4355,14 +4375,20 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     rangedLabel:SetText("Ranged")
     frame.rangedCheck = rangedCheck
     
-    local dpsCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    dpsCheck:SetPoint("TOPLEFT", rangedCheck, "BOTTOMLEFT", 0, -5)
-    dpsCheck:SetWidth(24)
-    dpsCheck:SetHeight(24)
-    local dpsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    dpsLabel:SetPoint("LEFT", dpsCheck, "RIGHT", 5, 0)
-    dpsLabel:SetText("DPS")
-    frame.dpsCheck = dpsCheck
+    -- Make checkboxes act like radio buttons (only one can be selected)
+    local roleChecks = {tankCheck, healerCheck, meleeCheck, rangedCheck}
+    for _, check in ipairs(roleChecks) do
+      check:SetScript("OnClick", function()
+        if this:GetChecked() then
+          -- Uncheck all others
+          for _, otherCheck in ipairs(roleChecks) do
+            if otherCheck ~= this then
+              otherCheck:SetChecked(false)
+            end
+          end
+        end
+      end)
+    end
     
     -- Save Button
     local saveBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -4395,12 +4421,12 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   frame.allowOtherRolesCheckbox:SetChecked(roleData.allowOtherRoles or false)
   frame.countEditBox:SetText(tostring(roleData.slots or 1))
   
-  -- Set default roles checkboxes
+  -- Set default roles checkboxes (only one should be checked)
   local defaultRoles = roleData.defaultRoles or {}
   frame.tankCheck:SetChecked(defaultRoles.tanks or false)
   frame.healerCheck:SetChecked(defaultRoles.healers or false)
+  frame.meleeCheck:SetChecked(defaultRoles.melee or false)
   frame.rangedCheck:SetChecked(defaultRoles.ranged or false)
-  frame.dpsCheck:SetChecked(defaultRoles.dps or false)
   
   -- Save button handler
   frame.saveBtn:SetScript("OnClick", function()
@@ -4412,14 +4438,14 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     roleData.allowOtherRoles = frame.allowOtherRolesCheckbox:GetChecked()
     roleData.slots = tonumber(frame.countEditBox:GetText()) or 1
     
-    -- Update default roles
+    -- Update default roles (clear all, then set the checked one)
     if not roleData.defaultRoles then
       roleData.defaultRoles = {}
     end
     roleData.defaultRoles.tanks = frame.tankCheck:GetChecked()
     roleData.defaultRoles.healers = frame.healerCheck:GetChecked()
+    roleData.defaultRoles.melee = frame.meleeCheck:GetChecked()
     roleData.defaultRoles.ranged = frame.rangedCheck:GetChecked()
-    roleData.defaultRoles.dps = frame.dpsCheck:GetChecked()
     
     -- Refresh the roles list
     if refreshCallback then
