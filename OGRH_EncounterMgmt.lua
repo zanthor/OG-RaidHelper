@@ -4051,33 +4051,35 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
   end
   
   -- Get raid members from current raid
-  local function GetRaidMembers()
-    local members = {}
-    
-    if frame.selectedFilter == "all" then
-      -- All Players: Show everyone currently in raid
-      for j = 1, GetNumRaidMembers() do
-        local name, _, _, _, class = GetRaidRosterInfo(j)
-        if name then
-          members[name] = {
-            name = name,
-            role = "All",
-            class = class
-          }
-        end
-      end
-    elseif frame.selectedFilter == "pool" then
-      -- Pool: Show all players from encounter pool (including those not in raid)
-      local poolPlayers = {}
-      local currentRaid = frame.currentRaidName
-      local currentEnc = frame.currentEncounterName
-      local currentRole = frame.currentTargetRoleIndex
+  -- Store as frame method so it always uses current frame values
+  if not frame.GetRaidMembers then
+    frame.GetRaidMembers = function()
+      local members = {}
       
-      if OGRH_SV.encounterPools and OGRH_SV.encounterPools[currentRaid] and 
-         OGRH_SV.encounterPools[currentRaid][currentEnc] and
-         OGRH_SV.encounterPools[currentRaid][currentEnc][currentRole] then
-        poolPlayers = OGRH_SV.encounterPools[currentRaid][currentEnc][currentRole]
-      end
+      if frame.selectedFilter == "all" then
+        -- All Players: Show everyone currently in raid
+        for j = 1, GetNumRaidMembers() do
+          local name, _, _, _, class = GetRaidRosterInfo(j)
+          if name then
+            members[name] = {
+              name = name,
+              role = "All",
+              class = class
+            }
+          end
+        end
+      elseif frame.selectedFilter == "pool" then
+        -- Pool: Show all players from encounter pool (including those not in raid)
+        local poolPlayers = {}
+        local currentRaid = frame.currentRaidName
+        local currentEnc = frame.currentEncounterName
+        local currentRole = frame.currentTargetRoleIndex
+        
+        if OGRH_SV.encounterPools and OGRH_SV.encounterPools[currentRaid] and 
+           OGRH_SV.encounterPools[currentRaid][currentEnc] and
+           OGRH_SV.encounterPools[currentRaid][currentEnc][currentRole] then
+          poolPlayers = OGRH_SV.encounterPools[currentRaid][currentEnc][currentRole]
+        end
       
       for i = 1, table.getn(poolPlayers) do
         local name = poolPlayers[i]
@@ -4135,6 +4137,8 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
     
     return members
   end
+  end
+  local GetRaidMembers = frame.GetRaidMembers
   
   -- Refresh player list
   local function RefreshPlayerList()
