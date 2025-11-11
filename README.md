@@ -56,6 +56,9 @@ I'll be adding full and accurate documentation as well as making a youtube video
 5. **Trade Items**: Use the **Trade** button to set up and distribute items to raid members
 6. **Share Configs**: Click **Share** to export/import your encounter and trade configurations
 
+7. A short video overview of the addon since I know you're raiders not readers.
+   https://youtu.be/u_wYddHOFfw 
+
 ---
 
 ## Main Window
