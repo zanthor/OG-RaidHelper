@@ -5,7 +5,7 @@ if not OGRH then
 end
 
 local Main = CreateFrame("Frame","OGRH_Main",UIParent)
-Main:SetWidth(140); Main:SetHeight(124)  -- Increased height for new button
+Main:SetWidth(165); Main:SetHeight(124)  -- Increased width for mark button
 Main:SetPoint("CENTER", UIParent, "CENTER", -380, 120)
 Main:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
 Main:SetBackdropColor(0,0,0,0.85)
@@ -396,6 +396,19 @@ announceBtn:SetScript("OnClick", function()
 end)
 encounterNav.announceBtn = announceBtn
 
+-- Mark button
+local markBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
+markBtn:SetWidth(20)
+markBtn:SetHeight(20)
+markBtn:SetPoint("LEFT", announceBtn, "RIGHT", 2, 0)
+markBtn:SetText("M")
+markBtn:SetScript("OnClick", function()
+  if OGRH.MarkPlayersFromMainUI then
+    OGRH.MarkPlayersFromMainUI()
+  end
+end)
+encounterNav.markBtn = markBtn
+
 -- Next Encounter button
 local nextEncBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
 nextEncBtn:SetWidth(20)
@@ -412,7 +425,7 @@ encounterNav.nextEncBtn = nextEncBtn
 -- Encounter button (middle, fills remaining space)
 local encounterBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
 encounterBtn:SetHeight(20)
-encounterBtn:SetPoint("LEFT", announceBtn, "RIGHT", 2, 0)
+encounterBtn:SetPoint("LEFT", markBtn, "RIGHT", 2, 0)
 encounterBtn:SetPoint("RIGHT", nextEncBtn, "LEFT", -2, 0)
 encounterBtn:SetText("Select Raid")
 encounterBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")

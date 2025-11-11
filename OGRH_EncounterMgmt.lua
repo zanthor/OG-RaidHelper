@@ -5874,4 +5874,123 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
   end
 end
 
+-- Mark Players from MainUI
+function OGRH.MarkPlayersFromMainUI()
+  -- Check if in raid
+  if GetNumRaidMembers() == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to mark players.")
+    return
+  end
+  
+  -- Get selected raid and encounter
+  local selectedRaid = OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedRaid
+  local selectedEncounter = OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedEncounter
+  
+  if not selectedRaid or not selectedEncounter then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
+    return
+  end
+  
+  -- Get role configuration
+  local roles = OGRH_SV.encounterMgmt.roles
+  if not roles or not roles[selectedRaid] or not roles[selectedRaid][selectedEncounter] then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
+    return
+  end
+  
+  local encounterRoles = roles[selectedRaid][selectedEncounter]
+  local column1 = encounterRoles.column1 or {}
+  local column2 = encounterRoles.column2 or {}
+  
+  -- Build ordered list of all roles (column1 first, then column2)
+  local allRoles = {}
+  
+  for i = 1, table.getn(column1) do
+    table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+  end
+  for i = 1, table.getn(column2) do
+    table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+  end
+  
+  -- Check if any role has markPlayer enabled
+  local hasMarkPlayerEnabled = false
+  for _, roleData in ipairs(allRoles) do
+    if roleData.role.markPlayer then
+      hasMarkPlayerEnabled = true
+      break
+    end
+  end
+  
+  -- If no roles have markPlayer enabled, try AutoMarker
+  if not hasMarkPlayerEnabled then
+    local amHandler = SlashCmdList["AUTOMARKER"]
+    if type(amHandler) ~= "function" then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured to mark players and AutoMarker addon not found.")
+      return
+    end
+    
+    -- Call AutoMarker with /am mark command
+    amHandler("mark")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r AutoMarker invoked.")
+    return
+  end
+  
+  -- Get assignments
+  local assignments = {}
+  if OGRH_SV.encounterAssignments and 
+     OGRH_SV.encounterAssignments[selectedRaid] and
+     OGRH_SV.encounterAssignments[selectedRaid][selectedEncounter] then
+    assignments = OGRH_SV.encounterAssignments[selectedRaid][selectedEncounter]
+  end
+  
+  -- Get raid marks
+  local raidMarks = {}
+  if OGRH_SV.encounterRaidMarks and
+     OGRH_SV.encounterRaidMarks[selectedRaid] and
+     OGRH_SV.encounterRaidMarks[selectedRaid][selectedEncounter] then
+    raidMarks = OGRH_SV.encounterRaidMarks[selectedRaid][selectedEncounter]
+  end
+  
+  -- Clear all raid marks first
+  for j = 1, GetNumRaidMembers() do
+    SetRaidTarget("raid"..j, 0)
+  end
+  
+  -- Iterate through roles and apply marks
+  local markedCount = 0
+  
+  for _, roleData in ipairs(allRoles) do
+    local role = roleData.role
+    local roleIndex = roleData.roleIndex
+    
+    -- Only process roles with markPlayer enabled
+    if role.markPlayer then
+      -- Get assigned players for this role
+      local assignedPlayers = assignments[roleIndex] or {}
+      local roleMarks = raidMarks[roleIndex] or {}
+      
+      -- Iterate through slots
+      for slotIndex = 1, table.getn(assignedPlayers) do
+        local playerName = assignedPlayers[slotIndex]
+        local markIndex = roleMarks[slotIndex]
+        
+        if playerName and markIndex and markIndex ~= 0 then
+          -- Find player in raid and apply mark
+          for j = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(j)
+            if name == playerName then
+              -- Set raid target icon (1-8)
+              SetRaidTarget("raid"..j, markIndex)
+              markedCount = markedCount + 1
+              break
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Marked " .. markedCount .. " players.")
+end
+
 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter Management loaded")
