@@ -475,10 +475,10 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     bottomPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
     frame.bottomPanel = bottomPanel
     
-    -- Auto Assign button
+    -- Auto Assign button (reduced height to fit Edit button)
     local autoAssignBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
     autoAssignBtn:SetWidth(120)
-    autoAssignBtn:SetHeight(30)
+    autoAssignBtn:SetHeight(24)
     autoAssignBtn:SetPoint("TOPLEFT", bottomPanel, "TOPLEFT", 10, -10)
     autoAssignBtn:SetText("Auto Assign")
     frame.autoAssignBtn = autoAssignBtn
@@ -638,11 +638,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-assigned " .. assignmentCount .. " players.")
     end)
     
-    -- Announce button (below Auto Assign)
+    -- Announce button (below Auto Assign, reduced height)
     local announceBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
     announceBtn:SetWidth(120)
-    announceBtn:SetHeight(30)
-    announceBtn:SetPoint("TOPLEFT", autoAssignBtn, "BOTTOMLEFT", 0, -10)
+    announceBtn:SetHeight(24)
+    announceBtn:SetPoint("TOPLEFT", autoAssignBtn, "BOTTOMLEFT", 0, -6)
     announceBtn:SetText("Announce")
     frame.announceBtn = announceBtn
     
@@ -1272,11 +1272,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       end
     end)
     
-    -- Mark Players button (below Announce)
+    -- Mark Players button (below Announce, reduced height)
     local markPlayersBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
     markPlayersBtn:SetWidth(120)
-    markPlayersBtn:SetHeight(30)
-    markPlayersBtn:SetPoint("TOPLEFT", announceBtn, "BOTTOMLEFT", 0, -10)
+    markPlayersBtn:SetHeight(24)
+    markPlayersBtn:SetPoint("TOPLEFT", announceBtn, "BOTTOMLEFT", 0, -6)
     markPlayersBtn:SetText("Mark Players")
     frame.markPlayersBtn = markPlayersBtn
     
@@ -1381,6 +1381,63 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Marked " .. markedCount .. " players.")
     end)
     
+    -- Edit toggle button (below Mark Players)
+    local editToggleBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
+    editToggleBtn:SetWidth(120)
+    editToggleBtn:SetHeight(24)
+    editToggleBtn:SetPoint("TOPLEFT", markPlayersBtn, "BOTTOMLEFT", 0, -6)
+    editToggleBtn:SetText("|cffff0000Edit: Locked|r")
+    frame.editToggleBtn = editToggleBtn
+    frame.editMode = false  -- Start in locked mode
+    
+    -- Function to toggle edit mode
+    local function SetEditMode(enabled)
+      frame.editMode = enabled
+      
+      if enabled then
+        editToggleBtn:SetText("|cff00ff00Edit: Unlocked|r")
+      else
+        editToggleBtn:SetText("|cffff0000Edit: Locked|r")
+      end
+      
+      -- Enable/disable announcement EditBoxes
+      if frame.announcementLines then
+        for i = 1, table.getn(frame.announcementLines) do
+          frame.announcementLines[i]:EnableKeyboard(enabled)
+          frame.announcementLines[i]:EnableMouse(enabled)
+          if not enabled then
+            frame.announcementLines[i]:ClearFocus()
+          end
+        end
+      end
+      
+      -- Enable/disable all raid mark and assignment buttons in role containers
+      -- We'll need to track these when they're created
+      if frame.roleContainers then
+        for _, container in ipairs(frame.roleContainers) do
+          if container.slots then
+            for _, slot in ipairs(container.slots) do
+              -- Disable/enable raid mark icon buttons
+              if slot.iconBtn then
+                slot.iconBtn:EnableMouse(enabled)
+              end
+              -- Disable/enable assignment buttons
+              if slot.assignBtn then
+                slot.assignBtn:EnableMouse(enabled)
+              end
+            end
+          end
+        end
+      end
+    end
+    
+    frame.SetEditMode = SetEditMode
+    
+    -- Toggle edit mode on click
+    editToggleBtn:SetScript("OnClick", function()
+      SetEditMode(not frame.editMode)
+    end)
+    
     -- Announcement Builder label
     local announcementLabel = bottomPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     announcementLabel:SetPoint("TOPLEFT", bottomPanel, "TOPLEFT", 145, -10)
@@ -1477,6 +1534,10 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       editBox:SetFontObject(GameFontHighlight)
       editBox:SetAutoFocus(false)
       editBox:SetMaxLetters(255)
+      
+      -- Start in read-only mode
+      editBox:EnableKeyboard(false)
+      editBox:EnableMouse(false)
       
       editBox:SetScript("OnEscapePressed", function()
         this:ClearFocus()
@@ -1729,6 +1790,9 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
             -- Store reference for loading
             slot.iconBtn = iconBtn
             
+            -- Start with mouse disabled (read-only mode)
+            iconBtn:EnableMouse(false)
+            
             -- Click to cycle through raid icons
             local capturedSlotIndex = i
             iconBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -1842,6 +1906,9 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
             -- Store reference for loading
             slot.assignBtn = assignBtn
             
+            -- Start with mouse disabled (read-only mode)
+            assignBtn:EnableMouse(false)
+            
             -- Tag marker for assignment (Ax) - positioned to the left of the button
             local assignTag = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             assignTag:SetPoint("RIGHT", assignBtn, "LEFT", -4, 0)
@@ -1911,7 +1978,12 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           -- Create a BUTTON for drag/drop (overlays the name area, RolesUI pattern)
           local dragBtn = CreateFrame("Button", nil, slot)
           dragBtn:SetPoint("LEFT", nameText, "LEFT", -5, 0)
-          dragBtn:SetPoint("RIGHT", slot, "RIGHT", -5, 0)
+          -- If assignment button exists, stop before it; otherwise cover full width
+          if role.showAssignment then
+            dragBtn:SetPoint("RIGHT", slot.assignTag, "LEFT", -2, 0)
+          else
+            dragBtn:SetPoint("RIGHT", slot, "RIGHT", -5, 0)
+          end
           dragBtn:SetHeight(20)
           dragBtn:EnableMouse(true)
           dragBtn:SetMovable(true)
@@ -2247,6 +2319,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       else
         scrollBar:Hide()
         scrollFrame:SetVerticalScroll(0)
+      end
+      
+      -- Apply current edit mode to newly created containers
+      if frame.SetEditMode then
+        frame.SetEditMode(frame.editMode or false)
       end
     end
     
