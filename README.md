@@ -66,9 +66,22 @@ The compact main window provides quick access to all major features.
 
 Located in the title bar:
 - **RC** - Performs a Ready Check (left-click), or toggle remote ready checks on/off (right-click)
-- **Announce** - Sends the current encounter's announcement to raid chat
+- **RA** - Re-announce the last announcement sent (left-click), stage a test announcement (right-click)
 - **-** - Minimize/expand window
 - **L** - Lock/unlock window position (drag to move when unlocked)
+
+### Minimized Window Controls
+
+When the main window is minimized, encounter navigation controls appear:
+- **<** (Previous) - Navigate to the previous encounter in the list
+- **A** (Announce) - Prepare the current encounter's announcement (opens in chat box)
+- **M** (Mark) - Mark players according to encounter configuration
+  - If any roles have "Mark Player" enabled: Applies configured raid marks
+  - If no roles are configured to mark: Attempts to call AutoMarker addon with `/am mark`
+- **Encounter** (Center button) - Shows selected raid/encounter name
+  - Left-click: Opens Encounter Planning window
+  - Right-click: Opens raid selection dropdown menu
+- **>** (Next) - Navigate to the next encounter in the list
 
 ### Main Buttons
 
@@ -154,6 +167,7 @@ Access via **Encounters** → **Manage** from the main window.
 - Shows available players for each role required by the encounter
 - Four default pools: Tanks, Healers, Melee, Ranged (customizable via Pool Defaults)
 - **Pool Defaults Button** (top-left) - Configure default players for all encounters
+  - Includes search/filter box to quickly find players in large guild rosters
 - Add players by typing names (comma-separated) or using the guild roster
 - Role filter dropdown to show only players of specific roles
 - Drag players from guild list to pool, or from pool to assignments
@@ -184,15 +198,15 @@ Design the encounter's role requirements:
 **Editing a Role** (click role to open edit window):
 - **Role Name** - Descriptive name (e.g., "Main Tank", "Orb Controller")
 - **Player Slots** - Number of players needed (1-15)
-- **Default Player Roles** - Which pools to draw from:
-  - ☑ Tanks
-  - ☑ Healers
-  - ☑ Melee
-  - ☑ Ranged
-  - ☑ DPS (generic DPS)
+- **Default Player Roles** - Which pools to draw from (radio button selection):
+  - ○ Tanks
+  - ○ Healers
+  - ○ Melee
+  - ○ Ranged
+  - Note: Only one role can be selected as the default
 - **Allow Other Roles** - If checked, players from non-default pools can be manually assigned
 - **Show Raid Icons** - Display raid mark buttons next to assigned players
-- **Mark Player by Default** - Automatically assign raid marks to players
+- **Mark Player by Default** - Automatically assign raid marks to players (used by Mark Players button)
 - **Show Assignment Numbers** - Display assignment number controls (1-9)
 
 #### Assignments Tab
@@ -207,8 +221,16 @@ Assign players to the roles you designed:
 
 **Assigning Players:**
 1. Ensure players are in the appropriate pools (middle panel)
-2. Drag a player from the pool to an empty slot in a role
-3. Or click **Auto Assign** to automatically fill all roles from pools
+2. Click an empty slot to open the Player Selection dialog
+3. Use the filter dropdown to choose:
+   - **All Players** - Shows all current raid members
+   - **Pool** - Shows all players from the encounter's pool for this role
+   - **Tanks** - Shows only players assigned to Tanks in the Roles window
+   - **Healers** - Shows only players assigned to Healers in the Roles window
+   - **Melee** - Shows only players assigned to Melee in the Roles window
+   - **Ranged** - Shows only players assigned to Ranged in the Roles window
+4. Click a player name to assign them to the slot
+5. Or click **Auto Assign** to automatically fill all roles from pools
 
 **Player Controls** (when assigned):
 - **Raid Mark Icons** (if enabled for role) - Click to assign marks (Star, Circle, Diamond, etc.)
@@ -222,6 +244,13 @@ Assign players to the roles you designed:
 - Automatically fills all roles from their configured player pools
 - Uses default roles settings to match players to slots
 - Manual assignments override auto-assignments
+
+**Mark Players:**
+- Click **Mark Players** button (bottom-left of right panel)
+- Left-click: Clears all existing raid marks, then applies configured marks for roles with "Mark Player" enabled
+- Right-click: Clears all raid marks without reapplying
+- Only applies marks to players who are currently in the raid
+- Uses the raid mark assignments from the Assignments tab
 
 #### Announcements Tab
 
@@ -256,18 +285,20 @@ This is an alternative interface for managing the same encounter data with a dif
 
 **Left Panel: Raids List**
 - Scrollable list of raids
-- Click a raid to load its encounters
+- Click a raid to load its encounters (left-click)
+- Right-click a raid to rename it
 
 **Middle Panel: Encounters List**
 - Shows encounters for selected raid
-- Click encounter to load its role configuration
+- Click an encounter to load its role configuration (left-click)
+- Right-click an encounter to rename it
 
 **Right Panel: Role Configuration**
 - Add/edit/delete roles for selected encounter
 - Configure role properties
 - Two-column layout similar to Encounter Planning window
 
-**Note:** Changes made in either the Encounter Planning or Encounter Setup window are synchronized as they modify the same underlying data structure.
+**Note:** Changes made in either the Encounter Planning or Encounter Setup window are synchronized as they modify the same underlying data structure. Renaming in Setup window updates all associated data (pools, assignments, marks, announcements).
 
 ### Pool Defaults Window
 
@@ -598,6 +629,18 @@ OGRH_SV = {
 - Improved announcement tag system with conditional blocks
 - Enhanced Roles UI with single-role polling
 - Added assignment numbers support
+- **NEW:** Minimized window encounter navigation controls (Previous, Announce, Mark, Next)
+- **NEW:** Mark Players button with AutoMarker fallback support
+- **NEW:** Player Selection dialog with filter dropdown (All/Pool/Tanks/Healers/Melee/Ranged)
+- **NEW:** Right-click rename for raids and encounters in Setup window
+- **NEW:** Search/filter box in Pool Defaults window
+- **NEW:** Announcement tags: `[Rx.P]` (all players in role) and `[Rx.A=y]` (players with assignment number)
+- **NEW:** Independent column layout (eliminates whitespace between unequal columns)
+- **NEW:** Role ordering fixes for consistent tag mapping
+- Fixed: Pool selection now shows correct role's pool
+- Fixed: Mark Players now applies marks to all roles (not just R1)
+- Fixed: Announcement role ordering now matches visual display order
+- Changed: Role defaults from checkboxes to radio buttons (single selection)
 
 **Earlier Versions:**
 - Poll system implementation
@@ -624,7 +667,6 @@ For bugs, feature requests, or questions:
 **Happy Raiding!**
 
 **ToDo**
-- Fix column layout on the raid management panel to reduce whitespace.
 - Add all existing encounters to default setup.
-- Fix Documentation
-- Raid
+- Create video tutorial showing addon in action
+- Expand troubleshooting section with common issues

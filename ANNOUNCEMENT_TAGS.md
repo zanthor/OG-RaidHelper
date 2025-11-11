@@ -35,6 +35,19 @@ Displays the name of player `y` in role `x`.
 Tankmedady is main tank
 ```
 
+### All Players in Role: `[Rx.P]`
+Displays all assigned players in role `x`, space-delimited with class colors.
+
+**Example:**
+```
+[R2.T]: [R2.P]
+```
+**Output:**
+```
+Off Tanks: Gnuzmas Zanthor Tankthree
+```
+**Note:** Players are listed in slot assignment order.
+
 ### Raid Mark: `[Rx.My]`
 Displays the raid mark assigned to player `y` in role `x`.
 
@@ -59,6 +72,21 @@ Displays the assignment number for player `y` in role `x`. Assignment numbers ar
 Tankmedady is assignment 1
 ```
 
+### Players with Assignment Number: `[Rx.A=y]`
+Displays all players in role `x` who have assignment number `y`, space-delimited with class colors.
+
+**Example:**
+```
+Group 1: [R2.A=1]
+Group 2: [R2.A=2]
+```
+**Output:**
+```
+Group 1: Gnuzmas Healer1
+Group 2: Zanthor Healer2
+```
+**Note:** Shows only players whose assignment number matches the specified value.
+
 ## Raid Mark Symbols
 
 When using `[Rx.My]` tags, the following symbols are returned:
@@ -80,32 +108,39 @@ When using `[Rx.Ay]` tags, numbers 1-9 are displayed. 0 is treated as "not set" 
 
 ## Complete Example
 
-**Announcement Setup:**
+**Example:**
 ```
 Line 1: [R1.T]: [R1.P1]
-Line 2: [R2.T]: [R2.P1] [R2.M1], [R2.P2] [R2.M2]
+Line 2: [R2.T]: [R2.P]
 Line 3: [R5.T]: [R5.P1] and [R5.P2]
 Line 4: Kill priority: [R3.M1] then [R3.M2]
-Line 5: Group [R1.A1]: [R1.P1], Group [R2.A1]: [R2.P1]
+Line 5: Group 1: [R2.A=1] | Group 2: [R2.A=2]
 ```
 
 **Actual Output (when Announce is clicked):**
 ```
 Main Tank: Tankmedady
-Off Tanks: Gnuzmas {Star}, Zanthor {Circle}
+Off Tanks: Gnuzmas Zanthor Tankthree
 Healers: Fatherkaii and Lightbringer
 Kill priority: {Skull} then {Cross}
-Group 1: Tankmedady, Group 2: Gnuzmas
+Group 1: Gnuzmas Healer1 | Group 2: Zanthor Healer2
 ```
 
 ## Role Numbering
 
-Roles are numbered in the order they appear in the encounter setup (left to right, top to bottom):
-- First role in left column = R1
-- First role in right column = R2
-- Second role in left column = R3
-- Second role in right column = R4
-- etc.
+Roles are numbered sequentially based on their column layout:
+- All roles in the **left column** (top to bottom) are numbered first
+- Then all roles in the **right column** (top to bottom)
+
+**Example Layout:**
+```
+Left Column          Right Column
+R1: Main Tank        R4: Orb Controller
+R2: Near Tanks       R5: Far Tanks
+R3: Healers
+```
+
+This ordering matches the visual display and ensures consistent tag mapping across announcements, tooltips, and raid marks.
 
 ## Conditional Blocks
 
