@@ -5,7 +5,7 @@ if not OGRH then
 end
 
 local Main = CreateFrame("Frame","OGRH_Main",UIParent)
-Main:SetWidth(165); Main:SetHeight(124)  -- Increased width for mark button
+Main:SetWidth(165); Main:SetHeight(56)  -- Fixed height for title bar + encounter nav
 Main:SetPoint("CENTER", UIParent, "CENTER", -380, 120)
 Main:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
 Main:SetBackdropColor(0,0,0,0.85)
@@ -26,11 +26,11 @@ H:SetHeight(20)
 local title = H:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
 title:SetPoint("LEFT", H, "LEFT", 4, 0); title:SetText("|cffffff00OGRH|r")
 
-local btnMin = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnMin:SetWidth(20); btnMin:SetHeight(16); btnMin:SetText("-"); btnMin:SetPoint("RIGHT", H, "RIGHT", -26, 0)
+local btnRoles = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnRoles:SetWidth(20); btnRoles:SetHeight(16); btnRoles:SetText("R"); btnRoles:SetPoint("RIGHT", H, "RIGHT", -26, 0)
 local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(16); btnLock:SetText("L"); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0)
 
 -- Sync button (S) - Send encounter configuration to raid
-local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(20); syncBtn:SetHeight(16); syncBtn:SetText("S"); syncBtn:SetPoint("RIGHT", btnMin, "LEFT", -2, 0)
+local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(20); syncBtn:SetHeight(16); syncBtn:SetText("S"); syncBtn:SetPoint("RIGHT", btnRoles, "LEFT", -2, 0)
 syncBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- Function to update sync button color based on lock state
@@ -129,20 +129,8 @@ end)
 local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(20); readyCheck:SetHeight(16); readyCheck:SetText("RC"); readyCheck:SetPoint("RIGHT", syncBtn, "LEFT", -2, 0)
 readyCheck:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
-local Content = CreateFrame("Frame", nil, Main); Content:SetPoint("TOPLEFT", Main, "TOPLEFT", 6, -26); Content:SetPoint("BOTTOMRIGHT", Main, "BOTTOMRIGHT", -6, 6)
-local function makeBtn(text, anchorTo)
-  local b=CreateFrame("Button", nil, Content, "UIPanelButtonTemplate")
-  b:SetWidth(110); b:SetHeight(20); b:SetText(text)
-  if not anchorTo then b:SetPoint("TOP", Content, "TOP", 0, 0) else b:SetPoint("TOP", anchorTo, "BOTTOM", 0, -4) end
-  return b
-end
-local bRoles = makeBtn("Roles", nil)
-local bEncounters = makeBtn("Encounters", bRoles)
-local bTrade  = makeBtn("Trade", bEncounters)
-local bShare  = makeBtn("Share", bTrade)
-
-function OGRH_ShowBoard() if OGRH.ShowRolesUI then OGRH.ShowRolesUI() else OGRH.Msg("Roles UI not yet loaded.") end end
-bRoles:SetScript("OnClick", function()
+-- Roles button handler
+btnRoles:SetScript("OnClick", function()
   -- Close encounter windows if they're open
   if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
     OGRH_BWLEncounterFrame:Hide()
@@ -164,303 +152,12 @@ bRoles:SetScript("OnClick", function()
   end
 end)
 
--- Encounters button with collapsible menu
-bEncounters:SetScript("OnClick", function()
-  -- Close Trade menu if it's open
-  if OGRH_TradeMenu and OGRH_TradeMenu:IsVisible() then
-    OGRH_TradeMenu:Hide()
-  end
-  
-  if not OGRH_EncountersMenu then
-    -- Create encounter menu
-    local menu = CreateFrame("Frame", "OGRH_EncountersMenu", UIParent)
-    menu:SetWidth(140)
-    menu:SetHeight(100)
-    menu:SetFrameStrata("FULLSCREEN_DIALOG")
-    menu:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      edgeSize = 12,
-      insets = {left = 4, right = 4, top = 4, bottom = 4}
-    })
-    menu:SetBackdropColor(0, 0, 0, 0.95)
-    menu:Hide()
-    
-    -- Track expanded raids
-    local expandedRaids = {}
-    
-    -- Store all menu buttons for cleanup
-    local menuButtons = {}
-    
-    -- Raid structure
-    local raids = {
-      {
-        name = "Manage",
-        encounters = nil,
-        handler = function()
-          -- Close Setup window if open
-          if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame:IsVisible() then
-            OGRH_EncounterSetupFrame:Hide()
-          end
-          
-          if OGRH.ShowBWLEncounterWindow then 
-            OGRH.ShowBWLEncounterWindow() 
-          else
-            DEFAULT_CHAT_FRAME:AddMessage("Encounter Planning window not yet implemented")
-          end
-        end
-      }
-    }
-    
-    -- Add Setup option at the end
-    local setupButton = nil
-    
-    -- Function to rebuild menu
-    local function RebuildMenu()
-      -- Clear existing buttons
-      for _, btn in ipairs(menuButtons) do
-        btn:Hide()
-        btn:SetParent(nil)
-      end
-      menuButtons = {}
-      
-      local yOffset = -5
-      
-      for _, raid in ipairs(raids) do
-        -- Check if this raid has encounters or a direct handler
-        if raid.encounters then
-          -- Expandable raid with encounters
-          local isExpanded = expandedRaids[raid.name]
-          
-          -- Create raid header button
-          local raidBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
-          raidBtn:SetWidth(130)
-          raidBtn:SetHeight(20)
-          raidBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
-          
-          local expandIcon = isExpanded and "[-] " or "[+] "
-          raidBtn:SetText(expandIcon .. raid.name)
-          
-          -- Capture raid.name in local variable for closure
-          local raidName = raid.name
-          raidBtn:SetScript("OnClick", function()
-            expandedRaids[raidName] = not expandedRaids[raidName]
-            RebuildMenu()
-          end)
-          table.insert(menuButtons, raidBtn)
-          yOffset = yOffset - 22
-          
-          -- If expanded, show encounters
-          if isExpanded then
-            for _, encounter in ipairs(raid.encounters) do
-              local encBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
-              encBtn:SetWidth(120)
-              encBtn:SetHeight(18)
-              encBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 15, yOffset)
-              encBtn:SetText(encounter.text)
-              
-              -- Capture handler in local variable for closure
-              local encounterHandler = encounter.handler
-              encBtn:SetScript("OnClick", function()
-                menu:Hide()
-                encounterHandler()
-              end)
-              table.insert(menuButtons, encBtn)
-              yOffset = yOffset - 20
-            end
-          end
-        else
-          -- Direct handler button (no encounters)
-          local raidBtn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
-          raidBtn:SetWidth(130)
-          raidBtn:SetHeight(20)
-          raidBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
-          raidBtn:SetText(raid.name)
-          
-          -- Capture handler in local variable for closure
-          local raidHandler = raid.handler
-          raidBtn:SetScript("OnClick", function()
-            menu:Hide()
-            if raidHandler then
-              raidHandler()
-            end
-          end)
-          table.insert(menuButtons, raidBtn)
-          yOffset = yOffset - 22
-        end
-      end
-      
-      -- Update menu height
-      local totalHeight = math.abs(yOffset) + 10
-      
-      -- Add Setup button at the bottom
-      if not setupButton then
-        setupButton = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
-        setupButton:SetWidth(130)
-        setupButton:SetHeight(20)
-        setupButton:SetScript("OnClick", function()
-          menu:Hide()
-          
-          -- Close Manage window if open
-          if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
-            OGRH_BWLEncounterFrame:Hide()
-          end
-          
-          if OGRH.ShowEncounterSetup then
-            OGRH.ShowEncounterSetup()
-          else
-            DEFAULT_CHAT_FRAME:AddMessage("Encounter Setup not yet implemented")
-          end
-        end)
-      end
-      setupButton:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
-      setupButton:SetText("Setup")
-      setupButton:Show()
-      
-      totalHeight = totalHeight + 22
-      menu:SetHeight(totalHeight)
-    end
-    
-    menu.Rebuild = RebuildMenu
-  end
-  
-  local menu = OGRH_EncountersMenu
-  if menu:IsVisible() then
-    menu:Hide()
-  else
-    menu.Rebuild()
-    menu:ClearAllPoints()
-    menu:SetPoint("TOPLEFT", bEncounters, "BOTTOMLEFT", 0, -2)
-    menu:Show()
-  end
-end)
-
-bTrade:RegisterForClicks("LeftButtonUp","RightButtonUp")
-bTrade:SetScript("OnClick", function()
-  local btn = arg1 or "LeftButton"
-  -- Close Encounters menu if it's open
-  if OGRH_EncountersMenu and OGRH_EncountersMenu:IsVisible() then
-    OGRH_EncountersMenu:Hide()
-  end
-  
-  -- Both left and right click show/hide the menu
-  if not OGRH_TradeMenu then
-      local M = CreateFrame("Frame","OGRH_TradeMenu",UIParent)
-      M:SetFrameStrata("FULLSCREEN_DIALOG")
-      M:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
-      M:SetBackdropColor(0,0,0,0.95); M:SetWidth(200); M:SetHeight(1); M:Hide()
-      
-      M.btns = {}
-      M.Rebuild = function()
-        -- Clear existing buttons
-        if M.btns then
-          for _, btn in ipairs(M.btns) do
-            btn:Hide()
-            btn:SetParent(nil)
-          end
-        end
-        M.btns = {}
-        
-        OGRH.EnsureSV()
-        local items = OGRH_SV.tradeItems
-        
-        -- Get current trade item info
-        local currentItemId = OGRH.GetCurrentTradeItemId and OGRH.GetCurrentTradeItemId() or nil
-        
-        local yOffset = -10
-        local buttonHeight = 18
-        local buttonSpacing = 6
-        
-        -- Create buttons for each trade item
-        for i, itemData in ipairs(items) do
-          local it = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
-          it:SetWidth(180)
-          it:SetHeight(buttonHeight)
-          
-          if i == 1 then
-            it:SetPoint("TOPLEFT", M, "TOPLEFT", 10, yOffset)
-          else
-            it:SetPoint("TOPLEFT", M.btns[i-1], "BOTTOMLEFT", 0, -buttonSpacing)
-          end
-          
-          local fs = it:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-          fs:SetAllPoints()
-          fs:SetJustifyH("CENTER")
-          it.fs = fs
-          
-          local label = itemData.name or ("Item " .. itemData.itemId)
-          
-          -- Highlight if this is the active trade item
-          if itemData.itemId == currentItemId then
-            fs:SetText(OGRH.COLOR.HEADER .. label .. OGRH.COLOR.RESET)
-          else
-            fs:SetText(label)
-          end
-          
-          local itemId = itemData.itemId
-          local quantity = itemData.quantity
-          
-          it:SetScript("OnClick", function()
-            if OGRH.SetTradeItem then
-              OGRH.SetTradeItem(itemId, quantity)
-            end
-            M:Hide()
-          end)
-          
-          table.insert(M.btns, it)
-        end
-        
-        -- Add Settings button at the bottom
-        local settingsBtn = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
-        settingsBtn:SetWidth(180)
-        settingsBtn:SetHeight(buttonHeight)
-        
-        if table.getn(M.btns) > 0 then
-          settingsBtn:SetPoint("TOPLEFT", M.btns[table.getn(M.btns)], "BOTTOMLEFT", 0, -buttonSpacing)
-        else
-          settingsBtn:SetPoint("TOPLEFT", M, "TOPLEFT", 10, yOffset)
-        end
-        
-        local settingsFs = settingsBtn:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-        settingsFs:SetAllPoints()
-        settingsFs:SetJustifyH("CENTER")
-        settingsFs:SetText("|cff888888Settings|r")
-        
-        settingsBtn:SetScript("OnClick", function()
-          M:Hide()
-          if OGRH.ShowTradeSettings then
-            OGRH.ShowTradeSettings()
-          end
-        end)
-        
-        table.insert(M.btns, settingsBtn)
-        
-        -- Calculate menu height
-        local numButtons = table.getn(M.btns)
-        local totalHeight = 10 + numButtons * buttonHeight + (numButtons - 1) * buttonSpacing + 10
-        M:SetHeight(totalHeight)
-      end
-    end
-    local M = OGRH_TradeMenu
-    
-    -- Toggle menu visibility
-    if M:IsVisible() then
-      M:Hide()
-      return
-    end
-    
-    -- Rebuild menu with current items
-    M.Rebuild()
-    
-    M:ClearAllPoints(); M:SetPoint("TOPLEFT", bTrade, "BOTTOMLEFT", 0, -2); M:Show()
-end)
-
--- Encounter navigation controls (shown when minimized)
+-- Encounter navigation controls
 local encounterNav = CreateFrame("Frame", nil, Main)
 encounterNav:SetPoint("TOPLEFT", Main, "TOPLEFT", 6, -26)
 encounterNav:SetPoint("TOPRIGHT", Main, "TOPRIGHT", -6, -26)
 encounterNav:SetHeight(24)
-encounterNav:Hide()
+encounterNav:Show()
 
 -- Previous Encounter button
 local prevEncBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
@@ -539,20 +236,6 @@ encounterNav.encounterBtn = encounterBtn
 -- Store reference for external access
 OGRH.encounterNav = encounterNav
 
-local function applyMinimized(mini) 
-  if mini then 
-    Content:Hide()
-    encounterNav:Show()
-    Main:SetHeight(56)
-    btnMin:SetText("+")
-  else 
-    Content:Show()
-    encounterNav:Hide()
-    Main:SetHeight(124)
-    btnMin:SetText("-")
-  end
-end
-btnMin:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.minimized = not OGRH_SV.ui.minimized; applyMinimized(OGRH_SV.ui.minimized) end)
 local function applyLocked(lock) btnLock:SetText("L") end
 btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)
 
@@ -630,24 +313,6 @@ readyCheck:SetScript("OnClick", function()
   end
 end)
 
--- Share button handler
-bShare:SetScript("OnClick", function()
-  -- Close Trade menu if it's open
-  if OGRH_TradeMenu and OGRH_TradeMenu:IsVisible() then
-    OGRH_TradeMenu:Hide()
-  end
-  -- Close Encounters menu if it's open
-  if OGRH_EncountersMenu and OGRH_EncountersMenu:IsVisible() then
-    OGRH_EncountersMenu:Hide()
-  end
-  
-  if OGRH.ShowShareWindow then
-    OGRH.ShowShareWindow()
-  else
-    OGRH.Msg("Share functionality not loaded.")
-  end
-end)
-
 -- Expose sync button for external access
 OGRH.syncButton = syncBtn
 
@@ -655,11 +320,16 @@ local function restoreMain()
   ensureSV()
   local ui=OGRH_SV.ui or {}
   if ui.point and ui.x and ui.y then Main:ClearAllPoints(); Main:SetPoint(ui.point, UIParent, ui.relPoint or ui.point, ui.x, ui.y) end
-  applyMinimized(ui.minimized); applyLocked(ui.locked)
+  applyLocked(ui.locked)
   
   -- Update sync button color after saved variables are loaded
   if OGRH.UpdateSyncButtonColor then
     OGRH.UpdateSyncButtonColor()
+  end
+  
+  -- Check if window should be hidden
+  if ui.hidden then
+    Main:Hide()
   end
 end
 local _loader = CreateFrame("Frame"); _loader:RegisterEvent("VARIABLES_LOADED"); _loader:SetScript("OnEvent", function() restoreMain() end)
