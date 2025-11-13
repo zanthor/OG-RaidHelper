@@ -59,8 +59,8 @@ Documentation is a work in progress... this addon  has changed a lot since it's 
 6. **Share Configs**: Click **Share** to export/import your encounter and trade configurations
 
 7. A short video overview of the addon since I know you're raiders not readers.
-   {Coming Soon}
-
+   https://youtu.be/eKVEandwlpM
+   
 ---
 
 ## Main Window
