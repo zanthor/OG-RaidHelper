@@ -4276,9 +4276,13 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"] = {
       
       if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
         OGRH_EncounterSetupFrame.selectedRaid = nil
+        OGRH_EncounterSetupFrame.selectedEncounter = nil
         OGRH_EncounterSetupFrame.RefreshRaidsList()
         if OGRH_EncounterSetupFrame.RefreshEncountersList then
           OGRH_EncounterSetupFrame.RefreshEncountersList()
+        end
+        if OGRH_EncounterSetupFrame.RefreshRolesList then
+          OGRH_EncounterSetupFrame.RefreshRolesList()
         end
       end
       DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Raid '" .. raidName .. "' deleted")
@@ -4367,6 +4371,9 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
         OGRH_EncounterSetupFrame.selectedEncounter = nil
         if OGRH_EncounterSetupFrame.RefreshEncountersList then
           OGRH_EncounterSetupFrame.RefreshEncountersList()
+        end
+        if OGRH_EncounterSetupFrame.RefreshRolesList then
+          OGRH_EncounterSetupFrame.RefreshRolesList()
         end
       end
       DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter '" .. encounterName .. "' deleted")
