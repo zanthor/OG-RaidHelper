@@ -4,6 +4,9 @@ OGRH.ADDON = "OG-RaidHelper"
 OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 
+-- Player class cache (persists across sessions)
+OGRH.classCache = OGRH.classCache or {}
+
 -- Standard announcement colors
 OGRH.COLOR = {
   HEADER = "|cff00ff00",   -- Bright Green
@@ -312,6 +315,60 @@ function OGRH.ClassColorHex(class)
   if RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then r,g,b = RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b
   elseif OGRH.CLASS_RGB[class] then r,g,b = OGRH.CLASS_RGB[class][1], OGRH.CLASS_RGB[class][2], OGRH.CLASS_RGB[class][3] end
   return string.format("|cff%02x%02x%02x", r*255, g*255, b*255)
+end
+
+-- Get player class from multiple sources with caching
+function OGRH.GetPlayerClass(playerName)
+  if not playerName then return nil end
+  
+  -- Check cache first
+  if OGRH.classCache[playerName] then
+    return OGRH.classCache[playerName]
+  end
+  
+  -- Check raid roster (most reliable for current raid members)
+  if OGRH.Roles.nameClass[playerName] then
+    OGRH.classCache[playerName] = OGRH.Roles.nameClass[playerName]
+    return OGRH.Roles.nameClass[playerName]
+  end
+  
+  -- Check current raid roster directly
+  local numRaid = GetNumRaidMembers()
+  if numRaid > 0 then
+    for i = 1, numRaid do
+      local name, _, _, _, class = GetRaidRosterInfo(i)
+      if name == playerName and class then
+        local upperClass = string.upper(class)
+        OGRH.classCache[playerName] = upperClass
+        return upperClass
+      end
+    end
+  end
+  
+  -- Check guild roster
+  local numGuild = GetNumGuildMembers(true)
+  if numGuild > 0 then
+    for i = 1, numGuild do
+      local name, _, _, _, class = GetGuildRosterInfo(i)
+      if name == playerName and class then
+        local upperClass = string.upper(class)
+        OGRH.classCache[playerName] = upperClass
+        return upperClass
+      end
+    end
+  end
+  
+  -- Try UnitClass if player is targetable/in party
+  if UnitExists(playerName) then
+    local _, class = UnitClass(playerName)
+    if class then
+      local upperClass = string.upper(class)
+      OGRH.classCache[playerName] = upperClass
+      return upperClass
+    end
+  end
+  
+  return nil
 end
 
 OGRH.Roles = OGRH.Roles or {
