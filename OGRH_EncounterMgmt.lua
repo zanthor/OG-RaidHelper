@@ -44,8 +44,22 @@ end
 
 -- Function to show Encounter Planning Window
 function OGRH.ShowBWLEncounterWindow(encounterName)
+  OGRH.EnsureSV()
+  
   -- Create or show the window
   if not OGRH_BWLEncounterFrame then
+    -- Check if encounter data exists before creating frame
+    if not OGRH_SV.encounterMgmt or 
+       not OGRH_SV.encounterMgmt.raids or 
+       table.getn(OGRH_SV.encounterMgmt.raids) == 0 then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r No encounter data found. Please import data from the Share window.")
+      if OGRH.ShowShareWindow then
+        OGRH.ShowShareWindow()
+      end
+      return
+    end
+    
+    -- Now create the frame
     local frame = CreateFrame("Frame", "OGRH_BWLEncounterFrame", UIParent)
     frame:SetWidth(1010)
     frame:SetHeight(450)
@@ -896,15 +910,9 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         return ""
       end
       
-      -- Helper function to get player class
+      -- Use the cached class lookup system instead of only checking raid roster
       local function GetPlayerClass(playerName)
-        for j = 1, GetNumRaidMembers() do
-          local name, _, _, _, playerClass = GetRaidRosterInfo(j)
-          if name == playerName then
-            return playerClass
-          end
-        end
-        return nil
+        return OGRH.GetPlayerClass(playerName)
       end
       
       -- Helper function to check if a tag is valid (has a value)
@@ -2142,6 +2150,17 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
               
               OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex] = frame.draggedPlayerName
               
+              -- Broadcast assignment update (minimal sync)
+              if OGRH.BroadcastAssignmentUpdate then
+                OGRH.BroadcastAssignmentUpdate(
+                  frame.selectedRaid,
+                  frame.selectedEncounter,
+                  targetRoleIndex,
+                  targetSlotIndex,
+                  frame.draggedPlayerName
+                )
+              end
+              
               -- Refresh display
               if frame.RefreshRoleContainers then
                 frame.RefreshRoleContainers()
@@ -2922,6 +2941,18 @@ end
 
 -- Function to show Encounter Setup Window
 function OGRH.ShowEncounterSetup()
+  -- Check if encounter data exists, if not show Share window
+  OGRH.EnsureSV()
+  if not OGRH_SV.encounterMgmt or 
+     not OGRH_SV.encounterMgmt.raids or 
+     table.getn(OGRH_SV.encounterMgmt.raids) == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r No encounter data found. Please import data from the Share window.")
+    if OGRH.ShowShareWindow then
+      OGRH.ShowShareWindow()
+    end
+    return
+  end
+  
   -- Create or show the setup window
   if not OGRH_EncounterSetupFrame then
     local frame = CreateFrame("Frame", "OGRH_EncounterSetupFrame", UIParent)

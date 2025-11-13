@@ -165,6 +165,67 @@ function OGRH.BroadcastEncounterSelection(raidName, encounterName)
   SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
 end
 
+-- Calculate checksum of encounter assignments
+function OGRH.CalculateAssignmentChecksum(raid, encounter)
+  OGRH.EnsureSV()
+  if not OGRH_SV.encounterAssignments or 
+     not OGRH_SV.encounterAssignments[raid] or 
+     not OGRH_SV.encounterAssignments[raid][encounter] then
+    return "0"
+  end
+  
+  local assignments = OGRH_SV.encounterAssignments[raid][encounter]
+  local checksum = 0
+  
+  for roleIdx, roleAssignments in pairs(assignments) do
+    for slotIdx, playerName in pairs(roleAssignments) do
+      if type(playerName) == "string" then
+        -- Simple hash: sum of byte values
+        for i = 1, string.len(playerName) do
+          checksum = checksum + string.byte(playerName, i) * (roleIdx * 100 + slotIdx)
+        end
+      end
+    end
+  end
+  
+  return tostring(checksum)
+end
+
+-- Broadcast assignment update (minimal data)
+function OGRH.BroadcastAssignmentUpdate(raid, encounter, roleIndex, slotIndex, playerName)
+  if GetNumRaidMembers() == 0 then
+    return
+  end
+  
+  -- Only send if we're raid leader or assistant
+  local canSend = false
+  for i = 1, GetNumRaidMembers() do
+    local name, rank = GetRaidRosterInfo(i)
+    if name == UnitName("player") and (rank == 2 or rank == 1) then
+      canSend = true
+      break
+    end
+  end
+  
+  if not canSend then
+    return
+  end
+  
+  local checksum = OGRH.CalculateAssignmentChecksum(raid, encounter)
+  local data = raid .. ";" .. encounter .. ";" .. roleIndex .. ";" .. slotIndex .. ";" .. (playerName or "") .. ";" .. checksum
+  SendAddonMessage(OGRH.ADDON_PREFIX, "ASSIGNMENT_UPDATE;" .. data, "RAID")
+end
+
+-- Request full sync from sender
+function OGRH.RequestFullSync(targetPlayer, raid, encounter)
+  if GetNumRaidMembers() == 0 then
+    return
+  end
+  
+  local data = targetPlayer .. ";" .. raid .. ";" .. encounter
+  SendAddonMessage(OGRH.ADDON_PREFIX, "REQUEST_FULL_SYNC;" .. data, "RAID")
+end
+
 -- Simple table serialization for addon messages
 function OGRH.Serialize(tbl)
   if type(tbl) ~= "table" then return tostring(tbl) end
@@ -328,11 +389,42 @@ addonFrame:SetScript("OnEvent", function()
           -- Initialize structures
           OGRH.EnsureSV()
           if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, encounters = {}} end
+          if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
+          if not OGRH_SV.encounterMgmt.encounters then OGRH_SV.encounterMgmt.encounters = {} end
           if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
           if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
           if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
           if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
           if not OGRH_SV.encounterAnnouncements then OGRH_SV.encounterAnnouncements = {} end
+          
+          -- Add raid to raids list if it doesn't exist
+          local raidExists = false
+          for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+            if OGRH_SV.encounterMgmt.raids[i] == syncData.raid then
+              raidExists = true
+              break
+            end
+          end
+          if not raidExists then
+            table.insert(OGRH_SV.encounterMgmt.raids, syncData.raid)
+          end
+          
+          -- Initialize encounter list for this raid if needed
+          if not OGRH_SV.encounterMgmt.encounters[syncData.raid] then
+            OGRH_SV.encounterMgmt.encounters[syncData.raid] = {}
+          end
+          
+          -- Add encounter to raid's encounter list if it doesn't exist
+          local encounterExists = false
+          for i = 1, table.getn(OGRH_SV.encounterMgmt.encounters[syncData.raid]) do
+            if OGRH_SV.encounterMgmt.encounters[syncData.raid][i] == syncData.encounter then
+              encounterExists = true
+              break
+            end
+          end
+          if not encounterExists then
+            table.insert(OGRH_SV.encounterMgmt.encounters[syncData.raid], syncData.encounter)
+          end
           
           -- Replace/create raid structure
           if not OGRH_SV.encounterMgmt.roles[syncData.raid] then
@@ -369,6 +461,14 @@ addonFrame:SetScript("OnEvent", function()
           end
           
           DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received encounter sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
+          
+          -- Refresh raid/encounter lists in open windows
+          if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshRaidsList then
+            OGRH_BWLEncounterFrame.RefreshRaidsList()
+          end
+          if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
+            OGRH_EncounterSetupFrame.RefreshRaidsList()
+          end
           
           -- Refresh UI if it's open and showing this encounter
           if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
@@ -459,6 +559,375 @@ addonFrame:SetScript("OnEvent", function()
                 OGRH.UpdateEncounterNavButton()
               end
             end
+          end
+        end
+      -- Handle assignment update
+      elseif string.sub(message, 1, 18) == "ASSIGNMENT_UPDATE;" then
+        -- Block from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Check if sync is locked (receive only if unlocked)
+        OGRH.EnsureSV()
+        if OGRH_SV.syncLocked then
+          return
+        end
+        
+        -- Check if sender is raid leader or assistant
+        local isAuthorized = false
+        local numRaidMembers = GetNumRaidMembers()
+        
+        if numRaidMembers > 0 then
+          for i = 1, numRaidMembers do
+            local name, rank = GetRaidRosterInfo(i)
+            if name == sender and (rank == 2 or rank == 1) then
+              isAuthorized = true
+              break
+            end
+          end
+        end
+        
+        if not isAuthorized then
+          return
+        end
+        
+        -- Parse: raid;encounter;roleIndex;slotIndex;playerName;checksum
+        local content = string.sub(message, 19)
+        local parts = {}
+        local lastPos = 1
+        for i = 1, 6 do
+          local pos = string.find(content, ";", lastPos, true)
+          if pos then
+            table.insert(parts, string.sub(content, lastPos, pos - 1))
+            lastPos = pos + 1
+          else
+            table.insert(parts, string.sub(content, lastPos))
+            break
+          end
+        end
+        
+        if table.getn(parts) >= 6 then
+          local raid = parts[1]
+          local encounter = parts[2]
+          local roleIndex = tonumber(parts[3])
+          local slotIndex = tonumber(parts[4])
+          local newPlayerName = parts[5]
+          if newPlayerName == "" then newPlayerName = nil end
+          local senderChecksum = parts[6]
+          
+          -- Calculate our checksum before update
+          local ourChecksum = OGRH.CalculateAssignmentChecksum(raid, encounter)
+          
+          -- Apply update
+          if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
+          if not OGRH_SV.encounterAssignments[raid] then OGRH_SV.encounterAssignments[raid] = {} end
+          if not OGRH_SV.encounterAssignments[raid][encounter] then OGRH_SV.encounterAssignments[raid][encounter] = {} end
+          if not OGRH_SV.encounterAssignments[raid][encounter][roleIndex] then OGRH_SV.encounterAssignments[raid][encounter][roleIndex] = {} end
+          
+          OGRH_SV.encounterAssignments[raid][encounter][roleIndex][slotIndex] = newPlayerName
+          
+          -- Calculate new checksum after update
+          local newChecksum = OGRH.CalculateAssignmentChecksum(raid, encounter)
+          
+          -- If checksums don't match, request full sync
+          if newChecksum ~= senderChecksum then
+            OGRH.RequestFullSync(sender, raid, encounter)
+          end
+          
+          -- Refresh UI if showing this encounter
+          if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
+            if OGRH_BWLEncounterFrame.selectedRaid == raid and
+               OGRH_BWLEncounterFrame.selectedEncounter == encounter then
+              if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+                OGRH_BWLEncounterFrame.RefreshRoleContainers()
+              end
+            end
+          end
+        end
+      -- Handle full sync request
+      elseif string.sub(message, 1, 18) == "REQUEST_FULL_SYNC;" then
+        -- Block from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Parse: targetPlayer;raid;encounter
+        local content = string.sub(message, 19)
+        local parts = {}
+        local lastPos = 1
+        for i = 1, 3 do
+          local pos = string.find(content, ";", lastPos, true)
+          if pos then
+            table.insert(parts, string.sub(content, lastPos, pos - 1))
+            lastPos = pos + 1
+          else
+            table.insert(parts, string.sub(content, lastPos))
+            break
+          end
+        end
+        
+        if table.getn(parts) >= 3 then
+          local targetPlayer = parts[1]
+          local raid = parts[2]
+          local encounter = parts[3]
+          
+          -- Only respond if we're the target
+          if targetPlayer ~= playerName then
+            return
+          end
+          
+          -- Send full sync data back via whisper
+          local syncData = {
+            raid = raid,
+            encounter = encounter,
+            roles = {},
+            assignments = {},
+            marks = {},
+            numbers = {},
+            announcements = ""
+          }
+          
+          OGRH.EnsureSV()
+          
+          if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and 
+             OGRH_SV.encounterMgmt.roles[raid] and 
+             OGRH_SV.encounterMgmt.roles[raid][encounter] then
+            syncData.roles = OGRH_SV.encounterMgmt.roles[raid][encounter]
+          end
+          
+          if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[raid] and 
+             OGRH_SV.encounterAssignments[raid][encounter] then
+            syncData.assignments = OGRH_SV.encounterAssignments[raid][encounter]
+          end
+          
+          if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[raid] and 
+             OGRH_SV.encounterRaidMarks[raid][encounter] then
+            syncData.marks = OGRH_SV.encounterRaidMarks[raid][encounter]
+          end
+          
+          if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[raid] and 
+             OGRH_SV.encounterAssignmentNumbers[raid][encounter] then
+            syncData.numbers = OGRH_SV.encounterAssignmentNumbers[raid][encounter]
+          end
+          
+          if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[raid] and 
+             OGRH_SV.encounterAnnouncements[raid][encounter] then
+            syncData.announcements = OGRH_SV.encounterAnnouncements[raid][encounter]
+          end
+          
+          local serialized = OGRH.Serialize(syncData)
+          SendAddonMessage(OGRH.ADDON_PREFIX, "FULL_SYNC_RESPONSE;" .. sender .. ";" .. serialized, "RAID")
+        end
+      -- Handle full sync response
+      elseif string.sub(message, 1, 19) == "FULL_SYNC_RESPONSE;" then
+        -- Parse: requesterName;serializedData
+        local content = string.sub(message, 20)
+        local semicolonPos = string.find(content, ";", 1, true)
+        
+        if semicolonPos then
+          local requesterName = string.sub(content, 1, semicolonPos - 1)
+          local playerName = UnitName("player")
+          
+          -- Only process if we're the requester
+          if requesterName ~= playerName then
+            return
+          end
+          
+          local serialized = string.sub(content, semicolonPos + 1)
+          local syncData = OGRH.Deserialize(serialized)
+          
+          if syncData and syncData.raid and syncData.encounter then
+            -- Apply the full sync data (same as ENCOUNTER_SYNC handler)
+            OGRH.EnsureSV()
+            if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, encounters = {}} end
+            if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
+            if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
+            if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
+            if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
+            if not OGRH_SV.encounterAnnouncements then OGRH_SV.encounterAnnouncements = {} end
+            
+            if not OGRH_SV.encounterMgmt.roles[syncData.raid] then
+              OGRH_SV.encounterMgmt.roles[syncData.raid] = {}
+            end
+            if not OGRH_SV.encounterAssignments[syncData.raid] then
+              OGRH_SV.encounterAssignments[syncData.raid] = {}
+            end
+            if not OGRH_SV.encounterRaidMarks[syncData.raid] then
+              OGRH_SV.encounterRaidMarks[syncData.raid] = {}
+            end
+            if not OGRH_SV.encounterAssignmentNumbers[syncData.raid] then
+              OGRH_SV.encounterAssignmentNumbers[syncData.raid] = {}
+            end
+            if not OGRH_SV.encounterAnnouncements[syncData.raid] then
+              OGRH_SV.encounterAnnouncements[syncData.raid] = {}
+            end
+            
+            if syncData.roles then
+              OGRH_SV.encounterMgmt.roles[syncData.raid][syncData.encounter] = syncData.roles
+            end
+            if syncData.assignments then
+              OGRH_SV.encounterAssignments[syncData.raid][syncData.encounter] = syncData.assignments
+            end
+            if syncData.raidMarks then
+              OGRH_SV.encounterRaidMarks[syncData.raid][syncData.encounter] = syncData.raidMarks
+            end
+            if syncData.assignmentNumbers then
+              OGRH_SV.encounterAssignmentNumbers[syncData.raid][syncData.encounter] = syncData.assignmentNumbers
+            end
+            if syncData.announcements then
+              OGRH_SV.encounterAnnouncements[syncData.raid][syncData.encounter] = syncData.announcements
+            end
+            
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received full sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
+            
+            -- Refresh UI if showing this encounter
+            if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
+              if OGRH_BWLEncounterFrame.selectedRaid == syncData.raid and
+                 OGRH_BWLEncounterFrame.selectedEncounter == syncData.encounter then
+                if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+                  OGRH_BWLEncounterFrame.RefreshRoleContainers()
+                end
+              end
+            end
+          end
+        end
+      -- Handle raid data request
+      elseif message == "REQUEST_RAID_DATA" then
+        -- Block from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received raid data request from " .. sender)
+        
+        -- Only respond if sync is locked (send only mode)
+        OGRH.EnsureSV()
+        if not OGRH_SV.syncLocked then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r Sync not locked - not responding (sync must be locked to send-only mode)")
+          return
+        end
+        
+        -- Check if we have data to share
+        if not OGRH_SV.encounterMgmt or 
+           not OGRH_SV.encounterMgmt.raids or 
+           table.getn(OGRH_SV.encounterMgmt.raids) == 0 then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r No encounter data to share")
+          return -- No data to share
+        end
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Will respond with encounter data (sync locked to send-only)")
+        
+        -- Add random delay (0.5 to 2 seconds) to avoid flooding
+        local delay = 0.5 + (math.random() * 1.5)
+        
+        if not OGRH.raidDataResponseTimer then
+          OGRH.raidDataResponseTimer = CreateFrame("Frame")
+        end
+        
+        local elapsed = 0
+        OGRH.raidDataResponseTimer:SetScript("OnUpdate", function()
+          elapsed = elapsed + arg1
+          if elapsed >= delay then
+            OGRH.raidDataResponseTimer:SetScript("OnUpdate", nil)
+            
+            -- Export and send data in chunks
+            if OGRH.ExportShareData then
+              local data = OGRH.ExportShareData()
+              local chunkSize = 200 -- Safe chunk size
+              local totalChunks = math.ceil(string.len(data) / chunkSize)
+              
+              DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Sending raid data in " .. totalChunks .. " chunks")
+              
+              -- Send chunks with delay between them
+              local chunkIndex = 0
+              local chunkTimer = CreateFrame("Frame")
+              local chunkElapsed = 0
+              
+              chunkTimer:SetScript("OnUpdate", function()
+                chunkElapsed = chunkElapsed + arg1
+                if chunkElapsed >= 0.5 then -- 500ms between chunks (safer for chat throttling)
+                  chunkElapsed = 0
+                  chunkIndex = chunkIndex + 1
+                  
+                  if chunkIndex <= totalChunks then
+                    local startPos = (chunkIndex - 1) * chunkSize + 1
+                    local endPos = math.min(chunkIndex * chunkSize, string.len(data))
+                    local chunk = string.sub(data, startPos, endPos)
+                    
+                    local msg = "RAID_DATA_CHUNK;" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
+                    SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
+                  else
+                    chunkTimer:SetScript("OnUpdate", nil)
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r All chunks sent")
+                  end
+                end
+              end)
+            end
+          end
+        end)
+      -- Handle raid data chunk
+      elseif string.sub(message, 1, 16) == "RAID_DATA_CHUNK;" then
+        -- Block from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Only collect if we're waiting for responses
+        if not OGRH.waitingForRaidData then
+          return
+        end
+        
+        -- Parse: chunkIndex;totalChunks;data
+        local content = string.sub(message, 17)
+        local semicolon1 = string.find(content, ";", 1, true)
+        if not semicolon1 then return end
+        
+        local chunkIndex = tonumber(string.sub(content, 1, semicolon1 - 1))
+        local remainder = string.sub(content, semicolon1 + 1)
+        
+        local semicolon2 = string.find(remainder, ";", 1, true)
+        if not semicolon2 then return end
+        
+        local totalChunks = tonumber(string.sub(remainder, 1, semicolon2 - 1))
+        local chunkData = string.sub(remainder, semicolon2 + 1)
+        
+        -- Initialize storage for this sender
+        if not OGRH.raidDataChunks[sender] then
+          OGRH.raidDataChunks[sender] = {
+            chunks = {},
+            total = totalChunks,
+            received = 0,
+            complete = false,
+            data = ""
+          }
+        end
+        
+        local senderData = OGRH.raidDataChunks[sender]
+        
+        -- Store chunk if not already received
+        if not senderData.chunks[chunkIndex] then
+          senderData.chunks[chunkIndex] = chunkData
+          senderData.received = senderData.received + 1
+          
+          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received chunk " .. chunkIndex .. "/" .. totalChunks .. " from " .. sender)
+          
+          -- Check if complete
+          if senderData.received == senderData.total then
+            -- Reassemble data
+            local fullData = ""
+            for i = 1, totalChunks do
+              if senderData.chunks[i] then
+                fullData = fullData .. senderData.chunks[i]
+              end
+            end
+            senderData.data = fullData
+            senderData.complete = true
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Complete data received from " .. sender)
           end
         end
       end
@@ -601,9 +1070,11 @@ function OGRH.GetPlayerClass(playerName)
   end
   
   -- Try UnitClass if player is targetable/in party
-  if UnitExists(playerName) then
-    local _, class = UnitClass(playerName)
-    if class then
+  -- Wrap in pcall to handle "Unknown unit name" errors gracefully
+  local existsSuccess, unitExists = pcall(UnitExists, playerName)
+  if existsSuccess and unitExists then
+    local success, _, class = pcall(UnitClass, playerName)
+    if success and class then
       local upperClass = string.upper(class)
       OGRH.classCache[playerName] = upperClass
       return upperClass
@@ -861,23 +1332,6 @@ function OGRH.ShowShareWindow()
       editBox:SetFocus()
     end)
     
-    -- Import button
-    local importBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    importBtn:SetWidth(100)
-    importBtn:SetHeight(25)
-    importBtn:SetPoint("RIGHT", clearBtn, "LEFT", -10, 0)
-    importBtn:SetText("Import")
-    importBtn:SetScript("OnClick", function()
-      local text = editBox:GetText()
-      if text and text ~= "" then
-        if OGRH.ImportShareData then
-          OGRH.ImportShareData(text)
-        end
-      else
-        OGRH.Msg("No data to import.")
-      end
-    end)
-    
     -- Export button
     local exportBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     exportBtn:SetWidth(100)
@@ -893,10 +1347,110 @@ function OGRH.ShowShareWindow()
       end
     end)
     
+    -- Import button (moved next to Export)
+    local importBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    importBtn:SetWidth(100)
+    importBtn:SetHeight(25)
+    importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 10, 0)
+    importBtn:SetText("Import")
+    importBtn:SetScript("OnClick", function()
+      local text = editBox:GetText()
+      if text and text ~= "" then
+        if OGRH.ImportShareData then
+          OGRH.ImportShareData(text)
+        end
+      else
+        OGRH.Msg("No data to import.")
+      end
+    end)
+    
+    -- Pull from Raid button (in Import's old location)
+    local pullBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    pullBtn:SetWidth(120)
+    pullBtn:SetHeight(25)
+    pullBtn:SetPoint("RIGHT", clearBtn, "LEFT", -10, 0)
+    pullBtn:SetText("Pull from Raid")
+    pullBtn:SetScript("OnClick", function()
+      if OGRH.RequestRaidData then
+        OGRH.RequestRaidData()
+      end
+    end)
+    
     OGRH_ShareFrame = frame
   end
   
   OGRH_ShareFrame:Show()
+end
+
+-- Request raid data from raid members
+function OGRH.RequestRaidData()
+  if GetNumRaidMembers() == 0 then
+    OGRH.Msg("You must be in a raid to request data.")
+    return
+  end
+  
+  -- Send request to raid
+  SendAddonMessage(OGRH.ADDON_PREFIX, "REQUEST_RAID_DATA", "RAID")
+  OGRH.Msg("Requesting encounter data from raid members...")
+  
+  -- Store that we're waiting for responses
+  OGRH.waitingForRaidData = true
+  OGRH.raidDataChunks = {} -- Store chunks by sender
+  
+  -- Set timeout to collect responses (90 seconds for chunked data)
+  if not OGRH.raidDataTimer then
+    OGRH.raidDataTimer = CreateFrame("Frame")
+  end
+  
+  OGRH.raidDataTimer:SetScript("OnUpdate", nil)
+  local elapsed = 0
+  OGRH.raidDataTimer:SetScript("OnUpdate", function()
+    elapsed = elapsed + arg1
+    if elapsed >= 90 then
+      OGRH.raidDataTimer:SetScript("OnUpdate", nil)
+      OGRH.ProcessRaidDataResponses()
+    end
+  end)
+end
+
+-- Process collected raid data responses
+function OGRH.ProcessRaidDataResponses()
+  if not OGRH.waitingForRaidData then
+    return
+  end
+  
+  OGRH.waitingForRaidData = false
+  
+  if not OGRH.raidDataChunks then
+    OGRH.Msg("No raid data received. Make sure other raid members have the addon installed.")
+    return
+  end
+  
+  -- Find first sender with complete data
+  local completeData = nil
+  local completeSender = nil
+  
+  for sender, chunks in pairs(OGRH.raidDataChunks) do
+    if chunks.complete then
+      completeData = chunks.data
+      completeSender = sender
+      break
+    end
+  end
+  
+  if not completeData then
+    OGRH.Msg("No complete raid data received. Try again.")
+    OGRH.raidDataChunks = {}
+    return
+  end
+  
+  -- Import the data
+  if OGRH.ImportShareData then
+    OGRH.ImportShareData(completeData)
+    OGRH.Msg("Received encounter data from " .. completeSender .. ".")
+  end
+  
+  OGRH.raidDataChunks = {}
 end
 
 -- Export data to string
@@ -971,6 +1525,13 @@ function OGRH.ImportShareData(dataString)
   end
   
   OGRH.Msg("|cff00ff00Success:|r Encounter data imported.")
+  
+  -- Debug: Check what was imported
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Imported " .. table.getn(OGRH_SV.encounterMgmt.raids) .. " raids")
+  else
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r encounterMgmt.raids is nil after import!")
+  end
   
   -- Refresh any open windows
   if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshAll then
