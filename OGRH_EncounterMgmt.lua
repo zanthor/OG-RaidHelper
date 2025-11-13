@@ -3724,6 +3724,58 @@ function OGRH.ShowEncounterSetup()
       end
     end)
     
+    -- Function to update announcement tags when roles are reordered/deleted
+    local function UpdateAnnouncementTagsForRoleChanges(raidName, encounterName, oldRoles, newRoles)
+      if not OGRH_SV.encounterAnnouncements or not OGRH_SV.encounterAnnouncements[raidName] or 
+         not OGRH_SV.encounterAnnouncements[raidName][encounterName] then
+        return
+      end
+      
+      -- Build a mapping from old role indices to new role indices by matching role objects
+      local roleMapping = {} -- roleMapping[oldIndex] = newIndex
+      
+      for oldIdx, oldRole in ipairs(oldRoles) do
+        for newIdx, newRole in ipairs(newRoles) do
+          if oldRole == newRole then -- Same table reference
+            roleMapping[oldIdx] = newIdx
+            break
+          end
+        end
+        -- If not found in new roles, it was deleted (no mapping)
+      end
+      
+      -- Update all announcement lines
+      local announcements = OGRH_SV.encounterAnnouncements[raidName][encounterName]
+      for lineIdx, line in ipairs(announcements) do
+        if line and line ~= "" then
+          -- Replace all [Rx.xxx] tags with updated role indices
+          local updatedLine = line
+          
+          -- Find all role references and update them
+          -- Match patterns like [R1.T], [R2.P3], [R1.M1], [R1.A=2], etc.
+          updatedLine = string.gsub(updatedLine, "%[R(%d+)%.([^%]]+)%]", function(roleNum, tagSuffix)
+            local oldRoleIdx = tonumber(roleNum)
+            local newRoleIdx = roleMapping[oldRoleIdx]
+            
+            if newRoleIdx then
+              -- Role still exists, update to new index
+              return "[R" .. newRoleIdx .. "." .. tagSuffix .. "]"
+            else
+              -- Role was deleted, remove the tag
+              return ""
+            end
+          end)
+          
+          -- Clean up extra spaces left by removed tags
+          updatedLine = string.gsub(updatedLine, "  +", " ")
+          updatedLine = string.gsub(updatedLine, "^ +", "")
+          updatedLine = string.gsub(updatedLine, " +$", "")
+          
+          announcements[lineIdx] = updatedLine
+        end
+      end
+    end
+    
     -- Function to refresh roles list
     local function RefreshRolesList()
       -- Clear existing buttons from both columns
@@ -3871,10 +3923,28 @@ function OGRH.ShowEncounterSetup()
           local sourceColumnRoles = this.columnRoles
           
           if MouseIsOver(targetScrollFrame) then
+            local selectedRaid = frame.selectedRaid
+            local selectedEncounter = frame.selectedEncounter
+            local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
+            
+            -- Save old roles state before moving (column1 then column2)
+            local oldRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(oldRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(oldRoles, role) end
+            
             -- Move role to other column
             local role = sourceColumnRoles[this.roleIndex]
             table.remove(sourceColumnRoles, this.roleIndex)
             table.insert(targetColumnRoles, role)
+            
+            -- Build new roles state after moving
+            local newRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(newRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(newRoles, role) end
+            
+            -- Update announcement tags
+            UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
+            
             RefreshRolesList()
           else
             -- Just refresh position
@@ -3907,7 +3977,26 @@ function OGRH.ShowEncounterSetup()
         deleteHighlight:SetBlendMode("ADD")
         
         deleteBtn:SetScript("OnClick", function()
+          local selectedRaid = frame.selectedRaid
+          local selectedEncounter = frame.selectedEncounter
+          local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
+          
+          -- Save old roles state before deletion (column1 then column2)
+          local oldRoles = {}
+          for _, role in ipairs(rolesData.column1) do table.insert(oldRoles, role) end
+          for _, role in ipairs(rolesData.column2) do table.insert(oldRoles, role) end
+          
+          -- Remove the role
           table.remove(capturedRoles, capturedIdx)
+          
+          -- Build new roles state after deletion
+          local newRoles = {}
+          for _, role in ipairs(rolesData.column1) do table.insert(newRoles, role) end
+          for _, role in ipairs(rolesData.column2) do table.insert(newRoles, role) end
+          
+          -- Update announcement tags
+          UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
+          
           RefreshRolesList()
         end)
         
@@ -3921,9 +4010,28 @@ function OGRH.ShowEncounterSetup()
         downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
         downBtn:SetScript("OnClick", function()
           if capturedIdx < table.getn(capturedRoles) then
+            local selectedRaid = frame.selectedRaid
+            local selectedEncounter = frame.selectedEncounter
+            local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
+            
+            -- Save old roles state before reordering (column1 then column2)
+            local oldRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(oldRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(oldRoles, role) end
+            
+            -- Swap roles
             local temp = capturedRoles[capturedIdx + 1]
             capturedRoles[capturedIdx + 1] = capturedRoles[capturedIdx]
             capturedRoles[capturedIdx] = temp
+            
+            -- Build new roles state after reordering
+            local newRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(newRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(newRoles, role) end
+            
+            -- Update announcement tags
+            UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
+            
             RefreshRolesList()
           end
         end)
@@ -3939,9 +4047,28 @@ function OGRH.ShowEncounterSetup()
         upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
         upBtn:SetScript("OnClick", function()
           if capturedIdx > 1 then
+            local selectedRaid = frame.selectedRaid
+            local selectedEncounter = frame.selectedEncounter
+            local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
+            
+            -- Save old roles state before reordering (column1 then column2)
+            local oldRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(oldRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(oldRoles, role) end
+            
+            -- Swap roles
             local temp = capturedRoles[capturedIdx - 1]
             capturedRoles[capturedIdx - 1] = capturedRoles[capturedIdx]
             capturedRoles[capturedIdx] = temp
+            
+            -- Build new roles state after reordering
+            local newRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(newRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(newRoles, role) end
+            
+            -- Update announcement tags
+            UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
+            
             RefreshRolesList()
           end
         end)
