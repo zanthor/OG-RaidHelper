@@ -7,6 +7,7 @@ end
 local Main = CreateFrame("Frame","OGRH_Main",UIParent)
 Main:SetWidth(165); Main:SetHeight(56)  -- Fixed height for title bar + encounter nav
 Main:SetPoint("CENTER", UIParent, "CENTER", -380, 120)
+Main:SetFrameStrata("HIGH")
 Main:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
 Main:SetBackdropColor(0,0,0,0.85)
 Main:EnableMouse(true); Main:SetMovable(true)
@@ -24,22 +25,22 @@ H:SetPoint("TOPLEFT", Main, "TOPLEFT", 4, -4)
 H:SetPoint("TOPRIGHT", Main, "TOPRIGHT", -4, -4)
 H:SetHeight(20)
 local title = H:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-title:SetPoint("LEFT", H, "LEFT", 4, 0); title:SetText("|cffffff00OGRH|r")
+title:SetPoint("LEFT", H, "LEFT", 4, 0); title:SetText("|cffffff00RH|r")
 
-local btnRoles = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnRoles:SetWidth(20); btnRoles:SetHeight(16); btnRoles:SetText("R"); btnRoles:SetPoint("RIGHT", H, "RIGHT", -26, 0)
-local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(16); btnLock:SetText("L"); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0)
+local btnRoles = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnRoles:SetWidth(35); btnRoles:SetHeight(20); btnRoles:SetText("Roles"); btnRoles:SetPoint("RIGHT", H, "RIGHT", -26, 0)
+local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(20); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0)
 
 -- Sync button (S) - Send encounter configuration to raid
-local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(20); syncBtn:SetHeight(16); syncBtn:SetText("S"); syncBtn:SetPoint("RIGHT", btnRoles, "LEFT", -2, 0)
+local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(35); syncBtn:SetHeight(20); syncBtn:SetText("Sync"); syncBtn:SetPoint("RIGHT", btnRoles, "LEFT", -2, 0)
 syncBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- Function to update sync button color based on lock state
 local function UpdateSyncButtonColor()
   OGRH.EnsureSV()
   if OGRH_SV.syncLocked then
-    syncBtn:SetText("|cff00ff00S|r")  -- Bright green when locked
+    syncBtn:SetText("|cff00ff00Sync|r")  -- Bright green when locked
   else
-    syncBtn:SetText("|cffffff00S|r")  -- Yellow when unlocked
+    syncBtn:SetText("|cffffff00Sync|r")  -- Yellow when unlocked
   end
 end
 
@@ -126,7 +127,7 @@ syncBtn:SetScript("OnClick", function()
 end)
 
 -- ReadyCheck button
-local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(20); readyCheck:SetHeight(16); readyCheck:SetText("RC"); readyCheck:SetPoint("RIGHT", syncBtn, "LEFT", -2, 0)
+local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(35); readyCheck:SetHeight(20); readyCheck:SetText("Rdy"); readyCheck:SetPoint("RIGHT", syncBtn, "LEFT", -2, 0)
 readyCheck:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- Roles button handler
@@ -236,7 +237,13 @@ encounterNav.encounterBtn = encounterBtn
 -- Store reference for external access
 OGRH.encounterNav = encounterNav
 
-local function applyLocked(lock) btnLock:SetText("L") end
+local function applyLocked(lock)
+  if lock then
+    btnLock:SetText("|cff00ff00L|r")  -- Green when locked
+  else
+    btnLock:SetText("|cffffff00L|r")  -- Yellow when unlocked
+  end
+end
 btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)
 
 -- ReadyCheck button handler
