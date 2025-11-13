@@ -52,12 +52,14 @@ function OGRH.EnsureSV()
   if not OGRH_SV.tankCategory then OGRH_SV.tankCategory = {} end
   if not OGRH_SV.healerBoss then OGRH_SV.healerBoss = {} end
   if not OGRH_SV.ui then OGRH_SV.ui = {} end
+  if OGRH_SV.ui.minimized == nil then OGRH_SV.ui.minimized = false end
   if not OGRH_SV.tankIcon then OGRH_SV.tankIcon = {} end
   if not OGRH_SV.healerIcon then OGRH_SV.healerIcon = {} end
   if not OGRH_SV.rolesUI then OGRH_SV.rolesUI = {} end
   if not OGRH_SV.playerAssignments then OGRH_SV.playerAssignments = {} end
   if OGRH_SV.allowRemoteReadyCheck == nil then OGRH_SV.allowRemoteReadyCheck = true end
   if not OGRH_SV.tradeItems then OGRH_SV.tradeItems = {} end
+  if OGRH_SV.syncLocked == nil then OGRH_SV.syncLocked = false end
   
   -- Migrate old healerTankAssigns to playerAssignments (as icons)
   if OGRH_SV.healerTankAssigns and not OGRH_SV._assignmentsMigrated then
@@ -150,6 +152,16 @@ end
 -- Send addon message with prefix
 function OGRH.SendAddonMessage(msgType, data)
   local message = msgType .. ";" .. data
+  SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
+end
+
+-- Broadcast encounter selection to raid (does not sync settings, just UI state)
+function OGRH.BroadcastEncounterSelection(raidName, encounterName)
+  if GetNumRaidMembers() == 0 then
+    return -- Not in a raid, don't broadcast
+  end
+  
+  local message = "ENCOUNTER_SELECT;" .. raidName .. ";" .. encounterName
   SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
 end
 
@@ -282,6 +294,13 @@ addonFrame:SetScript("OnEvent", function()
           return
         end
         
+        -- Check if sync is locked (send only mode)
+        OGRH.EnsureSV()
+        if OGRH_SV.syncLocked then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r Ignored encounter sync from " .. sender .. " (sync is locked)")
+          return
+        end
+        
         -- Check if sender is raid leader or assistant
         local isAuthorized = false
         local numRaidMembers = GetNumRaidMembers()
@@ -357,6 +376,87 @@ addonFrame:SetScript("OnEvent", function()
                OGRH_BWLEncounterFrame.selectedEncounter == syncData.encounter then
               if OGRH_BWLEncounterFrame.RefreshRoleContainers then
                 OGRH_BWLEncounterFrame.RefreshRoleContainers()
+              end
+            end
+          end
+        end
+      -- Handle encounter selection broadcast
+      elseif string.sub(message, 1, 17) == "ENCOUNTER_SELECT;" then
+        -- Block selection from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Parse raid and encounter names
+        local content = string.sub(message, 18)
+        local semicolonPos = string.find(content, ";", 1, true)
+        
+        if semicolonPos then
+          local raidName = string.sub(content, 1, semicolonPos - 1)
+          local encounterName = string.sub(content, semicolonPos + 1)
+          
+          -- Check if sender is raid leader or assistant
+          local isAuthorized = false
+          local numRaidMembers = GetNumRaidMembers()
+          
+          if numRaidMembers > 0 then
+            for i = 1, numRaidMembers do
+              local name, rank = GetRaidRosterInfo(i)
+              if name == sender and (rank == 2 or rank == 1) then
+                -- rank 2 = leader, rank 1 = assistant
+                isAuthorized = true
+                break
+              end
+            end
+          end
+          
+          if not isAuthorized then
+            -- Silently ignore - not from leader/assistant
+            return
+          end
+          
+          -- Verify raid and encounter exist locally
+          if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and
+             OGRH_SV.encounterMgmt.encounters[raidName] then
+            
+            -- Check if encounter exists in this raid
+            local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+            local encounterExists = false
+            for _, enc in ipairs(encounters) do
+              if enc == encounterName then
+                encounterExists = true
+                break
+              end
+            end
+            
+            if encounterExists then
+              -- Create frame if it doesn't exist (but don't show it)
+              if not OGRH_BWLEncounterFrame then
+                OGRH.ShowBWLEncounterWindow()
+                OGRH_BWLEncounterFrame:Hide()
+              end
+              
+              -- Update selection
+              OGRH_BWLEncounterFrame.selectedRaid = raidName
+              OGRH_BWLEncounterFrame.selectedEncounter = encounterName
+              
+              -- Refresh UI if window is open
+              if OGRH_BWLEncounterFrame:IsVisible() then
+                if OGRH_BWLEncounterFrame.RefreshRaidsList then
+                  OGRH_BWLEncounterFrame.RefreshRaidsList()
+                end
+                if OGRH_BWLEncounterFrame.RefreshEncountersList then
+                  OGRH_BWLEncounterFrame.RefreshEncountersList()
+                end
+                if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+                  OGRH_BWLEncounterFrame.RefreshRoleContainers()
+                end
+              end
+              
+              -- Always update the main UI encounter button
+              if OGRH.UpdateEncounterNavButton then
+                OGRH.UpdateEncounterNavButton()
               end
             end
           end
@@ -1358,6 +1458,105 @@ function OGRH.ShowAddTradeItemDialog()
   
   dialog:Show()
 end
+
+-- Create minimap button
+local function CreateMinimapButton()
+  local button = CreateFrame("Button", "OGRHMinimapButton", Minimap)
+  button:SetWidth(32)
+  button:SetHeight(32)
+  button:SetFrameStrata("MEDIUM")
+  button:SetFrameLevel(8)
+  button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+  
+  -- Background texture
+  local background = button:CreateTexture(nil, "BACKGROUND")
+  background:SetWidth(20)
+  background:SetHeight(20)
+  background:SetPoint("CENTER", 0, 1)
+  background:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+  
+  -- Border
+  local border = button:CreateTexture(nil, "OVERLAY")
+  border:SetWidth(52)
+  border:SetHeight(52)
+  border:SetPoint("TOPLEFT", 0, 0)
+  border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+  
+  -- Text label (RH)
+  local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  text:SetPoint("CENTER", 0, 1)
+  text:SetText("RH")
+  text:SetTextColor(1, 1, 0)
+  
+  -- Position
+  OGRH.EnsureSV()
+  if not OGRH_SV.minimap then
+    OGRH_SV.minimap = {angle = 200}
+  end
+  
+  local function UpdatePosition()
+    local angle = OGRH_SV.minimap.angle
+    local x = 80 * math.cos(angle)
+    local y = 80 * math.sin(angle)
+    button:SetPoint("CENTER", Minimap, "CENTER", x, y)
+  end
+  
+  UpdatePosition()
+  
+  -- Click handler
+  button:SetScript("OnClick", function()
+    if OGRH_Main then
+      if OGRH_Main:IsVisible() then
+        OGRH_Main:Hide()
+        OGRH_SV.ui.hidden = true
+      else
+        OGRH_Main:Show()
+        OGRH_SV.ui.hidden = false
+      end
+    end
+  end)
+  
+  -- Drag to reposition
+  button:RegisterForDrag("LeftButton")
+  button:SetScript("OnDragStart", function()
+    button:SetScript("OnUpdate", function()
+      local mx, my = Minimap:GetCenter()
+      local px, py = GetCursorPosition()
+      local scale = Minimap:GetEffectiveScale()
+      px, py = px / scale, py / scale
+      
+      local angle = math.atan2(py - my, px - mx)
+      OGRH_SV.minimap.angle = angle
+      UpdatePosition()
+    end)
+  end)
+  
+  button:SetScript("OnDragStop", function()
+    button:SetScript("OnUpdate", nil)
+  end)
+  
+  -- Tooltip
+  button:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+    GameTooltip:SetText("|cff66ccffOG-RaidHelper|r")
+    GameTooltip:AddLine("Click to toggle main window", 1, 1, 1)
+    GameTooltip:AddLine("Drag to move", 0.8, 0.8, 0.8)
+    GameTooltip:Show()
+  end)
+  
+  button:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+  
+  OGRH.minimapButton = button
+end
+
+-- Create minimap button on load
+local minimapLoader = CreateFrame("Frame")
+minimapLoader:RegisterEvent("PLAYER_LOGIN")
+minimapLoader:SetScript("OnEvent", function()
+  CreateMinimapButton()
+end)
 
 
 

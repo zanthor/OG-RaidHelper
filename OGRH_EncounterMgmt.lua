@@ -260,6 +260,16 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
             frame.selectedEncounter = nil
           end
           frame.selectedRaid = capturedRaidName
+          
+          -- Select first encounter if available
+          local firstEncounter = nil
+          if OGRH_SV.encounterMgmt.encounters and 
+             OGRH_SV.encounterMgmt.encounters[capturedRaidName] and
+             table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaidName]) > 0 then
+            firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaidName][1]
+            frame.selectedEncounter = firstEncounter
+          end
+          
           RefreshRaidsList()
           if frame.RefreshEncountersList then
             frame.RefreshEncountersList()
@@ -272,6 +282,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           end
           if OGRH.UpdateEncounterNavButton then
             OGRH.UpdateEncounterNavButton()
+          end
+          
+          -- Broadcast encounter change
+          if firstEncounter and OGRH.BroadcastEncounterSelection then
+            OGRH.BroadcastEncounterSelection(capturedRaidName, firstEncounter)
           end
         end)
         
@@ -374,6 +389,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           end
           if OGRH.UpdateEncounterNavButton then
             OGRH.UpdateEncounterNavButton()
+          end
+          
+          -- Broadcast encounter change
+          if frame.selectedRaid and OGRH.BroadcastEncounterSelection then
+            OGRH.BroadcastEncounterSelection(frame.selectedRaid, capturedEncounterName)
           end
         end)
         
@@ -640,26 +660,49 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     -- Create scroll frame for guild list
     local guildScrollFrame = CreateFrame("ScrollFrame", nil, guildListFrame)
     guildScrollFrame:SetPoint("TOPLEFT", guildListFrame, "TOPLEFT", 5, -5)
-    guildScrollFrame:SetPoint("BOTTOMRIGHT", guildListFrame, "BOTTOMRIGHT", -5, 5)
+    guildScrollFrame:SetPoint("BOTTOMRIGHT", guildListFrame, "BOTTOMRIGHT", -25, 5)
     
     local guildScrollChild = CreateFrame("Frame", nil, guildScrollFrame)
-    guildScrollChild:SetWidth(170)
+    guildScrollChild:SetWidth(155)
     guildScrollChild:SetHeight(1)
     guildScrollFrame:SetScrollChild(guildScrollChild)
     frame.guildScrollChild = guildScrollChild
     frame.guildScrollFrame = guildScrollFrame
     
+    -- Create scrollbar for player list
+    local guildScrollBar = CreateFrame("Slider", nil, guildListFrame)
+    guildScrollBar:SetPoint("TOPRIGHT", guildListFrame, "TOPRIGHT", -5, -16)
+    guildScrollBar:SetPoint("BOTTOMRIGHT", guildListFrame, "BOTTOMRIGHT", -5, 16)
+    guildScrollBar:SetWidth(16)
+    guildScrollBar:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    guildScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    guildScrollBar:SetOrientation("VERTICAL")
+    guildScrollBar:SetMinMaxValues(0, 1)
+    guildScrollBar:SetValue(0)
+    guildScrollBar:SetValueStep(22)
+    frame.guildScrollBar = guildScrollBar
+    
+    guildScrollBar:SetScript("OnValueChanged", function()
+      guildScrollFrame:SetVerticalScroll(this:GetValue())
+    end)
+    
     -- Enable mouse wheel scrolling for guild list
     guildScrollFrame:EnableMouseWheel(true)
     guildScrollFrame:SetScript("OnMouseWheel", function()
       local delta = arg1
-      local current = guildScrollFrame:GetVerticalScroll()
-      local maxScroll = guildScrollChild:GetHeight() - guildScrollFrame:GetHeight()
-      if maxScroll < 0 then maxScroll = 0 end
+      local current = guildScrollBar:GetValue()
+      local minVal, maxVal = guildScrollBar:GetMinMaxValues()
       
-      local newScroll = current - (delta * 20)
-      if newScroll < 0 then newScroll = 0 elseif newScroll > maxScroll then newScroll = maxScroll end
-      guildScrollFrame:SetVerticalScroll(newScroll)
+      if delta > 0 then
+        guildScrollBar:SetValue(math.max(minVal, current - 22))
+      else
+        guildScrollBar:SetValue(math.min(maxVal, current + 22))
+      end
     end)
     
     -- Bottom right panel: Additional info area (fills remaining space = 146px)
@@ -1666,23 +1709,20 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     
     -- Scrollbar
     local announcementScrollBar = CreateFrame("Slider", nil, announcementScrollFrame)
-    announcementScrollBar:SetPoint("TOPRIGHT", announcementScrollFrame, "TOPRIGHT", -5, -18)
-    announcementScrollBar:SetPoint("BOTTOMRIGHT", announcementScrollFrame, "BOTTOMRIGHT", -5, 18)
+    announcementScrollBar:SetPoint("TOPRIGHT", announcementScrollFrame, "TOPRIGHT", -5, -16)
+    announcementScrollBar:SetPoint("BOTTOMRIGHT", announcementScrollFrame, "BOTTOMRIGHT", -5, 16)
     announcementScrollBar:SetWidth(16)
-    announcementScrollBar:SetOrientation("VERTICAL")
-    announcementScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
     announcementScrollBar:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 8,
+      tile = true, tileSize = 16, edgeSize = 8,
       insets = {left = 3, right = 3, top = 3, bottom = 3}
     })
-    announcementScrollBar:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+    announcementScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    announcementScrollBar:SetOrientation("VERTICAL")
     announcementScrollBar:SetMinMaxValues(0, 1)
     announcementScrollBar:SetValue(0)
-    announcementScrollBar:SetValueStep(1)
+    announcementScrollBar:SetValueStep(22)
     announcementScrollBar:SetScript("OnValueChanged", function()
       announcementScrollFrame:SetVerticalScroll(this:GetValue())
     end)
@@ -1690,16 +1730,14 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     -- Mouse wheel scroll support
     announcementScrollFrame:EnableMouseWheel(true)
     announcementScrollFrame:SetScript("OnMouseWheel", function()
-      local currentScroll = announcementScrollBar:GetValue()
-      local minScroll, maxScroll = announcementScrollBar:GetMinMaxValues()
       local delta = arg1
+      local current = announcementScrollBar:GetValue()
+      local minVal, maxVal = announcementScrollBar:GetMinMaxValues()
       
       if delta > 0 then
-        -- Scroll up
-        announcementScrollBar:SetValue(math.max(minScroll, currentScroll - 20))
+        announcementScrollBar:SetValue(math.max(minVal, current - 22))
       else
-        -- Scroll down
-        announcementScrollBar:SetValue(math.min(maxScroll, currentScroll + 20))
+        announcementScrollBar:SetValue(math.min(maxVal, current + 22))
       end
     end)
     
@@ -1967,9 +2005,9 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           if playerData.section == "raid" then
             sectionLabel = "In Raid"
           elseif playerData.section == "online" then
-            sectionLabel = "Online (60)"
+            sectionLabel = "Online"
           elseif playerData.section == "offline" then
-            sectionLabel = "Offline (60)"
+            sectionLabel = "Offline"
           end
           
           if sectionLabel ~= "" then
@@ -2128,10 +2166,25 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       
       -- Update scroll child height
       scrollChild:SetHeight(math.max(yOffset, 1))
+      
+      -- Update scrollbar range
+      local scrollBar = frame.guildScrollBar
+      if scrollBar then
+        local maxScroll = scrollChild:GetHeight() - frame.guildScrollFrame:GetHeight()
+        if maxScroll < 0 then maxScroll = 0 end
+        scrollBar:SetMinMaxValues(0, maxScroll)
+        scrollBar:SetValue(0)
+      end
     end
     
     -- Function to refresh role containers based on selected encounter
     local function RefreshRoleContainers()
+      -- Save current scroll position
+      local savedScrollPosition = 0
+      if frame.rolesScrollBar and frame.rolesScrollBar:IsShown() then
+        savedScrollPosition = frame.rolesScrollBar:GetValue()
+      end
+      
       -- Clear existing role containers
       for _, container in pairs(frame.roleContainers) do
         container:Hide()
@@ -2813,9 +2866,13 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       
       if contentHeight > scrollFrameHeight then
         scrollBar:Show()
-        scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
-        scrollBar:SetValue(0)
-        scrollFrame:SetVerticalScroll(0)
+        local maxScroll = contentHeight - scrollFrameHeight
+        scrollBar:SetMinMaxValues(0, maxScroll)
+        
+        -- Restore scroll position, but clamp to new max
+        local newScrollPos = math.min(savedScrollPosition, maxScroll)
+        scrollBar:SetValue(newScrollPos)
+        scrollFrame:SetVerticalScroll(newScrollPos)
       else
         scrollBar:Hide()
         scrollFrame:SetVerticalScroll(0)
@@ -6294,6 +6351,9 @@ function OGRH.NavigateToPreviousEncounter()
           OGRH_BWLEncounterFrame.RefreshRoleContainers()
         end
         OGRH.UpdateEncounterNavButton()
+        
+        -- Broadcast encounter change
+        OGRH.BroadcastEncounterSelection(raidName, encounters[i - 1])
         break
       end
     end
@@ -6324,6 +6384,9 @@ function OGRH.NavigateToNextEncounter()
           OGRH_BWLEncounterFrame.RefreshRoleContainers()
         end
         OGRH.UpdateEncounterNavButton()
+        
+        -- Broadcast encounter change
+        OGRH.BroadcastEncounterSelection(raidName, encounters[i + 1])
         break
       end
     end
@@ -6406,30 +6469,68 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         btn:SetScript("OnClick", function()
           menu:Hide()
           
-          -- Open or create the Encounter Planning window
-          if not OGRH_BWLEncounterFrame then
-            OGRH.ShowBWLEncounterWindow()
-          end
+          -- Check if window is currently open
+          local wasOpen = OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible()
           
-          -- Select this raid
-          OGRH_BWLEncounterFrame.selectedRaid = capturedRaid
-          
-          -- Select first encounter if available
-          if OGRH_SV.encounterMgmt.encounters and 
-             OGRH_SV.encounterMgmt.encounters[capturedRaid] and
-             table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
-            OGRH_BWLEncounterFrame.selectedEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
-          end
-          
-          -- Refresh the window
-          if OGRH_BWLEncounterFrame.RefreshRaidsList then
-            OGRH_BWLEncounterFrame.RefreshRaidsList()
-          end
-          if OGRH_BWLEncounterFrame.RefreshEncountersList then
-            OGRH_BWLEncounterFrame.RefreshEncountersList()
-          end
-          if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-            OGRH_BWLEncounterFrame.RefreshRoleContainers()
+          -- Only create/show window if it was already open
+          if wasOpen then
+            -- Select this raid
+            OGRH_BWLEncounterFrame.selectedRaid = capturedRaid
+            
+            -- Select first encounter if available
+            local firstEncounter = nil
+            if OGRH_SV.encounterMgmt.encounters and 
+               OGRH_SV.encounterMgmt.encounters[capturedRaid] and
+               table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
+              firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
+              OGRH_BWLEncounterFrame.selectedEncounter = firstEncounter
+            end
+            
+            -- Refresh the window
+            if OGRH_BWLEncounterFrame.RefreshRaidsList then
+              OGRH_BWLEncounterFrame.RefreshRaidsList()
+            end
+            if OGRH_BWLEncounterFrame.RefreshEncountersList then
+              OGRH_BWLEncounterFrame.RefreshEncountersList()
+            end
+            if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+              OGRH_BWLEncounterFrame.RefreshRoleContainers()
+            end
+            
+            -- Broadcast encounter change
+            if firstEncounter then
+              OGRH.BroadcastEncounterSelection(capturedRaid, firstEncounter)
+            end
+          else
+            -- Window not open, create frame but keep it hidden
+            if not OGRH_BWLEncounterFrame then
+              OGRH.ShowBWLEncounterWindow()
+              OGRH_BWLEncounterFrame:Hide()
+            end
+            
+            -- Select this raid
+            OGRH_BWLEncounterFrame.selectedRaid = capturedRaid
+            
+            -- Select first encounter if available
+            local firstEncounter = nil
+            if OGRH_SV.encounterMgmt.encounters and 
+               OGRH_SV.encounterMgmt.encounters[capturedRaid] and
+               table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
+              firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
+              OGRH_BWLEncounterFrame.selectedEncounter = firstEncounter
+            end
+            
+            -- Update saved variables for next time
+            OGRH.EnsureSV()
+            OGRH_SV.lastSelectedRaid = capturedRaid
+            if firstEncounter then
+              OGRH_SV.lastSelectedEncounter = firstEncounter
+            end
+            
+            -- Broadcast encounter change
+            if firstEncounter then
+              OGRH.BroadcastEncounterSelection(capturedRaid, firstEncounter)
+            end
           end
           
           OGRH.UpdateEncounterNavButton()

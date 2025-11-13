@@ -519,56 +519,6 @@ local function CreateRolesFrame()
         frame:Hide()
     end
 
-    -- Create encounter panels
-    local razorgorePanel, vaelTrashPanel, cthunPanel
-    
-    -- Create BWL panels
-    if OGRH.BWL then
-        razorgorePanel = OGRH.BWL.CreateRazorgorePanel(frame, encounterBtn)
-        vaelTrashPanel = OGRH.BWL.CreateVaelTrashPanel(frame, encounterBtn)
-    else
-        print("|cFFFFFF00OGRH:|r Error: BWL module not found!")
-    end
-
-    -- Create AQ40 panels
-    if OGRH.AQ40 then
-        cthunPanel = OGRH.AQ40.CreateCThunPanel(frame, encounterBtn)
-    else
-        print("|cFFFFFF00OGRH:|r Error: AQ40 module not found!")
-    end
-
-    local function HideAllPanels()
-        if razorgorePanel then razorgorePanel:Hide() end
-        if vaelTrashPanel then vaelTrashPanel:Hide() end
-        if cthunPanel then cthunPanel:Hide() end
-    end
-
-    OGRH.ShowRazorgorePanel = function()
-        HideAllPanels()
-        if razorgorePanel then
-            razorgorePanel:Show()
-        else
-            print("|cFFFFFF00OGRH:|r Error: Razorgore panel could not be created!")
-        end
-    end
-
-    OGRH.ShowVaelTrashPanel = function()
-        HideAllPanels()
-        if vaelTrashPanel then
-            vaelTrashPanel:Show()
-        else
-            print("|cFFFFFF00OGRH:|r Error: Vael Trash panel could not be created!")
-        end
-    end
-
-    OGRH.ShowCThunPanel = function()
-        HideAllPanels()
-        if cthunPanel then
-            cthunPanel:Show()
-        else
-            print("|cFFFFFF00OGRH:|r Error: C'Thun panel could not be created!")
-        end
-    end
 end
 
 -- Initialize when addon loads

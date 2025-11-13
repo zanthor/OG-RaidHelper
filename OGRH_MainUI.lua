@@ -31,7 +31,39 @@ local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:
 
 -- Sync button (S) - Send encounter configuration to raid
 local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(20); syncBtn:SetHeight(16); syncBtn:SetText("S"); syncBtn:SetPoint("RIGHT", btnMin, "LEFT", -2, 0)
+syncBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+-- Function to update sync button color based on lock state
+local function UpdateSyncButtonColor()
+  OGRH.EnsureSV()
+  if OGRH_SV.syncLocked then
+    syncBtn:SetText("|cff00ff00S|r")  -- Bright green when locked
+  else
+    syncBtn:SetText("|cffffff00S|r")  -- Yellow when unlocked
+  end
+end
+
+-- Store globally for access from other files
+OGRH.UpdateSyncButtonColor = UpdateSyncButtonColor
+
 syncBtn:SetScript("OnClick", function()
+  local btn = arg1 or "LeftButton"
+  
+  if btn == "RightButton" then
+    -- Right-click: Toggle sync lock
+    OGRH.EnsureSV()
+    OGRH_SV.syncLocked = not OGRH_SV.syncLocked
+    UpdateSyncButtonColor()
+    
+    if OGRH_SV.syncLocked then
+      OGRH.Msg("Sync locked: Will not receive encounter syncs from others.")
+    else
+      OGRH.Msg("Sync unlocked: Will receive encounter syncs from raid leader/assistants.")
+    end
+    return
+  end
+  
+  -- Left-click: Send sync
   -- Get current encounter selection from EncounterMgmt
   if not OGRH.GetCurrentEncounter then
     OGRH.Msg("Encounter management not loaded.")
@@ -524,40 +556,6 @@ btnMin:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.minimized = not OG
 local function applyLocked(lock) btnLock:SetText("L") end
 btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)
 
--- ReAnnounce button handler
-reAnnounce:SetScript("OnClick", function()
-  local btn = arg1 or "LeftButton"
-  
-  if btn == "RightButton" then
-    -- Test stub: Stage a multi-line announcement with timestamp
-    local timestamp = date("%H:%M:%S")
-    local testLines = {
-      "|cff00ff00[Test Announcement " .. timestamp .. "]|r",
-      "|cff00ff00[Main Tank]:|r |cFFC79C6ETankPlayer|r",
-      "|cff00ff00[Near]:|r |cFFC79C6ETank1|r, |cFFC79C6ETank2|r - |cff00ff00Healers:|r |cFFFFFFFFHealer1|r |cFFFFFFFFHealer2|r",
-      "|cff00ff00[Far]:|r |cFFC79C6ETank3|r, |cFFC79C6ETank4|r - |cff00ff00Healers:|r |cFFFFFFFFHealer3|r |cFFFFFFFFHealer4|r"
-    }
-    
-    if OGRH and OGRH.StoreAndBroadcastAnnouncement then
-      OGRH.StoreAndBroadcastAnnouncement(testLines)
-      if OGRH.Msg then
-        OGRH.Msg("Test announcement staged. Left-click RA to announce.")
-      end
-    else
-      if OGRH and OGRH.Msg then
-        OGRH.Msg("StoreAndBroadcastAnnouncement not loaded.")
-      end
-    end
-  else
-    -- Left click: Re-announce
-    if OGRH and OGRH.ReAnnounce then
-      OGRH.ReAnnounce()
-    elseif OGRH and OGRH.Msg then
-      OGRH.Msg("No announcement to repeat.")
-    end
-  end
-end)
-
 -- ReadyCheck button handler
 readyCheck:SetScript("OnClick", function()
   local btn = arg1 or "LeftButton"
@@ -658,6 +656,11 @@ local function restoreMain()
   local ui=OGRH_SV.ui or {}
   if ui.point and ui.x and ui.y then Main:ClearAllPoints(); Main:SetPoint(ui.point, UIParent, ui.relPoint or ui.point, ui.x, ui.y) end
   applyMinimized(ui.minimized); applyLocked(ui.locked)
+  
+  -- Update sync button color after saved variables are loaded
+  if OGRH.UpdateSyncButtonColor then
+    OGRH.UpdateSyncButtonColor()
+  end
 end
 local _loader = CreateFrame("Frame"); _loader:RegisterEvent("VARIABLES_LOADED"); _loader:SetScript("OnEvent", function() restoreMain() end)
 
