@@ -275,6 +275,15 @@ OGRH.GetTradeType = function()
     return currentTradeType
 end
 
+-- Helper to truncate text if it's too long for the button
+local function TruncateText(text, maxLength)
+    if not text then return "" end
+    if string.len(text) <= maxLength then
+        return text
+    end
+    return string.sub(text, 1, maxLength - 2) .. ".."
+end
+
 OGRH.SetTradeItem = function(itemId, quantity)
     currentTradeItemId = itemId
     currentTradeQuantity = quantity
@@ -282,10 +291,19 @@ OGRH.SetTradeItem = function(itemId, quantity)
     
     -- Get item name for display
     local itemName = GetItemInfo(itemId)
+    local displayName = itemName or ("Item " .. itemId)
+    
     if itemName then
         OGRH.Msg("Trade item set to: " .. itemName .. " x" .. quantity)
     else
         OGRH.Msg("Trade item set to: Item " .. itemId .. " x" .. quantity)
+    end
+    
+    -- Update button text if it exists
+    local btn = getglobal("OGRH_TradeButton")
+    if btn then
+        btn:SetText(TruncateText(displayName, 16))
+        btn:Enable()
     end
 end
 
@@ -319,6 +337,127 @@ OGRH.ExecuteTrade = function(itemId, quantity)
     end
 end
 
+-- Function to show trade menu
+local function ShowTradeMenu(anchorBtn)
+    if not OGRH_TradeFrameMenu then
+        local M = CreateFrame("Frame", "OGRH_TradeFrameMenu", UIParent)
+        M:SetFrameStrata("FULLSCREEN_DIALOG")
+        M:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            edgeSize = 12,
+            insets = {left = 4, right = 4, top = 4, bottom = 4}
+        })
+        M:SetBackdropColor(0, 0, 0, 0.95)
+        M:SetWidth(200)
+        M:SetHeight(1)
+        M:Hide()
+        
+        M.btns = {}
+        M.Rebuild = function()
+            -- Clear existing buttons
+            if M.btns then
+                for _, btn in ipairs(M.btns) do
+                    btn:Hide()
+                    btn:SetParent(nil)
+                end
+            end
+            M.btns = {}
+            
+            OGRH.EnsureSV()
+            local items = OGRH_SV.tradeItems
+            
+            local yOffset = -10
+            local buttonHeight = 18
+            local buttonSpacing = 6
+            
+            -- Create buttons for each trade item
+            for i, itemData in ipairs(items) do
+                local it = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
+                it:SetWidth(180)
+                it:SetHeight(buttonHeight)
+                
+                if i == 1 then
+                    it:SetPoint("TOPLEFT", M, "TOPLEFT", 10, yOffset)
+                else
+                    it:SetPoint("TOPLEFT", M.btns[i-1], "BOTTOMLEFT", 0, -buttonSpacing)
+                end
+                
+                local fs = it:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                fs:SetAllPoints()
+                fs:SetJustifyH("CENTER")
+                it.fs = fs
+                
+                local label = itemData.name or ("Item " .. itemData.itemId)
+                
+                -- Highlight if this is the active trade item
+                if itemData.itemId == currentTradeItemId then
+                    fs:SetText(OGRH.COLOR.HEADER .. label .. OGRH.COLOR.RESET)
+                else
+                    fs:SetText(label)
+                end
+                
+                local itemId = itemData.itemId
+                local quantity = itemData.quantity
+                
+                it:SetScript("OnClick", function()
+                    if OGRH.SetTradeItem then
+                        OGRH.SetTradeItem(itemId, quantity)
+                    end
+                    M:Hide()
+                end)
+                
+                table.insert(M.btns, it)
+            end
+            
+            -- Add Settings button at the bottom
+            local settingsBtn = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
+            settingsBtn:SetWidth(180)
+            settingsBtn:SetHeight(buttonHeight)
+            
+            if table.getn(M.btns) > 0 then
+                settingsBtn:SetPoint("TOPLEFT", M.btns[table.getn(M.btns)], "BOTTOMLEFT", 0, -buttonSpacing)
+            else
+                settingsBtn:SetPoint("TOPLEFT", M, "TOPLEFT", 10, yOffset)
+            end
+            
+            local settingsFs = settingsBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            settingsFs:SetAllPoints()
+            settingsFs:SetJustifyH("CENTER")
+            settingsFs:SetText("|cff888888Settings|r")
+            
+            settingsBtn:SetScript("OnClick", function()
+                M:Hide()
+                if OGRH.ShowTradeSettings then
+                    OGRH.ShowTradeSettings()
+                end
+            end)
+            
+            table.insert(M.btns, settingsBtn)
+            
+            -- Calculate menu height
+            local numButtons = table.getn(M.btns)
+            local totalHeight = 10 + numButtons * buttonHeight + (numButtons - 1) * buttonSpacing + 10
+            M:SetHeight(totalHeight)
+        end
+    end
+    
+    local M = OGRH_TradeFrameMenu
+    
+    -- Toggle menu visibility
+    if M:IsVisible() then
+        M:Hide()
+        return
+    end
+    
+    -- Rebuild menu with current items
+    M.Rebuild()
+    
+    M:ClearAllPoints()
+    M:SetPoint("BOTTOMLEFT", anchorBtn, "TOPLEFT", 0, 2)
+    M:Show()
+end
+
 -- Create OGRH button on the trade frame
 local function CreateTradeButton()
     if not TradeFrame then return end
@@ -327,30 +466,54 @@ local function CreateTradeButton()
     local tradeButton = getglobal("TradeFrameTradeButton")
     
     local ogrhBtn = CreateFrame("Button", "OGRH_TradeButton", TradeFrame, "UIPanelButtonTemplate")
-    ogrhBtn:SetWidth(60)
+    ogrhBtn:SetWidth(120)
     ogrhBtn:SetHeight(22)
     
-    -- Position directly above the Trade button
+    -- Position to the left of the Trade button
     if tradeButton then
-        ogrhBtn:SetPoint("BOTTOM", tradeButton, "TOP", 0, 2)
+        ogrhBtn:SetPoint("RIGHT", tradeButton, "LEFT", -5, 0)
     else
         -- Fallback position if we can't find the Trade button
-        ogrhBtn:SetPoint("BOTTOMRIGHT", TradeFrame, "BOTTOMRIGHT", -20, 50)
+        ogrhBtn:SetPoint("BOTTOMRIGHT", TradeFrame, "BOTTOMRIGHT", -150, 16)
     end
     
-    ogrhBtn:SetText("OGRH")
+    -- Set initial text based on whether item is selected
+    if currentTradeItemId then
+        local itemName = GetItemInfo(currentTradeItemId)
+        local displayName = itemName or ("Item " .. currentTradeItemId)
+        ogrhBtn:SetText(TruncateText(displayName, 16))
+    else
+        ogrhBtn:SetText("Select")
+    end
+    
+    -- Register for both left and right clicks
+    ogrhBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     
     ogrhBtn:SetScript("OnClick", function()
-        if OGRH.ExecuteTrade then
-            OGRH.ExecuteTrade()
+        if arg1 == "RightButton" then
+            -- Right-click: Always show menu
+            ShowTradeMenu(ogrhBtn)
+        else
+            -- Left-click: Execute trade if item selected, otherwise show menu
+            if currentTradeItemId then
+                if OGRH.ExecuteTrade then
+                    OGRH.ExecuteTrade()
+                end
+            else
+                ShowTradeMenu(ogrhBtn)
+            end
         end
     end)
     
-    -- Show/hide with trade frame
+    -- Update button when trade frame shows
     ogrhBtn:SetScript("OnShow", function()
-        if not currentTradeType and not currentTradeItemId then
-            this:Disable()
+        if currentTradeItemId then
+            local itemName = GetItemInfo(currentTradeItemId)
+            local displayName = itemName or ("Item " .. currentTradeItemId)
+            this:SetText(TruncateText(displayName, 16))
+            this:Enable()
         else
+            this:SetText("Select")
             this:Enable()
         end
     end)

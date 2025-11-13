@@ -1,6 +1,6 @@
 # OG-RaidHelper
 
-**Version:** 1.14.0  
+**Version:** 1.5.0  
 **Author:** Gnuzmas  
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)
 
@@ -19,7 +19,9 @@ That said it's 1:00AM and I've had about 5 hours of sleep a night for the past 4
 ## First Run
 In the addon folder you will find defaults.txt, when you first run the addon it's all empty.  If you open the share dialog you'll find a place you can paste the contents of defaults.txt which will give you a head start using the addon.
 
-I'll be adding full and accurate documentation as well as making a youtube video showing the addon in action... but that's future me's problem.
+Alternatively you can get in a raid with a player that's already set this up and sync the data from them.
+
+Documentation is a work in progress... this addon  has changed a lot since it's inception so I apologize for any errors in the documentation... that said this is written for raiders, not readers, so I'll get an updated youtube video posted soon.
 
 ---
 
@@ -42,14 +44,14 @@ I'll be adding full and accurate documentation as well as making a youtube video
 
 1. Extract the `OG-RaidHelper` folder to your `Interface\AddOns` directory
 2. Restart World of Warcraft or type `/reload` if you are just updating in-game
-3. You should see the OG-RaidHelper main window on your screen
+3. You should see the OG-RaidHelper main window on your screen or the mini map button RH.
 4. Seriously, skip all this and use the GIT Addon manager.
 
 ---
 
 ## Quick Start
 
-1. **Access Main UI**: The small main window appears on login or type `/ogrh`
+1. **Access Main UI**: The small main window appears on login or type `/ogrh` or click the mini map button.
 2. **Open Roles Window**: Click the **Roles** button to manage your raid composition
 3. **Poll for Roles**: Use the **Poll** button to request players sign up via raid chat
 4. **Setup Encounters**: Click **Encounters** → **Manage** to access encounter planning
@@ -57,7 +59,7 @@ I'll be adding full and accurate documentation as well as making a youtube video
 6. **Share Configs**: Click **Share** to export/import your encounter and trade configurations
 
 7. A short video overview of the addon since I know you're raiders not readers.
-   https://youtu.be/u_wYddHOFfw 
+   {Coming Soon}
 
 ---
 
@@ -69,7 +71,7 @@ The compact main window provides quick access to all major features.
 
 Located in the title bar:
 - **RC** - Performs a Ready Check (left-click), or toggle remote ready checks on/off (right-click)
-- **RA** - Re-announce the last announcement sent (left-click), stage a test announcement (right-click)
+- **S** - Syncronize Data to other raiders.  Left click to send the selected encounter, right click to lock so you don't accept data from other raiders.
 - **-** - Minimize/expand window
 - **L** - Lock/unlock window position (drag to move when unlocked)
 
@@ -166,19 +168,16 @@ Access via **Encounters** → **Manage** from the main window.
 - Click an encounter name to load its configuration in the right panels
 - Right-click raids or encounters to rename/delete them
 
-**Middle Panel: Player Pool Management**
-- Shows available players for each role required by the encounter
-- Four default pools: Tanks, Healers, Melee, Ranged (customizable via Pool Defaults)
-- **Pool Defaults Button** (top-left) - Configure default players for all encounters
-  - Includes search/filter box to quickly find players in large guild rosters
-- Add players by typing names (comma-separated) or using the guild roster
-- Role filter dropdown to show only players of specific roles
-- Drag players from guild list to pool, or from pool to assignments
+**Middle Panel: Role Management**
+- Shows player slots needing to be assigned for the encounter.
+- Drag players from guild list to assignment slots, right click to clear.
+- Drag players from one slot to another as needed.
+- **Announcements Panel** - Create automated announcements with [tag support](#announcement-tags)
 
-**Right Panel: Encounter Configuration**
-- **Roles Tab** - Design the encounter's role structure
-- **Assignments Tab** - Assign specific players to roles
-- **Announcements Tab** - Create automated announcements with [tag support](#announcement-tags)
+**Right Panel: Roster**
+- **Players Filter** - Filter to a specific role or all players.
+- - Players in Raid are shown based off their role in the RolesUI.
+- - Players from the Guild Roster are sorted into online and offline and filtered by what roles they can possibly fill.
 
 #### Creating an Encounter
 
@@ -302,23 +301,6 @@ This is an alternative interface for managing the same encounter data with a dif
 - Two-column layout similar to Encounter Planning window
 
 **Note:** Changes made in either the Encounter Planning or Encounter Setup window are synchronized as they modify the same underlying data structure. Renaming in Setup window updates all associated data (pools, assignments, marks, announcements).
-
-### Pool Defaults Window
-
-Configure default player pools used for all encounters:
-
-Access via **Pool Defaults** button in Encounter Planning window.
-
-**Four Default Pools:**
-1. Tanks
-2. Healers
-3. Melee
-4. Ranged
-
-**Managing Pools:**
-- Add players to each pool (comma-separated or one per line)
-- These defaults are used as starting pools for new encounters
-- Individual encounter pools can be customized independently
 
 ---
 
