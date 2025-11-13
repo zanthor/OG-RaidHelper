@@ -11,6 +11,14 @@ OGRH.EncounterMgmt = OGRH.EncounterMgmt or {}
 -- Storage for encounter assignments
 local encounterData = {}
 
+-- Get currently selected encounter (for sync from MainUI)
+function OGRH.GetCurrentEncounter()
+  if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedRaid and OGRH_BWLEncounterFrame.selectedEncounter then
+    return OGRH_BWLEncounterFrame.selectedRaid, OGRH_BWLEncounterFrame.selectedEncounter
+  end
+  return nil, nil
+end
+
 -- Migrate old roleDefaults to poolDefaults (one-time migration)
 local function MigrateRoleDefaultsToPoolDefaults()
   if OGRH_SV.roleDefaults and not OGRH_SV.poolDefaults then

@@ -147,6 +147,61 @@ function OGRH.SendAnnouncement(lines, testMode)
   end
 end
 
+-- Send addon message with prefix
+function OGRH.SendAddonMessage(msgType, data)
+  local message = msgType .. ";" .. data
+  SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
+end
+
+-- Simple table serialization for addon messages
+function OGRH.Serialize(tbl)
+  if type(tbl) ~= "table" then return tostring(tbl) end
+  
+  -- Use AceSerializer if available, otherwise basic serialization
+  if AceLibrary and AceLibrary:HasInstance("AceSerializer-1.0") then
+    local serializer = AceLibrary("AceSerializer-1.0")
+    return serializer:Serialize(tbl)
+  end
+  
+  -- Basic serialization - convert to string
+  local result = "{"
+  for k, v in pairs(tbl) do
+    if type(k) == "string" then
+      result = result .. k .. "="
+    end
+    
+    if type(v) == "table" then
+      result = result .. OGRH.Serialize(v) .. ","
+    elseif type(v) == "string" then
+      result = result .. string.format("%q", v) .. ","
+    elseif type(v) == "number" or type(v) == "boolean" then
+      result = result .. tostring(v) .. ","
+    end
+  end
+  result = result .. "}"
+  return result
+end
+
+-- Simple table deserialization
+function OGRH.Deserialize(str)
+  if not str or str == "" then return nil end
+  
+  -- Use AceSerializer if available
+  if AceLibrary and AceLibrary:HasInstance("AceSerializer-1.0") then
+    local serializer = AceLibrary("AceSerializer-1.0")
+    local success, data = serializer:Deserialize(str)
+    if success then return data end
+  end
+  
+  -- Basic deserialization - use loadstring
+  local func = loadstring("return " .. str)
+  if func then
+    return func()
+  end
+  
+  return nil
+end
+
 -- Re-announce stored announcement
 function OGRH.ReAnnounce()
   if not OGRH.storedAnnouncement then
@@ -218,6 +273,93 @@ addonFrame:SetScript("OnEvent", function()
             lines = lines,
             timestamp = time()
           }
+        end
+      -- Handle encounter sync
+      elseif string.sub(message, 1, 15) == "ENCOUNTER_SYNC;" then
+        -- Block sync from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Check if sender is raid leader or assistant
+        local isAuthorized = false
+        local numRaidMembers = GetNumRaidMembers()
+        
+        if numRaidMembers > 0 then
+          for i = 1, numRaidMembers do
+            local name, rank = GetRaidRosterInfo(i)
+            if name == sender and (rank == 2 or rank == 1) then
+              -- rank 2 = leader, rank 1 = assistant
+              isAuthorized = true
+              break
+            end
+          end
+        end
+        
+        if not isAuthorized then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Ignored encounter sync from " .. sender .. " (not raid leader or assistant)")
+          return
+        end
+        
+        local serialized = string.sub(message, 16)
+        local syncData = OGRH.Deserialize(serialized)
+        
+        if syncData and syncData.raid and syncData.encounter then
+          -- Initialize structures
+          OGRH.EnsureSV()
+          if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, encounters = {}} end
+          if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
+          if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
+          if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
+          if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
+          if not OGRH_SV.encounterAnnouncements then OGRH_SV.encounterAnnouncements = {} end
+          
+          -- Replace/create raid structure
+          if not OGRH_SV.encounterMgmt.roles[syncData.raid] then
+            OGRH_SV.encounterMgmt.roles[syncData.raid] = {}
+          end
+          if not OGRH_SV.encounterAssignments[syncData.raid] then
+            OGRH_SV.encounterAssignments[syncData.raid] = {}
+          end
+          if not OGRH_SV.encounterRaidMarks[syncData.raid] then
+            OGRH_SV.encounterRaidMarks[syncData.raid] = {}
+          end
+          if not OGRH_SV.encounterAssignmentNumbers[syncData.raid] then
+            OGRH_SV.encounterAssignmentNumbers[syncData.raid] = {}
+          end
+          if not OGRH_SV.encounterAnnouncements[syncData.raid] then
+            OGRH_SV.encounterAnnouncements[syncData.raid] = {}
+          end
+          
+          -- Replace encounter data
+          if syncData.roles then
+            OGRH_SV.encounterMgmt.roles[syncData.raid][syncData.encounter] = syncData.roles
+          end
+          if syncData.assignments then
+            OGRH_SV.encounterAssignments[syncData.raid][syncData.encounter] = syncData.assignments
+          end
+          if syncData.raidMarks then
+            OGRH_SV.encounterRaidMarks[syncData.raid][syncData.encounter] = syncData.raidMarks
+          end
+          if syncData.assignmentNumbers then
+            OGRH_SV.encounterAssignmentNumbers[syncData.raid][syncData.encounter] = syncData.assignmentNumbers
+          end
+          if syncData.announcements then
+            OGRH_SV.encounterAnnouncements[syncData.raid][syncData.encounter] = syncData.announcements
+          end
+          
+          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received encounter sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
+          
+          -- Refresh UI if it's open and showing this encounter
+          if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
+            if OGRH_BWLEncounterFrame.selectedRaid == syncData.raid and
+               OGRH_BWLEncounterFrame.selectedEncounter == syncData.encounter then
+              if OGRH_BWLEncounterFrame.RefreshRoleContainers then
+                OGRH_BWLEncounterFrame.RefreshRoleContainers()
+              end
+            end
+          end
         end
       end
     end

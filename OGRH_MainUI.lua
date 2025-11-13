@@ -29,12 +29,72 @@ title:SetPoint("LEFT", H, "LEFT", 4, 0); title:SetText("|cffffff00OGRH|r")
 local btnMin = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnMin:SetWidth(20); btnMin:SetHeight(16); btnMin:SetText("-"); btnMin:SetPoint("RIGHT", H, "RIGHT", -26, 0)
 local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(16); btnLock:SetText("L"); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0)
 
--- ReAnnounce button
-local reAnnounce = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); reAnnounce:SetWidth(20); reAnnounce:SetHeight(16); reAnnounce:SetText("RA"); reAnnounce:SetPoint("RIGHT", btnMin, "LEFT", -2, 0)
-reAnnounce:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+-- Sync button (S) - Send encounter configuration to raid
+local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(20); syncBtn:SetHeight(16); syncBtn:SetText("S"); syncBtn:SetPoint("RIGHT", btnMin, "LEFT", -2, 0)
+syncBtn:SetScript("OnClick", function()
+  -- Get current encounter selection from EncounterMgmt
+  if not OGRH.GetCurrentEncounter then
+    OGRH.Msg("Encounter management not loaded.")
+    return
+  end
+  
+  local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+  if not currentRaid or not currentEncounter then
+    OGRH.Msg("No encounter selected to sync. Open Encounter Planning and select an encounter first.")
+    return
+  end
+  
+  -- Build sync data package
+  local syncData = {
+    raid = currentRaid,
+    encounter = currentEncounter,
+    roles = {},
+    assignments = {},
+    marks = {},
+    numbers = {},
+    announcements = ""
+  }
+  
+  -- Get roles configuration
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and 
+     OGRH_SV.encounterMgmt.roles[currentRaid] and 
+     OGRH_SV.encounterMgmt.roles[currentRaid][currentEncounter] then
+    syncData.roles = OGRH_SV.encounterMgmt.roles[currentRaid][currentEncounter]
+  end
+  
+  -- Get player assignments
+  if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[currentRaid] and 
+     OGRH_SV.encounterAssignments[currentRaid][currentEncounter] then
+    syncData.assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
+  end
+  
+  -- Get raid marks
+  if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[currentRaid] and 
+     OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter] then
+    syncData.marks = OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter]
+  end
+  
+  -- Get assignment numbers
+  if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[currentRaid] and 
+     OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter] then
+    syncData.numbers = OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter]
+  end
+  
+  -- Get announcements
+  if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[currentRaid] and 
+     OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter] then
+    syncData.announcements = OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter]
+  end
+  
+  -- Serialize and send
+  local serialized = OGRH.Serialize(syncData)
+  OGRH.SendAddonMessage("ENCOUNTER_SYNC", serialized)
+  
+  OGRH.Msg("Encounter configuration for " .. currentEncounter .. " synced to raid (excluding self).")
+end)
 
 -- ReadyCheck button
-local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(20); readyCheck:SetHeight(16); readyCheck:SetText("RC"); readyCheck:SetPoint("RIGHT", reAnnounce, "LEFT", -2, 0)
+local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(20); readyCheck:SetHeight(16); readyCheck:SetText("RC"); readyCheck:SetPoint("RIGHT", syncBtn, "LEFT", -2, 0)
 readyCheck:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 local Content = CreateFrame("Frame", nil, Main); Content:SetPoint("TOPLEFT", Main, "TOPLEFT", 6, -26); Content:SetPoint("BOTTOMRIGHT", Main, "BOTTOMRIGHT", -6, 6)
@@ -590,8 +650,8 @@ bShare:SetScript("OnClick", function()
   end
 end)
 
--- Expose reAnnounce button for external access
-OGRH.reAnnounceButton = reAnnounce
+-- Expose sync button for external access
+OGRH.syncButton = syncBtn
 
 local function restoreMain()
   ensureSV()
