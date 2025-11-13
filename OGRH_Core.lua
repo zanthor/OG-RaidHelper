@@ -2064,15 +2064,170 @@ local function CreateMinimapButton()
   
   UpdatePosition()
   
-  -- Click handler
+  -- Create right-click menu
+  local function ShowMinimapMenu()
+    if not OGRH_MinimapMenu then
+      local menu = CreateFrame("Frame", "OGRH_MinimapMenu", UIParent)
+      menu:SetFrameStrata("FULLSCREEN_DIALOG")
+      menu:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = {left = 4, right = 4, top = 4, bottom = 4}
+      })
+      menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+      menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+      menu:SetWidth(160)
+      menu:SetHeight(90)
+      menu:Hide()
+      
+      -- Close menu when clicking outside
+      menu:SetScript("OnShow", function()
+        -- Create invisible backdrop to capture clicks
+        if not menu.backdrop then
+          local backdrop = CreateFrame("Frame", nil, UIParent)
+          backdrop:SetFrameStrata("FULLSCREEN")
+          backdrop:SetAllPoints()
+          backdrop:EnableMouse(true)
+          backdrop:SetScript("OnMouseDown", function()
+            menu:Hide()
+          end)
+          menu.backdrop = backdrop
+        end
+        menu.backdrop:Show()
+      end)
+      
+      menu:SetScript("OnHide", function()
+        if menu.backdrop then
+          menu.backdrop:Hide()
+        end
+      end)
+      
+      -- Title text
+      local titleText = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      titleText:SetPoint("TOP", menu, "TOP", 0, -8)
+      titleText:SetText("OG-RaidHelper")
+      titleText:SetTextColor(1, 0.82, 0)
+      
+      local yOffset = -28
+      local itemHeight = 16
+      local itemSpacing = 2
+      
+      -- Helper to create menu items
+      local function CreateMenuItem(text, onClick, parent, yPos)
+        local item = CreateFrame("Button", nil, menu)
+        item:SetWidth(150)
+        item:SetHeight(itemHeight)
+        item:SetPoint("TOP", menu, "TOP", 0, yPos)
+        
+        -- Background highlight
+        local bg = item:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+        item.bg = bg
+        
+        -- Text
+        local fs = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetPoint("LEFT", item, "LEFT", 8, 0)
+        fs:SetText(text)
+        fs:SetTextColor(1, 1, 1)
+        item.fs = fs
+        
+        -- Highlight on hover
+        item:SetScript("OnEnter", function()
+          bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+        end)
+        
+        item:SetScript("OnLeave", function()
+          bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+        end)
+        
+        item:SetScript("OnClick", function()
+          onClick()
+          menu:Hide()
+        end)
+        
+        return item
+      end
+      
+      -- Show/Hide item
+      local toggleItem = CreateMenuItem("Show", function()
+        if OGRH_Main then
+          if OGRH_Main:IsVisible() then
+            OGRH_Main:Hide()
+            OGRH_SV.ui.hidden = true
+          else
+            OGRH_Main:Show()
+            OGRH_SV.ui.hidden = false
+          end
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Share item
+      local shareItem = CreateMenuItem("Share", function()
+        if OGRH.ShowShareWindow then
+          OGRH.ShowShareWindow()
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Setup item
+      local setupItem = CreateMenuItem("Setup", function()
+        if OGRH.ShowEncounterSetup then
+          OGRH.ShowEncounterSetup()
+        end
+      end, menu, yOffset)
+      
+      menu.toggleItem = toggleItem
+      
+      -- Update toggle item text based on window state
+      menu.UpdateToggleText = function()
+        if OGRH_Main and OGRH_Main:IsVisible() then
+          toggleItem.fs:SetText("Hide")
+        else
+          toggleItem.fs:SetText("Show")
+        end
+      end
+    end
+    
+    local menu = OGRH_MinimapMenu
+    
+    -- Toggle menu visibility
+    if menu:IsVisible() then
+      menu:Hide()
+      return
+    end
+    
+    -- Update toggle button text
+    menu.UpdateToggleText()
+    
+    -- Position menu near minimap button
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -5)
+    menu:Show()
+  end
+  
+  -- Click handler (left-click toggles, right-click shows menu)
+  button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   button:SetScript("OnClick", function()
-    if OGRH_Main then
-      if OGRH_Main:IsVisible() then
-        OGRH_Main:Hide()
-        OGRH_SV.ui.hidden = true
-      else
-        OGRH_Main:Show()
-        OGRH_SV.ui.hidden = false
+    if arg1 == "RightButton" then
+      ShowMinimapMenu()
+    else
+      -- Left-click: toggle window
+      if OGRH_Main then
+        if OGRH_Main:IsVisible() then
+          OGRH_Main:Hide()
+          OGRH_SV.ui.hidden = true
+        else
+          OGRH_Main:Show()
+          OGRH_SV.ui.hidden = false
+        end
       end
     end
   end)
@@ -2100,7 +2255,8 @@ local function CreateMinimapButton()
   button:SetScript("OnEnter", function()
     GameTooltip:SetOwner(button, "ANCHOR_LEFT")
     GameTooltip:SetText("|cff66ccffOG-RaidHelper|r")
-    GameTooltip:AddLine("Click to toggle main window", 1, 1, 1)
+    GameTooltip:AddLine("Left-click to toggle main window", 1, 1, 1)
+    GameTooltip:AddLine("Right-click for menu", 1, 1, 1)
     GameTooltip:AddLine("Drag to move", 0.8, 0.8, 0.8)
     GameTooltip:Show()
   end)
