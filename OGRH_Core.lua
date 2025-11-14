@@ -2283,9 +2283,45 @@ local function CreateMinimapButton()
     -- Update toggle button text
     menu.UpdateToggleText()
     
-    -- Position menu near minimap button
+    -- Position menu near minimap button with boundary checking
     menu:ClearAllPoints()
-    menu:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -5)
+    
+    -- Get screen dimensions
+    local screenWidth = UIParent:GetWidth()
+    local screenHeight = UIParent:GetHeight()
+    
+    -- Get button position
+    local btnX, btnY = button:GetCenter()
+    local menuWidth = menu:GetWidth()
+    local menuHeight = menu:GetHeight()
+    
+    -- Default position: below and left-aligned
+    local anchorPoint = "TOPLEFT"
+    local relativePoint = "BOTTOMLEFT"
+    local xOffset = 0
+    local yOffset = -5
+    
+    -- Check if menu would go off right edge
+    if btnX + menuWidth > screenWidth then
+      -- Align right edge of menu with button
+      anchorPoint = "TOPRIGHT"
+      relativePoint = "BOTTOMRIGHT"
+    end
+    
+    -- Check if menu would go off bottom edge
+    if btnY - menuHeight < 0 then
+      -- Position above button instead
+      if anchorPoint == "TOPLEFT" then
+        anchorPoint = "BOTTOMLEFT"
+        relativePoint = "TOPLEFT"
+      else
+        anchorPoint = "BOTTOMRIGHT"
+        relativePoint = "TOPRIGHT"
+      end
+      yOffset = 5
+    end
+    
+    menu:SetPoint(anchorPoint, button, relativePoint, xOffset, yOffset)
     menu:Show()
   end
   
