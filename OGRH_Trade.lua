@@ -371,13 +371,12 @@ local function ShowTradeMenu(anchorBtn)
             local buttonHeight = 18
             local buttonSpacing = 6
             
-            -- Create buttons for each trade item
-            for i, itemData in ipairs(items) do
-                local it = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
-                it:SetWidth(180)
-                it:SetHeight(buttonHeight)
-                
-                if i == 1 then
+        -- Create buttons for each trade item
+        for i, itemData in ipairs(items) do
+          local it = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
+          it:SetWidth(180)
+          it:SetHeight(buttonHeight)
+          OGRH.StyleButton(it)                if i == 1 then
                     it:SetPoint("TOPLEFT", M, "TOPLEFT", 10, yOffset)
                 else
                     it:SetPoint("TOPLEFT", M.btns[i-1], "BOTTOMLEFT", 0, -buttonSpacing)
@@ -410,12 +409,11 @@ local function ShowTradeMenu(anchorBtn)
                 table.insert(M.btns, it)
             end
             
-            -- Add Settings button at the bottom
-            local settingsBtn = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
-            settingsBtn:SetWidth(180)
-            settingsBtn:SetHeight(buttonHeight)
-            
-            if table.getn(M.btns) > 0 then
+        -- Add Settings button at the bottom
+        local settingsBtn = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
+        settingsBtn:SetWidth(180)
+        settingsBtn:SetHeight(buttonHeight)
+        OGRH.StyleButton(settingsBtn)            if table.getn(M.btns) > 0 then
                 settingsBtn:SetPoint("TOPLEFT", M.btns[table.getn(M.btns)], "BOTTOMLEFT", 0, -buttonSpacing)
             else
                 settingsBtn:SetPoint("TOPLEFT", M, "TOPLEFT", 10, yOffset)

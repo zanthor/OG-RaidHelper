@@ -92,6 +92,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     closeBtn:SetHeight(24)
     closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
     closeBtn:SetText("Close")
+    OGRH.StyleButton(closeBtn)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
     -- Left panel: Raids and Encounters selection
@@ -524,6 +525,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     playerRoleBtn:SetHeight(24)
     playerRoleBtn:SetPoint("TOP", playersLabel, "BOTTOM", 0, -5)
     playerRoleBtn:SetText("All Roles")
+    OGRH.StyleButton(playerRoleBtn)
     frame.playerRoleBtn = playerRoleBtn
     frame.selectedPlayerRole = "all"
     
@@ -741,6 +743,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     autoAssignBtn:SetHeight(24)
     autoAssignBtn:SetPoint("TOPLEFT", bottomPanel, "TOPLEFT", 10, -10)
     autoAssignBtn:SetText("Auto Assign")
+    OGRH.StyleButton(autoAssignBtn)
     frame.autoAssignBtn = autoAssignBtn
     
     -- Auto Assign functionality
@@ -902,6 +905,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     announceBtn:SetHeight(24)
     announceBtn:SetPoint("TOPLEFT", autoAssignBtn, "BOTTOMLEFT", 0, -6)
     announceBtn:SetText("Announce")
+    OGRH.StyleButton(announceBtn)
     frame.announceBtn = announceBtn
     
     -- Function to replace tags in announcement text with colored output
@@ -1530,6 +1534,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     markPlayersBtn:SetHeight(24)
     markPlayersBtn:SetPoint("TOPLEFT", announceBtn, "BOTTOMLEFT", 0, -6)
     markPlayersBtn:SetText("Mark Players")
+    OGRH.StyleButton(markPlayersBtn)
     frame.markPlayersBtn = markPlayersBtn
     
     -- Mark Players functionality
@@ -1639,6 +1644,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     editToggleBtn:SetHeight(24)
     editToggleBtn:SetPoint("TOPLEFT", markPlayersBtn, "BOTTOMLEFT", 0, -6)
     editToggleBtn:SetText("|cffff0000Edit: Locked|r")
+    OGRH.StyleButton(editToggleBtn)
     frame.editToggleBtn = editToggleBtn
     frame.editMode = false  -- Start in locked mode
     
@@ -2219,6 +2225,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         frame.autoAssignBtn:Hide()
         frame.announceBtn:Hide()
         frame.markPlayersBtn:Hide()
+        frame.editToggleBtn:Hide()
         announcementLabel:Hide()
         announcementScrollFrame:Hide()
         
@@ -2239,6 +2246,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       frame.autoAssignBtn:Show()
       frame.announceBtn:Show()
       frame.markPlayersBtn:Show()
+      frame.editToggleBtn:Show()
       announcementLabel:Show()
       announcementScrollFrame:Show()
       
@@ -2986,6 +2994,7 @@ function OGRH.ShowEncounterSetup()
     closeBtn:SetHeight(24)
     closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
     closeBtn:SetText("Close")
+    OGRH.StyleButton(closeBtn)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
     -- Content area
@@ -6599,11 +6608,35 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
     menu:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      edgeSize = 12,
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
       insets = {left = 4, right = 4, top = 4, bottom = 4}
     })
-    menu:SetBackdropColor(0, 0, 0, 0.95)
+    menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+    menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     menu:Hide()
+    
+    -- Close menu when clicking outside
+    menu:SetScript("OnShow", function()
+      if not menu.backdrop then
+        local backdrop = CreateFrame("Frame", nil, UIParent)
+        backdrop:SetFrameStrata("FULLSCREEN")
+        backdrop:SetAllPoints()
+        backdrop:EnableMouse(true)
+        backdrop:SetScript("OnMouseDown", function()
+          menu:Hide()
+        end)
+        menu.backdrop = backdrop
+      end
+      menu.backdrop:Show()
+    end)
+    
+    menu:SetScript("OnHide", function()
+      if menu.backdrop then
+        menu.backdrop:Hide()
+      end
+    end)
     
     menu.buttons = {}
     
@@ -6621,14 +6654,38 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
       
       local raids = OGRH_SV.encounterMgmt.raids
       local yOffset = -5
+      local itemHeight = 18
+      local itemSpacing = 2
       
       for i = 1, table.getn(raids) do
         local raidName = raids[i]
-        local btn = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+        local btn = CreateFrame("Button", nil, menu)
         btn:SetWidth(130)
-        btn:SetHeight(20)
+        btn:SetHeight(itemHeight)
         btn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
-        btn:SetText(raidName)
+        
+        -- Background highlight
+        local bg = btn:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+        btn.bg = bg
+        
+        -- Text
+        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetPoint("CENTER", btn, "CENTER", 0, 0)
+        fs:SetText(raidName)
+        fs:SetTextColor(1, 1, 1)
+        btn.fs = fs
+        
+        -- Highlight on hover
+        btn:SetScript("OnEnter", function()
+          bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+        end)
+        
+        btn:SetScript("OnLeave", function()
+          bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+        end)
         
         local capturedRaid = raidName
         btn:SetScript("OnClick", function()
@@ -6702,7 +6759,7 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         end)
         
         table.insert(menu.buttons, btn)
-        yOffset = yOffset - 22
+        yOffset = yOffset - (itemHeight + itemSpacing)
       end
       
       menu:SetHeight(math.max(50, math.abs(yOffset) + 10))

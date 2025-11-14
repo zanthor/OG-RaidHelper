@@ -27,11 +27,11 @@ H:SetHeight(20)
 local title = H:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
 title:SetPoint("LEFT", H, "LEFT", 4, 0); title:SetText("|cffffff00RH|r")
 
-local btnRoles = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnRoles:SetWidth(35); btnRoles:SetHeight(20); btnRoles:SetText("Roles"); btnRoles:SetPoint("RIGHT", H, "RIGHT", -26, 0)
-local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(20); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0)
+local btnRoles = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnRoles:SetWidth(35); btnRoles:SetHeight(20); btnRoles:SetText("Roles"); btnRoles:SetPoint("RIGHT", H, "RIGHT", -26, 0); OGRH.StyleButton(btnRoles)
+local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(20); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0); OGRH.StyleButton(btnLock)
 
 -- Sync button (S) - Send encounter configuration to raid
-local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(35); syncBtn:SetHeight(20); syncBtn:SetText("Sync"); syncBtn:SetPoint("RIGHT", btnRoles, "LEFT", -2, 0)
+local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(35); syncBtn:SetHeight(20); syncBtn:SetText("Sync"); syncBtn:SetPoint("RIGHT", btnRoles, "LEFT", -2, 0); OGRH.StyleButton(syncBtn)
 syncBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- Function to update sync button color based on lock state
@@ -127,7 +127,7 @@ syncBtn:SetScript("OnClick", function()
 end)
 
 -- ReadyCheck button
-local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(35); readyCheck:SetHeight(20); readyCheck:SetText("Rdy"); readyCheck:SetPoint("RIGHT", syncBtn, "LEFT", -2, 0)
+local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(35); readyCheck:SetHeight(20); readyCheck:SetText("Rdy"); readyCheck:SetPoint("RIGHT", syncBtn, "LEFT", -2, 0); OGRH.StyleButton(readyCheck)
 readyCheck:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- Roles button handler
@@ -166,6 +166,7 @@ prevEncBtn:SetWidth(20)
 prevEncBtn:SetHeight(20)
 prevEncBtn:SetPoint("LEFT", encounterNav, "LEFT", 0, 0)
 prevEncBtn:SetText("<")
+OGRH.StyleButton(prevEncBtn)
 prevEncBtn:SetScript("OnClick", function()
   if OGRH.NavigateToPreviousEncounter then
     OGRH.NavigateToPreviousEncounter()
@@ -179,6 +180,7 @@ announceBtn:SetWidth(20)
 announceBtn:SetHeight(20)
 announceBtn:SetPoint("LEFT", prevEncBtn, "RIGHT", 2, 0)
 announceBtn:SetText("A")
+OGRH.StyleButton(announceBtn)
 announceBtn:SetScript("OnClick", function()
   if OGRH.PrepareEncounterAnnouncement then
     OGRH.PrepareEncounterAnnouncement()
@@ -192,6 +194,7 @@ markBtn:SetWidth(20)
 markBtn:SetHeight(20)
 markBtn:SetPoint("LEFT", announceBtn, "RIGHT", 2, 0)
 markBtn:SetText("M")
+OGRH.StyleButton(markBtn)
 markBtn:SetScript("OnClick", function()
   if OGRH.MarkPlayersFromMainUI then
     OGRH.MarkPlayersFromMainUI()
@@ -205,6 +208,7 @@ nextEncBtn:SetWidth(20)
 nextEncBtn:SetHeight(20)
 nextEncBtn:SetPoint("RIGHT", encounterNav, "RIGHT", 0, 0)
 nextEncBtn:SetText(">")
+OGRH.StyleButton(nextEncBtn)
 nextEncBtn:SetScript("OnClick", function()
   if OGRH.NavigateToNextEncounter then
     OGRH.NavigateToNextEncounter()
@@ -218,6 +222,7 @@ encounterBtn:SetHeight(20)
 encounterBtn:SetPoint("LEFT", markBtn, "RIGHT", 2, 0)
 encounterBtn:SetPoint("RIGHT", nextEncBtn, "LEFT", -2, 0)
 encounterBtn:SetText("Select Raid")
+OGRH.StyleButton(encounterBtn)
 encounterBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 encounterBtn:SetScript("OnClick", function()
   if arg1 == "RightButton" then
@@ -227,6 +232,11 @@ encounterBtn:SetScript("OnClick", function()
     end
   else
     -- Left click: Open Encounter Planning with selected encounter
+    -- Close Roles UI if it's open
+    if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
+      getglobal("OGRH_RolesFrame"):Hide()
+    end
+    
     if OGRH.OpenEncounterPlanning then
       OGRH.OpenEncounterPlanning()
     end
@@ -261,6 +271,7 @@ readyCheck:SetScript("OnClick", function()
       local toggleBtn = CreateFrame("Button", nil, M, "UIPanelButtonTemplate")
       toggleBtn:SetWidth(160); toggleBtn:SetHeight(20)
       toggleBtn:SetPoint("TOPLEFT", M, "TOPLEFT", 10, -15)
+      OGRH.StyleButton(toggleBtn)
       
       local fs = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
       fs:SetAllPoints(); fs:SetJustifyH("CENTER")

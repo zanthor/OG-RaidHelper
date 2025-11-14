@@ -81,6 +81,55 @@ function OGRH.Mod1(n,t) return math.mod(n-1, t)+1 end
 function OGRH.CanRW() if IsRaidLeader and IsRaidLeader()==1 then return true end if IsRaidOfficer and IsRaidOfficer()==1 then return true end return false end
 function OGRH.SayRW(text) if OGRH.CanRW() then SendChatMessage(text, "RAID_WARNING") else SendChatMessage(text, "RAID") end end
 
+-- Custom button styling with backdrop and rounded corners
+function OGRH.StyleButton(button)
+  if not button then return end
+  
+  -- Hide the default textures
+  local normalTexture = button:GetNormalTexture()
+  if normalTexture then
+    normalTexture:SetTexture(nil)
+  end
+  
+  local highlightTexture = button:GetHighlightTexture()
+  if highlightTexture then
+    highlightTexture:SetTexture(nil)
+  end
+  
+  local pushedTexture = button:GetPushedTexture()
+  if pushedTexture then
+    pushedTexture:SetTexture(nil)
+  end
+  
+  -- Add custom backdrop with rounded corners and border
+  button:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = { left = 2, right = 2, top = 2, bottom = 2 }
+  })
+  
+  -- Ensure button is fully opaque
+  button:SetAlpha(1.0)
+  
+  -- Dark teal background color
+  button:SetBackdropColor(0.25, 0.35, 0.35, 1)
+  button:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  
+  -- Add hover effect
+  button:SetScript("OnEnter", function()
+    this:SetBackdropColor(0.3, 0.45, 0.45, 1)
+    this:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+  end)
+  
+  button:SetScript("OnLeave", function()
+    this:SetBackdropColor(0.25, 0.35, 0.35, 1)
+    this:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  end)
+end
+
 -- Ready Check functionality
 function OGRH.DoReadyCheck()
   -- Check if in a raid
@@ -1319,6 +1368,7 @@ function OGRH.ShowShareWindow()
     closeBtn:SetHeight(25)
     closeBtn:SetPoint("BOTTOMRIGHT", -20, 15)
     closeBtn:SetText("Close")
+    OGRH.StyleButton(closeBtn)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
     -- Clear button
@@ -1327,6 +1377,7 @@ function OGRH.ShowShareWindow()
     clearBtn:SetHeight(25)
     clearBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
     clearBtn:SetText("Clear")
+    OGRH.StyleButton(clearBtn)
     clearBtn:SetScript("OnClick", function()
       editBox:SetText("")
       editBox:SetFocus()
@@ -1338,6 +1389,7 @@ function OGRH.ShowShareWindow()
     exportBtn:SetHeight(25)
     exportBtn:SetPoint("BOTTOMLEFT", 20, 15)
     exportBtn:SetText("Export")
+    OGRH.StyleButton(exportBtn)
     exportBtn:SetScript("OnClick", function()
       if OGRH.ExportShareData then
         local data = OGRH.ExportShareData()
@@ -1353,6 +1405,7 @@ function OGRH.ShowShareWindow()
     importBtn:SetHeight(25)
     importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 10, 0)
     importBtn:SetText("Import")
+    OGRH.StyleButton(importBtn)
     importBtn:SetScript("OnClick", function()
       local text = editBox:GetText()
       if text and text ~= "" then
@@ -1370,6 +1423,7 @@ function OGRH.ShowShareWindow()
     pullBtn:SetHeight(25)
     pullBtn:SetPoint("RIGHT", clearBtn, "LEFT", -10, 0)
     pullBtn:SetText("Pull from Raid")
+    OGRH.StyleButton(pullBtn)
     pullBtn:SetScript("OnClick", function()
       if OGRH.RequestRaidData then
         OGRH.RequestRaidData()
@@ -2170,6 +2224,17 @@ local function CreateMinimapButton()
       
       -- Share item
       local shareItem = CreateMenuItem("Share", function()
+        -- Close other windows
+        if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
+          getglobal("OGRH_BWLEncounterFrame"):Hide()
+        end
+        if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
+          getglobal("OGRH_RolesFrame"):Hide()
+        end
+        if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
+          getglobal("OGRH_EncounterSetupFrame"):Hide()
+        end
+        
         if OGRH.ShowShareWindow then
           OGRH.ShowShareWindow()
         end
@@ -2179,6 +2244,17 @@ local function CreateMinimapButton()
       
       -- Setup item
       local setupItem = CreateMenuItem("Setup", function()
+        -- Close other windows
+        if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
+          getglobal("OGRH_BWLEncounterFrame"):Hide()
+        end
+        if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
+          getglobal("OGRH_RolesFrame"):Hide()
+        end
+        if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
+          getglobal("OGRH_ShareFrame"):Hide()
+        end
+        
         if OGRH.ShowEncounterSetup then
           OGRH.ShowEncounterSetup()
         end

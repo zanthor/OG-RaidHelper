@@ -54,8 +54,9 @@ local function InitializePollMenu()
     local numItems = table.getn(menuItems)
     for i = 1, numItems do
         local btn = CreateFrame("Button", nil, OGRH.Poll.menu, "UIPanelButtonTemplate")
-        btn:SetWidth(80)
+        btn:SetWidth(180)
         btn:SetHeight(20)
+        OGRH.StyleButton(btn)
         if i == 1 then
             btn:SetPoint("TOPLEFT", OGRH.Poll.menu, "TOPLEFT", 10, -10)
         else
