@@ -245,6 +245,11 @@ encounterBtn:SetScript("OnClick", function()
       getglobal("OGRH_RolesFrame"):Hide()
     end
     
+    -- Close Encounter Setup if it's open
+    if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
+      getglobal("OGRH_EncounterSetupFrame"):Hide()
+    end
+    
     if OGRH.OpenEncounterPlanning then
       OGRH.OpenEncounterPlanning()
     end
