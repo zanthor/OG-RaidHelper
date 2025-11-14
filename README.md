@@ -6,6 +6,9 @@
 
 A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, and coordinating raid activities.
 
+<img width="1161" height="518" alt="image" src="https://github.com/user-attachments/assets/a80bc0cb-d10e-4700-a1cd-5fb169dea8b1" />
+
+
 ---
 ## Disclaimer
 
