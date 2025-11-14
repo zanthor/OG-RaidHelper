@@ -186,6 +186,14 @@ announceBtn:SetScript("OnClick", function()
     OGRH.PrepareEncounterAnnouncement()
   end
 end)
+announceBtn:SetScript("OnEnter", function()
+  if OGRH.ShowAnnouncementTooltip then
+    OGRH.ShowAnnouncementTooltip(this)
+  end
+end)
+announceBtn:SetScript("OnLeave", function()
+  GameTooltip:Hide()
+end)
 encounterNav.announceBtn = announceBtn
 
 -- Mark button

@@ -1283,14 +1283,14 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         
         -- Raid mark names
         local markNames = {
-          [1] = "{Star}",
-          [2] = "{Circle}",
-          [3] = "{Diamond}",
-          [4] = "{Triangle}",
-          [5] = "{Moon}",
-          [6] = "{Square}",
-          [7] = "{Cross}",
-          [8] = "{Skull}"
+          [1] = "(Star)",
+          [2] = "(Circle)",
+          [3] = "(Diamond)",
+          [4] = "(Triangle)",
+          [5] = "(Moon)",
+          [6] = "(Square)",
+          [7] = "(Cross)",
+          [8] = "(Skull)"
         }
         
         if raidMarks and raidMarks[roleIndex] and raidMarks[roleIndex][playerIndex] then
@@ -1435,6 +1435,9 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       
       return finalResult
     end
+    
+    -- Store ReplaceTags on frame for external access (e.g., tooltip generation)
+    frame.ReplaceTags = ReplaceTags
     
     -- Announce functionality
     announceBtn:SetScript("OnClick", function()
@@ -6564,6 +6567,128 @@ function OGRH.NavigateToNextEncounter()
         break
       end
     end
+  end
+end
+
+function OGRH.ShowAnnouncementTooltip(anchorFrame)
+  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid or 
+     not OGRH_BWLEncounterFrame.selectedEncounter then
+    return
+  end
+  
+  -- Check if there's a ReplaceTags function stored on the frame
+  if not OGRH_BWLEncounterFrame.ReplaceTags then
+    return
+  end
+  
+  -- Get announcement text lines
+  if not OGRH_SV.encounterAnnouncements or 
+     not OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid] or
+     not OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    return "No announcement configured"
+  end
+  
+  -- Get role data
+  local orderedRoles = {}
+  if OGRH_SV.encounterRoles and 
+     OGRH_SV.encounterRoles[OGRH_BWLEncounterFrame.selectedRaid] and 
+     OGRH_SV.encounterRoles[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    orderedRoles = OGRH_SV.encounterRoles[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  end
+  
+  local assignments = {}
+  if OGRH_SV.encounterAssignments and
+     OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid] and
+     OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    assignments = OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  end
+  
+  local raidMarks = {}
+  if OGRH_SV.encounterRaidMarks and
+     OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid] and
+     OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    raidMarks = OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  end
+  
+  local assignmentNumbers = {}
+  if OGRH_SV.encounterAssignmentNumbers and
+     OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid] and
+     OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  end
+  
+  -- Get announcement text
+  if not OGRH_SV.encounterAnnouncements or 
+     not OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid] or
+     not OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    return
+  end
+  
+  -- Get role data for tag processing (must match announce button logic)
+  local orderedRoles = {}
+  local roles = OGRH_SV.encounterMgmt.roles
+  if roles and roles[OGRH_BWLEncounterFrame.selectedRaid] and 
+     roles[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    local encounterRoles = roles[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+    local column1 = encounterRoles.column1 or {}
+    local column2 = encounterRoles.column2 or {}
+    
+    -- Build ordered list of roles
+    for i = 1, table.getn(column1) do
+      table.insert(orderedRoles, column1[i])
+    end
+    for i = 1, table.getn(column2) do
+      table.insert(orderedRoles, column2[i])
+    end
+  end
+  
+  local assignments = {}
+  if OGRH_SV.encounterAssignments and
+     OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid] and
+     OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    assignments = OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  end
+  
+  -- Note: This is a duplicate of raidMarks loading above and can be removed
+  local raidMarks = {}
+  if OGRH_SV.encounterRaidMarks and
+     OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid] and
+     OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    raidMarks = OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  end
+  
+  local assignmentNumbers = {}
+  if OGRH_SV.encounterAssignmentNumbers and
+     OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid] and
+     OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  end
+  
+  local announcementData = OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  
+  -- Process announcement lines exactly as they would be sent to chat
+  GameTooltip:SetOwner(anchorFrame, "ANCHOR_RIGHT")
+  GameTooltip:ClearLines()
+  
+  local hasLines = false
+  for i = 1, 20 do
+    local lineText = announcementData[i]
+    if lineText and lineText ~= "" then
+      local processedText = OGRH_BWLEncounterFrame.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
+      
+      if processedText and processedText ~= "" then
+        if not hasLines then
+          GameTooltip:AddLine(processedText, 1, 1, 1, 1)
+          hasLines = true
+        else
+          GameTooltip:AddLine(processedText, 1, 1, 1, 1)
+        end
+      end
+    end
+  end
+  
+  if hasLines then
+    GameTooltip:Show()
   end
 end
 
