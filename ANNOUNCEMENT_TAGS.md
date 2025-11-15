@@ -48,6 +48,19 @@ Off Tanks: Gnuzmas Zanthor Tankthree
 ```
 **Note:** Players are listed in slot assignment order.
 
+### All Players with Assignments: `[Rx.PA]`
+Displays all assigned players in role `x` with their assignment numbers, space-delimited with class colors.
+
+**Example:**
+```
+[R2.T]: [R2.PA]
+```
+**Output:**
+```
+Off Tanks: Gnuzmas (1) Zanthor (2) Tankthree
+```
+**Note:** Assignment numbers are shown in parentheses. Players without assignment numbers are shown without parentheses. Players are listed in slot assignment order.
+
 ### Raid Mark: `[Rx.My]`
 Displays the raid mark assigned to player `y` in role `x`.
 

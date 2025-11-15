@@ -746,8 +746,62 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     OGRH.StyleButton(autoAssignBtn)
     frame.autoAssignBtn = autoAssignBtn
     
+    -- Enable right-click
+    autoAssignBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    
     -- Auto Assign functionality
     autoAssignBtn:SetScript("OnClick", function()
+      local button = arg1 or "LeftButton"
+      
+      -- Right-click: Clear all encounter data
+      if button == "RightButton" then
+        if not frame.selectedRaid or not frame.selectedEncounter then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
+          return
+        end
+        
+        -- Create confirmation dialog
+        StaticPopupDialogs["OGRH_CLEAR_ENCOUNTER"] = {
+          text = "Clear all assignments, marks, and announcement text for this encounter?",
+          button1 = "OK",
+          button2 = "Cancel",
+          OnAccept = function()
+            -- Clear assignments
+            if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[frame.selectedRaid] then
+              OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = {}
+            end
+            
+            -- Clear raid marks
+            if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[frame.selectedRaid] then
+              OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter] = {}
+            end
+            
+            -- Clear assignment numbers
+            if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid] then
+              OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter] = {}
+            end
+            
+            -- Broadcast full sync to update other clients
+            if OGRH.BroadcastFullSync then
+              OGRH.BroadcastFullSync(frame.selectedRaid, frame.selectedEncounter)
+            end
+            
+            -- Refresh display
+            if frame.RefreshRoleContainers then
+              frame.RefreshRoleContainers()
+            end
+            
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter data cleared.")
+          end,
+          timeout = 0,
+          whileDead = true,
+          hideOnEscape = true,
+        }
+        StaticPopup_Show("OGRH_CLEAR_ENCOUNTER")
+        return
+      end
+      
+      -- Left-click: Auto Assign functionality
       if not frame.selectedRaid or not frame.selectedEncounter then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
         return
@@ -764,124 +818,104 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       local column1 = encounterRoles.column1 or {}
       local column2 = encounterRoles.column2 or {}
       
-      -- Build ordered list of all roles (interleaved by row)
+      -- Build ordered list of all roles
       local allRoles = {}
-      local maxRoles = math.max(table.getn(column1), table.getn(column2))
       
-      for i = 1, maxRoles do
-        if column1[i] then
-          table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
-        end
-        if column2[i] then
-          table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
-        end
+      -- Add all roles from column1 first (top to bottom)
+      for i = 1, table.getn(column1) do
+        table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+      end
+      
+      -- Then add all roles from column2 (top to bottom)
+      for i = 1, table.getn(column2) do
+        table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
       end
       
       -- Track assigned players
-      local assignedPlayers = {}  -- playerName -> first roleIndex assigned
-      local roleAssignments = {}  -- roleIndex -> {player1, player2, ...}
+      local assignedPlayers = {}  -- playerName -> true (already assigned)
+      local roleAssignments = {}  -- roleIndex -> {slotIndex -> playerName}
       local assignmentCount = 0
       
       -- Process each role in order
       for _, roleData in ipairs(allRoles) do
         local role = roleData.role
         local roleIndex = roleData.roleIndex
-        local maxPlayers = role.slots or 1
+        local maxSlots = role.slots or 1
         
-        roleAssignments[roleIndex] = {}
+        if not roleAssignments[roleIndex] then
+          roleAssignments[roleIndex] = {}
+        end
         
-        -- Get available players for this role from defaultRoles
+        -- Get available players for this role based on defaultRoles
         local availablePlayers = {}
-        if role.defaultRoles and table.getn(role.defaultRoles) > 0 then
-          -- Get players matching this role's defaultRoles
-          for _, roleName in ipairs(role.defaultRoles) do
-            local rolePlayers = OGRH.GetRolePlayers(roleName)
-            if rolePlayers then
-              for _, playerName in ipairs(rolePlayers) do
-                -- Check if player is in raid and online
-                local inRaid = false
-                local isOnline = false
+        
+        -- Build list of current raid members
+        local raidMembers = {}
+        local numRaidMembers = GetNumRaidMembers()
+        if numRaidMembers > 0 then
+          for i = 1, numRaidMembers do
+            local name = GetRaidRosterInfo(i)
+            if name then
+              raidMembers[name] = true
+            end
+          end
+        end
+        
+        if role.defaultRoles then
+          -- Get all players from RolesUI who match the defaultRoles
+          if OGRH_SV.roles then
+            for playerName, playerRole in pairs(OGRH_SV.roles) do
+              -- Check if player is in the raid
+              if raidMembers[playerName] then
+                -- Check if player's role matches any enabled defaultRole
+                local matches = false
                 
-                for j = 1, GetNumRaidMembers() do
-                  local name, _, _, _, _, _, _, online = GetRaidRosterInfo(j)
-                  if name == playerName then
-                    inRaid = true
-                    isOnline = online
-                    break
-                  end
+                if playerRole == "TANKS" and role.defaultRoles.tanks then
+                  matches = true
+                elseif playerRole == "HEALERS" and role.defaultRoles.healers then
+                  matches = true
+                elseif playerRole == "MELEE" and role.defaultRoles.melee then
+                  matches = true
+                elseif playerRole == "RANGED" and role.defaultRoles.ranged then
+                  matches = true
                 end
                 
-                if inRaid and isOnline then
-                  table.insert(availablePlayers, playerName)
+                if matches then
+                  -- Check if player is already assigned (unless allowOtherRoles is true)
+                  if not assignedPlayers[playerName] or role.allowOtherRoles then
+                    table.insert(availablePlayers, playerName)
+                  end
                 end
               end
             end
           end
         end
         
-        -- Try to assign players from available players
-        local slotsAssigned = 0
+        -- Assign players to slots
+        local slotIndex = 1
         for i = 1, table.getn(availablePlayers) do
-          if slotsAssigned >= maxPlayers then
+          if slotIndex > maxSlots then
             break
           end
           
           local playerName = availablePlayers[i]
           
-          -- Check if player is already assigned
+          -- Check if we can assign this player
           local canAssign = true
-          if assignedPlayers[playerName] then
-            -- Player is already assigned to at least one role
-            -- They can only be reused if ALL roles they're assigned to have allowOtherRoles = true
+          if assignedPlayers[playerName] and not role.allowOtherRoles then
             canAssign = false
-            
-            local allRolesAllowReuse = true
-            -- Check all roles this player is currently assigned to
-            for checkRoleIndex, players in pairs(roleAssignments) do
-              for _, assignedPlayer in ipairs(players) do
-                if assignedPlayer == playerName then
-                  -- Found this player in a role, check if that role allows other roles
-                  local roleAllowsReuse = false
-                  for _, checkRoleData in ipairs(allRoles) do
-                    if checkRoleData.roleIndex == checkRoleIndex then
-                      if checkRoleData.role.allowOtherRoles then
-                        roleAllowsReuse = true
-                      end
-                      break
-                    end
-                  end
-                  
-                  if not roleAllowsReuse then
-                    -- This player is in a role that doesn't allow reuse
-                    allRolesAllowReuse = false
-                    break
-                  end
-                end
-              end
-              
-              if not allRolesAllowReuse then
-                break
-              end
-            end
-            
-            if allRolesAllowReuse then
-              canAssign = true
-            end
           end
           
           if canAssign then
-            -- Assign this player to the role
-            if not assignedPlayers[playerName] then
-              assignedPlayers[playerName] = roleIndex
-            end
-            table.insert(roleAssignments[roleIndex], playerName)
-            slotsAssigned = slotsAssigned + 1
+            roleAssignments[roleIndex][slotIndex] = playerName
+            assignedPlayers[playerName] = true
             assignmentCount = assignmentCount + 1
+            slotIndex = slotIndex + 1
           end
         end
       end
       
-      -- Store assignments (roleIndex -> {player1, player2, ...})
+      -- Store assignments
       if not OGRH_SV.encounterAssignments then
         OGRH_SV.encounterAssignments = {}
       end
@@ -890,6 +924,11 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
       end
       
       OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = roleAssignments
+      
+      -- Broadcast full sync
+      if OGRH.BroadcastFullSync then
+        OGRH.BroadcastFullSync(frame.selectedRaid, frame.selectedEncounter)
+      end
       
       -- Refresh the display
       if frame.RefreshRoleContainers then
@@ -930,6 +969,21 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         
         -- Check [Rx.P] tags (all players in role)
         roleNum = string.match(tagText, "^%[R(%d+)%.P%]$")
+        if roleNum then
+          local roleIndex = tonumber(roleNum)
+          -- Valid if role exists and has at least one assigned player
+          if assignments and assignments[roleIndex] then
+            for _, playerName in pairs(assignments[roleIndex]) do
+              if playerName then
+                return true
+              end
+            end
+          end
+          return false
+        end
+        
+        -- Check [Rx.PA] tags (all players with assignments)
+        roleNum = string.match(tagText, "^%[R(%d+)%.PA%]$")
         if roleNum then
           local roleIndex = tonumber(roleNum)
           -- Valid if role exists and has at least one assigned player
@@ -1235,6 +1289,66 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
           
           -- Join with space and reset code between each player
           local playerList = table.concat(playerNames, OGRH.COLOR.RESET .. " ")
+          -- Pass empty color and use the embedded colors
+          AddReplacement(tagStart, tagEnd, playerList, "", false)
+        else
+          -- No players - replace with empty string
+          AddReplacement(tagStart, tagEnd, "", "", false)
+        end
+        
+        pos = tagEnd + 1
+      end
+      
+      -- Find [Rx.PA] tags (All Players with Assignment Numbers)
+      pos = 1
+      while true do
+        local tagStart, tagEnd, roleNum = string.find(result, "%[R(%d+)%.PA%]", pos)
+        if not tagStart then break end
+        
+        local roleIndex = tonumber(roleNum)
+        
+        -- Build list of all players in this role with their assignment numbers
+        local allPlayers = {}
+        
+        if assignments and assignments[roleIndex] then
+          -- Iterate through all slots in this role
+          for slotIndex, playerName in pairs(assignments[roleIndex]) do
+            if playerName then
+              -- Get player's class for coloring
+              local playerClass = GetPlayerClass(playerName)
+              local color = OGRH.COLOR.ROLE
+              
+              if playerClass and OGRH.COLOR.CLASS[string.upper(playerClass)] then
+                color = OGRH.COLOR.CLASS[string.upper(playerClass)]
+              end
+              
+              -- Get assignment number for this player
+              local assignNum = ""
+              if assignmentNumbers and assignmentNumbers[roleIndex] and assignmentNumbers[roleIndex][slotIndex] then
+                local assignIndex = assignmentNumbers[roleIndex][slotIndex]
+                if assignIndex and assignIndex ~= 0 then
+                  assignNum = " (" .. assignIndex .. ")"
+                end
+              end
+              
+              -- Add player with color code and assignment number
+              table.insert(allPlayers, {index = slotIndex, text = color .. playerName .. assignNum})
+            end
+          end
+        end
+        
+        if table.getn(allPlayers) > 0 then
+          -- Sort by slot index to maintain assignment order
+          table.sort(allPlayers, function(a, b) return a.index < b.index end)
+          
+          -- Extract just the text
+          local playerTexts = {}
+          for _, player in ipairs(allPlayers) do
+            table.insert(playerTexts, player.text)
+          end
+          
+          -- Join with space and reset code between each player
+          local playerList = table.concat(playerTexts, OGRH.COLOR.RESET .. " ")
           -- Pass empty color and use the embedded colors
           AddReplacement(tagStart, tagEnd, playerList, "", false)
         else
@@ -2715,9 +2829,45 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
                 if targetPlayer then
                   -- Swap: put target player in source position
                   OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][frame.draggedFromRole][frame.draggedFromSlot] = targetPlayer
+                  
+                  -- Broadcast swap: update both positions
+                  if OGRH.BroadcastAssignmentUpdate then
+                    OGRH.BroadcastAssignmentUpdate(
+                      frame.selectedRaid,
+                      frame.selectedEncounter,
+                      targetRoleIndex,
+                      targetSlotIndex,
+                      frame.draggedPlayer
+                    )
+                    OGRH.BroadcastAssignmentUpdate(
+                      frame.selectedRaid,
+                      frame.selectedEncounter,
+                      frame.draggedFromRole,
+                      frame.draggedFromSlot,
+                      targetPlayer
+                    )
+                  end
                 else
                   -- Just move: clear source position
                   OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][frame.draggedFromRole][frame.draggedFromSlot] = nil
+                  
+                  -- Broadcast move: update target and clear source
+                  if OGRH.BroadcastAssignmentUpdate then
+                    OGRH.BroadcastAssignmentUpdate(
+                      frame.selectedRaid,
+                      frame.selectedEncounter,
+                      targetRoleIndex,
+                      targetSlotIndex,
+                      frame.draggedPlayer
+                    )
+                    OGRH.BroadcastAssignmentUpdate(
+                      frame.selectedRaid,
+                      frame.selectedEncounter,
+                      frame.draggedFromRole,
+                      frame.draggedFromSlot,
+                      nil
+                    )
+                  end
                 end
               end
             end
@@ -2750,6 +2900,17 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] and
                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][slotRoleIndex] then
                 OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][slotRoleIndex][slotSlotIndex] = nil
+                
+                -- Broadcast removal
+                if OGRH.BroadcastAssignmentUpdate then
+                  OGRH.BroadcastAssignmentUpdate(
+                    frame.selectedRaid,
+                    frame.selectedEncounter,
+                    slotRoleIndex,
+                    slotSlotIndex,
+                    nil
+                  )
+                end
                 
                 -- Refresh display
                 if frame.RefreshRoleContainers then
