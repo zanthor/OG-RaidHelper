@@ -203,9 +203,30 @@ markBtn:SetHeight(20)
 markBtn:SetPoint("LEFT", announceBtn, "RIGHT", 2, 0)
 markBtn:SetText("M")
 OGRH.StyleButton(markBtn)
+markBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 markBtn:SetScript("OnClick", function()
-  if OGRH.MarkPlayersFromMainUI then
-    OGRH.MarkPlayersFromMainUI()
+  local btn = arg1 or "LeftButton"
+  
+  if btn == "RightButton" then
+    -- Right-click: Clear all raid marks
+    local numRaidMembers = GetNumRaidMembers()
+    if numRaidMembers > 0 then
+      for i = 1, numRaidMembers do
+        SetRaidTarget("raid"..i, 0)
+      end
+      if OGRH and OGRH.Msg then
+        OGRH.Msg("Cleared all raid marks.")
+      end
+    else
+      if OGRH and OGRH.Msg then
+        OGRH.Msg("Not in a raid group.")
+      end
+    end
+  else
+    -- Left-click: Mark players from encounter
+    if OGRH.MarkPlayersFromMainUI then
+      OGRH.MarkPlayersFromMainUI()
+    end
   end
 end)
 encounterNav.markBtn = markBtn
