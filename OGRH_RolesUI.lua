@@ -311,6 +311,15 @@ local function CreateRolesFrame()
     -- Set initial button text
     UpdatePollButtonText()
     
+    -- Sync from RollFor button (must be created after UpdatePlayerLists and RefreshColumnDisplays are defined below)
+    local syncBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    syncBtn:SetWidth(95)
+    syncBtn:SetHeight(24)
+    syncBtn:SetPoint("LEFT", pollBtn, "RIGHT", 5, 0)
+    syncBtn:SetText("Sync RollFor")
+    OGRH.StyleButton(syncBtn)
+    frame.syncBtn = syncBtn  -- Store reference for later setup
+    
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     closeBtn:SetWidth(80)
     closeBtn:SetHeight(24)
@@ -430,13 +439,34 @@ local function CreateRolesFrame()
                     
                         local roleIndex = 4  -- Default to Ranged
                         
-                        if OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
+                        -- Priority 1: Try to get role from RollFor soft-res data
+                        local rollForRole = nil
+                        if OGRH.Invites and OGRH.Invites.GetSoftResPlayers then
+                            local softResPlayers = OGRH.Invites.GetSoftResPlayers()
+                            for _, playerData in ipairs(softResPlayers) do
+                                if playerData.name == name then
+                                    rollForRole = OGRH.Invites.MapRollForRoleToOGRH(playerData.role)
+                                    break
+                                end
+                            end
+                        end
+                        
+                        if rollForRole then
+                            -- Use RollFor role
+                            if rollForRole == "TANKS" then roleIndex = 1
+                            elseif rollForRole == "HEALERS" then roleIndex = 2
+                            elseif rollForRole == "MELEE" then roleIndex = 3
+                            elseif rollForRole == "RANGED" then roleIndex = 4
+                            end
+                        elseif OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
+                            -- Priority 2: Use manually saved role assignment
                             local savedRole = OGRH_SV.roles[name]
                             if savedRole == "TANKS" then roleIndex = 1
                             elseif savedRole == "HEALERS" then roleIndex = 2
                             elseif savedRole == "MELEE" then roleIndex = 3
                             end
                         else
+                            -- Priority 3: Fall back to class defaults
                             if class == "WARRIOR" then
                                 roleIndex = 1  -- Tanks
                             elseif class == "PRIEST" or (class == "PALADIN") or (class == "DRUID") then
@@ -469,6 +499,21 @@ local function CreateRolesFrame()
     frame:SetScript("OnEvent", function()
         UpdatePlayerLists()
     end)
+    
+    -- Setup Sync RollFor button click handler (now that functions are defined)
+    if frame.syncBtn then
+        frame.syncBtn:SetScript("OnClick", function()
+            -- Clear all role assignments first
+            if OGRH_SV and OGRH_SV.roles then
+                OGRH_SV.roles = {}
+            end
+            
+            -- Force update with RollFor data taking priority
+            UpdatePlayerLists()
+            
+            OGRH.Msg("Synced roles from RollFor soft-res data.")
+        end)
+    end
     
     -- Make ROLE_COLUMNS accessible to child frames
     frame.ROLE_COLUMNS = ROLE_COLUMNS
