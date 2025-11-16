@@ -333,6 +333,20 @@ end
 
 -- Show Invites Window
 function OGRH.Invites.ShowWindow()
+  -- Close other windows
+  if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
+    getglobal("OGRH_BWLEncounterFrame"):Hide()
+  end
+  if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
+    getglobal("OGRH_RolesFrame"):Hide()
+  end
+  if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
+    getglobal("OGRH_ShareFrame"):Hide()
+  end
+  if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
+    getglobal("OGRH_EncounterSetupFrame"):Hide()
+  end
+  
   if OGRH_InvitesFrame then
     OGRH_InvitesFrame:Show()
     OGRH.Invites.RefreshPlayerList()

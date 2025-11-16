@@ -182,6 +182,9 @@ btnRoles:SetScript("OnClick", function()
   if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame:IsVisible() then
     OGRH_EncounterSetupFrame:Hide()
   end
+  if OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
+    OGRH_InvitesFrame:Hide()
+  end
   -- Close encounters menu if it's open
   if OGRH_EncountersMenu and OGRH_EncountersMenu:IsVisible() then
     OGRH_EncountersMenu:Hide()
@@ -312,6 +315,11 @@ encounterBtn:SetScript("OnClick", function()
     -- Close Encounter Setup if it's open
     if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
       getglobal("OGRH_EncounterSetupFrame"):Hide()
+    end
+    
+    -- Close Invites if it's open
+    if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
+      getglobal("OGRH_InvitesFrame"):Hide()
     end
     
     if OGRH.OpenEncounterPlanning then

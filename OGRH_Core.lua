@@ -2234,6 +2234,9 @@ local function CreateMinimapButton()
         if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
           getglobal("OGRH_EncounterSetupFrame"):Hide()
         end
+        if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
+          getglobal("OGRH_InvitesFrame"):Hide()
+        end
         
         if OGRH.ShowShareWindow then
           OGRH.ShowShareWindow()
@@ -2253,6 +2256,9 @@ local function CreateMinimapButton()
         end
         if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
           getglobal("OGRH_ShareFrame"):Hide()
+        end
+        if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
+          getglobal("OGRH_InvitesFrame"):Hide()
         end
         
         if OGRH.ShowEncounterSetup then
