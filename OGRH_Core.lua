@@ -2119,7 +2119,7 @@ local function CreateMinimapButton()
   UpdatePosition()
   
   -- Create right-click menu
-  local function ShowMinimapMenu()
+  local function ShowMinimapMenu(sourceButton)
     if not OGRH_MinimapMenu then
       local menu = CreateFrame("Frame", "OGRH_MinimapMenu", UIParent)
       menu:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -2134,7 +2134,7 @@ local function CreateMinimapButton()
       menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
       menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
       menu:SetWidth(160)
-      menu:SetHeight(90)
+      menu:SetHeight(108)
       menu:Hide()
       
       -- Close menu when clicking outside
@@ -2260,6 +2260,31 @@ local function CreateMinimapButton()
         end
       end, menu, yOffset)
       
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Invites item
+      local invitesItem = CreateMenuItem("Invites", function()
+        -- Close other windows
+        if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
+          getglobal("OGRH_BWLEncounterFrame"):Hide()
+        end
+        if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
+          getglobal("OGRH_RolesFrame"):Hide()
+        end
+        if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
+          getglobal("OGRH_ShareFrame"):Hide()
+        end
+        if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
+          getglobal("OGRH_EncounterSetupFrame"):Hide()
+        end
+        
+        if OGRH.Invites and OGRH.Invites.ShowWindow then
+          OGRH.Invites.ShowWindow()
+        else
+          OGRH.Msg("Invites module not loaded.")
+        end
+      end, menu, yOffset)
+      
       menu.toggleItem = toggleItem
       
       -- Update toggle item text based on window state
@@ -2283,15 +2308,18 @@ local function CreateMinimapButton()
     -- Update toggle button text
     menu.UpdateToggleText()
     
-    -- Position menu near minimap button with boundary checking
+    -- Position menu near source button with boundary checking
     menu:ClearAllPoints()
+    
+    -- Use provided button or fall back to minimap button
+    local targetButton = sourceButton or button
     
     -- Get screen dimensions
     local screenWidth = UIParent:GetWidth()
     local screenHeight = UIParent:GetHeight()
     
     -- Get button position
-    local btnX, btnY = button:GetCenter()
+    local btnX, btnY = targetButton:GetCenter()
     local menuWidth = menu:GetWidth()
     local menuHeight = menu:GetHeight()
     
@@ -2321,7 +2349,7 @@ local function CreateMinimapButton()
       yOffset = 5
     end
     
-    menu:SetPoint(anchorPoint, button, relativePoint, xOffset, yOffset)
+    menu:SetPoint(anchorPoint, targetButton, relativePoint, xOffset, yOffset)
     menu:Show()
   end
   
@@ -2378,6 +2406,9 @@ local function CreateMinimapButton()
   end)
   
   OGRH.minimapButton = button
+  
+  -- Expose menu function globally for RH button
+  OGRH.ShowMinimapMenu = ShowMinimapMenu
 end
 
 -- Create minimap button on load

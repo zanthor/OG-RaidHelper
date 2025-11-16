@@ -1,0 +1,893 @@
+-- OGRH_Invites.lua
+-- Raid Invites Module - Manage invites for players from RollFor soft-res data
+if not OGRH then
+  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Error: OGRH_Invites requires OGRH_Core to be loaded first!|r")
+  return
+end
+
+OGRH.Invites = OGRH.Invites or {
+  playerStatuses = {}, -- Track invite status per player
+  lastUpdate = 0,
+  updateInterval = 2 -- Update every 2 seconds
+}
+
+-- Invite status constants
+local STATUS = {
+  NOT_IN_RAID = "not_in_raid",
+  IN_RAID = "in_raid",
+  INVITED = "invited",
+  DECLINED = "declined",
+  OFFLINE = "offline",
+  IN_OTHER_GROUP = "in_other_group"
+}
+
+-- Initialize saved variables for invite tracking
+function OGRH.Invites.EnsureSV()
+  OGRH.EnsureSV()
+  if not OGRH_SV.invites then
+    OGRH_SV.invites = {
+      declinedPlayers = {}, -- Track who declined invites this session
+      history = {} -- Track invite history with timestamps
+    }
+  end
+end
+
+-- Get player list from RollFor soft-res data
+function OGRH.Invites.GetSoftResPlayers()
+  local players = {}
+  
+  -- Check if RollFor addon is loaded
+  if not RollFor or not RollForCharDb then
+    return players
+  end
+  
+  -- Check if we have softres data
+  if not RollForCharDb.softres then
+    return players
+  end
+  
+  -- The data is stored as an encoded string in RollForCharDb.softres.data
+  -- We need to decode it using RollFor's decode function
+  local encodedData = RollForCharDb.softres.data
+  if not encodedData or type(encodedData) ~= "string" then
+    return players
+  end
+  
+  -- Use RollFor's SoftRes.decode function to decode the data
+  if not RollFor.SoftRes or type(RollFor.SoftRes.decode) ~= "function" then
+    return players
+  end
+  
+  local decodedData = RollFor.SoftRes.decode(encodedData)
+  if not decodedData or type(decodedData) ~= "table" then
+    return players
+  end
+  
+  -- Now transform the data using SoftResDataTransformer
+  if not RollFor.SoftResDataTransformer or type(RollFor.SoftResDataTransformer.transform) ~= "function" then
+    return players
+  end
+  
+  local softresData, hardresData = RollFor.SoftResDataTransformer.transform(decodedData)
+  if not softresData or type(softresData) ~= "table" then
+    return players
+  end
+  
+  -- Build player map from soft-res data
+  -- softresData structure: { [itemId] = { rollers = { {name, role, sr_plus, rolls} }, quality } }
+  local playerMap = {}
+  
+  for itemId, itemData in pairs(softresData) do
+    if type(itemData) == "table" and itemData.rollers then
+      for _, roller in ipairs(itemData.rollers) do
+        if roller and roller.name then
+          if not playerMap[roller.name] then
+            playerMap[roller.name] = {
+              name = roller.name,
+              role = roller.role or "Unknown",
+              srPlus = roller.sr_plus or 0,
+              itemCount = 0
+            }
+          end
+          -- Increment item count
+          playerMap[roller.name].itemCount = playerMap[roller.name].itemCount + (roller.rolls or 1)
+        end
+      end
+    end
+  end
+  
+  -- Convert map to array
+  for _, playerData in pairs(playerMap) do
+    table.insert(players, playerData)
+  end
+  
+  -- Sort by name
+  if table.getn(players) > 0 then
+    table.sort(players, function(a, b) return a.name < b.name end)
+  end
+  
+  return players
+end
+
+-- Check if player is in current raid
+function OGRH.Invites.IsPlayerInRaid(playerName)
+  if not playerName then return false end
+  
+  local numRaid = GetNumRaidMembers() or 0
+  for i = 1, numRaid do
+    local name = GetRaidRosterInfo(i)
+    if name == playerName then
+      return true
+    end
+  end
+  
+  return false
+end
+
+-- Get player online status and group status
+function OGRH.Invites.GetPlayerStatus(playerName)
+  OGRH.Invites.EnsureSV()
+  
+  -- Check if in our raid first
+  if OGRH.Invites.IsPlayerInRaid(playerName) then
+    return STATUS.IN_RAID, true, nil
+  end
+  
+  -- Check if we've invited them this session
+  if OGRH.Invites.playerStatuses[playerName] == STATUS.INVITED then
+    return STATUS.INVITED, false, nil
+  end
+  
+  -- Check if they declined
+  if OGRH_SV.invites.declinedPlayers[playerName] then
+    return STATUS.DECLINED, false, nil
+  end
+  
+  -- Try to check if player is online via guild roster
+  local numGuild = GetNumGuildMembers(true)
+  for i = 1, numGuild do
+    local name, _, _, _, _, _, _, _, online, _, class = GetGuildRosterInfo(i)
+    if name == playerName then
+      if not online then
+        return STATUS.OFFLINE, false, class
+      end
+      -- Online but not in our raid
+      return STATUS.NOT_IN_RAID, true, class
+    end
+  end
+  
+  -- Can't determine status (not in guild or we can't see them)
+  return STATUS.NOT_IN_RAID, false, nil
+end
+
+-- Send invite to player
+function OGRH.Invites.InvitePlayer(playerName)
+  if not playerName or playerName == "" then return end
+  
+  -- Check if we're in a raid and have permission
+  local numRaid = GetNumRaidMembers()
+  if numRaid > 0 then
+    -- In a raid, check if we're leader or assistant
+    if not IsRaidLeader() and not IsRaidOfficer() then
+      OGRH.Msg("You must be raid leader or assistant to invite players.")
+      return false
+    end
+  else
+    -- Not in raid yet, can't invite
+    OGRH.Msg("You must be in a raid to invite players.")
+    return false
+  end
+  
+  -- Send the invite
+  InviteByName(playerName)
+  
+  -- Log the invite in history
+  OGRH.Invites.EnsureSV()
+  table.insert(OGRH_SV.invites.history, {
+    player = playerName,
+    timestamp = time(),
+    action = "invited"
+  })
+  
+  OGRH.Msg("Invited " .. playerName .. " to raid.")
+  return true
+end
+
+-- Send whisper to player
+function OGRH.Invites.WhisperPlayer(playerName, message)
+  if not playerName or playerName == "" then return end
+  
+  local msg = message or "Whisper me invite when ready"
+  SendChatMessage(msg, "WHISPER", nil, playerName)
+  
+  OGRH.Msg("Whispered " .. playerName .. ".")
+end
+
+-- Clear declined status for a player
+function OGRH.Invites.ClearDeclined(playerName)
+  OGRH.Invites.EnsureSV()
+  OGRH_SV.invites.declinedPlayers[playerName] = nil
+  OGRH.Invites.playerStatuses[playerName] = nil
+end
+
+-- Clear all invite tracking
+function OGRH.Invites.ClearAllTracking()
+  OGRH.Invites.EnsureSV()
+  OGRH_SV.invites.declinedPlayers = {}
+  OGRH.Invites.playerStatuses = {}
+  OGRH.Msg("Cleared all invite tracking.")
+end
+
+-- Update player class from raid roster
+function OGRH.Invites.UpdatePlayerClass(playerData)
+  if not playerData or not playerData.name then return playerData end
+  
+  -- Use OGRH's existing class lookup system
+  local class = OGRH.GetPlayerClass(playerData.name)
+  if class then
+    playerData.class = class
+    return playerData
+  end
+  
+  -- Fallback: Check raid roster for class
+  local numRaid = GetNumRaidMembers() or 0
+  for i = 1, numRaid do
+    local name, _, _, _, raidClass = GetRaidRosterInfo(i)
+    if name == playerData.name and raidClass then
+      playerData.class = string.upper(raidClass)
+      return playerData
+    end
+  end
+  
+  -- Check guild roster
+  local numGuild = GetNumGuildMembers(true)
+  for i = 1, numGuild do
+    local name, _, _, _, _, _, _, _, _, _, guildClass = GetGuildRosterInfo(i)
+    if name == playerData.name and guildClass then
+      playerData.class = string.upper(guildClass)
+      return playerData
+    end
+  end
+  
+  return playerData
+end
+
+-- Map RollFor role to OGRH RolesUI bucket
+function OGRH.Invites.MapRollForRoleToOGRH(rollForRole)
+  -- RollFor format: "ClassSpec" (e.g., "DruidBalance", "HunterMarksmanship")
+  -- Map to OGRH buckets: TANKS, HEALERS, MELEE, RANGED
+  
+  if not rollForRole or rollForRole == "" then
+    return nil
+  end
+  
+  local roleMap = {
+    -- Tanks
+    DruidBear = "TANKS",
+    PaladinProtection = "TANKS",
+    ShamanTank = "TANKS",
+    WarriorProtection = "TANKS",
+    
+    -- Healers
+    DruidRestoration = "HEALERS",
+    PaladinHoly = "HEALERS",
+    PriestHoly = "HEALERS",
+    PriestDiscipline = "HEALERS",
+    ShamanRestoration = "HEALERS",
+    
+    -- Melee
+    DruidFeral = "MELEE",
+    HunterSurvival = "MELEE",
+    PaladinRetribution = "MELEE",
+    RogueDaggers = "MELEE",
+    RogueSwords = "MELEE",
+    ShamanEnhancement = "MELEE",
+    WarriorArms = "MELEE",
+    WarriorFury = "MELEE",
+    
+    -- Ranged
+    DruidBalance = "RANGED",
+    HunterMarksmanship = "RANGED",
+    HunterBeastMastery = "RANGED",
+    MageArcane = "RANGED",
+    MageFire = "RANGED",
+    MageFrost = "RANGED",
+    PriestShadow = "RANGED",
+    WarlockAffliction = "RANGED",
+    WarlockDemonology = "RANGED",
+    WarlockDestruction = "RANGED",
+    ShamanElemental = "RANGED"
+  }
+  
+  return roleMap[rollForRole]
+end
+
+-- Sync RollFor data to OGRH RolesUI
+function OGRH.Invites.SyncToRolesUI()
+  local players = OGRH.Invites.GetSoftResPlayers()
+  
+  if table.getn(players) == 0 then
+    OGRH.Msg("No soft-res players to sync.")
+    return
+  end
+  
+  local syncCount = 0
+  
+  for _, playerData in ipairs(players) do
+    local ogrh_role = OGRH.Invites.MapRollForRoleToOGRH(playerData.role)
+    
+    if ogrh_role and playerData.name then
+      -- Use OGRH's AddTo function to assign role
+      OGRH.AddTo(ogrh_role, playerData.name)
+      syncCount = syncCount + 1
+    end
+  end
+  
+  OGRH.Msg("Synced " .. syncCount .. " players from RollFor to Roles.")
+  
+  -- Refresh RolesUI if it's open
+  if OGRH_RolesFrame and OGRH_RolesFrame:IsVisible() and OGRH.RenderRoles then
+    OGRH.RenderRoles()
+  end
+end
+
+-- Show Invites Window
+function OGRH.Invites.ShowWindow()
+  if OGRH_InvitesFrame then
+    OGRH_InvitesFrame:Show()
+    OGRH.Invites.RefreshPlayerList()
+    return
+  end
+  
+  -- Create main frame
+  local frame = CreateFrame("Frame", "OGRH_InvitesFrame", UIParent)
+  frame:SetWidth(520)
+  frame:SetHeight(500)
+  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  frame:SetFrameStrata("DIALOG")
+  frame:EnableMouse(true)
+  frame:SetMovable(true)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+  frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+  
+  -- Backdrop
+  frame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  frame:SetBackdropColor(0, 0, 0, 0.85)
+  
+  -- Title
+  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -15)
+  title:SetText("Raid Invites")
+  
+  -- Close button
+  local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  closeBtn:SetWidth(60)
+  closeBtn:SetHeight(24)
+  closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+  closeBtn:SetText("Close")
+  OGRH.StyleButton(closeBtn)
+  closeBtn:SetScript("OnClick", function() frame:Hide() end)
+  
+  -- Info text
+  local infoText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  infoText:SetPoint("TOPLEFT", 20, -45)
+  infoText:SetPoint("TOPRIGHT", -20, -45)
+  infoText:SetJustifyH("LEFT")
+  infoText:SetText("Players from RollFor soft-res data not currently in the raid:")
+  frame.infoText = infoText
+  
+  -- Column headers
+  local headerFrame = CreateFrame("Frame", nil, frame)
+  headerFrame:SetPoint("TOPLEFT", 20, -70)
+  headerFrame:SetPoint("TOPRIGHT", -20, -70)
+  headerFrame:SetHeight(20)
+  
+  local nameHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  nameHeader:SetPoint("LEFT", 5, 0)
+  nameHeader:SetText("Name")
+  
+  local roleHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  roleHeader:SetPoint("LEFT", 140, 0)
+  roleHeader:SetText("Role")
+  
+  local statusHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  statusHeader:SetPoint("LEFT", 230, 0)
+  statusHeader:SetText("Status")
+  
+  local actionsHeader = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  actionsHeader:SetPoint("LEFT", 320, 0)
+  actionsHeader:SetText("Actions")
+  
+  -- List backdrop
+  local listBackdrop = CreateFrame("Frame", nil, frame)
+  listBackdrop:SetPoint("TOPLEFT", 17, -95)
+  listBackdrop:SetPoint("BOTTOMRIGHT", -17, 50)
+  listBackdrop:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  listBackdrop:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+  
+  -- Scroll frame
+  local scrollFrame = CreateFrame("ScrollFrame", nil, listBackdrop)
+  scrollFrame:SetPoint("TOPLEFT", listBackdrop, "TOPLEFT", 5, -5)
+  scrollFrame:SetPoint("BOTTOMRIGHT", listBackdrop, "BOTTOMRIGHT", -22, 5)
+  
+  -- Scroll child
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  scrollChild:SetWidth(540)
+  scrollChild:SetHeight(1)
+  scrollFrame:SetScrollChild(scrollChild)
+  frame.scrollChild = scrollChild
+  frame.scrollFrame = scrollFrame
+  
+  -- Create scrollbar
+  local scrollBar = CreateFrame("Slider", nil, scrollFrame)
+  scrollBar:SetPoint("TOPRIGHT", listBackdrop, "TOPRIGHT", -5, -16)
+  scrollBar:SetPoint("BOTTOMRIGHT", listBackdrop, "BOTTOMRIGHT", -5, 16)
+  scrollBar:SetWidth(16)
+  scrollBar:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 8,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollBar:SetOrientation("VERTICAL")
+  scrollBar:SetMinMaxValues(0, 1)
+  scrollBar:SetValue(0)
+  scrollBar:SetValueStep(24)
+  scrollBar:Hide()
+  frame.scrollBar = scrollBar
+  
+  scrollBar:SetScript("OnValueChanged", function()
+    scrollFrame:SetVerticalScroll(this:GetValue())
+  end)
+  
+  scrollFrame:EnableMouseWheel(true)
+  scrollFrame:SetScript("OnMouseWheel", function()
+    if not scrollBar:IsShown() then return end
+    
+    local delta = arg1
+    local current = scrollBar:GetValue()
+    local minVal, maxVal = scrollBar:GetMinMaxValues()
+    
+    if delta > 0 then
+      scrollBar:SetValue(math.max(minVal, current - 24))
+    else
+      scrollBar:SetValue(math.min(maxVal, current + 24))
+    end
+  end)
+  
+  -- Bottom action buttons
+  local inviteAllBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  inviteAllBtn:SetWidth(120)
+  inviteAllBtn:SetHeight(28)
+  inviteAllBtn:SetPoint("BOTTOMLEFT", 20, 15)
+  inviteAllBtn:SetText("Invite All Online")
+  OGRH.StyleButton(inviteAllBtn)
+  inviteAllBtn:SetScript("OnClick", function()
+    OGRH.Invites.InviteAllOnline()
+  end)
+  
+  -- Refresh button (bottom right)
+  local refreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  refreshBtn:SetWidth(70)
+  refreshBtn:SetHeight(28)
+  refreshBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 15)
+  refreshBtn:SetText("Refresh")
+  OGRH.StyleButton(refreshBtn)
+  refreshBtn:SetScript("OnClick", function()
+    OGRH.Invites.RefreshPlayerList()
+    OGRH.Msg("Refreshed player list.")
+  end)
+  
+  -- Clear Status button (bottom right, left of Refresh)
+  local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  clearBtn:SetWidth(100)
+  clearBtn:SetHeight(28)
+  clearBtn:SetPoint("RIGHT", refreshBtn, "LEFT", -5, 0)
+  clearBtn:SetText("Clear Status")
+  OGRH.StyleButton(clearBtn)
+  clearBtn:SetScript("OnClick", function()
+    OGRH.Invites.ClearAllTracking()
+    OGRH.Invites.RefreshPlayerList()
+  end)
+  
+  local statsText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  statsText:SetPoint("BOTTOM", 0, 25)
+  statsText:SetJustifyH("CENTER")
+  statsText:SetText("0 players not in raid")
+  frame.statsText = statsText
+  
+  -- Auto-update timer
+  frame:SetScript("OnUpdate", function()
+    if not frame:IsVisible() then return end
+    
+    local now = GetTime()
+    if now - OGRH.Invites.lastUpdate >= OGRH.Invites.updateInterval then
+      OGRH.Invites.lastUpdate = now
+      OGRH.Invites.RefreshPlayerList()
+    end
+  end)
+  
+  -- Register for whisper events
+  frame:RegisterEvent("CHAT_MSG_WHISPER")
+  frame:SetScript("OnEvent", function()
+    if event == "CHAT_MSG_WHISPER" then
+      local msg, sender = arg1, arg2
+      -- Check if sender is already in the raid
+      if OGRH.Invites.IsPlayerInRaid(sender) then
+        return
+      end
+      -- Check if sender is in our soft-res list
+      local players = OGRH.Invites.GetSoftResPlayers()
+      for _, playerData in ipairs(players) do
+        if playerData.name == sender then
+          -- Auto-invite them
+          OGRH.Invites.InvitePlayer(sender)
+          OGRH.Msg("Auto-inviting " .. sender .. " (whispered for invite)")
+          break
+        end
+      end
+    end
+  end)
+  
+  frame:Show()
+  OGRH.Invites.RefreshPlayerList()
+end
+
+-- Refresh the player list
+function OGRH.Invites.RefreshPlayerList()
+  if not OGRH_InvitesFrame then return end
+  
+  local scrollChild = OGRH_InvitesFrame.scrollChild
+  
+  -- Clear existing rows
+  if scrollChild.rows then
+    for _, row in ipairs(scrollChild.rows) do
+      row:Hide()
+      row:SetParent(nil)
+    end
+  end
+  scrollChild.rows = {}
+  
+  -- Get soft-res players
+  local allPlayers = OGRH.Invites.GetSoftResPlayers()
+  
+  -- Filter to only those not in raid
+  local playersNotInRaid = {}
+  for _, playerData in ipairs(allPlayers) do
+    if not OGRH.Invites.IsPlayerInRaid(playerData.name) then
+      -- Update class information first
+      playerData = OGRH.Invites.UpdatePlayerClass(playerData)
+      
+      -- Get current status (note: GetPlayerStatus returns class as 3rd param but we already looked it up above)
+      playerData.status, playerData.online = OGRH.Invites.GetPlayerStatus(playerData.name)
+      
+      table.insert(playersNotInRaid, playerData)
+    end
+  end
+  
+  -- Update stats text
+  local totalCount = table.getn(allPlayers)
+  local notInRaidCount = table.getn(playersNotInRaid)
+  local inRaidCount = totalCount - notInRaidCount
+  
+  -- Check if RollFor is loaded but not initialized yet
+  if totalCount == 0 then
+    if not RollFor then
+      OGRH_InvitesFrame.infoText:SetText("RollFor addon not detected. Please install and load RollFor.")
+    elseif not RollFor.unfiltered_softres and not RollFor.softres then
+      OGRH_InvitesFrame.infoText:SetText("RollFor is loading... please wait a moment and refresh.")
+    else
+      OGRH_InvitesFrame.infoText:SetText("No soft-res data found. Import soft-res in RollFor first (/sr).")
+    end
+    OGRH_InvitesFrame.statsText:SetText("0 players")
+    scrollChild:SetHeight(1)
+    OGRH_InvitesFrame.scrollBar:Hide()
+    return
+  end
+  
+  OGRH_InvitesFrame.statsText:SetText(
+    notInRaidCount .. " players not in raid\n(" .. inRaidCount .. " already in raid)"
+  )
+  
+  if notInRaidCount == 0 then
+    OGRH_InvitesFrame.infoText:SetText("All soft-res players are in the raid!")
+    scrollChild:SetHeight(1)
+    OGRH_InvitesFrame.scrollBar:Hide()
+    return
+  else
+    OGRH_InvitesFrame.infoText:SetText("Players from RollFor soft-res data not currently in the raid:")
+  end
+  
+  -- Create rows
+  local yOffset = -5
+  local rowHeight = 24
+  local rowSpacing = 2
+  
+  for i, playerData in ipairs(playersNotInRaid) do
+    local row = CreateFrame("Frame", nil, scrollChild)
+    row:SetWidth(540)
+    row:SetHeight(rowHeight)
+    row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
+    
+    -- Background
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    -- Color based on status
+    if playerData.status == STATUS.IN_RAID then
+      bg:SetVertexColor(0.1, 0.3, 0.1, 0.5)
+    elseif playerData.status == STATUS.OFFLINE then
+      bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+    elseif playerData.status == STATUS.DECLINED then
+      bg:SetVertexColor(0.3, 0.1, 0.1, 0.5)
+    elseif playerData.status == STATUS.INVITED then
+      bg:SetVertexColor(0.2, 0.2, 0.3, 0.5)
+    else
+      bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+    end
+    
+    -- Player name (colored by class if available)
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    nameText:SetPoint("LEFT", 5, 0)
+    nameText:SetWidth(130)
+    nameText:SetJustifyH("LEFT")
+    
+    -- Use OGRH.ColorName which handles class coloring
+    if playerData.class then
+      -- Store in nameClass for ColorName to work
+      OGRH.Roles.nameClass[playerData.name] = playerData.class
+      nameText:SetText(OGRH.ColorName(playerData.name))
+    else
+      -- No class info, just show name in white
+      nameText:SetText(playerData.name)
+    end
+    
+    -- Role (show OGRH bucket instead of RollFor spec)
+    local roleText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    roleText:SetPoint("LEFT", 140, 0)
+    roleText:SetWidth(115)
+    roleText:SetJustifyH("LEFT")
+    local ogrh_role = OGRH.Invites.MapRollForRoleToOGRH(playerData.role)
+    local displayRole = ogrh_role or playerData.role or "Unknown"
+    -- Format for display: TANKS -> Tank, HEALERS -> Healer, MELEE -> Melee, RANGED -> Ranged
+    if displayRole == "TANKS" then
+      displayRole = "Tank"
+    elseif displayRole == "HEALERS" then
+      displayRole = "Healer"
+    elseif displayRole == "MELEE" then
+      displayRole = "Melee"
+    elseif displayRole == "RANGED" then
+      displayRole = "Ranged"
+    end
+    roleText:SetText(displayRole)
+    
+    -- Status
+    local statusText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    statusText:SetPoint("LEFT", 230, 0)
+    statusText:SetWidth(100)
+    statusText:SetJustifyH("LEFT")
+    if playerData.status == STATUS.OFFLINE then
+      statusText:SetText("|cff888888Offline|r")
+    elseif playerData.status == STATUS.INVITED then
+      statusText:SetText("|cff8888ffInvited|r")
+    elseif playerData.status == STATUS.DECLINED then
+      statusText:SetText("|cffff8888Declined|r")
+    elseif playerData.online then
+      statusText:SetText("|cff88ff88Online|r")
+    else
+      statusText:SetText("|cffccccccUnknown|r")
+    end
+    
+    -- Action buttons
+    -- Invite button
+    local inviteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    inviteBtn:SetWidth(50)
+    inviteBtn:SetHeight(20)
+    inviteBtn:SetPoint("LEFT", 320, 0)
+    inviteBtn:SetText("Invite")
+    OGRH.StyleButton(inviteBtn)
+    local playerName = playerData.name
+    inviteBtn:SetScript("OnClick", function()
+      OGRH.Invites.InvitePlayer(playerName)
+    end)
+    -- Disable only if offline
+    if playerData and playerData.status and playerData.status == STATUS.OFFLINE then
+      inviteBtn:Disable()
+    end
+    
+    -- Whisper button
+    local whisperBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    whisperBtn:SetWidth(50)
+    whisperBtn:SetHeight(20)
+    whisperBtn:SetPoint("LEFT", inviteBtn, "RIGHT", 2, 0)
+    whisperBtn:SetText("Msg")
+    OGRH.StyleButton(whisperBtn)
+    local playerName = playerData.name
+    whisperBtn:SetScript("OnClick", function()
+      OGRH.Invites.WhisperPlayer(playerName)
+    end)
+    -- Disable if offline
+    if playerData and playerData.status and playerData.status == STATUS.OFFLINE then
+      whisperBtn:Disable()
+    end
+    
+    table.insert(scrollChild.rows, row)
+    yOffset = yOffset - rowHeight - rowSpacing
+  end
+  
+  -- Update scroll child height
+  local contentHeight = math.abs(yOffset) + 5
+  scrollChild:SetHeight(contentHeight)
+  
+  -- Update scrollbar
+  local scrollFrame = OGRH_InvitesFrame.scrollFrame
+  local scrollBar = OGRH_InvitesFrame.scrollBar
+  local scrollFrameHeight = scrollFrame:GetHeight()
+  
+  if contentHeight > scrollFrameHeight then
+    scrollBar:Show()
+    scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+  else
+    scrollBar:Hide()
+    scrollFrame:SetVerticalScroll(0)
+  end
+end
+
+-- Invite all online players
+function OGRH.Invites.InviteAllOnline()
+  local players = OGRH.Invites.GetSoftResPlayers()
+  local inviteCount = 0
+  
+  for _, playerData in ipairs(players) do
+    if not OGRH.Invites.IsPlayerInRaid(playerData.name) then
+      local status, online = OGRH.Invites.GetPlayerStatus(playerData.name)
+      if online and status ~= STATUS.INVITED and status ~= STATUS.DECLINED then
+        OGRH.Invites.InvitePlayer(playerData.name)
+        inviteCount = inviteCount + 1
+      end
+    end
+  end
+  
+  if inviteCount > 0 then
+    OGRH.Msg("Sent invites to " .. inviteCount .. " online players.")
+    OGRH.Invites.RefreshPlayerList()
+  else
+    OGRH.Msg("No online players to invite.")
+  end
+end
+
+-- Show whisper dialog
+function OGRH.Invites.ShowWhisperDialog(playerName)
+  if OGRH_WhisperDialog then
+    OGRH_WhisperDialog.targetPlayer = playerName
+    OGRH_WhisperDialog.titleText:SetText("Whisper " .. playerName)
+    OGRH_WhisperDialog.messageInput:SetText("")
+    OGRH_WhisperDialog:Show()
+    OGRH_WhisperDialog.messageInput:SetFocus()
+    return
+  end
+  
+  -- Create dialog
+  local dialog = CreateFrame("Frame", "OGRH_WhisperDialog", UIParent)
+  dialog:SetWidth(400)
+  dialog:SetHeight(200)
+  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+  dialog:EnableMouse(true)
+  dialog:SetMovable(true)
+  dialog:RegisterForDrag("LeftButton")
+  dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
+  dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
+  
+  dialog.targetPlayer = playerName
+  
+  -- Backdrop
+  dialog:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  dialog:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Title
+  local titleText = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  titleText:SetPoint("TOP", 0, -15)
+  titleText:SetText("Whisper " .. playerName)
+  dialog.titleText = titleText
+  
+  -- Message label
+  local msgLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  msgLabel:SetPoint("TOPLEFT", 20, -50)
+  msgLabel:SetText("Message:")
+  
+  -- Message input (multiline)
+  local msgBackdrop = CreateFrame("Frame", nil, dialog)
+  msgBackdrop:SetPoint("TOPLEFT", 20, -75)
+  msgBackdrop:SetPoint("TOPRIGHT", -20, -75)
+  msgBackdrop:SetHeight(80)
+  msgBackdrop:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  msgBackdrop:SetBackdropColor(0, 0, 0, 0.8)
+  
+  local messageInput = CreateFrame("EditBox", nil, msgBackdrop)
+  messageInput:SetPoint("TOPLEFT", 8, -8)
+  messageInput:SetPoint("BOTTOMRIGHT", -8, 8)
+  messageInput:SetMultiLine(true)
+  messageInput:SetAutoFocus(true)
+  messageInput:SetFontObject(ChatFontNormal)
+  messageInput:SetText("Hey! We have a raid spot for you. Are you available?")
+  messageInput:SetScript("OnEscapePressed", function()
+    dialog:Hide()
+  end)
+  dialog.messageInput = messageInput
+  
+  -- Send button
+  local sendBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  sendBtn:SetWidth(80)
+  sendBtn:SetHeight(24)
+  sendBtn:SetPoint("BOTTOMRIGHT", -20, 15)
+  sendBtn:SetText("Send")
+  OGRH.StyleButton(sendBtn)
+  sendBtn:SetScript("OnClick", function()
+    local msg = messageInput:GetText()
+    if msg and msg ~= "" then
+      OGRH.Invites.WhisperPlayer(dialog.targetPlayer, msg)
+      dialog:Hide()
+    end
+  end)
+  
+  -- Cancel button
+  local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  cancelBtn:SetWidth(80)
+  cancelBtn:SetHeight(24)
+  cancelBtn:SetPoint("RIGHT", sendBtn, "LEFT", -5, 0)
+  cancelBtn:SetText("Cancel")
+  OGRH.StyleButton(cancelBtn)
+  cancelBtn:SetScript("OnClick", function()
+    dialog:Hide()
+  end)
+  
+  dialog:Show()
+  messageInput:SetFocus()
+end
+
+-- Handle party invite declined event
+local inviteEventFrame = CreateFrame("Frame")
+inviteEventFrame:RegisterEvent("PARTY_INVITE_REQUEST")
+inviteEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+inviteEventFrame:SetScript("OnEvent", function()
+  if event == "PARTY_INVITE_REQUEST" then
+    -- Track declined invites
+    -- Note: WoW 1.12 doesn't have a specific "declined" event
+    -- We'll track this indirectly
+  elseif event == "RAID_ROSTER_UPDATE" then
+    -- Refresh the window if it's open
+    if OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
+      OGRH.Invites.RefreshPlayerList()
+    end
+  end
+end)
+
+-- Initialize
+OGRH.Invites.EnsureSV()
+
+OGRH.Msg("Invites module loaded. Use the minimap menu to access.")

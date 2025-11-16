@@ -5,7 +5,7 @@ if not OGRH then
 end
 
 local Main = CreateFrame("Frame","OGRH_Main",UIParent)
-Main:SetWidth(165); Main:SetHeight(56)  -- Fixed height for title bar + encounter nav
+Main:SetWidth(180); Main:SetHeight(56)  -- Fixed height for title bar + encounter nav
 Main:SetPoint("CENTER", UIParent, "CENTER", -380, 120)
 Main:SetFrameStrata("HIGH")
 Main:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", edgeSize=12, insets={left=4,right=4,top=4,bottom=4}})
@@ -24,14 +24,58 @@ local H = CreateFrame("Frame", nil, Main)
 H:SetPoint("TOPLEFT", Main, "TOPLEFT", 4, -4)
 H:SetPoint("TOPRIGHT", Main, "TOPRIGHT", -4, -4)
 H:SetHeight(20)
-local title = H:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-title:SetPoint("LEFT", H, "LEFT", 4, 0); title:SetText("|cffffff00RH|r")
 
-local btnRoles = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnRoles:SetWidth(35); btnRoles:SetHeight(20); btnRoles:SetText("Roles"); btnRoles:SetPoint("RIGHT", H, "RIGHT", -26, 0); OGRH.StyleButton(btnRoles)
-local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(20); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0); OGRH.StyleButton(btnLock)
+-- RH button (opens menu like minimap right-click)
+local rhBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate")
+rhBtn:SetWidth(28)
+rhBtn:SetHeight(20)
+rhBtn:SetPoint("LEFT", H, "LEFT", 2, 0)
+rhBtn:SetText("RH")
+OGRH.StyleButton(rhBtn)
+
+rhBtn:SetScript("OnClick", function()
+  -- Initialize menu if needed by calling the global show function
+  if OGRH.ShowMinimapMenu then
+    -- This will create the menu if it doesn't exist
+    OGRH.ShowMinimapMenu(rhBtn)
+  elseif OGRH_MinimapMenu then
+    -- Menu exists, just toggle it
+    local menu = OGRH_MinimapMenu
+    
+    if menu:IsVisible() then
+      menu:Hide()
+      return
+    end
+    
+    -- Update toggle button text
+    if menu.UpdateToggleText then
+      menu.UpdateToggleText()
+    end
+    
+    -- Position menu near RH button
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", rhBtn, "BOTTOMLEFT", 0, -2)
+    menu:Show()
+  end
+end)
+
+-- ReadyCheck button
+local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(33); readyCheck:SetHeight(20); readyCheck:SetText("Rdy"); readyCheck:SetPoint("LEFT", rhBtn, "RIGHT", 2, 0); OGRH.StyleButton(readyCheck)
 
 -- Sync button (S) - Send encounter configuration to raid
-local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(35); syncBtn:SetHeight(20); syncBtn:SetText("Sync"); syncBtn:SetPoint("RIGHT", btnRoles, "LEFT", -2, 0); OGRH.StyleButton(syncBtn)
+local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(35); syncBtn:SetHeight(20); syncBtn:SetText("Sync"); syncBtn:SetPoint("LEFT", readyCheck, "RIGHT", 2, 0); OGRH.StyleButton(syncBtn)
+
+-- Lock button
+local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(20); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0); OGRH.StyleButton(btnLock)
+
+-- Roles button (fills remaining space between Sync and Lock)
+local btnRoles = CreateFrame("Button", nil, H, "UIPanelButtonTemplate")
+btnRoles:SetHeight(20)
+btnRoles:SetPoint("LEFT", syncBtn, "RIGHT", 2, 0)
+btnRoles:SetPoint("RIGHT", btnLock, "LEFT", -2, 0)
+btnRoles:SetText("Roles")
+OGRH.StyleButton(btnRoles)
+OGRH.MainUI_RolesBtn = btnRoles  -- Store reference for menu access
 syncBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- Function to update sync button color based on lock state
@@ -126,8 +170,7 @@ syncBtn:SetScript("OnClick", function()
   OGRH.Msg("Encounter configuration for " .. currentEncounter .. " synced to raid (excluding self).")
 end)
 
--- ReadyCheck button
-local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(35); readyCheck:SetHeight(20); readyCheck:SetText("Rdy"); readyCheck:SetPoint("RIGHT", syncBtn, "LEFT", -2, 0); OGRH.StyleButton(readyCheck)
+-- ReadyCheck button click handlers
 readyCheck:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- Roles button handler
