@@ -1,13 +1,13 @@
 # OG-RaidHelper
 
-**Version:** 1.5.0  
-**Author:** Gnuzmas  
+**Version:** 1.7.0  
+**Author:** Gnuzmas
+**Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)
 
 A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, and coordinating raid activities.
 
 <img width="1161" height="518" alt="image" src="https://github.com/user-attachments/assets/a80bc0cb-d10e-4700-a1cd-5fb169dea8b1" />
-
 
 ---
 ## Disclaimer
