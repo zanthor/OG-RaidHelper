@@ -1,6 +1,6 @@
 w# OG-RaidHelper
 
-**Version:** 1.7.2  
+**Version:** 1.7.3  
 **Author:** Gnuzmas
 **Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)
@@ -817,7 +817,12 @@ OGRH_SV = {
 
 ## Version History
 
-**1.7.2** (Current)
+**1.7.3** (Current)
+- Fixed: Encounter nav button on main UI now displays saved raid/encounter on addon load
+- Fixed: Previous/Next navigation buttons now properly enable/disable based on saved state
+- Fixed: UpdateEncounterNavButton now checks saved variables when frame doesn't exist yet
+
+**1.7.2**
 - **Refactored:** Removed legacy "BWL" naming from encounter window functions and frame names
   - `OGRH.ShowBWLEncounterWindow` → `OGRH.ShowEncounterWindow`
   - `OGRH_BWLEncounterFrame` → `OGRH_EncounterFrame`

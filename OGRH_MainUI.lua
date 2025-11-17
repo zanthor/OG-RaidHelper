@@ -433,6 +433,11 @@ local function restoreMain()
     OGRH.UpdateSyncButtonColor()
   end
   
+  -- Update encounter nav button with saved state
+  if OGRH.UpdateEncounterNavButton then
+    OGRH.UpdateEncounterNavButton()
+  end
+  
   -- Check if window should be hidden
   if ui.hidden then
     Main:Hide()

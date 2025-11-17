@@ -6630,15 +6630,22 @@ function OGRH.UpdateEncounterNavButton()
   local prevBtn = OGRH.encounterNav.prevEncBtn
   local nextBtn = OGRH.encounterNav.nextEncBtn
   
-  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid then
+  -- Get raid and encounter from frame if it exists, otherwise from saved variables
+  local raidName, encounterName
+  if OGRH_EncounterFrame then
+    raidName = OGRH_EncounterFrame.selectedRaid
+    encounterName = OGRH_EncounterFrame.selectedEncounter
+  elseif OGRH_SV and OGRH_SV.ui then
+    raidName = OGRH_SV.ui.selectedRaid
+    encounterName = OGRH_SV.ui.selectedEncounter
+  end
+  
+  if not raidName then
     btn:SetText("Select Raid")
     prevBtn:Disable()
     nextBtn:Disable()
     return
   end
-  
-  local raidName = OGRH_EncounterFrame.selectedRaid
-  local encounterName = OGRH_EncounterFrame.selectedEncounter
   
   if encounterName then
     -- Truncate encounter name if needed to fit
