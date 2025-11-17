@@ -4,10 +4,21 @@
 **Author:** Gnuzmas  
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)
 
-A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, and coordinating raid activities.
+A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 
-<img width="1161" height="518" alt="image" src="https://github.com/user-attachments/assets/a80bc0cb-d10e-4700-a1cd-5fb169dea8b1" />
+![Main UI](Images/mainui.jpg)
 
+---
+
+## Dependencies
+
+**Required:**
+- **[RollFor](https://github.com/jasonp1992/RollFor)** - Soft-reserve addon that provides the underlying SR data for the Raid Invites and SR+ Validation features. OG-RaidHelper reads RollFor's encoded soft-reserve data to display player SR+ values and item lists.
+
+**Installation:**
+1. Install RollFor addon first
+2. Configure your soft-reserve data in RollFor
+3. OG-RaidHelper will automatically detect and use RollFor data
 
 ---
 ## Disclaimer
@@ -30,10 +41,13 @@ Documentation is a work in progress... this addon  has changed a lot since it's 
 
 ## Table of Contents
 
+- [Dependencies](#dependencies)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Main Window](#main-window)
 - [Roles Window](#roles-window)
+- [Raid Invites System](#raid-invites-system)
+- [SR+ Validation System](#sr-validation-system)
 - [Encounters System](#encounters-system)
 - [Trade System](#trade-system)
 - [Share System](#share-system)
@@ -55,14 +69,17 @@ Documentation is a work in progress... this addon  has changed a lot since it's 
 ## Quick Start
 
 1. **Access Main UI**: The small main window appears on login or type `/ogrh` or click the mini map button.
-2. **Open Roles Window**: Click the **Roles** button to manage your raid composition
-3. **Poll for Roles**: Use the **Poll** button to request players sign up via raid chat
-4. **Setup Encounters**: Click **Encounters** → **Manage** to access encounter planning
-5. **Trade Items**: Use the **Trade** button to set up and distribute items to raid members
-6. **Share Configs**: Click **Share** to export/import your encounter and trade configurations
+2. **Install RollFor**: Required for Raid Invites and SR+ Validation features
+3. **Open Roles Window**: Click the **Roles** button to manage your raid composition
+4. **Poll for Roles**: Use the **Poll** button to request players sign up via raid chat
+5. **Setup Encounters**: Click **Encounters** → **Manage** to access encounter planning
+6. **Raid Invites**: Click minimap → **Raid Invites** to invite players from soft-reserve list
+7. **SR+ Validation**: Click minimap → **SR Validation** to track SR+ changes over time
+8. **Trade Items**: Use the **Trade** button to set up and distribute items to raid members
+9. **Share Configs**: Click **Share** to export/import your encounter and trade configurations
 
-7. A short video overview of the addon since I know you're raiders not readers.
-   https://youtu.be/eKVEandwlpM
+10. A short video overview of the addon since I know you're raiders not readers.
+    https://youtu.be/eKVEandwlpM
    
 ---
 
@@ -108,6 +125,8 @@ When the main window is minimized, encounter navigation controls appear:
 
 The Roles Window displays your raid composition organized into four columns: **Tanks**, **Healers**, **Melee**, and **Ranged**.
 
+![Roles UI](Images/RolesUI.jpg)
+
 ### Window Features
 
 - **Alphabetical Display** - Players are automatically sorted A-Z within each role
@@ -151,6 +170,191 @@ The Roles Window displays your raid composition organized into four columns: **T
 **Known Issues**
 - Once you pop, you just can't stop.  A poll began will run the distance, I haven't been able to sort out stopping it.
 - In previous versions the drag/drop would randomly stop working for some units.  I suspect this had to do with other changes happening to the data behind the UI and this interface has been greatly simplified since this was a problem.
+
+---
+
+## Raid Invites System
+
+The Raid Invites system integrates with RollFor to display soft-reserve data and invite players to your raid automatically.
+
+![Raid Invites](Images/RaidInvites.jpg)
+
+**Requirements:**
+- RollFor addon must be installed
+- Soft-reserve data must be configured in RollFor
+- You must be raid leader or have assist
+
+### Window Features
+
+**Player List Display:**
+- Shows all players from RollFor soft-reserve data
+- **Class Colors** - Player names colored by class
+- **SR+ Values** - Displays each player's current soft-reserve plus value in **(+XX)** format
+- **Online Status** - Green background for online players, gray for offline
+- **Raid Status** - Shows "In Raid" for players already in your raid group
+
+**Metadata Display:**
+- **Instance** - Shows configured instance name from RollFor (e.g., "MC", "BWL")
+- **Data Age** - Last update timestamp from RollFor
+
+### Using Raid Invites
+
+**Inviting Players:**
+1. Click minimap button → **Raid Invites** to open window
+2. Review player list with SR+ values
+3. **Invite Individual Player:**
+   - Click any player name to invite them
+4. **Invite All Online:**
+   - Click **Invite All** button to invite all online players
+   - When solo: Sends first 4 invites (party limit)
+   - Auto-converts to raid when first person joins
+   - Automatically invites remaining players after raid forms
+
+**Auto-Conversion Feature:**
+- The addon automatically handles solo → party → raid progression
+- When you click **Invite All** from solo:
+  1. Sends 4 invites (leaving one slot for you in the party)
+  2. Monitors for party formation (PARTY_MEMBERS_CHANGED event)
+  3. Automatically converts party to raid when first person joins
+  4. Automatically sends remaining invites once raid is formed
+- This provides seamless raid formation without manual intervention
+
+**Refresh Button:**
+- Click **Refresh** to reload RollFor data
+- Updates player list, SR+ values, and online status
+
+### Data Source
+
+All data is read from RollFor addon:
+- Player names and class information
+- SR+ (soft-reserve plus) values
+- Reserved items per player
+- Instance configuration
+- Last update timestamp
+
+**Note:** OG-RaidHelper reads RollFor data but does not modify it. All SR+ changes must be made in RollFor directly.
+
+---
+
+## SR+ Validation System
+
+The SR+ Validation system tracks soft-reserve plus value changes over time to help raid leaders detect suspicious SR+ increases and maintain audit trails.
+
+![SR+ Validation](Images/SRValidation.jpg)
+
+**Requirements:**
+- RollFor addon must be installed
+- Soft-reserve data must be configured in RollFor
+
+### Window Features
+
+**Left Panel: Player List (220px width)**
+- Shows all players from RollFor with SR+ values
+- **Class Colors** - Names colored by class
+- **Validation Status:**
+  - **Green background** - Player validated successfully (SR+ increase ≤10 from last validation)
+  - **Red background** - Validation error (SR+ increased >10 from last validation)
+  - **Gray background** - Not yet validated
+- **Mouse Wheel Scrolling** - Scroll through player list
+
+**Right Panel: Player Details (490px width)**
+- **Current SR+ Value** - Displays player's current soft-reserve plus
+- **Current Items** - Lists all items with SR+ values
+  - Items displayed with quality colors (gray/white/green/blue/purple/orange)
+  - Clickable item links that show tooltips
+  - SR+ value shown next to each item name
+  - **Red *** markers** around items that had SR+ increases during validation errors
+- **Previous Validations** - Shows last 5 validation records
+  - Date, time, validator name, instance
+  - Complete item lists showing historical SR+ values
+  - Total SR+ value at time of validation
+- **Expected Value** - For validation errors, shows expected SR+ (last validated + 10)
+
+### Using SR+ Validation
+
+**Opening the Window:**
+- Click minimap button → **SR Validation** to open
+
+**Validating Players:**
+
+1. **Validate Individual Player:**
+   - Click player name to view details
+   - Review current items and previous validations
+   - Click **Save Validation** to record current state
+   
+2. **Validate All Passed Players:**
+   - Click **Validate All Passed** to save records for all players with valid SR+ increases (≤10)
+   - Players with validation errors (>10 increase) are skipped and remain highlighted in red
+
+**Validation Logic:**
+- **First Validation:** Always succeeds, creates initial record
+- **Subsequent Validations:** 
+  - ✅ **Pass:** SR+ increased by 10 or less from last validation
+  - ❌ **Fail:** SR+ increased by more than 10 from last validation
+  - Failed validations show expected value (last + 10) in green next to actual SR+ in red
+
+**Validation Records:**
+- Stores: Date, time, validator name, instance, SR+ value, and complete item list
+- **Duplicate Prevention:** Won't save if SR+, instance, and all items match last record
+- **Auto-Purge:** When player reaches all items at +0, creates final record then purges older history
+- **Item History:** Each record includes full item list with names and SR+ values at time of validation
+
+**Refresh Button:**
+- Click **Refresh** to reload RollFor data and update display
+
+### Use Cases
+
+**Audit Trail:**
+- Track SR+ progression over time for each player
+- Detect sudden unexplained SR+ increases
+- Maintain historical records of who validated when
+
+**SR+ Increase Detection:**
+- Automatic flagging of suspicious increases (>10 from last validation)
+- Visual red highlighting for validation errors
+- Expected vs. actual value display
+- Red markers on specific items that increased
+
+**Validation Workflow:**
+1. Before raid, open SR+ Validation window
+2. Review any red-highlighted players
+3. Investigate suspicious increases
+4. Click **Validate All Passed** to record all valid players
+5. Manually review and validate (or exclude) flagged players
+
+### Debug Command
+
+`/ogrhsr <PlayerName> [itemId]`
+- Inspects RollFor data structure for debugging
+- Shows raw SR+ values and item data
+- Optional itemId parameter to check specific item
+
+**Example:**
+```
+/ogrhsr Gnuzmas
+/ogrhsr Gnuzmas 18803
+```
+
+### Data Storage
+
+Validation records stored in `OGRH_SV.srValidation.records[playerName]`:
+```lua
+{
+  date = "2025-01-15",
+  time = "19:30:45",
+  validator = "Gnuzmas",
+  instance = "MC",
+  srPlus = 25,
+  items = {
+    {itemId = 18803, name = "Finkle's Lava Dredger", plus = 5},
+    {itemId = 17102, name = "Cloak of the Shrouded Mists", plus = 3},
+    -- ... more items
+  }
+}
+```
+
+**Note:** RollFor data is read-only. SR+ changes must be made in RollFor directly. OG-RaidHelper cannot modify SR+ values as RollFor uses encoded data format.
+
 ---
 
 ## Encounters System
@@ -160,6 +364,8 @@ The Encounters system provides comprehensive tools for pre-planning raid encount
 ### Encounter Planning Window
 
 Access via **Encounters** → **Manage** from the main window.
+
+![Encounter Management](Images/EncounterMgmt.jpg)
 
 #### Window Layout
 
@@ -284,6 +490,8 @@ See [Announcement Tags](#announcement-tags) section for complete tag documentati
 
 Access via **Encounters** → **Setup Raids** from the main window.
 
+![Encounter Setup](Images/EncounterSetup.jpg)
+
 This is an alternative interface for managing the same encounter data with a different workflow. Both interfaces modify the same saved configuration.
 
 #### Window Layout
@@ -377,6 +585,10 @@ Access via **Share** button on main window.
 - Encounter Assignment Numbers
 - Encounter Announcements (all announcement text)
 - Trade Items (configured trade items and quantities)
+
+**What is NOT Shared:**
+- Raid Invites data (read from RollFor)
+- SR+ Validation records (stored per-character for audit purposes)
 
 **Layout:**
 - Large text box for export/import data
@@ -537,18 +749,23 @@ For full details, examples, and raid mark symbols, see **[ANNOUNCEMENT_TAGS.md](
 3. **Share Configs** - Export and share standard strategies with your raid team
 4. **Use Auto Assign** - Let the addon fill basic roles, then fine-tune manually
 5. **Test Announcements** - Use `/say` to test announcement formatting before raid night
+6. **Validate SR+ Regularly** - Check SR+ Validation before each raid to flag suspicious increases
+7. **Use Auto-Invites** - Click "Invite All" from solo state, addon handles party-to-raid conversion
 
 ### For Officers
 
 1. **Import Leader Configs** - Get standardized encounter setups via Share system
 2. **Customize Pools** - Adjust player pools for your raid group composition
 3. **Save Backups** - Export configurations periodically as backups
+4. **Monitor SR+ Changes** - Use SR+ Validation to track soft-reserve changes over time
+5. **Review Validation History** - Check previous validations to investigate SR+ progression
 
 ### For Players
 
 1. **Respond to Polls Quickly** - Watch for "[ROLE] put + in raid chat" messages
 2. **Type "+" to Sign Up** - Simple plus sign in raid chat assigns you to role
 3. **Listen for Announcements** - Pay attention to raid chat for automated callouts
+4. **Accept Raid Invites** - Watch for automatic invites from Raid Invites system
 
 ---
 
@@ -576,6 +793,27 @@ For full details, examples, and raid mark symbols, see **[ANNOUNCEMENT_TAGS.md](
 - Ensure you clicked out of text fields before closing windows
 - Type `/reload` to save and reload
 
+**Raid Invites showing no players:**
+- Ensure RollFor addon is installed and loaded
+- Configure soft-reserve data in RollFor first
+- Click **Refresh** button to reload RollFor data
+- Check that RollFor has player data (open RollFor UI to verify)
+
+**SR+ Validation showing wrong values:**
+- Click **Refresh** to reload current RollFor data
+- Verify RollFor data is up-to-date
+- Use `/ogrhsr PlayerName` to inspect raw data
+
+**Auto-conversion not working:**
+- Ensure you are party leader when solo
+- Ensure raid leader/assist permissions after conversion
+- Check that PARTY_MEMBERS_CHANGED events are firing (may need `/reload`)
+
+**Items showing as "Unknown Item":**
+- Item data not cached by client yet
+- Close and reopen SR+ Validation window after a moment
+- Hover over items in-game to cache them first
+
 ---
 
 ## SavedVariables Structure
@@ -593,11 +831,16 @@ OGRH_SV = {
   encounterAssignmentNumbers = {}, -- Assignment numbers
   encounterAnnouncements = {}, -- Announcement templates
   tradeItems = {}, -- Trade item configurations
+  srValidation = { -- SR+ validation records
+    records = {} -- Per-player validation history
+  },
   ui = {} -- Window positions
 }
 ```
 
 **Backup:** Manually copy `WTF\Account\[Account]\[Server]\[Character]\SavedVariables\OG-RaidHelper.lua`
+
+**Note:** RollFor data is stored separately in RollFor's own SavedVariables file. OG-RaidHelper reads but does not modify RollFor data.
 
 ---
 
@@ -610,7 +853,29 @@ OGRH_SV = {
 
 ## Version History
 
-**1.14.0** (Current)
+**1.15.0** (Current)
+- **NEW:** Raid Invites system with RollFor integration
+  - Display all soft-reserve players with SR+ values
+  - Invite individual or all online players
+  - Auto-conversion from solo → party → raid
+  - Automatic invite continuation after raid forms
+  - Online/offline status indicators
+  - Class-colored player names
+- **NEW:** SR+ Validation system for audit tracking
+  - Track SR+ changes over time per player
+  - Automatic flagging of suspicious increases (>10)
+  - Complete item history in validation records
+  - Visual indicators (green/red) for validation status
+  - Expected value display for validation errors
+  - Red markers on items with SR+ increases
+  - Duplicate prevention and auto-purge features
+  - Debug command `/ogrhsr` for data inspection
+- **NEW:** RollFor dependency for soft-reserve data
+- Added comprehensive documentation with images
+- Fixed: Raid invites now work from solo state
+- Fixed: Event handling for automatic party-to-raid conversion
+
+**1.14.0**
 - Added Trade system with dynamic item configuration
 - Added Share system for configuration export/import
 - Added trade items to Share data
@@ -655,6 +920,7 @@ For bugs, feature requests, or questions:
 **Happy Raiding!**
 
 **ToDo**
-- Add all existing encounters to default setup.
-- Create video tutorial showing addon in action
-- Expand troubleshooting section with common issues
+- Add all existing encounters to default setup
+- Create updated video tutorial showing new features (Raid Invites, SR+ Validation)
+- Document RollFor data structure and integration details
+- Add configuration guide for RollFor setup
