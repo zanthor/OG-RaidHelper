@@ -63,6 +63,16 @@ function OGRH.Invites.GetSoftResPlayers()
     return players
   end
   
+  -- Store the entire decoded structure for debugging
+  OGRH.Invites.rawDecodedData = decodedData
+  
+  -- Extract metadata from nested table
+  if decodedData.metadata and type(decodedData.metadata) == "table" then
+    OGRH.Invites.softresMetadata = decodedData.metadata
+  else
+    OGRH.Invites.softresMetadata = {}
+  end
+  
   -- Now transform the data using SoftResDataTransformer
   if not RollFor.SoftResDataTransformer or type(RollFor.SoftResDataTransformer.transform) ~= "function" then
     return players
@@ -164,19 +174,24 @@ end
 function OGRH.Invites.InvitePlayer(playerName)
   if not playerName or playerName == "" then return end
   
-  -- Check if we're in a raid and have permission
   local numRaid = GetNumRaidMembers()
+  local numParty = GetNumPartyMembers()
+  
+  -- Check if we're in a raid and have permission
   if numRaid > 0 then
     -- In a raid, check if we're leader or assistant
     if not IsRaidLeader() and not IsRaidOfficer() then
       OGRH.Msg("You must be raid leader or assistant to invite players.")
       return false
     end
-  else
-    -- Not in raid yet, can't invite
-    OGRH.Msg("You must be in a raid to invite players.")
-    return false
+  elseif numParty > 0 then
+    -- In a party, check if we're leader
+    if not IsPartyLeader() then
+      OGRH.Msg("You must be party leader to invite players.")
+      return false
+    end
   end
+  -- If solo, we can invite (will start a party)
   
   -- Send the invite
   InviteByName(playerName)
@@ -189,7 +204,11 @@ function OGRH.Invites.InvitePlayer(playerName)
     action = "invited"
   })
   
-  OGRH.Msg("Invited " .. playerName .. " to raid.")
+  if numRaid > 0 then
+    OGRH.Msg("Invited " .. playerName .. " to raid.")
+  else
+    OGRH.Msg("Invited " .. playerName .. " to party.")
+  end
   return true
 end
 
@@ -197,7 +216,15 @@ end
 function OGRH.Invites.WhisperPlayer(playerName, message)
   if not playerName or playerName == "" then return end
   
-  local msg = message or "Whisper me invite when ready"
+  local msg = message
+  if not msg then
+    local meta = OGRH.Invites.GetMetadata()
+    local raidName = "the raid"
+    if meta.instance then
+      raidName = OGRH.Invites.GetInstanceName(meta.instance)
+    end
+    msg = "Whisper me invite for " .. raidName .. " when ready."
+  end
   SendChatMessage(msg, "WHISPER", nil, playerName)
   
   OGRH.Msg("Whispered " .. playerName .. ".")
@@ -250,6 +277,75 @@ function OGRH.Invites.UpdatePlayerClass(playerData)
   end
   
   return playerData
+end
+
+-- Get soft-res metadata (instance, date, time)
+function OGRH.Invites.GetMetadata()
+  -- Force a refresh to capture metadata
+  OGRH.Invites.GetSoftResPlayers()
+  return OGRH.Invites.softresMetadata or {}
+end
+
+-- Map instance ID to name
+function OGRH.Invites.GetInstanceName(instanceId)
+  local instances = {
+    [48] = "Molten Core",
+    [94] = "Blackwing Lair",
+    [95] = "Molten Core",
+    [96] = "Onyxia's Lair",
+    [97] = "Onyxia's Lair",
+    [98] = "Ruins of Ahn'Qiraj",
+    [99] = "Temple of Ahn'Qiraj",
+    [100] = "Zul'Gurub",
+    [101] = "Lower Karazhan Halls",
+    [102] = "Emerald Sanctum",
+    [109] = "Karazhan",
+    [249] = "Onyxia's Lair",
+    [309] = "Zul'Gurub",
+    [409] = "Molten Core",
+    [469] = "Blackwing Lair",
+    [509] = "Ruins of Ahn'Qiraj",
+    [531] = "Ahn'Qiraj Temple",
+    [533] = "Naxxramas"
+  }
+  return instances[tonumber(instanceId)] or "Unknown Raid (ID: " .. tostring(instanceId) .. ")"
+end
+
+-- Debug function to show available metadata
+function OGRH.Invites.ShowMetadata()
+  local meta = OGRH.Invites.GetMetadata()
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00=== RollFor Soft-Res Metadata ===|r")
+  for key, value in pairs(meta) do
+    if key == "instance" then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00" .. key .. "|r: " .. tostring(value) .. " (" .. OGRH.Invites.GetInstanceName(value) .. ")")
+    else
+      DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00" .. key .. "|r: " .. tostring(value))
+    end
+  end
+  if not next(meta) then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000No metadata found|r")
+  end
+end
+
+-- Debug function to show raw decoded structure
+function OGRH.Invites.ShowRawData()
+  OGRH.Invites.GetSoftResPlayers() -- Force refresh
+  
+  if not OGRH.Invites.rawDecodedData then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000No raw data available|r")
+    return
+  end
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00=== Raw Decoded Data Structure ===|r")
+  local count = 0
+  for key, value in pairs(OGRH.Invites.rawDecodedData) do
+    count = count + 1
+    if count <= 20 then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00" .. tostring(key) .. "|r: " .. type(value) .. 
+        (type(value) ~= "table" and " = " .. tostring(value) or ""))
+    end
+  end
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Total keys: " .. count .. "|r")
 end
 
 -- Map RollFor role to OGRH RolesUI bucket
@@ -377,7 +473,16 @@ function OGRH.Invites.ShowWindow()
   -- Title
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -15)
-  title:SetText("Raid Invites")
+  
+  -- Set title with raid name and ID from metadata
+  local meta = OGRH.Invites.GetMetadata()
+  local titleText = "Raid Invites"
+  if meta.instance then
+    local raidName = OGRH.Invites.GetInstanceName(meta.instance)
+    titleText = "Raid Invites - " .. raidName .. " (" .. tostring(meta.instance) .. ")"
+  end
+  title:SetText(titleText)
+  frame.titleText = title
   
   -- Close button
   local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -554,6 +659,35 @@ function OGRH.Invites.ShowWindow()
           break
         end
       end
+    end
+  end)
+  
+  -- Register events for party/raid changes
+  frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+  frame:RegisterEvent("RAID_ROSTER_UPDATE")
+  
+  frame:SetScript("OnEvent", function()
+    if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+      local numRaid = GetNumRaidMembers()
+      local numParty = GetNumPartyMembers()
+      
+      -- If someone joined the party and we're not in a raid yet, convert to raid
+      if numRaid == 0 and numParty > 0 then
+        ConvertToRaid()
+        OGRH.Msg("Party detected - converting to raid...")
+        -- Wait a moment then invite rest
+        OGRH.Invites.scheduleRestOfInvites = true
+      end
+      
+      -- If we just converted to raid and have pending invites, send them
+      if numRaid > 0 and OGRH.Invites.scheduleRestOfInvites then
+        OGRH.Invites.scheduleRestOfInvites = false
+        OGRH.Msg("Raid formed - inviting remaining online players...")
+        OGRH.Invites.InviteAllOnline()
+      end
+      
+      -- Refresh the list to update statuses
+      OGRH.Invites.RefreshPlayerList()
     end
   end)
   
@@ -765,11 +899,19 @@ end
 function OGRH.Invites.InviteAllOnline()
   local players = OGRH.Invites.GetSoftResPlayers()
   local inviteCount = 0
+  local numRaid = GetNumRaidMembers()
+  local numParty = GetNumPartyMembers()
+  local wasSolo = (numRaid == 0 and numParty == 0)
   
   for _, playerData in ipairs(players) do
     if not OGRH.Invites.IsPlayerInRaid(playerData.name) then
       local status, online = OGRH.Invites.GetPlayerStatus(playerData.name)
       if online and status ~= STATUS.INVITED and status ~= STATUS.DECLINED then
+        -- If we started solo, only send 4 invites initially
+        if wasSolo and inviteCount >= 4 then
+          break
+        end
+        
         OGRH.Invites.InvitePlayer(playerData.name)
         inviteCount = inviteCount + 1
       end
@@ -777,7 +919,11 @@ function OGRH.Invites.InviteAllOnline()
   end
   
   if inviteCount > 0 then
-    OGRH.Msg("Sent invites to " .. inviteCount .. " online players.")
+    if wasSolo and inviteCount >= 4 then
+      OGRH.Msg("Sent " .. inviteCount .. " invites. Will auto-convert to raid and invite rest when someone joins.")
+    else
+      OGRH.Msg("Sent invites to " .. inviteCount .. " online players.")
+    end
     OGRH.Invites.RefreshPlayerList()
   else
     OGRH.Msg("No online players to invite.")

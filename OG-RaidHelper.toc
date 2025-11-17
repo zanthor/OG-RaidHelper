@@ -12,3 +12,4 @@ OGRH_EncounterMgmt.lua
 OGRH_Poll.lua
 OGRH_Trade.lua
 OGRH_Invites.lua
+OGRH_SRValidation.lua

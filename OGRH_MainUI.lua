@@ -185,6 +185,9 @@ btnRoles:SetScript("OnClick", function()
   if OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
     OGRH_InvitesFrame:Hide()
   end
+  if OGRH_SRValidationFrame and OGRH_SRValidationFrame:IsVisible() then
+    OGRH_SRValidationFrame:Hide()
+  end
   -- Close encounters menu if it's open
   if OGRH_EncountersMenu and OGRH_EncountersMenu:IsVisible() then
     OGRH_EncountersMenu:Hide()

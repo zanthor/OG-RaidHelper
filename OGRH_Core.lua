@@ -2134,7 +2134,7 @@ local function CreateMinimapButton()
       menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
       menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
       menu:SetWidth(160)
-      menu:SetHeight(108)
+      menu:SetHeight(135)
       menu:Hide()
       
       -- Close menu when clicking outside
@@ -2237,6 +2237,9 @@ local function CreateMinimapButton()
         if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
           getglobal("OGRH_InvitesFrame"):Hide()
         end
+        if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
+          getglobal("OGRH_SRValidationFrame"):Hide()
+        end
         
         if OGRH.ShowShareWindow then
           OGRH.ShowShareWindow()
@@ -2259,6 +2262,9 @@ local function CreateMinimapButton()
         end
         if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
           getglobal("OGRH_InvitesFrame"):Hide()
+        end
+        if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
+          getglobal("OGRH_SRValidationFrame"):Hide()
         end
         
         if OGRH.ShowEncounterSetup then
@@ -2283,11 +2289,42 @@ local function CreateMinimapButton()
         if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
           getglobal("OGRH_EncounterSetupFrame"):Hide()
         end
+        if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
+          getglobal("OGRH_SRValidationFrame"):Hide()
+        end
         
         if OGRH.Invites and OGRH.Invites.ShowWindow then
           OGRH.Invites.ShowWindow()
         else
           OGRH.Msg("Invites module not loaded.")
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- SR Validation item
+      local srValidationItem = CreateMenuItem("SR Validation", function()
+        -- Close other windows
+        if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
+          getglobal("OGRH_BWLEncounterFrame"):Hide()
+        end
+        if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
+          getglobal("OGRH_RolesFrame"):Hide()
+        end
+        if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
+          getglobal("OGRH_ShareFrame"):Hide()
+        end
+        if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
+          getglobal("OGRH_EncounterSetupFrame"):Hide()
+        end
+        if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
+          getglobal("OGRH_InvitesFrame"):Hide()
+        end
+        
+        if OGRH.SRValidation and OGRH.SRValidation.ShowWindow then
+          OGRH.SRValidation.ShowWindow()
+        else
+          OGRH.Msg("SR Validation module not loaded.")
         end
       end, menu, yOffset)
       
