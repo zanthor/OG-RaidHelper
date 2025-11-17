@@ -13,8 +13,8 @@ local encounterData = {}
 
 -- Get currently selected encounter (for sync from MainUI)
 function OGRH.GetCurrentEncounter()
-  if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedRaid and OGRH_BWLEncounterFrame.selectedEncounter then
-    return OGRH_BWLEncounterFrame.selectedRaid, OGRH_BWLEncounterFrame.selectedEncounter
+  if OGRH_EncounterFrame and OGRH_EncounterFrame.selectedRaid and OGRH_EncounterFrame.selectedEncounter then
+    return OGRH_EncounterFrame.selectedRaid, OGRH_EncounterFrame.selectedEncounter
   end
   return nil, nil
 end
@@ -43,11 +43,11 @@ local function InitializeSavedVars()
 end
 
 -- Function to show Encounter Planning Window
-function OGRH.ShowBWLEncounterWindow(encounterName)
+function OGRH.ShowEncounterWindow(encounterName)
   OGRH.EnsureSV()
   
   -- Create or show the window
-  if not OGRH_BWLEncounterFrame then
+  if not OGRH_EncounterFrame then
     -- Check if encounter data exists before creating frame
     if not OGRH_SV.encounterMgmt or 
        not OGRH_SV.encounterMgmt.raids or 
@@ -60,7 +60,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     end
     
     -- Now create the frame
-    local frame = CreateFrame("Frame", "OGRH_BWLEncounterFrame", UIParent)
+    local frame = CreateFrame("Frame", "OGRH_EncounterFrame", UIParent)
     frame:SetWidth(1010)
     frame:SetHeight(450)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -275,6 +275,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
             frame.selectedEncounter = nil
           end
           frame.selectedRaid = capturedRaidName
+          OGRH_SV.ui.selectedRaid = capturedRaidName
           
           -- Select first encounter if available
           local firstEncounter = nil
@@ -283,6 +284,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
              table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaidName]) > 0 then
             firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaidName][1]
             frame.selectedEncounter = firstEncounter
+            OGRH_SV.ui.selectedEncounter = firstEncounter
           end
           
           RefreshRaidsList()
@@ -395,6 +397,7 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
         local capturedEncounterName = encounterName
         encounterBtn:SetScript("OnClick", function()
           frame.selectedEncounter = capturedEncounterName
+          OGRH_SV.ui.selectedEncounter = capturedEncounterName
           RefreshEncountersList()
           if frame.RefreshRoleContainers then
             frame.RefreshRoleContainers()
@@ -3079,6 +3082,14 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     
     -- Initialize lists
     RefreshRaidsList()
+    
+    -- Restore saved raid and encounter selection
+    if OGRH_SV.ui.selectedRaid then
+      frame.selectedRaid = OGRH_SV.ui.selectedRaid
+      if OGRH_SV.ui.selectedEncounter then
+        frame.selectedEncounter = OGRH_SV.ui.selectedEncounter
+      end
+    end
   end
   
   -- Close Roles window if it's open
@@ -3097,26 +3108,26 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
   end
   
   -- Show the frame
-  OGRH_BWLEncounterFrame:Show()
+  OGRH_EncounterFrame:Show()
   
   -- Refresh the raids list (this will validate and clear selectedRaid/selectedEncounter if needed)
-  OGRH_BWLEncounterFrame.RefreshRaidsList()
+  OGRH_EncounterFrame.RefreshRaidsList()
   
   -- Refresh the encounters list (this will validate and clear selectedEncounter if needed)
-  if OGRH_BWLEncounterFrame.RefreshEncountersList then
-    OGRH_BWLEncounterFrame.RefreshEncountersList()
+  if OGRH_EncounterFrame.RefreshEncountersList then
+    OGRH_EncounterFrame.RefreshEncountersList()
   end
   
   -- Refresh role containers to set initial visibility state of buttons
-  if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-    OGRH_BWLEncounterFrame.RefreshRoleContainers()
+  if OGRH_EncounterFrame.RefreshRoleContainers then
+    OGRH_EncounterFrame.RefreshRoleContainers()
   end
   
   -- If an encounter is still selected after validation, refresh again
   -- to pick up any changes made in the Setup window
-  if OGRH_BWLEncounterFrame.selectedRaid and OGRH_BWLEncounterFrame.selectedEncounter then
-    if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-      OGRH_BWLEncounterFrame.RefreshRoleContainers()
+  if OGRH_EncounterFrame.selectedRaid and OGRH_EncounterFrame.selectedEncounter then
+    if OGRH_EncounterFrame.RefreshRoleContainers then
+      OGRH_EncounterFrame.RefreshRoleContainers()
     end
   end
 end
@@ -4644,8 +4655,8 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.selectedRaid == oldName then
           OGRH_EncounterSetupFrame.selectedRaid = newName
         end
-        if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedRaid == oldName then
-          OGRH_BWLEncounterFrame.selectedRaid = newName
+        if OGRH_EncounterFrame and OGRH_EncounterFrame.selectedRaid == oldName then
+          OGRH_EncounterFrame.selectedRaid = newName
         end
         
         -- Refresh windows
@@ -4655,10 +4666,10 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
             OGRH_EncounterSetupFrame.RefreshEncountersList()
           end
         end
-        if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshRaidsList then
-          OGRH_BWLEncounterFrame.RefreshRaidsList()
-          if OGRH_BWLEncounterFrame.RefreshEncountersList then
-            OGRH_BWLEncounterFrame.RefreshEncountersList()
+        if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRaidsList then
+          OGRH_EncounterFrame.RefreshRaidsList()
+          if OGRH_EncounterFrame.RefreshEncountersList then
+            OGRH_EncounterFrame.RefreshEncountersList()
           end
         end
         
@@ -4766,8 +4777,8 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.selectedEncounter == oldName then
           OGRH_EncounterSetupFrame.selectedEncounter = newName
         end
-        if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedEncounter == oldName then
-          OGRH_BWLEncounterFrame.selectedEncounter = newName
+        if OGRH_EncounterFrame and OGRH_EncounterFrame.selectedEncounter == oldName then
+          OGRH_EncounterFrame.selectedEncounter = newName
         end
         
         -- Refresh windows
@@ -4777,10 +4788,10 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
             OGRH_EncounterSetupFrame.RefreshRolesList()
           end
         end
-        if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshEncountersList then
-          OGRH_BWLEncounterFrame.RefreshEncountersList()
-          if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-            OGRH_BWLEncounterFrame.RefreshRoleContainers()
+        if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshEncountersList then
+          OGRH_EncounterFrame.RefreshEncountersList()
+          if OGRH_EncounterFrame.RefreshRoleContainers then
+            OGRH_EncounterFrame.RefreshRoleContainers()
           end
         end
         
@@ -6619,15 +6630,15 @@ function OGRH.UpdateEncounterNavButton()
   local prevBtn = OGRH.encounterNav.prevEncBtn
   local nextBtn = OGRH.encounterNav.nextEncBtn
   
-  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid then
+  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid then
     btn:SetText("Select Raid")
     prevBtn:Disable()
     nextBtn:Disable()
     return
   end
   
-  local raidName = OGRH_BWLEncounterFrame.selectedRaid
-  local encounterName = OGRH_BWLEncounterFrame.selectedEncounter
+  local raidName = OGRH_EncounterFrame.selectedRaid
+  local encounterName = OGRH_EncounterFrame.selectedEncounter
   
   if encounterName then
     -- Truncate encounter name if needed to fit
@@ -6676,12 +6687,12 @@ function OGRH.UpdateEncounterNavButton()
 end
 
 function OGRH.NavigateToPreviousEncounter()
-  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid then
+  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid then
     return
   end
   
-  local raidName = OGRH_BWLEncounterFrame.selectedRaid
-  local currentEncounter = OGRH_BWLEncounterFrame.selectedEncounter
+  local raidName = OGRH_EncounterFrame.selectedRaid
+  local currentEncounter = OGRH_EncounterFrame.selectedEncounter
   
   if not currentEncounter then return end
   
@@ -6691,12 +6702,13 @@ function OGRH.NavigateToPreviousEncounter()
     
     for i = 1, table.getn(encounters) do
       if encounters[i] == currentEncounter and i > 1 then
-        OGRH_BWLEncounterFrame.selectedEncounter = encounters[i - 1]
-        if OGRH_BWLEncounterFrame.RefreshEncountersList then
-          OGRH_BWLEncounterFrame.RefreshEncountersList()
+        OGRH_EncounterFrame.selectedEncounter = encounters[i - 1]
+        OGRH_SV.ui.selectedEncounter = encounters[i - 1]
+        if OGRH_EncounterFrame.RefreshEncountersList then
+          OGRH_EncounterFrame.RefreshEncountersList()
         end
-        if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-          OGRH_BWLEncounterFrame.RefreshRoleContainers()
+        if OGRH_EncounterFrame.RefreshRoleContainers then
+          OGRH_EncounterFrame.RefreshRoleContainers()
         end
         OGRH.UpdateEncounterNavButton()
         
@@ -6709,12 +6721,12 @@ function OGRH.NavigateToPreviousEncounter()
 end
 
 function OGRH.NavigateToNextEncounter()
-  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid then
+  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid then
     return
   end
   
-  local raidName = OGRH_BWLEncounterFrame.selectedRaid
-  local currentEncounter = OGRH_BWLEncounterFrame.selectedEncounter
+  local raidName = OGRH_EncounterFrame.selectedRaid
+  local currentEncounter = OGRH_EncounterFrame.selectedEncounter
   
   if not currentEncounter then return end
   
@@ -6724,12 +6736,13 @@ function OGRH.NavigateToNextEncounter()
     
     for i = 1, table.getn(encounters) do
       if encounters[i] == currentEncounter and i < table.getn(encounters) then
-        OGRH_BWLEncounterFrame.selectedEncounter = encounters[i + 1]
-        if OGRH_BWLEncounterFrame.RefreshEncountersList then
-          OGRH_BWLEncounterFrame.RefreshEncountersList()
+        OGRH_EncounterFrame.selectedEncounter = encounters[i + 1]
+        OGRH_SV.ui.selectedEncounter = encounters[i + 1]
+        if OGRH_EncounterFrame.RefreshEncountersList then
+          OGRH_EncounterFrame.RefreshEncountersList()
         end
-        if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-          OGRH_BWLEncounterFrame.RefreshRoleContainers()
+        if OGRH_EncounterFrame.RefreshRoleContainers then
+          OGRH_EncounterFrame.RefreshRoleContainers()
         end
         OGRH.UpdateEncounterNavButton()
         
@@ -6742,65 +6755,65 @@ function OGRH.NavigateToNextEncounter()
 end
 
 function OGRH.ShowAnnouncementTooltip(anchorFrame)
-  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid or 
-     not OGRH_BWLEncounterFrame.selectedEncounter then
+  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid or 
+     not OGRH_EncounterFrame.selectedEncounter then
     return
   end
   
   -- Check if there's a ReplaceTags function stored on the frame
-  if not OGRH_BWLEncounterFrame.ReplaceTags then
+  if not OGRH_EncounterFrame.ReplaceTags then
     return
   end
   
   -- Get announcement text lines
   if not OGRH_SV.encounterAnnouncements or 
-     not OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid] or
-     not OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+     not OGRH_SV.encounterAnnouncements[OGRH_EncounterFrame.selectedRaid] or
+     not OGRH_SV.encounterAnnouncements[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
     return "No announcement configured"
   end
   
   -- Get role data
   local orderedRoles = {}
   if OGRH_SV.encounterRoles and 
-     OGRH_SV.encounterRoles[OGRH_BWLEncounterFrame.selectedRaid] and 
-     OGRH_SV.encounterRoles[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
-    orderedRoles = OGRH_SV.encounterRoles[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+     OGRH_SV.encounterRoles[OGRH_EncounterFrame.selectedRaid] and 
+     OGRH_SV.encounterRoles[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+    orderedRoles = OGRH_SV.encounterRoles[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
   end
   
   local assignments = {}
   if OGRH_SV.encounterAssignments and
-     OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid] and
-     OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
-    assignments = OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+     OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid] and
+     OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+    assignments = OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
   end
   
   local raidMarks = {}
   if OGRH_SV.encounterRaidMarks and
-     OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid] and
-     OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
-    raidMarks = OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+     OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid] and
+     OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+    raidMarks = OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
   end
   
   local assignmentNumbers = {}
   if OGRH_SV.encounterAssignmentNumbers and
-     OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid] and
-     OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
-    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+     OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid] and
+     OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
   end
   
   -- Get announcement text
   if not OGRH_SV.encounterAnnouncements or 
-     not OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid] or
-     not OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
+     not OGRH_SV.encounterAnnouncements[OGRH_EncounterFrame.selectedRaid] or
+     not OGRH_SV.encounterAnnouncements[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
     return
   end
   
   -- Get role data for tag processing (must match announce button logic)
   local orderedRoles = {}
   local roles = OGRH_SV.encounterMgmt.roles
-  if roles and roles[OGRH_BWLEncounterFrame.selectedRaid] and 
-     roles[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
-    local encounterRoles = roles[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  if roles and roles[OGRH_EncounterFrame.selectedRaid] and 
+     roles[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+    local encounterRoles = roles[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
     local column1 = encounterRoles.column1 or {}
     local column2 = encounterRoles.column2 or {}
     
@@ -6815,27 +6828,27 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
   
   local assignments = {}
   if OGRH_SV.encounterAssignments and
-     OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid] and
-     OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
-    assignments = OGRH_SV.encounterAssignments[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+     OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid] and
+     OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+    assignments = OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
   end
   
   -- Note: This is a duplicate of raidMarks loading above and can be removed
   local raidMarks = {}
   if OGRH_SV.encounterRaidMarks and
-     OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid] and
-     OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
-    raidMarks = OGRH_SV.encounterRaidMarks[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+     OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid] and
+     OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+    raidMarks = OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
   end
   
   local assignmentNumbers = {}
   if OGRH_SV.encounterAssignmentNumbers and
-     OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid] and
-     OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter] then
-    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+     OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid] and
+     OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
   end
   
-  local announcementData = OGRH_SV.encounterAnnouncements[OGRH_BWLEncounterFrame.selectedRaid][OGRH_BWLEncounterFrame.selectedEncounter]
+  local announcementData = OGRH_SV.encounterAnnouncements[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
   
   -- Process announcement lines exactly as they would be sent to chat
   GameTooltip:SetOwner(anchorFrame, "ANCHOR_RIGHT")
@@ -6845,7 +6858,7 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
   for i = 1, 20 do
     local lineText = announcementData[i]
     if lineText and lineText ~= "" then
-      local processedText = OGRH_BWLEncounterFrame.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
+      local processedText = OGRH_EncounterFrame.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
       
       if processedText and processedText ~= "" then
         if not hasLines then
@@ -6864,16 +6877,16 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
 end
 
 function OGRH.PrepareEncounterAnnouncement()
-  if not OGRH_BWLEncounterFrame or not OGRH_BWLEncounterFrame.selectedRaid or 
-     not OGRH_BWLEncounterFrame.selectedEncounter then
+  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid or 
+     not OGRH_EncounterFrame.selectedEncounter then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No encounter selected")
     return
   end
   
   -- Call the announce function but don't send it
-  if OGRH_BWLEncounterFrame.announceBtn then
+  if OGRH_EncounterFrame.announceBtn then
     -- Simulate clicking the announce button
-    local announceScript = OGRH_BWLEncounterFrame.announceBtn:GetScript("OnClick")
+    local announceScript = OGRH_EncounterFrame.announceBtn:GetScript("OnClick")
     if announceScript then
       announceScript()
       DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement prepared. Click RA to send.")
@@ -6892,12 +6905,12 @@ function OGRH.OpenEncounterPlanning()
     OGRH_ShareFrame:Hide()
   end
   
-  if not OGRH_BWLEncounterFrame then
-    OGRH.ShowBWLEncounterWindow()
+  if not OGRH_EncounterFrame then
+    OGRH.ShowEncounterWindow()
     return
   end
   
-  OGRH_BWLEncounterFrame:Show()
+  OGRH_EncounterFrame:Show()
 end
 
 function OGRH.ShowEncounterRaidMenu(anchorBtn)
@@ -6993,12 +7006,12 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
           menu:Hide()
           
           -- Check if window is currently open
-          local wasOpen = OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible()
+          local wasOpen = OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible()
           
           -- Only create/show window if it was already open
           if wasOpen then
             -- Select this raid
-            OGRH_BWLEncounterFrame.selectedRaid = capturedRaid
+            OGRH_EncounterFrame.selectedRaid = capturedRaid
             
             -- Select first encounter if available
             local firstEncounter = nil
@@ -7006,18 +7019,18 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
                OGRH_SV.encounterMgmt.encounters[capturedRaid] and
                table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
               firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
-              OGRH_BWLEncounterFrame.selectedEncounter = firstEncounter
+              OGRH_EncounterFrame.selectedEncounter = firstEncounter
             end
             
             -- Refresh the window
-            if OGRH_BWLEncounterFrame.RefreshRaidsList then
-              OGRH_BWLEncounterFrame.RefreshRaidsList()
+            if OGRH_EncounterFrame.RefreshRaidsList then
+              OGRH_EncounterFrame.RefreshRaidsList()
             end
-            if OGRH_BWLEncounterFrame.RefreshEncountersList then
-              OGRH_BWLEncounterFrame.RefreshEncountersList()
+            if OGRH_EncounterFrame.RefreshEncountersList then
+              OGRH_EncounterFrame.RefreshEncountersList()
             end
-            if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-              OGRH_BWLEncounterFrame.RefreshRoleContainers()
+            if OGRH_EncounterFrame.RefreshRoleContainers then
+              OGRH_EncounterFrame.RefreshRoleContainers()
             end
             
             -- Broadcast encounter change
@@ -7026,13 +7039,13 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
             end
           else
             -- Window not open, create frame but keep it hidden
-            if not OGRH_BWLEncounterFrame then
-              OGRH.ShowBWLEncounterWindow()
-              OGRH_BWLEncounterFrame:Hide()
+            if not OGRH_EncounterFrame then
+              OGRH.ShowEncounterWindow()
+              OGRH_EncounterFrame:Hide()
             end
             
             -- Select this raid
-            OGRH_BWLEncounterFrame.selectedRaid = capturedRaid
+            OGRH_EncounterFrame.selectedRaid = capturedRaid
             
             -- Select first encounter if available
             local firstEncounter = nil
@@ -7040,7 +7053,7 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
                OGRH_SV.encounterMgmt.encounters[capturedRaid] and
                table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
               firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
-              OGRH_BWLEncounterFrame.selectedEncounter = firstEncounter
+              OGRH_EncounterFrame.selectedEncounter = firstEncounter
             end
             
             -- Update saved variables for next time
@@ -7088,8 +7101,8 @@ function OGRH.MarkPlayersFromMainUI()
   end
   
   -- Get selected raid and encounter
-  local selectedRaid = OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedRaid
-  local selectedEncounter = OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.selectedEncounter
+  local selectedRaid = OGRH_EncounterFrame and OGRH_EncounterFrame.selectedRaid
+  local selectedEncounter = OGRH_EncounterFrame and OGRH_EncounterFrame.selectedEncounter
   
   if not selectedRaid or not selectedEncounter then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")

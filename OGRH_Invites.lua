@@ -430,8 +430,8 @@ end
 -- Show Invites Window
 function OGRH.Invites.ShowWindow()
   -- Close other windows
-  if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
-    getglobal("OGRH_BWLEncounterFrame"):Hide()
+  if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
+    getglobal("OGRH_EncounterFrame"):Hide()
   end
   if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
     getglobal("OGRH_RolesFrame"):Hide()

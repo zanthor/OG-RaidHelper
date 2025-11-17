@@ -176,8 +176,8 @@ readyCheck:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 -- Roles button handler
 btnRoles:SetScript("OnClick", function()
   -- Close encounter windows if they're open
-  if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
-    OGRH_BWLEncounterFrame:Hide()
+  if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+    OGRH_EncounterFrame:Hide()
   end
   if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame:IsVisible() then
     OGRH_EncounterSetupFrame:Hide()

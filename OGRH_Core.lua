@@ -512,19 +512,19 @@ addonFrame:SetScript("OnEvent", function()
           DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received encounter sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
           
           -- Refresh raid/encounter lists in open windows
-          if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshRaidsList then
-            OGRH_BWLEncounterFrame.RefreshRaidsList()
+          if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRaidsList then
+            OGRH_EncounterFrame.RefreshRaidsList()
           end
           if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
             OGRH_EncounterSetupFrame.RefreshRaidsList()
           end
           
           -- Refresh UI if it's open and showing this encounter
-          if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
-            if OGRH_BWLEncounterFrame.selectedRaid == syncData.raid and
-               OGRH_BWLEncounterFrame.selectedEncounter == syncData.encounter then
-              if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-                OGRH_BWLEncounterFrame.RefreshRoleContainers()
+          if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+            if OGRH_EncounterFrame.selectedRaid == syncData.raid and
+               OGRH_EncounterFrame.selectedEncounter == syncData.encounter then
+              if OGRH_EncounterFrame.RefreshRoleContainers then
+                OGRH_EncounterFrame.RefreshRoleContainers()
               end
             end
           end
@@ -581,25 +581,25 @@ addonFrame:SetScript("OnEvent", function()
             
             if encounterExists then
               -- Create frame if it doesn't exist (but don't show it)
-              if not OGRH_BWLEncounterFrame then
-                OGRH.ShowBWLEncounterWindow()
-                OGRH_BWLEncounterFrame:Hide()
+              if not OGRH_EncounterFrame then
+                OGRH.ShowEncounterWindow()
+                OGRH_EncounterFrame:Hide()
               end
               
               -- Update selection
-              OGRH_BWLEncounterFrame.selectedRaid = raidName
-              OGRH_BWLEncounterFrame.selectedEncounter = encounterName
+              OGRH_EncounterFrame.selectedRaid = raidName
+              OGRH_EncounterFrame.selectedEncounter = encounterName
               
               -- Refresh UI if window is open
-              if OGRH_BWLEncounterFrame:IsVisible() then
-                if OGRH_BWLEncounterFrame.RefreshRaidsList then
-                  OGRH_BWLEncounterFrame.RefreshRaidsList()
+              if OGRH_EncounterFrame:IsVisible() then
+                if OGRH_EncounterFrame.RefreshRaidsList then
+                  OGRH_EncounterFrame.RefreshRaidsList()
                 end
-                if OGRH_BWLEncounterFrame.RefreshEncountersList then
-                  OGRH_BWLEncounterFrame.RefreshEncountersList()
+                if OGRH_EncounterFrame.RefreshEncountersList then
+                  OGRH_EncounterFrame.RefreshEncountersList()
                 end
-                if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-                  OGRH_BWLEncounterFrame.RefreshRoleContainers()
+                if OGRH_EncounterFrame.RefreshRoleContainers then
+                  OGRH_EncounterFrame.RefreshRoleContainers()
                 end
               end
               
@@ -686,11 +686,11 @@ addonFrame:SetScript("OnEvent", function()
           end
           
           -- Refresh UI if showing this encounter
-          if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
-            if OGRH_BWLEncounterFrame.selectedRaid == raid and
-               OGRH_BWLEncounterFrame.selectedEncounter == encounter then
-              if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-                OGRH_BWLEncounterFrame.RefreshRoleContainers()
+          if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+            if OGRH_EncounterFrame.selectedRaid == raid and
+               OGRH_EncounterFrame.selectedEncounter == encounter then
+              if OGRH_EncounterFrame.RefreshRoleContainers then
+                OGRH_EncounterFrame.RefreshRoleContainers()
               end
             end
           end
@@ -833,11 +833,11 @@ addonFrame:SetScript("OnEvent", function()
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received full sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
             
             -- Refresh UI if showing this encounter
-            if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame:IsVisible() then
-              if OGRH_BWLEncounterFrame.selectedRaid == syncData.raid and
-                 OGRH_BWLEncounterFrame.selectedEncounter == syncData.encounter then
-                if OGRH_BWLEncounterFrame.RefreshRoleContainers then
-                  OGRH_BWLEncounterFrame.RefreshRoleContainers()
+            if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+              if OGRH_EncounterFrame.selectedRaid == syncData.raid and
+                 OGRH_EncounterFrame.selectedEncounter == syncData.encounter then
+                if OGRH_EncounterFrame.RefreshRoleContainers then
+                  OGRH_EncounterFrame.RefreshRoleContainers()
                 end
               end
             end
@@ -1594,8 +1594,8 @@ function OGRH.ImportShareData(dataString)
   if OGRH_TradeSettingsFrame and OGRH_TradeSettingsFrame.RefreshList then
     OGRH_TradeSettingsFrame.RefreshList()
   end
-  if OGRH_BWLEncounterFrame and OGRH_BWLEncounterFrame.RefreshRaidsList then
-    OGRH_BWLEncounterFrame.RefreshRaidsList()
+  if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRaidsList then
+    OGRH_EncounterFrame.RefreshRaidsList()
   end
 end
 
@@ -2225,8 +2225,8 @@ local function CreateMinimapButton()
       -- Share item
       local shareItem = CreateMenuItem("Share", function()
         -- Close other windows
-        if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
-          getglobal("OGRH_BWLEncounterFrame"):Hide()
+        if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
+          getglobal("OGRH_EncounterFrame"):Hide()
         end
         if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
           getglobal("OGRH_RolesFrame"):Hide()
@@ -2251,8 +2251,8 @@ local function CreateMinimapButton()
       -- Setup item
       local setupItem = CreateMenuItem("Setup", function()
         -- Close other windows
-        if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
-          getglobal("OGRH_BWLEncounterFrame"):Hide()
+        if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
+          getglobal("OGRH_EncounterFrame"):Hide()
         end
         if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
           getglobal("OGRH_RolesFrame"):Hide()
@@ -2277,8 +2277,8 @@ local function CreateMinimapButton()
       -- Invites item
       local invitesItem = CreateMenuItem("Invites", function()
         -- Close other windows
-        if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
-          getglobal("OGRH_BWLEncounterFrame"):Hide()
+        if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
+          getglobal("OGRH_EncounterFrame"):Hide()
         end
         if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
           getglobal("OGRH_RolesFrame"):Hide()
@@ -2305,8 +2305,8 @@ local function CreateMinimapButton()
       -- SR Validation item
       local srValidationItem = CreateMenuItem("SR Validation", function()
         -- Close other windows
-        if getglobal("OGRH_BWLEncounterFrame") and getglobal("OGRH_BWLEncounterFrame"):IsVisible() then
-          getglobal("OGRH_BWLEncounterFrame"):Hide()
+        if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
+          getglobal("OGRH_EncounterFrame"):Hide()
         end
         if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
           getglobal("OGRH_RolesFrame"):Hide()

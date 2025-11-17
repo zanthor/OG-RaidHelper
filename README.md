@@ -1,6 +1,6 @@
 w# OG-RaidHelper
 
-**Version:** 1.7.1  
+**Version:** 1.7.2  
 **Author:** Gnuzmas
 **Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)
@@ -817,7 +817,15 @@ OGRH_SV = {
 
 ## Version History
 
-**1.7.1** (Current)
+**1.7.2** (Current)
+- **Refactored:** Removed legacy "BWL" naming from encounter window functions and frame names
+  - `OGRH.ShowBWLEncounterWindow` → `OGRH.ShowEncounterWindow`
+  - `OGRH_BWLEncounterFrame` → `OGRH_EncounterFrame`
+- **NEW:** Selected raid and encounter now persist between sessions
+  - Automatically restores last selected raid/encounter when opening Encounter Planning
+  - Saves selection when clicking raids, encounters, or using navigation buttons
+
+**1.7.1**
 - Fixed: Encounter Planning window now properly closes SR+ Validation and Share windows
 - Fixed: Encounter button on main UI now opens Encounter Planning window consistently
 - Fixed: Removed "No raid selected" error when opening Encounter Planning without a selected raid
