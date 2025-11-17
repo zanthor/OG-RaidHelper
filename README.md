@@ -176,7 +176,7 @@ The Roles Window displays your raid composition organized into four columns: **T
 
 ## Raid Invites System
 
-The Raid Invites system integrates with RollFor to display soft-reserve data and invite players to your raid automatically.
+The Raid Invites system integrates with RollFor to invite players to your raid automatically.
 
 ![Raid Invites](Images/RaidInvites.jpg)
 
@@ -190,56 +190,31 @@ The Raid Invites system integrates with RollFor to display soft-reserve data and
 **Player List Display:**
 - Shows all players from RollFor soft-reserve data
 - **Class Colors** - Player names colored by class
-- **SR+ Values** - Displays each player's current soft-reserve plus value in **(+XX)** format
 - **Online Status** - Green background for online players, gray for offline
-- **Raid Status** - Shows "In Raid" for players already in your raid group
-
-**Metadata Display:**
-- **Instance** - Shows configured instance name from RollFor (e.g., "MC", "BWL")
-- **Data Age** - Last update timestamp from RollFor
 
 ### Using Raid Invites
 
 **Inviting Players:**
 1. Click minimap button → **Raid Invites** to open window
-2. Review player list with SR+ values
-3. **Invite Individual Player:**
+2. **Invite Individual Player:**
    - Click any player name to invite them
-4. **Invite All Online:**
+3. **Invite All Online:**
    - Click **Invite All** button to invite all online players
    - When solo: Sends first 4 invites (party limit)
    - Auto-converts to raid when first person joins
    - Automatically invites remaining players after raid forms
 
-**Auto-Conversion Feature:**
-- The addon automatically handles solo → party → raid progression
-- When you click **Invite All** from solo:
-  1. Sends 4 invites (leaving one slot for you in the party)
-  2. Monitors for party formation (PARTY_MEMBERS_CHANGED event)
-  3. Automatically converts party to raid when first person joins
-  4. Automatically sends remaining invites once raid is formed
-- This provides seamless raid formation without manual intervention
-
 **Refresh Button:**
 - Click **Refresh** to reload RollFor data
 - Updates player list, SR+ values, and online status
-
-### Data Source
-
-All data is read from RollFor addon:
-- Player names and class information
-- SR+ (soft-reserve plus) values
-- Reserved items per player
-- Instance configuration
-- Last update timestamp
-
-**Note:** OG-RaidHelper reads RollFor data but does not modify it. All SR+ changes must be made in RollFor directly.
 
 ---
 
 ## SR+ Validation System
 
 The SR+ Validation system tracks soft-reserve plus value changes over time to help raid leaders detect suspicious SR+ increases and maintain audit trails.
+
+**Note:** OG-RaidHelper reads RollFor data but can not modify it. All SR+ changes must be made in the RaidRes website and re-imported.
 
 ![SR+ Validation](Images/SRValidation.jpg)
 
@@ -251,12 +226,9 @@ The SR+ Validation system tracks soft-reserve plus value changes over time to he
 
 **Left Panel: Player List (220px width)**
 - Shows all players from RollFor with SR+ values
-- **Class Colors** - Names colored by class
 - **Validation Status:**
   - **Green background** - Player validated successfully (SR+ increase ≤10 from last validation)
   - **Red background** - Validation error (SR+ increased >10 from last validation)
-  - **Gray background** - Not yet validated
-- **Mouse Wheel Scrolling** - Scroll through player list
 
 **Right Panel: Player Details (490px width)**
 - **Current SR+ Value** - Displays player's current soft-reserve plus
@@ -270,6 +242,7 @@ The SR+ Validation system tracks soft-reserve plus value changes over time to he
   - Complete item lists showing historical SR+ values
   - Total SR+ value at time of validation
 - **Expected Value** - For validation errors, shows expected SR+ (last validated + 10)
+- **Data Pruning** - If a player has +0 on all SR items the addon will reset the history for that player.
 
 ### Using SR+ Validation
 
@@ -278,9 +251,12 @@ The SR+ Validation system tracks soft-reserve plus value changes over time to he
 
 **Validating Players:**
 
+1. **Automatic Validation**
+   - The addon will validate based off the last record stored in the players saved variables.  If you did not master loot the previous raid, simply import the previous SR data, validate everything, then import the current SR data.
+   - Players that can be automatically validated will be marked in Green, players with discrepancies over their last record will be marked in red.
 1. **Validate Individual Player:**
    - Click player name to view details
-   - Review current items and previous validations
+   - Review current items and previous validations, if changes need to be made edit the data on the RaidRes website and re-import.
    - Click **Save Validation** to record current state
    
 2. **Validate All Passed Players:**
@@ -323,19 +299,6 @@ The SR+ Validation system tracks soft-reserve plus value changes over time to he
 4. Click **Validate All Passed** to record all valid players
 5. Manually review and validate (or exclude) flagged players
 
-### Debug Command
-
-`/ogrhsr <PlayerName> [itemId]`
-- Inspects RollFor data structure for debugging
-- Shows raw SR+ values and item data
-- Optional itemId parameter to check specific item
-
-**Example:**
-```
-/ogrhsr Gnuzmas
-/ogrhsr Gnuzmas 18803
-```
-
 ### Data Storage
 
 Validation records stored in `OGRH_SV.srValidation.records[playerName]`:
@@ -354,7 +317,7 @@ Validation records stored in `OGRH_SV.srValidation.records[playerName]`:
 }
 ```
 
-**Note:** RollFor data is read-only. SR+ changes must be made in RollFor directly. OG-RaidHelper cannot modify SR+ values as RollFor uses encoded data format.
+**Note:** RollFor data is read-only. SR+ changes must be made in the RaidRes website and reimported to RollFor directly. OG-RaidHelper cannot modify SR+ values as RollFor uses encoded data format.
 
 ---
 
