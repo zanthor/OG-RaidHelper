@@ -1,6 +1,6 @@
 w# OG-RaidHelper
 
-**Version:** 1.7.0  
+**Version:** 1.7.1  
 **Author:** Gnuzmas
 **Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)
@@ -817,7 +817,12 @@ OGRH_SV = {
 
 ## Version History
 
-**1.15.0** (Current)
+**1.7.1** (Current)
+- Fixed: Encounter Planning window now properly closes SR+ Validation and Share windows
+- Fixed: Encounter button on main UI now opens Encounter Planning window consistently
+- Fixed: Removed "No raid selected" error when opening Encounter Planning without a selected raid
+
+**1.7.0**
 - **NEW:** Raid Invites system with RollFor integration
   - Display all soft-reserve players with SR+ values
   - Invite individual or all online players

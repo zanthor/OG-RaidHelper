@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.7.0
+## Version: 1.7.1
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua

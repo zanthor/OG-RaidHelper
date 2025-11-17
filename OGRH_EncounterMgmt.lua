@@ -3086,6 +3086,16 @@ function OGRH.ShowBWLEncounterWindow(encounterName)
     OGRH.rolesFrame:Hide()
   end
   
+  -- Close SR+ Validation window if it's open
+  if OGRH_SRValidationFrame and OGRH_SRValidationFrame:IsVisible() then
+    OGRH_SRValidationFrame:Hide()
+  end
+  
+  -- Close Share window if it's open
+  if OGRH_ShareFrame and OGRH_ShareFrame:IsVisible() then
+    OGRH_ShareFrame:Hide()
+  end
+  
   -- Show the frame
   OGRH_BWLEncounterFrame:Show()
   
@@ -6872,13 +6882,18 @@ function OGRH.PrepareEncounterAnnouncement()
 end
 
 function OGRH.OpenEncounterPlanning()
-  if not OGRH_BWLEncounterFrame then
-    OGRH.ShowBWLEncounterWindow()
-    return
+  -- Close SR+ Validation window if it's open
+  if OGRH_SRValidationFrame and OGRH_SRValidationFrame:IsVisible() then
+    OGRH_SRValidationFrame:Hide()
   end
   
-  if not OGRH_BWLEncounterFrame.selectedRaid then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No raid selected. Right-click to select a raid.")
+  -- Close Share window if it's open
+  if OGRH_ShareFrame and OGRH_ShareFrame:IsVisible() then
+    OGRH_ShareFrame:Hide()
+  end
+  
+  if not OGRH_BWLEncounterFrame then
+    OGRH.ShowBWLEncounterWindow()
     return
   end
   
