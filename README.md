@@ -1,24 +1,14 @@
 # OG-RaidHelper
 
-**Version:** 1.5.0  
-**Author:** Gnuzmas  
+**Version:** 1.7.0  
+**Author:** Gnuzmas
+**Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)
 
-A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
+A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, and coordinating raid activities.
 
-![Main UI](Images/mainui.jpg)
+<img width="1161" height="518" alt="image" src="https://github.com/user-attachments/assets/a80bc0cb-d10e-4700-a1cd-5fb169dea8b1" />
 
----
-
-## Dependencies
-
-**Required:**
-- **[RollFor](https://github.com/jasonp1992/RollFor)** - Soft-reserve addon that provides the underlying SR data for the Raid Invites and SR+ Validation features. OG-RaidHelper reads RollFor's encoded soft-reserve data to display player SR+ values and item lists.
-
-**Installation:**
-1. Install RollFor addon first
-2. Configure your soft-reserve data in RollFor
-3. OG-RaidHelper will automatically detect and use RollFor data
 
 ---
 ## Disclaimer
