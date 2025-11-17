@@ -2,7 +2,7 @@
 ## Title: OG-RaidHelper
 ## Notes: Roles helper, assignments (C'Thun, 4HM), trade helper, polling, and healing pairs.
 ## Author: Gnuzmas
-## Version: 1.6.0
+## Version: 1.7.0
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
