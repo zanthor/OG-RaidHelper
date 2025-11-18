@@ -1,8 +1,16 @@
 -- OG-RaidHelper Roles UI
 -- Author: Will + ChatGPT
--- Version: 1.15.0
+-- Version: 1.16.0
 
 --[[
+  CHANGELOG:
+  v1.16.0:
+  - Added Puppeteer integration: Tank roles automatically sync to Puppeteer's role system
+  - Added pfUI integration: Tank roles automatically sync to pfUI's tankrole system
+  - Fixed role priority: Manual role assignments now take precedence over RollFor data
+  - RollFor data only applied on first join or when "Sync RollFor" button is clicked
+  - Tank role changes trigger immediate UI updates in both Puppeteer and pfUI
+  
   SIMPLIFIED ROLES UI
   
   This UI provides basic role column management with drag/drop functionality.
@@ -180,6 +188,30 @@ local function CreateRolesFrame()
                                     else newRole = "RANGED" end
                                     
                                     OGRH_SV.roles[draggedName] = newRole
+                                    
+                                    -- Sync tank status to Puppeteer and pfUI
+                                    local isTank = (newRole == "TANKS")
+                                    
+                                    -- Update Puppeteer (use SetRoleAndUpdate to trigger UI refresh)
+                                    if _G.Puppeteer and _G.Puppeteer.SetRoleAndUpdate then
+                                        if isTank then
+                                            _G.Puppeteer.SetRoleAndUpdate(draggedName, "Tank")
+                                        else
+                                            -- Remove tank role if they had it
+                                            local currentRole = _G.Puppeteer.GetAssignedRole and _G.Puppeteer.GetAssignedRole(draggedName)
+                                            if currentRole == "Tank" then
+                                                _G.Puppeteer.SetRoleAndUpdate(draggedName, "No Role")
+                                            end
+                                        end
+                                    end
+                                    
+                                    -- Update pfUI
+                                    if _G.pfUI and _G.pfUI.uf and _G.pfUI.uf.raid and _G.pfUI.uf.raid.tankrole then
+                                        _G.pfUI.uf.raid.tankrole[draggedName] = isTank
+                                        if _G.pfUI.uf.raid.Show then
+                                            _G.pfUI.uf.raid:Show()  -- Trigger pfUI update
+                                        end
+                                    end
                                     
                                     -- Refresh display
                                     RefreshColumnDisplays()
@@ -407,8 +439,12 @@ local function CreateRolesFrame()
         column.contentFrame = content
     end
     
+    -- Track players who have joined (used to apply RollFor data only on first join)
+    local knownPlayers = {}
+    
     -- Function to update player lists
-    local function UpdatePlayerLists()
+    -- forceSyncRollFor: if true, apply RollFor data even for known players
+    local function UpdatePlayerLists(forceSyncRollFor)
         -- Load saved raid target assignments
         if OGRH_SV and OGRH_SV.raidTargets then
             for name, iconId in pairs(OGRH_SV.raidTargets) do
@@ -438,10 +474,22 @@ local function CreateRolesFrame()
                         OGRH.Roles.nameClass[name] = class
                     
                         local roleIndex = 4  -- Default to Ranged
+                        local isNewPlayer = not knownPlayers[name]
                         
-                        -- Priority 1: Try to get role from RollFor soft-res data
-                        local rollForRole = nil
-                        if OGRH.Invites and OGRH.Invites.GetSoftResPlayers then
+                        -- Mark player as known
+                        knownPlayers[name] = true
+                        
+                        -- Priority 1: Use manually saved role assignment (if exists)
+                        if OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
+                            local savedRole = OGRH_SV.roles[name]
+                            if savedRole == "TANKS" then roleIndex = 1
+                            elseif savedRole == "HEALERS" then roleIndex = 2
+                            elseif savedRole == "MELEE" then roleIndex = 3
+                            elseif savedRole == "RANGED" then roleIndex = 4
+                            end
+                        -- Priority 2: Try to get role from RollFor soft-res data (only on first join or forced sync)
+                        elseif (isNewPlayer or forceSyncRollFor) and OGRH.Invites and OGRH.Invites.GetSoftResPlayers then
+                            local rollForRole = nil
                             local softResPlayers = OGRH.Invites.GetSoftResPlayers()
                             for _, playerData in ipairs(softResPlayers) do
                                 if playerData.name == name then
@@ -449,21 +497,28 @@ local function CreateRolesFrame()
                                     break
                                 end
                             end
-                        end
-                        
-                        if rollForRole then
-                            -- Use RollFor role
-                            if rollForRole == "TANKS" then roleIndex = 1
-                            elseif rollForRole == "HEALERS" then roleIndex = 2
-                            elseif rollForRole == "MELEE" then roleIndex = 3
-                            elseif rollForRole == "RANGED" then roleIndex = 4
-                            end
-                        elseif OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
-                            -- Priority 2: Use manually saved role assignment
-                            local savedRole = OGRH_SV.roles[name]
-                            if savedRole == "TANKS" then roleIndex = 1
-                            elseif savedRole == "HEALERS" then roleIndex = 2
-                            elseif savedRole == "MELEE" then roleIndex = 3
+                            
+                            if rollForRole then
+                                -- Use RollFor role and save it
+                                if rollForRole == "TANKS" then roleIndex = 1
+                                elseif rollForRole == "HEALERS" then roleIndex = 2
+                                elseif rollForRole == "MELEE" then roleIndex = 3
+                                elseif rollForRole == "RANGED" then roleIndex = 4
+                                end
+                                
+                                -- Save the RollFor role so it persists
+                                if not OGRH_SV then OGRH_SV = {} end
+                                if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                                OGRH_SV.roles[name] = rollForRole
+                            else
+                                -- Priority 3: Fall back to class defaults (only if no RollFor data)
+                                if class == "WARRIOR" then
+                                    roleIndex = 1  -- Tanks
+                                elseif class == "PRIEST" or (class == "PALADIN") or (class == "DRUID") then
+                                    roleIndex = 2  -- Healers
+                                elseif class == "ROGUE" then
+                                    roleIndex = 3  -- Melee
+                                end
                             end
                         else
                             -- Priority 3: Fall back to class defaults
@@ -482,11 +537,63 @@ local function CreateRolesFrame()
             end
         end
         
+        -- Clean up knownPlayers - remove players who are no longer in raid
+        local currentPlayers = {}
+        for i = 1, table.getn(ROLE_COLUMNS) do
+            for j = 1, table.getn(ROLE_COLUMNS[i].players) do
+                currentPlayers[ROLE_COLUMNS[i].players[j]] = true
+            end
+        end
+        for name in pairs(knownPlayers) do
+            if not currentPlayers[name] then
+                knownPlayers[name] = nil
+            end
+        end
+        
         -- Sort all columns alphabetically
         for i = 1, table.getn(ROLE_COLUMNS) do
             table.sort(ROLE_COLUMNS[i].players, function(a, b) 
                 return string.upper(a) < string.upper(b)
             end)
+        end
+        
+        -- Sync tank status to Puppeteer and pfUI for all players
+        local puppeteerNeedsUpdate = false
+        for i = 1, table.getn(ROLE_COLUMNS) do
+            local isTankColumn = (i == 1)  -- First column is Tanks
+            for j = 1, table.getn(ROLE_COLUMNS[i].players) do
+                local playerName = ROLE_COLUMNS[i].players[j]
+                
+                -- Update Puppeteer (use SetAssignedRole without update, we'll batch update at the end)
+                if _G.Puppeteer and _G.Puppeteer.SetAssignedRole then
+                    if isTankColumn then
+                        _G.Puppeteer.SetAssignedRole(playerName, "Tank")
+                        puppeteerNeedsUpdate = true
+                    else
+                        -- Remove tank role if they had it
+                        local currentRole = _G.Puppeteer.GetAssignedRole and _G.Puppeteer.GetAssignedRole(playerName)
+                        if currentRole == "Tank" then
+                            _G.Puppeteer.SetAssignedRole(playerName, "No Role")
+                            puppeteerNeedsUpdate = true
+                        end
+                    end
+                end
+                
+                -- Update pfUI
+                if _G.pfUI and _G.pfUI.uf and _G.pfUI.uf.raid and _G.pfUI.uf.raid.tankrole then
+                    _G.pfUI.uf.raid.tankrole[playerName] = isTankColumn
+                end
+            end
+        end
+        
+        -- Trigger Puppeteer UI update once after all changes
+        if puppeteerNeedsUpdate and _G.Puppeteer and _G.Puppeteer.UpdateUnitFrameGroups then
+            _G.Puppeteer.UpdateUnitFrameGroups()
+        end
+        
+        -- Trigger pfUI update once after all changes
+        if _G.pfUI and _G.pfUI.uf and _G.pfUI.uf.raid and _G.pfUI.uf.raid.Show then
+            _G.pfUI.uf.raid:Show()
         end
         
         RefreshColumnDisplays()
@@ -508,8 +615,8 @@ local function CreateRolesFrame()
                 OGRH_SV.roles = {}
             end
             
-            -- Force update with RollFor data taking priority
-            UpdatePlayerLists()
+            -- Force update with RollFor data taking priority (pass true to forceSyncRollFor)
+            UpdatePlayerLists(true)
             
             OGRH.Msg("Synced roles from RollFor soft-res data.")
         end)

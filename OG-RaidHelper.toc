@@ -1,7 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.7.3
+## Version: 1.7.4
+## Notes: Added Puppeteer & pfUI integration for tank role synchronization
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
