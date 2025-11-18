@@ -817,7 +817,25 @@ OGRH_SV = {
 
 ## Version History
 
-**1.7.3** (Current)
+**1.8.1** (Current)
+- Added "Trade Settings" option to minimap menu for configuring trade items
+- Enhanced Addon Audit system:
+  - Added TWThreat addon detection and version checking
+  - Fixed Lua 5.0 compatibility issues (replaced % operator with math.mod)
+  - Improved window mutual exclusion for Trade Settings
+- Fixed: Trade Settings window was inaccessible from menu
+
+**1.8.0**
+- Added Addon Audit window to check which raid members have specific addons installed
+  - BigWigs version detection and comparison
+  - TWThreat version detection and comparison
+  - Visual list of players with/without target addon
+  - Version display for installed addons
+  - Offline player detection
+  - Refresh button for re-querying
+  - Accessible via minimap menu "Audit Addons"
+
+**1.7.3**
 - Fixed: Encounter nav button on main UI now displays saved raid/encounter on addon load
 - Fixed: Previous/Next navigation buttons now properly enable/disable based on saved state
 - Fixed: UpdateEncounterNavButton now checks saved variables when frame doesn't exist yet
