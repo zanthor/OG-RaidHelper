@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.7.4
-## Notes: Added Puppeteer & pfUI integration for tank role synchronization
+## Version: 1.8.1
+## Notes: Added Trade Settings to menu, addon audit enhancements
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
@@ -13,3 +13,4 @@ OGRH_Poll.lua
 OGRH_Trade.lua
 OGRH_Invites.lua
 OGRH_SRValidation.lua
+OGRH_AddonAudit.lua

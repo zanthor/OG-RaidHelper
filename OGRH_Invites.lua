@@ -442,6 +442,12 @@ function OGRH.Invites.ShowWindow()
   if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
     getglobal("OGRH_EncounterSetupFrame"):Hide()
   end
+  if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
+    getglobal("OGRH_AddonAuditFrame"):Hide()
+  end
+  if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
+    getglobal("OGRH_TradeSettingsFrame"):Hide()
+  end
   
   if OGRH_InvitesFrame then
     OGRH_InvitesFrame:Show()

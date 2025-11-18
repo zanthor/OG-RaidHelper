@@ -1651,6 +1651,29 @@ end
 function OGRH.ShowTradeSettings()
   OGRH.EnsureSV()
   
+  -- Close other windows
+  if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
+    getglobal("OGRH_EncounterFrame"):Hide()
+  end
+  if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
+    getglobal("OGRH_RolesFrame"):Hide()
+  end
+  if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
+    getglobal("OGRH_ShareFrame"):Hide()
+  end
+  if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
+    getglobal("OGRH_EncounterSetupFrame"):Hide()
+  end
+  if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
+    getglobal("OGRH_InvitesFrame"):Hide()
+  end
+  if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
+    getglobal("OGRH_SRValidationFrame"):Hide()
+  end
+  if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
+    getglobal("OGRH_AddonAuditFrame"):Hide()
+  end
+  
   if OGRH_TradeSettingsFrame then
     OGRH_TradeSettingsFrame:Show()
     OGRH.RefreshTradeSettings()
@@ -2134,7 +2157,7 @@ local function CreateMinimapButton()
       menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
       menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
       menu:SetWidth(160)
-      menu:SetHeight(135)
+      menu:SetHeight(171)
       menu:Hide()
       
       -- Close menu when clicking outside
@@ -2266,6 +2289,12 @@ local function CreateMinimapButton()
         if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
           getglobal("OGRH_SRValidationFrame"):Hide()
         end
+        if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
+          getglobal("OGRH_AddonAuditFrame"):Hide()
+        end
+        if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
+          getglobal("OGRH_TradeSettingsFrame"):Hide()
+        end
         
         if OGRH.ShowEncounterSetup then
           OGRH.ShowEncounterSetup()
@@ -2291,6 +2320,12 @@ local function CreateMinimapButton()
         end
         if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
           getglobal("OGRH_SRValidationFrame"):Hide()
+        end
+        if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
+          getglobal("OGRH_AddonAuditFrame"):Hide()
+        end
+        if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
+          getglobal("OGRH_TradeSettingsFrame"):Hide()
         end
         
         if OGRH.Invites and OGRH.Invites.ShowWindow then
@@ -2320,11 +2355,39 @@ local function CreateMinimapButton()
         if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
           getglobal("OGRH_InvitesFrame"):Hide()
         end
+        if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
+          getglobal("OGRH_AddonAuditFrame"):Hide()
+        end
+        if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
+          getglobal("OGRH_TradeSettingsFrame"):Hide()
+        end
         
         if OGRH.SRValidation and OGRH.SRValidation.ShowWindow then
           OGRH.SRValidation.ShowWindow()
         else
           OGRH.Msg("SR Validation module not loaded.")
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Addon Audit item
+      local addonAuditItem = CreateMenuItem("Audit Addons", function()
+        if OGRH.ShowAddonAudit then
+          OGRH.ShowAddonAudit()
+        else
+          OGRH.Msg("Addon Audit module not loaded.")
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Trade Settings item
+      local tradeSettingsItem = CreateMenuItem("Trade Settings", function()
+        if OGRH.ShowTradeSettings then
+          OGRH.ShowTradeSettings()
+        else
+          OGRH.Msg("Trade Settings module not loaded.")
         end
       end, menu, yOffset)
       

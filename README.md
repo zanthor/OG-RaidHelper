@@ -1,6 +1,6 @@
 w# OG-RaidHelper
 
-**Version:** 1.7.3  
+**Version:** 1.8.1  
 **Author:** Gnuzmas
 **Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)

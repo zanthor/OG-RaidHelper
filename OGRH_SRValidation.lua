@@ -954,6 +954,7 @@ function OGRH.SRValidation.ShowWindow()
   if OGRH_EncounterSetupFrame then OGRH_EncounterSetupFrame:Hide() end
   if OGRH_InvitesFrame then OGRH_InvitesFrame:Hide() end
   if OGRH.BWLFrame then OGRH.BWLFrame:Hide() end
+  if OGRH_AddonAuditFrame then OGRH_AddonAuditFrame:Hide() end
   
   -- If frame exists, just show and refresh
   if OGRH_SRValidationFrame then
