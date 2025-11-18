@@ -664,34 +664,7 @@ end
 ------------------------------
 
 function OGRH.ShowAddonAudit()
-  -- Close other windows
-  if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
-    getglobal("OGRH_EncounterFrame"):Hide()
-  end
-  if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
-    getglobal("OGRH_RolesFrame"):Hide()
-  end
-  if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
-    getglobal("OGRH_ShareFrame"):Hide()
-  end
-  if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
-    getglobal("OGRH_EncounterSetupFrame"):Hide()
-  end
-  if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
-    getglobal("OGRH_InvitesFrame"):Hide()
-  end
-  if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
-    getglobal("OGRH_SRValidationFrame"):Hide()
-  end
-  if getglobal("OGRH_EncountersMenu") and getglobal("OGRH_EncountersMenu"):IsVisible() then
-    getglobal("OGRH_EncountersMenu"):Hide()
-  end
-  if getglobal("OGRH_TradeMenu") and getglobal("OGRH_TradeMenu"):IsVisible() then
-    getglobal("OGRH_TradeMenu"):Hide()
-  end
-  if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
-    getglobal("OGRH_TradeSettingsFrame"):Hide()
-  end
+  OGRH.CloseAllWindows("OGRH_AddonAuditFrame")
   
   -- Create frame if needed
   if not getglobal("OGRH_AddonAuditFrame") then

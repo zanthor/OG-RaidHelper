@@ -81,6 +81,32 @@ function OGRH.Mod1(n,t) return math.mod(n-1, t)+1 end
 function OGRH.CanRW() if IsRaidLeader and IsRaidLeader()==1 then return true end if IsRaidOfficer and IsRaidOfficer()==1 then return true end return false end
 function OGRH.SayRW(text) if OGRH.CanRW() then SendChatMessage(text, "RAID_WARNING") else SendChatMessage(text, "RAID") end end
 
+-- Centralized window management - close all dialog windows except the specified one
+function OGRH.CloseAllWindows(exceptFrame)
+  local windows = {
+    "OGRH_EncounterFrame",
+    "OGRH_RolesFrame",
+    "OGRH_ShareFrame",
+    "OGRH_EncounterSetupFrame",
+    "OGRH_InvitesFrame",
+    "OGRH_SRValidationFrame",
+    "OGRH_AddonAuditFrame",
+    "OGRH_TradeSettingsFrame",
+    "OGRH_TradeMenu",
+    "OGRH_EncountersMenu",
+    "OGRH_ConsumesFrame"
+  }
+  
+  for _, frameName in ipairs(windows) do
+    if frameName ~= exceptFrame then
+      local frame = getglobal(frameName)
+      if frame and frame:IsVisible() then
+        frame:Hide()
+      end
+    end
+  end
+end
+
 -- Custom button styling with backdrop and rounded corners
 function OGRH.StyleButton(button)
   if not button then return end
@@ -1650,29 +1676,7 @@ end
 -- Trade Settings Window
 function OGRH.ShowTradeSettings()
   OGRH.EnsureSV()
-  
-  -- Close other windows
-  if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
-    getglobal("OGRH_EncounterFrame"):Hide()
-  end
-  if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
-    getglobal("OGRH_RolesFrame"):Hide()
-  end
-  if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
-    getglobal("OGRH_ShareFrame"):Hide()
-  end
-  if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
-    getglobal("OGRH_EncounterSetupFrame"):Hide()
-  end
-  if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
-    getglobal("OGRH_InvitesFrame"):Hide()
-  end
-  if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
-    getglobal("OGRH_SRValidationFrame"):Hide()
-  end
-  if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
-    getglobal("OGRH_AddonAuditFrame"):Hide()
-  end
+  OGRH.CloseAllWindows("OGRH_TradeSettingsFrame")
   
   if OGRH_TradeSettingsFrame then
     OGRH_TradeSettingsFrame:Show()
@@ -1816,6 +1820,7 @@ function OGRH.RefreshTradeSettings()
     row:SetWidth(235)
     row:SetHeight(rowHeight)
     row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     
     -- Background
     local bg = row:CreateTexture(nil, "BACKGROUND")
@@ -1825,6 +1830,13 @@ function OGRH.RefreshTradeSettings()
     row.bg = bg
     
     local idx = i
+    
+    -- Right-click to edit
+    row:SetScript("OnClick", function()
+      if arg1 == "RightButton" then
+        OGRH.ShowEditTradeItemDialog(idx)
+      end
+    end)
     
     -- Delete button (X mark - raid target icon 7)
     local deleteBtn = CreateFrame("Button", nil, row)
@@ -2097,6 +2109,147 @@ function OGRH.ShowAddTradeItemDialog()
   dialog:Show()
 end
 
+-- Show edit trade item dialog
+function OGRH.ShowEditTradeItemDialog(itemIndex)
+  OGRH.EnsureSV()
+  local itemData = OGRH_SV.tradeItems[itemIndex]
+  if not itemData then return end
+  
+  if OGRH_EditTradeItemDialog then
+    OGRH_EditTradeItemDialog.itemIndex = itemIndex
+    OGRH_EditTradeItemDialog.itemIdInput:SetText(tostring(itemData.itemId))
+    OGRH_EditTradeItemDialog.qtyInput:SetText(tostring(itemData.quantity or 1))
+    OGRH_EditTradeItemDialog:Show()
+    return
+  end
+  
+  local dialog = CreateFrame("Frame", "OGRH_EditTradeItemDialog", UIParent)
+  dialog:SetWidth(250)
+  dialog:SetHeight(160)
+  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+  dialog:EnableMouse(true)
+  dialog:SetMovable(true)
+  dialog:RegisterForDrag("LeftButton")
+  dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
+  dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
+  dialog.itemIndex = itemIndex
+  
+  -- Backdrop
+  dialog:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  dialog:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Title
+  local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -15)
+  title:SetText("Edit Trade Item")
+  
+  -- Item ID label
+  local itemIdLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  itemIdLabel:SetPoint("TOPLEFT", 20, -50)
+  itemIdLabel:SetText("Item ID:")
+  
+  -- Item ID input
+  local itemIdInput = CreateFrame("EditBox", nil, dialog)
+  itemIdInput:SetPoint("LEFT", itemIdLabel, "RIGHT", 10, 0)
+  itemIdInput:SetWidth(120)
+  itemIdInput:SetHeight(25)
+  itemIdInput:SetAutoFocus(false)
+  itemIdInput:SetFontObject(ChatFontNormal)
+  itemIdInput:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  itemIdInput:SetBackdropColor(0, 0, 0, 0.8)
+  itemIdInput:SetTextInsets(8, 8, 0, 0)
+  itemIdInput:SetText(tostring(itemData.itemId))
+  itemIdInput:SetScript("OnEscapePressed", function() itemIdInput:ClearFocus() end)
+  dialog.itemIdInput = itemIdInput
+  
+  -- Quantity label
+  local qtyLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  qtyLabel:SetPoint("TOPLEFT", 20, -90)
+  qtyLabel:SetText("Quantity:")
+  
+  -- Quantity input
+  local qtyInput = CreateFrame("EditBox", nil, dialog)
+  qtyInput:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
+  qtyInput:SetWidth(120)
+  qtyInput:SetHeight(25)
+  qtyInput:SetAutoFocus(false)
+  qtyInput:SetFontObject(ChatFontNormal)
+  qtyInput:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  qtyInput:SetBackdropColor(0, 0, 0, 0.8)
+  qtyInput:SetTextInsets(8, 8, 0, 0)
+  qtyInput:SetText(tostring(itemData.quantity or 1))
+  qtyInput:SetScript("OnEscapePressed", function() qtyInput:ClearFocus() end)
+  dialog.qtyInput = qtyInput
+  
+  -- Cancel button
+  local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  cancelBtn:SetWidth(80)
+  cancelBtn:SetHeight(25)
+  cancelBtn:SetPoint("BOTTOMRIGHT", -20, 15)
+  cancelBtn:SetText("Cancel")
+  cancelBtn:SetScript("OnClick", function()
+    dialog:Hide()
+  end)
+  
+  -- Save button
+  local saveBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  saveBtn:SetWidth(80)
+  saveBtn:SetHeight(25)
+  saveBtn:SetPoint("RIGHT", cancelBtn, "LEFT", -10, 0)
+  saveBtn:SetText("Save")
+  saveBtn:SetScript("OnClick", function()
+    local itemIdText = itemIdInput:GetText()
+    local qtyText = qtyInput:GetText()
+    
+    local itemId = tonumber(itemIdText)
+    local quantity = tonumber(qtyText)
+    
+    if not itemId or itemId <= 0 then
+      OGRH.Msg("Invalid Item ID. Please enter a valid number.")
+      return
+    end
+    
+    if not quantity or quantity <= 0 then
+      OGRH.Msg("Invalid Quantity. Please enter a valid number.")
+      return
+    end
+    
+    -- Get item name from game
+    local itemName, itemLink = GetItemInfo(itemId)
+    
+    -- Update item
+    OGRH_SV.tradeItems[dialog.itemIndex] = {
+      itemId = itemId,
+      name = itemName or ("Item " .. itemId),
+      quantity = quantity
+    }
+    
+    -- Refresh settings window
+    OGRH.RefreshTradeSettings()
+    
+    dialog:Hide()
+    OGRH.Msg("Updated trade item: " .. (itemName or ("Item " .. itemId)))
+  end)
+  
+  dialog:Show()
+end
+
 -- Create minimap button
 local function CreateMinimapButton()
   local button = CreateFrame("Button", "OGRHMinimapButton", Minimap)
@@ -2157,7 +2310,7 @@ local function CreateMinimapButton()
       menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
       menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
       menu:SetWidth(160)
-      menu:SetHeight(171)
+      menu:SetHeight(189)
       menu:Hide()
       
       -- Close menu when clicking outside
@@ -2247,22 +2400,7 @@ local function CreateMinimapButton()
       
       -- Share item
       local shareItem = CreateMenuItem("Share", function()
-        -- Close other windows
-        if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
-          getglobal("OGRH_EncounterFrame"):Hide()
-        end
-        if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
-          getglobal("OGRH_RolesFrame"):Hide()
-        end
-        if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
-          getglobal("OGRH_EncounterSetupFrame"):Hide()
-        end
-        if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
-          getglobal("OGRH_InvitesFrame"):Hide()
-        end
-        if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
-          getglobal("OGRH_SRValidationFrame"):Hide()
-        end
+        OGRH.CloseAllWindows("OGRH_ShareFrame")
         
         if OGRH.ShowShareWindow then
           OGRH.ShowShareWindow()
@@ -2273,28 +2411,7 @@ local function CreateMinimapButton()
       
       -- Setup item
       local setupItem = CreateMenuItem("Setup", function()
-        -- Close other windows
-        if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
-          getglobal("OGRH_EncounterFrame"):Hide()
-        end
-        if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
-          getglobal("OGRH_RolesFrame"):Hide()
-        end
-        if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
-          getglobal("OGRH_ShareFrame"):Hide()
-        end
-        if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
-          getglobal("OGRH_InvitesFrame"):Hide()
-        end
-        if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
-          getglobal("OGRH_SRValidationFrame"):Hide()
-        end
-        if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
-          getglobal("OGRH_AddonAuditFrame"):Hide()
-        end
-        if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
-          getglobal("OGRH_TradeSettingsFrame"):Hide()
-        end
+        OGRH.CloseAllWindows("OGRH_EncounterSetupFrame")
         
         if OGRH.ShowEncounterSetup then
           OGRH.ShowEncounterSetup()
@@ -2305,28 +2422,7 @@ local function CreateMinimapButton()
       
       -- Invites item
       local invitesItem = CreateMenuItem("Invites", function()
-        -- Close other windows
-        if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
-          getglobal("OGRH_EncounterFrame"):Hide()
-        end
-        if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
-          getglobal("OGRH_RolesFrame"):Hide()
-        end
-        if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
-          getglobal("OGRH_ShareFrame"):Hide()
-        end
-        if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
-          getglobal("OGRH_EncounterSetupFrame"):Hide()
-        end
-        if getglobal("OGRH_SRValidationFrame") and getglobal("OGRH_SRValidationFrame"):IsVisible() then
-          getglobal("OGRH_SRValidationFrame"):Hide()
-        end
-        if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
-          getglobal("OGRH_AddonAuditFrame"):Hide()
-        end
-        if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
-          getglobal("OGRH_TradeSettingsFrame"):Hide()
-        end
+        OGRH.CloseAllWindows("OGRH_InvitesFrame")
         
         if OGRH.Invites and OGRH.Invites.ShowWindow then
           OGRH.Invites.ShowWindow()
@@ -2339,28 +2435,7 @@ local function CreateMinimapButton()
       
       -- SR Validation item
       local srValidationItem = CreateMenuItem("SR Validation", function()
-        -- Close other windows
-        if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
-          getglobal("OGRH_EncounterFrame"):Hide()
-        end
-        if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
-          getglobal("OGRH_RolesFrame"):Hide()
-        end
-        if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
-          getglobal("OGRH_ShareFrame"):Hide()
-        end
-        if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
-          getglobal("OGRH_EncounterSetupFrame"):Hide()
-        end
-        if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
-          getglobal("OGRH_InvitesFrame"):Hide()
-        end
-        if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
-          getglobal("OGRH_AddonAuditFrame"):Hide()
-        end
-        if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
-          getglobal("OGRH_TradeSettingsFrame"):Hide()
-        end
+        OGRH.CloseAllWindows("OGRH_SRValidationFrame")
         
         if OGRH.SRValidation and OGRH.SRValidation.ShowWindow then
           OGRH.SRValidation.ShowWindow()
@@ -2388,6 +2463,17 @@ local function CreateMinimapButton()
           OGRH.ShowTradeSettings()
         else
           OGRH.Msg("Trade Settings module not loaded.")
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Consumes item
+      local consumesItem = CreateMenuItem("Consumes", function()
+        if OGRH.ShowConsumesSettings then
+          OGRH.ShowConsumesSettings()
+        else
+          OGRH.Msg("Consumes module not loaded.")
         end
       end, menu, yOffset)
       

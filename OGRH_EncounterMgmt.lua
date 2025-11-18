@@ -13,10 +13,35 @@ local encounterData = {}
 
 -- Get currently selected encounter (for sync from MainUI)
 function OGRH.GetCurrentEncounter()
+  -- Check frame first
   if OGRH_EncounterFrame and OGRH_EncounterFrame.selectedRaid and OGRH_EncounterFrame.selectedEncounter then
     return OGRH_EncounterFrame.selectedRaid, OGRH_EncounterFrame.selectedEncounter
   end
+  
+  -- Fall back to saved variables
+  if OGRH_SV and OGRH_SV.ui then
+    return OGRH_SV.ui.selectedRaid, OGRH_SV.ui.selectedEncounter
+  end
+  
   return nil, nil
+end
+
+-- Global ReplaceTags function for announcement processing
+-- This is used by the A button and can work without the frame being created
+function OGRH.ReplaceTags(text, roles, assignments, raidMarks, assignmentNumbers)
+  if not text or text == "" then
+    return ""
+  end
+  
+  -- Use the frame's version if it exists (it's already been created and is authoritative)
+  if OGRH_EncounterFrame and OGRH_EncounterFrame.ReplaceTags then
+    return OGRH_EncounterFrame.ReplaceTags(text, roles, assignments, raidMarks, assignmentNumbers)
+  end
+  
+  -- Otherwise, use simplified version that just returns the text as-is
+  -- The full implementation is complex and duplicating it would be maintenance burden
+  -- Users should open the Encounter Planning window at least once after login for full functionality
+  return text
 end
 
 -- Migrate old roleDefaults to poolDefaults (one-time migration)
@@ -6694,14 +6719,12 @@ function OGRH.UpdateEncounterNavButton()
 end
 
 function OGRH.NavigateToPreviousEncounter()
-  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid then
+  -- Get current encounter from frame or saved variables
+  local raidName, currentEncounter = OGRH.GetCurrentEncounter()
+  
+  if not raidName or not currentEncounter then
     return
   end
-  
-  local raidName = OGRH_EncounterFrame.selectedRaid
-  local currentEncounter = OGRH_EncounterFrame.selectedEncounter
-  
-  if not currentEncounter then return end
   
   if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and 
      OGRH_SV.encounterMgmt.encounters[raidName] then
@@ -6709,14 +6732,20 @@ function OGRH.NavigateToPreviousEncounter()
     
     for i = 1, table.getn(encounters) do
       if encounters[i] == currentEncounter and i > 1 then
-        OGRH_EncounterFrame.selectedEncounter = encounters[i - 1]
+        -- Update saved variables
         OGRH_SV.ui.selectedEncounter = encounters[i - 1]
-        if OGRH_EncounterFrame.RefreshEncountersList then
-          OGRH_EncounterFrame.RefreshEncountersList()
+        
+        -- Update frame if it exists
+        if OGRH_EncounterFrame then
+          OGRH_EncounterFrame.selectedEncounter = encounters[i - 1]
+          if OGRH_EncounterFrame.RefreshEncountersList then
+            OGRH_EncounterFrame.RefreshEncountersList()
+          end
+          if OGRH_EncounterFrame.RefreshRoleContainers then
+            OGRH_EncounterFrame.RefreshRoleContainers()
+          end
         end
-        if OGRH_EncounterFrame.RefreshRoleContainers then
-          OGRH_EncounterFrame.RefreshRoleContainers()
-        end
+        
         OGRH.UpdateEncounterNavButton()
         
         -- Broadcast encounter change
@@ -6728,14 +6757,12 @@ function OGRH.NavigateToPreviousEncounter()
 end
 
 function OGRH.NavigateToNextEncounter()
-  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid then
+  -- Get current encounter from frame or saved variables
+  local raidName, currentEncounter = OGRH.GetCurrentEncounter()
+  
+  if not raidName or not currentEncounter then
     return
   end
-  
-  local raidName = OGRH_EncounterFrame.selectedRaid
-  local currentEncounter = OGRH_EncounterFrame.selectedEncounter
-  
-  if not currentEncounter then return end
   
   if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and 
      OGRH_SV.encounterMgmt.encounters[raidName] then
@@ -6743,14 +6770,20 @@ function OGRH.NavigateToNextEncounter()
     
     for i = 1, table.getn(encounters) do
       if encounters[i] == currentEncounter and i < table.getn(encounters) then
-        OGRH_EncounterFrame.selectedEncounter = encounters[i + 1]
+        -- Update saved variables
         OGRH_SV.ui.selectedEncounter = encounters[i + 1]
-        if OGRH_EncounterFrame.RefreshEncountersList then
-          OGRH_EncounterFrame.RefreshEncountersList()
+        
+        -- Update frame if it exists
+        if OGRH_EncounterFrame then
+          OGRH_EncounterFrame.selectedEncounter = encounters[i + 1]
+          if OGRH_EncounterFrame.RefreshEncountersList then
+            OGRH_EncounterFrame.RefreshEncountersList()
+          end
+          if OGRH_EncounterFrame.RefreshRoleContainers then
+            OGRH_EncounterFrame.RefreshRoleContainers()
+          end
         end
-        if OGRH_EncounterFrame.RefreshRoleContainers then
-          OGRH_EncounterFrame.RefreshRoleContainers()
-        end
+        
         OGRH.UpdateEncounterNavButton()
         
         -- Broadcast encounter change
@@ -6884,21 +6917,96 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
 end
 
 function OGRH.PrepareEncounterAnnouncement()
-  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid or 
-     not OGRH_EncounterFrame.selectedEncounter then
+  -- Get current encounter from frame or saved variables
+  local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounter()
+  
+  if not selectedRaid or not selectedEncounter then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No encounter selected")
     return
   end
   
-  -- Call the announce function but don't send it
-  if OGRH_EncounterFrame.announceBtn then
-    -- Simulate clicking the announce button
-    local announceScript = OGRH_EncounterFrame.announceBtn:GetScript("OnClick")
-    if announceScript then
-      announceScript()
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement prepared. Click RA to send.")
+  -- Check if in raid
+  if GetNumRaidMembers() == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to announce.")
+    return
+  end
+  
+  -- Get announcement text from saved variables
+  if not OGRH_SV.encounterAnnouncements or 
+     not OGRH_SV.encounterAnnouncements[selectedRaid] or
+     not OGRH_SV.encounterAnnouncements[selectedRaid][selectedEncounter] then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No announcement text configured for this encounter.")
+    return
+  end
+  
+  local announcementData = OGRH_SV.encounterAnnouncements[selectedRaid][selectedEncounter]
+  
+  -- Get role configuration
+  local roles = OGRH_SV.encounterMgmt.roles
+  if not roles or not roles[selectedRaid] or not roles[selectedRaid][selectedEncounter] then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
+    return
+  end
+  
+  local encounterRoles = roles[selectedRaid][selectedEncounter]
+  local column1 = encounterRoles.column1 or {}
+  local column2 = encounterRoles.column2 or {}
+  
+  -- Build ordered list of roles for tag replacement
+  local orderedRoles = {}
+  for i = 1, table.getn(column1) do
+    table.insert(orderedRoles, column1[i])
+  end
+  for i = 1, table.getn(column2) do
+    table.insert(orderedRoles, column2[i])
+  end
+  
+  -- Get assignments
+  local assignments = {}
+  if OGRH_SV.encounterAssignments and 
+     OGRH_SV.encounterAssignments[selectedRaid] and
+     OGRH_SV.encounterAssignments[selectedRaid][selectedEncounter] then
+    assignments = OGRH_SV.encounterAssignments[selectedRaid][selectedEncounter]
+  end
+  
+  -- Get raid marks
+  local raidMarks = {}
+  if OGRH_SV.encounterRaidMarks and
+     OGRH_SV.encounterRaidMarks[selectedRaid] and
+     OGRH_SV.encounterRaidMarks[selectedRaid][selectedEncounter] then
+    raidMarks = OGRH_SV.encounterRaidMarks[selectedRaid][selectedEncounter]
+  end
+  
+  -- Get assignment numbers
+  local assignmentNumbers = {}
+  if OGRH_SV.encounterAssignmentNumbers and
+     OGRH_SV.encounterAssignmentNumbers[selectedRaid] and
+     OGRH_SV.encounterAssignmentNumbers[selectedRaid][selectedEncounter] then
+    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[selectedRaid][selectedEncounter]
+  end
+  
+  -- Process announcement lines using global ReplaceTags function
+  local announcementLines = {}
+  for i = 1, table.getn(announcementData) do
+    local lineText = announcementData[i]
+    if lineText and lineText ~= "" then
+      local processedText = OGRH.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
+      table.insert(announcementLines, processedText)
     end
   end
+  
+  -- Send announcements to raid chat
+  if table.getn(announcementLines) == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No announcement text to send.")
+    return
+  end
+  
+  -- Send announcement
+  for _, line in ipairs(announcementLines) do
+    SendChatMessage(line, "RAID")
+  end
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement sent to raid chat (" .. table.getn(announcementLines) .. " lines).")
 end
 
 function OGRH.OpenEncounterPlanning()
@@ -7107,9 +7215,8 @@ function OGRH.MarkPlayersFromMainUI()
     return
   end
   
-  -- Get selected raid and encounter
-  local selectedRaid = OGRH_EncounterFrame and OGRH_EncounterFrame.selectedRaid
-  local selectedEncounter = OGRH_EncounterFrame and OGRH_EncounterFrame.selectedEncounter
+  -- Get selected raid and encounter from frame or saved variables
+  local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounter()
   
   if not selectedRaid or not selectedEncounter then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
@@ -7217,5 +7324,20 @@ function OGRH.MarkPlayersFromMainUI()
   
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Marked " .. markedCount .. " players.")
 end
+
+-- Initialize encounter frame on VARIABLES_LOADED to ensure ReplaceTags is available
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("VARIABLES_LOADED")
+initFrame:SetScript("OnEvent", function()
+  -- Create the frame if it doesn't exist and we have encounter data
+  if not OGRH_EncounterFrame and OGRH_SV and OGRH_SV.encounterMgmt and 
+     OGRH_SV.encounterMgmt.raids and table.getn(OGRH_SV.encounterMgmt.raids) > 0 then
+    -- Create frame hidden so ReplaceTags function is available
+    OGRH.ShowEncounterWindow()
+    if OGRH_EncounterFrame then
+      OGRH_EncounterFrame:Hide()
+    end
+  end
+end)
 
 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter Management loaded")

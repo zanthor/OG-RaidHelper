@@ -430,24 +430,7 @@ end
 -- Show Invites Window
 function OGRH.Invites.ShowWindow()
   -- Close other windows
-  if getglobal("OGRH_EncounterFrame") and getglobal("OGRH_EncounterFrame"):IsVisible() then
-    getglobal("OGRH_EncounterFrame"):Hide()
-  end
-  if getglobal("OGRH_RolesFrame") and getglobal("OGRH_RolesFrame"):IsVisible() then
-    getglobal("OGRH_RolesFrame"):Hide()
-  end
-  if getglobal("OGRH_ShareFrame") and getglobal("OGRH_ShareFrame"):IsVisible() then
-    getglobal("OGRH_ShareFrame"):Hide()
-  end
-  if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
-    getglobal("OGRH_EncounterSetupFrame"):Hide()
-  end
-  if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
-    getglobal("OGRH_AddonAuditFrame"):Hide()
-  end
-  if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
-    getglobal("OGRH_TradeSettingsFrame"):Hide()
-  end
+  OGRH.CloseAllWindows("OGRH_InvitesFrame")
   
   if OGRH_InvitesFrame then
     OGRH_InvitesFrame:Show()

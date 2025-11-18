@@ -318,25 +318,7 @@ encounterBtn:SetScript("OnClick", function()
       getglobal("OGRH_RolesFrame"):Hide()
     end
     
-    -- Close Encounter Setup if it's open
-    if getglobal("OGRH_EncounterSetupFrame") and getglobal("OGRH_EncounterSetupFrame"):IsVisible() then
-      getglobal("OGRH_EncounterSetupFrame"):Hide()
-    end
-    
-    -- Close Invites if it's open
-    if getglobal("OGRH_InvitesFrame") and getglobal("OGRH_InvitesFrame"):IsVisible() then
-      getglobal("OGRH_InvitesFrame"):Hide()
-    end
-    
-    -- Close Addon Audit if it's open
-    if getglobal("OGRH_AddonAuditFrame") and getglobal("OGRH_AddonAuditFrame"):IsVisible() then
-      getglobal("OGRH_AddonAuditFrame"):Hide()
-    end
-    
-    -- Close Trade Settings if it's open
-    if getglobal("OGRH_TradeSettingsFrame") and getglobal("OGRH_TradeSettingsFrame"):IsVisible() then
-      getglobal("OGRH_TradeSettingsFrame"):Hide()
-    end
+    OGRH.CloseAllWindows("OGRH_EncounterFrame")
     
     if OGRH.OpenEncounterPlanning then
       OGRH.OpenEncounterPlanning()
