@@ -2313,7 +2313,7 @@ local function CreateMinimapButton()
       menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
       menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
       menu:SetWidth(160)
-      menu:SetHeight(189)
+      menu:SetHeight(210)
       menu:Hide()
       
       -- Close menu when clicking outside
@@ -2460,6 +2460,43 @@ local function CreateMinimapButton()
       
       yOffset = yOffset - itemHeight - itemSpacing
       
+      -- Monitor Consumes toggle item
+      menu.monitorConsumesItem = CreateMenuItem("Monitor Consumes", function()
+        OGRH.EnsureSV()
+        OGRH_SV.monitorConsumes = not OGRH_SV.monitorConsumes
+        
+        -- Update button text color
+        if OGRH_SV.monitorConsumes then
+          menu.monitorConsumesItem.fs:SetText("|cff00ff00Monitor Consumes|r")
+          if OGRH.ShowConsumeMonitor then
+            OGRH.ShowConsumeMonitor()
+          end
+        else
+          menu.monitorConsumesItem.fs:SetText("Monitor Consumes")
+          if OGRH.HideConsumeMonitor then
+            OGRH.HideConsumeMonitor()
+          end
+        end
+        
+        if OGRH_SV.monitorConsumes then
+          OGRH.Msg("Consume monitoring |cff00ff00enabled|r.")
+        else
+          OGRH.Msg("Consume monitoring |cffff0000disabled|r.")
+        end
+      end, menu, yOffset)
+      
+      -- Set initial text color based on current state
+      menu.UpdateMonitorConsumesText = function()
+        OGRH.EnsureSV()
+        if OGRH_SV.monitorConsumes then
+          menu.monitorConsumesItem.fs:SetText("|cff00ff00Monitor Consumes|r")
+        else
+          menu.monitorConsumesItem.fs:SetText("Monitor Consumes")
+        end
+      end
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
       -- Setup item
       local setupItem = CreateMenuItem("Setup Encounters", function()
         OGRH.CloseAllWindows("OGRH_EncounterSetupFrame")
@@ -2502,6 +2539,11 @@ local function CreateMinimapButton()
     
     -- Update toggle button text
     menu.UpdateToggleText()
+    
+    -- Update monitor consumes text
+    if menu.UpdateMonitorConsumesText then
+      menu.UpdateMonitorConsumesText()
+    end
     
     -- Position menu near source button with boundary checking
     menu:ClearAllPoints()

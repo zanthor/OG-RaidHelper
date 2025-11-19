@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.8.1
-## Notes: Added Trade Settings to menu, addon audit enhancements
+## Version: 1.8.2
+## Notes: Added Consume Monitor with buff tracking and reporting
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua

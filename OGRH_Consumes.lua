@@ -618,3 +618,431 @@ function OGRH.ShowEditConsumeDialog(itemIndex)
   
   dialog:Show()
 end
+
+--[[
+  Consume Monitor Window
+  Tracks consume buffs on raid members
+]]--
+
+-- Buff cache for consume checking
+OGRH.ConsumeBuffCache = {}
+OGRH.ConsumeBuffLastUpdated = {}
+
+-- Check if unit has a consume buff by spell ID
+local function HasConsumeBuff(unit, spellId)
+  if not unit or not UnitExists(unit) or not spellId then
+    return false
+  end
+  
+  -- Check cache
+  local cTime = GetTime()
+  if OGRH.ConsumeBuffCache[unit] and OGRH.ConsumeBuffLastUpdated[unit] and 
+     OGRH.ConsumeBuffLastUpdated[unit] > cTime - 3 then
+    -- Use cache
+    if OGRH.ConsumeBuffCache[unit][spellId] then
+      return true
+    end
+  else
+    -- Update cache
+    OGRH.ConsumeBuffCache[unit] = {}
+    OGRH.ConsumeBuffLastUpdated[unit] = cTime
+    
+    local i = 1
+    while true do
+      local texture, stacks, buffSpellId = UnitBuff(unit, i)
+      if not texture then break end
+      
+      if buffSpellId then
+        OGRH.ConsumeBuffCache[unit][buffSpellId] = true
+      end
+      
+      i = i + 1
+    end
+    
+    if OGRH.ConsumeBuffCache[unit][spellId] then
+      return true
+    end
+  end
+  
+  return false
+end
+
+-- Get spell ID from item ID
+local function GetSpellIdFromItem(itemId)
+  -- Spell IDs for common consumables - extend as needed
+  local itemToSpell = {
+    -- Greater Protection Potions
+    [13457] = 17543, -- Greater Fire Protection Potion
+    [13456] = 17544, -- Greater Frost Protection Potion  
+    [13458] = 17546, -- Greater Nature Protection Potion
+    [13459] = 17548, -- Greater Shadow Protection Potion
+    [13461] = 17549, -- Greater Arcane Protection Potion
+    
+    -- Lesser Protection Potions
+    [6049] = 7233,   -- Fire Protection Potion
+    [6050] = 7239,   -- Frost Protection Potion
+    [6052] = 7254,   -- Nature Protection Potion
+    [6048] = 10278,  -- Shadow Protection Potion
+  }
+  
+  return itemToSpell[itemId]
+end
+
+function OGRH.ShowConsumeMonitor()
+  OGRH.EnsureSV()
+  
+  if not OGRH_SV.monitorConsumes then
+    return
+  end
+  
+  if OGRH_ConsumeMonitorFrame then
+    -- Force immediate update when frame already exists
+    if OGRH_ConsumeMonitorFrame.Update then
+      OGRH_ConsumeMonitorFrame.Update()
+    end
+    return
+  end
+  
+  local frame = CreateFrame("Frame", "OGRH_ConsumeMonitorFrame", UIParent)
+  frame:SetWidth(180)
+  frame:SetHeight(100)
+  frame:SetFrameStrata("MEDIUM")
+  frame:EnableMouse(true)
+  
+  frame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  frame:SetBackdropColor(0, 0, 0, 0.85)
+  
+  -- Position relative to main UI
+  frame.PositionFrame = function()
+    if not OGRH_Main or not OGRH_Main:IsVisible() then
+      frame:SetPoint("CENTER", UIParent, "CENTER", 300, 0)
+      return
+    end
+    
+    local screenHeight = UIParent:GetHeight()
+    local mainBottom = OGRH_Main:GetBottom()
+    local mainTop = OGRH_Main:GetTop()
+    local frameHeight = frame:GetHeight()
+    
+    frame:ClearAllPoints()
+    
+    -- Try to dock below main UI
+    if mainBottom and (mainBottom - frameHeight) > 0 then
+      frame:SetPoint("TOP", OGRH_Main, "BOTTOM", 0, 0)
+    -- Otherwise dock above main UI
+    elseif mainTop and (mainTop + frameHeight) < screenHeight then
+      frame:SetPoint("BOTTOM", OGRH_Main, "TOP", 0, 0)
+    else
+      -- Fallback to center if neither position works
+      frame:SetPoint("CENTER", UIParent, "CENTER", 300, 0)
+    end
+  end
+  
+  -- Consume rows container
+  frame.consumeRows = {}
+  
+  -- Update function
+  frame.Update = function()
+    if not OGRH_SV.monitorConsumes then
+      frame:Hide()
+      return
+    end
+    
+    -- Hide if in combat
+    if UnitAffectingCombat("player") then
+      frame:Hide()
+      return
+    end
+    
+    -- Get current encounter
+    if not OGRH.GetCurrentEncounter then
+      frame:Hide()
+      return
+    end
+    
+    local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+    if not currentRaid or not currentEncounter then
+      frame:Hide()
+      return
+    end
+    
+    -- Get encounter roles
+    local roles = OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles
+    if not roles or not roles[currentRaid] or not roles[currentRaid][currentEncounter] then
+      frame:Hide()
+      return
+    end
+    
+    local encounterRoles = roles[currentRaid][currentEncounter]
+    local column1 = encounterRoles.column1 or {}
+    local column2 = encounterRoles.column2 or {}
+    
+    -- Find consume check role
+    local consumeRole = nil
+    for i = 1, table.getn(column1) do
+      if column1[i].isConsumeCheck then
+        consumeRole = column1[i]
+        break
+      end
+    end
+    if not consumeRole then
+      for i = 1, table.getn(column2) do
+        if column2[i].isConsumeCheck then
+          consumeRole = column2[i]
+          break
+        end
+      end
+    end
+    
+    if not consumeRole or not consumeRole.consumes then
+      frame:Hide()
+      return
+    end
+    
+    -- Clear existing rows
+    for _, row in ipairs(frame.consumeRows) do
+      row:Hide()
+    end
+    
+    -- Get raid size
+    local numRaid = GetNumRaidMembers()
+    if numRaid == 0 then
+      frame:Hide()
+      return
+    end
+    
+    -- Build consume rows
+    local yOffset = -6
+    local rowIndex = 1
+    
+    for i = 1, (consumeRole.slots or 1) do
+      if consumeRole.consumes[i] then
+        local consumeData = consumeRole.consumes[i]
+        local primarySpellId = GetSpellIdFromItem(consumeData.primaryId)
+        local secondarySpellId = consumeData.allowAlternate and consumeData.secondaryId and GetSpellIdFromItem(consumeData.secondaryId)
+        
+        if primarySpellId then
+          -- Count buffed players
+          local buffedCount = 0
+          local unbuffedPlayers = {}
+          
+          for j = 1, numRaid do
+            local name = GetRaidRosterInfo(j)
+            if name then
+              local hasBuff = HasConsumeBuff("raid"..j, primarySpellId)
+              if not hasBuff and secondarySpellId then
+                hasBuff = HasConsumeBuff("raid"..j, secondarySpellId)
+              end
+              
+              if hasBuff then
+                buffedCount = buffedCount + 1
+              else
+                table.insert(unbuffedPlayers, name)
+              end
+            end
+          end
+          
+          -- Create or reuse row
+          if not frame.consumeRows[rowIndex] then
+            local row = CreateFrame("Button", nil, frame)
+            row:SetWidth(172)
+            row:SetHeight(20)
+            row:SetPoint("TOP", 0, yOffset)
+            
+            row:SetBackdrop({
+              bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+              tile = true, tileSize = 16
+            })
+            row:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+            
+            local text = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            text:SetPoint("LEFT", 5, 0)
+            row.text = text
+            
+            local count = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            count:SetPoint("RIGHT", -5, 0)
+            row.count = count
+            
+            row:SetScript("OnEnter", function()
+              row:SetBackdropColor(0.2, 0.2, 0.3, 0.8)
+            end)
+            
+            row:SetScript("OnLeave", function()
+              row:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+            end)
+            
+            row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            
+            frame.consumeRows[rowIndex] = row
+          end
+          
+          local row = frame.consumeRows[rowIndex]
+          local itemName, _ = GetItemInfo(consumeData.primaryId)
+          local displayName = itemName or consumeData.primaryName or "Unknown"
+          
+          -- Shorten consume name: "Greater" -> "G.", remove "Potion"
+          displayName = string.gsub(displayName, "Greater ", "G. ")
+          displayName = string.gsub(displayName, " Potion", "")
+          
+          row.text:SetText(displayName)
+          
+          -- Color code the count
+          local color = "|cff00ff00"
+          if buffedCount < numRaid then
+            color = "|cffff0000"
+          end
+          row.count:SetText(color .. buffedCount .. "/" .. numRaid .. "|r")
+          
+          -- Store unbuffed players for reporting
+          row.unbuffedPlayers = unbuffedPlayers
+          row.consumeName = itemName or consumeData.primaryName
+          row.primaryItemId = consumeData.primaryId
+          row.secondaryItemId = consumeData.allowAlternate and consumeData.secondaryId or nil
+          row.primarySpellId = primarySpellId
+          row.secondarySpellId = secondarySpellId
+          
+          -- Click handler
+          row:SetScript("OnClick", function()
+            local button = arg1 or "LeftButton"
+            
+            if button == "RightButton" then
+              -- Right-click: Use consume from inventory
+              -- Check if player already has the buff
+              local hasPrimaryBuff = HasConsumeBuff("player", row.primarySpellId)
+              local hasSecondaryBuff = row.secondarySpellId and HasConsumeBuff("player", row.secondarySpellId)
+              
+              if hasPrimaryBuff or hasSecondaryBuff then
+                OGRH.Msg("You already have " .. row.consumeName .. " buff")
+                return
+              end
+              
+              -- Try to use secondary first if allowed, then primary
+              local itemToUse = nil
+              local itemName = nil
+              
+              if row.secondaryItemId then
+                -- Search for secondary item in bags
+                for bag = 0, 4 do
+                  for slot = 1, GetContainerNumSlots(bag) do
+                    local link = GetContainerItemLink(bag, slot)
+                    if link then
+                      local _, _, itemId = string.find(link, "item:(%d+)")
+                      if itemId and tonumber(itemId) == row.secondaryItemId then
+                        itemToUse = {bag = bag, slot = slot}
+                        itemName, _ = GetItemInfo(row.secondaryItemId)
+                        break
+                      end
+                    end
+                  end
+                  if itemToUse then break end
+                end
+              end
+              
+              -- If secondary not found, try primary
+              if not itemToUse and row.primaryItemId then
+                for bag = 0, 4 do
+                  for slot = 1, GetContainerNumSlots(bag) do
+                    local link = GetContainerItemLink(bag, slot)
+                    if link then
+                      local _, _, itemId = string.find(link, "item:(%d+)")
+                      if itemId and tonumber(itemId) == row.primaryItemId then
+                        itemToUse = {bag = bag, slot = slot}
+                        itemName, _ = GetItemInfo(row.primaryItemId)
+                        break
+                      end
+                    end
+                  end
+                  if itemToUse then break end
+                end
+              end
+              
+              if itemToUse then
+                UseContainerItem(itemToUse.bag, itemToUse.slot)
+                OGRH.Msg("Using " .. (itemName or row.consumeName))
+              else
+                OGRH.Msg("You don't have " .. row.consumeName .. " in your bags")
+              end
+            else
+              -- Left-click: Report missing players
+              if table.getn(row.unbuffedPlayers) > 0 then
+                -- Build colored player list
+                local coloredPlayers = {}
+                for _, playerName in ipairs(row.unbuffedPlayers) do
+                  local playerClass = OGRH.GetPlayerClass and OGRH.GetPlayerClass(playerName)
+                  local colorHex = OGRH.ClassColorHex and OGRH.ClassColorHex(playerClass) or "|cffffffff"
+                  table.insert(coloredPlayers, colorHex .. playerName .. "|r")
+                end
+                
+                -- Send compact announcement
+                local canRW = OGRH.CanRW and OGRH.CanRW()
+                local channel = canRW and "RAID_WARNING" or "RAID"
+                
+                local headerColor = OGRH.COLOR and OGRH.COLOR.HEADER or "|cff00ff00"
+                SendChatMessage(headerColor .. "Missing " .. row.consumeName .. "|r", channel)
+                SendChatMessage(table.concat(coloredPlayers, ", "), channel)
+                
+                OGRH.Msg("Reported " .. table.getn(row.unbuffedPlayers) .. " players missing " .. row.consumeName)
+              end
+            end
+          end)
+          
+          row:Show()
+          yOffset = yOffset - 22
+          rowIndex = rowIndex + 1
+        end
+      end
+    end
+    
+    -- Resize frame
+    local newHeight = 6 + (rowIndex - 1) * 22 + 6
+    frame:SetHeight(newHeight)
+    
+    -- Position frame relative to main UI
+    frame.PositionFrame()
+    
+    frame:Show()
+  end
+  
+  -- Update timer
+  frame.timeSinceUpdate = 0
+  frame:SetScript("OnUpdate", function()
+    frame.timeSinceUpdate = frame.timeSinceUpdate + arg1
+    if frame.timeSinceUpdate >= 3 then
+      frame.timeSinceUpdate = 0
+      frame.Update()
+    end
+  end)
+  
+  -- Combat detection - hide in combat, show after combat
+  frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+  frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+  frame:SetScript("OnEvent", function()
+    if event == "PLAYER_REGEN_DISABLED" then
+      -- Entering combat - hide window
+      if frame:IsVisible() then
+        frame.wasVisibleBeforeCombat = true
+        frame:Hide()
+      end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+      -- Leaving combat - show window if it was visible before
+      if frame.wasVisibleBeforeCombat then
+        frame.wasVisibleBeforeCombat = false
+        frame.Update()
+      end
+    end
+  end)
+  
+  -- Initial update
+  frame.Update()
+end
+
+function OGRH.HideConsumeMonitor()
+  if OGRH_ConsumeMonitorFrame then
+    OGRH_ConsumeMonitorFrame:Hide()
+  end
+end

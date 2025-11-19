@@ -438,6 +438,11 @@ function OGRH.ShowEncounterWindow(encounterName)
             OGRH.UpdateEncounterNavButton()
           end
           
+          -- Update consume monitor if enabled
+          if OGRH.ShowConsumeMonitor then
+            OGRH.ShowConsumeMonitor()
+          end
+          
           -- Broadcast encounter change
           if frame.selectedRaid and OGRH.BroadcastEncounterSelection then
             OGRH.BroadcastEncounterSelection(frame.selectedRaid, capturedEncounterName)
@@ -1605,12 +1610,114 @@ function OGRH.ShowEncounterWindow(encounterName)
     -- Store ReplaceTags on frame for external access (e.g., tooltip generation)
     frame.ReplaceTags = ReplaceTags
     
+    -- Enable right-click on announce button
+    announceBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    
     -- Announce functionality
     announceBtn:SetScript("OnClick", function()
+      local button = arg1 or "LeftButton"
+      
       if not frame.selectedRaid or not frame.selectedEncounter then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
         return
       end
+      
+      -- Right-click: Announce consumes
+      if button == "RightButton" then
+        -- Get role configuration
+        local roles = OGRH_SV.encounterMgmt.roles
+        if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
+          return -- Silently do nothing if no roles configured
+        end
+        
+        local encounterRoles = roles[frame.selectedRaid][frame.selectedEncounter]
+        local column1 = encounterRoles.column1 or {}
+        local column2 = encounterRoles.column2 or {}
+        
+        -- Find consume check role
+        local consumeRole = nil
+        for i = 1, table.getn(column1) do
+          if column1[i].isConsumeCheck then
+            consumeRole = column1[i]
+            break
+          end
+        end
+        if not consumeRole then
+          for i = 1, table.getn(column2) do
+            if column2[i].isConsumeCheck then
+              consumeRole = column2[i]
+              break
+            end
+          end
+        end
+        
+        -- If no consume role found, do nothing
+        if not consumeRole or not consumeRole.consumes then
+          return
+        end
+        
+        -- Check if in raid
+        if GetNumRaidMembers() == 0 then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to announce.")
+          return
+        end
+        
+        -- Build consume announcement lines
+        local announceLines = {}
+        local titleColor = OGRH.COLOR.HEADER or "|cFFFFD100"
+        table.insert(announceLines, titleColor .. "Consumes for " .. frame.selectedEncounter .. OGRH.COLOR.RESET)
+        
+        for i = 1, (consumeRole.slots or 1) do
+          if consumeRole.consumes[i] then
+            local consumeData = consumeRole.consumes[i]
+            local items = {}
+            
+            -- Add primary item
+            if consumeData.primaryId then
+              table.insert(items, consumeData.primaryId)
+            end
+            
+            -- Add secondary item if alternate allowed
+            if consumeData.allowAlternate and consumeData.secondaryId then
+              table.insert(items, consumeData.secondaryId)
+            end
+            
+            -- Build line with item links
+            if table.getn(items) > 0 then
+              local lineText = ""
+              for j = 1, table.getn(items) do
+                local itemId = items[j]
+                local itemName, itemLink, quality = GetItemInfo(itemId)
+                
+                if j > 1 then
+                  lineText = lineText .. " / "
+                end
+                
+                -- Construct chat link using AtlasLoot method
+                if itemLink and itemName then
+                  local _, _, _, color = GetItemQualityColor(quality)
+                  lineText = lineText .. color .. "|H" .. itemLink .. "|h[" .. itemName .. "]|h|r"
+                elseif itemName then
+                  lineText = lineText .. itemName
+                else
+                  lineText = lineText .. "Item " .. itemId
+                end
+              end
+              table.insert(announceLines, lineText)
+            end
+          end
+        end
+        
+        -- Send to raid warning
+        for _, line in ipairs(announceLines) do
+          SendChatMessage(line, "RAID_WARNING")
+        end
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Consumes announced to raid warning.")
+        return
+      end
+      
+      -- Left-click: Normal announcement
       
       -- Get role configuration
       local roles = OGRH_SV.encounterMgmt.roles
@@ -6433,6 +6540,11 @@ function OGRH.NavigateToPreviousEncounter()
         
         OGRH.UpdateEncounterNavButton()
         
+        -- Update consume monitor if enabled
+        if OGRH.ShowConsumeMonitor then
+          OGRH.ShowConsumeMonitor()
+        end
+        
         -- Broadcast encounter change
         OGRH.BroadcastEncounterSelection(raidName, encounters[i - 1])
         break
@@ -6470,6 +6582,11 @@ function OGRH.NavigateToNextEncounter()
         end
         
         OGRH.UpdateEncounterNavButton()
+        
+        -- Update consume monitor if enabled
+        if OGRH.ShowConsumeMonitor then
+          OGRH.ShowConsumeMonitor()
+        end
         
         -- Broadcast encounter change
         OGRH.BroadcastEncounterSelection(raidName, encounters[i + 1])

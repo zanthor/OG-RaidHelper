@@ -233,7 +233,117 @@ announceBtn:SetHeight(20)
 announceBtn:SetPoint("LEFT", prevEncBtn, "RIGHT", 2, 0)
 announceBtn:SetText("A")
 OGRH.StyleButton(announceBtn)
+announceBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 announceBtn:SetScript("OnClick", function()
+  local button = arg1 or "LeftButton"
+  
+  if button == "RightButton" then
+    -- Right-click: Announce consumes
+    if not OGRH.GetCurrentEncounter then
+      OGRH.Msg("Encounter management not loaded.")
+      return
+    end
+    
+    local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+    if not currentRaid or not currentEncounter then
+      return -- Silently do nothing if no encounter selected
+    end
+    
+    -- Get role configuration
+    OGRH.EnsureSV()
+    local roles = OGRH_SV.encounterMgmt.roles
+    if not roles or not roles[currentRaid] or not roles[currentRaid][currentEncounter] then
+      return -- Silently do nothing if no roles configured
+    end
+    
+    local encounterRoles = roles[currentRaid][currentEncounter]
+    local column1 = encounterRoles.column1 or {}
+    local column2 = encounterRoles.column2 or {}
+    
+    -- Find consume check role
+    local consumeRole = nil
+    for i = 1, table.getn(column1) do
+      if column1[i].isConsumeCheck then
+        consumeRole = column1[i]
+        break
+      end
+    end
+    if not consumeRole then
+      for i = 1, table.getn(column2) do
+        if column2[i].isConsumeCheck then
+          consumeRole = column2[i]
+          break
+        end
+      end
+    end
+    
+    -- If no consume role found, do nothing
+    if not consumeRole or not consumeRole.consumes then
+      return
+    end
+    
+    -- Check if in raid
+    if GetNumRaidMembers() == 0 then
+      OGRH.Msg("You must be in a raid to announce.")
+      return
+    end
+    
+    -- Build consume announcement lines
+    local announceLines = {}
+    local titleColor = OGRH.COLOR.HEADER or "|cFFFFD100"
+    table.insert(announceLines, titleColor .. "Consumes for " .. currentEncounter .. OGRH.COLOR.RESET)
+    
+    for i = 1, (consumeRole.slots or 1) do
+      if consumeRole.consumes[i] then
+        local consumeData = consumeRole.consumes[i]
+        local items = {}
+        
+        -- Add primary item
+        if consumeData.primaryId then
+          table.insert(items, consumeData.primaryId)
+        end
+        
+        -- Add secondary item if alternate allowed
+        if consumeData.allowAlternate and consumeData.secondaryId then
+          table.insert(items, consumeData.secondaryId)
+        end
+        
+        -- Build line with item links
+        if table.getn(items) > 0 then
+          local lineText = ""
+          for j = 1, table.getn(items) do
+            local itemId = items[j]
+            local itemName, itemLink, quality = GetItemInfo(itemId)
+            
+            if j > 1 then
+              lineText = lineText .. " / "
+            end
+            
+            -- Construct chat link using AtlasLoot method
+            if itemLink and itemName then
+              local _, _, _, color = GetItemQualityColor(quality)
+              lineText = lineText .. color .. "|H" .. itemLink .. "|h[" .. itemName .. "]|h|r"
+            elseif itemName then
+              lineText = lineText .. itemName
+            else
+              lineText = lineText .. "Item " .. itemId
+            end
+          end
+          table.insert(announceLines, lineText)
+        end
+      end
+    end
+    
+    -- Send to raid warning
+    for _, line in ipairs(announceLines) do
+      SendChatMessage(line, "RAID_WARNING")
+    end
+    
+    OGRH.Msg("Consumes announced to raid warning.")
+    return
+  end
+  
+  -- Left-click: Normal announcement
   if OGRH.PrepareEncounterAnnouncement then
     OGRH.PrepareEncounterAnnouncement()
   end
@@ -431,6 +541,11 @@ local function restoreMain()
   -- Update encounter nav button with saved state
   if OGRH.UpdateEncounterNavButton then
     OGRH.UpdateEncounterNavButton()
+  end
+  
+  -- Show consume monitor if enabled and encounter has consumes
+  if OGRH.ShowConsumeMonitor then
+    OGRH.ShowConsumeMonitor()
   end
   
   -- Check if window should be hidden
