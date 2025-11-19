@@ -389,26 +389,37 @@ end
 function OGRH.SRValidation.ValidatePlayer(playerName, currentSRPlus)
   OGRH.SRValidation.EnsureSV()
   
+  -- Normalize currentSRPlus (treat nil as 0)
+  currentSRPlus = currentSRPlus or 0
+  
   local records = OGRH_SV.srValidation.records[playerName]
   if not records or table.getn(records) == 0 then
-    -- No previous records, validation passes
-    return true, "No previous data", {}
+    -- No previous records - only pass if SR+ is 0
+    if currentSRPlus == 0 then
+      return true, "No previous data (SR+ is 0)", {}
+    else
+      return false, "*** No previous data but SR+ is " .. currentSRPlus .. " (0 expected) ***", {}
+    end
   end
   
   -- Get most recent validation
   local lastRecord = records[table.getn(records)]
-  local lastSRPlus = lastRecord.srPlus or 0
-  local increase = currentSRPlus - lastSRPlus
   
-  -- Build a map of items that increased
-  local itemIncreases = {}
-  if lastRecord.items then
-    local currentItems = OGRH.SRValidation.GetPlayerItems(playerName)
+  -- Get current items
+  local currentItems = OGRH.SRValidation.GetPlayerItems(playerName)
+  
+  -- Track items with errors
+  local itemErrors = {}
+  
+  -- Check each current item against last record
+  for _, currentItem in ipairs(currentItems) do
+    local itemName = currentItem.name or "Unknown Item"
+    local currentPlus = currentItem.plus or 0
+    local oldPlus = 0
+    local foundInLast = false
     
-    for _, currentItem in ipairs(currentItems) do
-      local foundInLast = false
-      local oldPlus = 0
-      
+    -- Find this item in the last record
+    if lastRecord.items then
       for _, lastItem in ipairs(lastRecord.items) do
         if lastItem.itemId == currentItem.itemId then
           foundInLast = true
@@ -416,20 +427,34 @@ function OGRH.SRValidation.ValidatePlayer(playerName, currentSRPlus)
           break
         end
       end
+    end
+    
+    -- Item not in last record - only allow if it's at +0
+    if not foundInLast and currentPlus > 0 then
+      itemErrors[currentItem.itemId] = true
+      return false, "*** " .. itemName .. " is new with +" .. currentPlus .. " (+0 expected) ***", itemErrors
+    end
+    
+    -- Item was in last record - check if increase is valid
+    if foundInLast then
+      local increase = currentPlus - oldPlus
       
-      if foundInLast and currentItem.plus > oldPlus then
-        itemIncreases[currentItem.itemId] = currentItem.plus - oldPlus
-      elseif not foundInLast and currentItem.plus > 0 then
-        itemIncreases[currentItem.itemId] = currentItem.plus
+      -- Check if increased by more than 10
+      if increase > 10 then
+        itemErrors[currentItem.itemId] = true
+        local expectedPlus = oldPlus + 10
+        return false, "*** " .. itemName .. " increased by " .. increase .. " (+" .. expectedPlus .. " expected) ***", itemErrors
+      end
+      
+      -- Check if decreased but didn't drop to 0
+      if increase < 0 and currentPlus > 0 then
+        itemErrors[currentItem.itemId] = true
+        return false, "*** " .. itemName .. " decreased from +" .. oldPlus .. " to +" .. currentPlus .. " (must go to +0 or increase by max +10) ***", itemErrors
       end
     end
   end
   
-  if increase > 10 then
-    return false, "SR+ increased by " .. increase .. " (>" .. lastSRPlus .. ")", itemIncreases
-  end
-  
-  return true, "SR+ within acceptable range", itemIncreases
+  return true, "All items within acceptable range", {}
 end
 
 -- Save validation record
@@ -719,15 +744,15 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
   table.insert(detailPanel.content, nameText)
   yOffset = yOffset + 25
   
+  -- Check validation status to identify problem items
+  local isValid, validMsg, itemIncreases = OGRH.SRValidation.ValidatePlayer(playerName, currentSRPlus)
+  
   -- Current SR+ header
   local currentHeader = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   currentHeader:SetPoint("TOPLEFT", 10, -yOffset)
   currentHeader:SetText("Current SR+ Items:")
   table.insert(detailPanel.content, currentHeader)
   yOffset = yOffset + 20
-  
-  -- Check validation status to identify problem items
-  local isValid, validMsg, itemIncreases = OGRH.SRValidation.ValidatePlayer(playerName, currentSRPlus)
   
   -- Get and display items
   local items = OGRH.SRValidation.GetPlayerItems(playerName)
@@ -772,17 +797,12 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
         displayText = item.name
       end
       
-      -- Add red asterisks if this item has an increase
-      if hasIncrease then
-        displayText = "|cffff0000*** |r" .. displayText .. "|cffff0000 ***|r"
-      end
-      
       itemText:SetText(displayText)
-      itemBtn:SetWidth(itemText:GetStringWidth() + 5)
       
       -- Capture values in closure
       local capturedItemId = item.itemId
-      local capturedLink = itemLink
+      local capturedItemName = itemName
+      local capturedQuality = itemQuality
       
       -- Make it clickable to show item tooltip
       itemBtn:SetScript("OnEnter", function()
@@ -796,8 +816,10 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
         GameTooltip:Hide()
       end)
       itemBtn:SetScript("OnClick", function()
-        if capturedLink and ChatFrameEditBox:IsVisible() then
-          ChatFrameEditBox:Insert(capturedLink)
+        if IsShiftKeyDown() and capturedItemId and capturedItemName and ChatFrameEditBox:IsVisible() then
+          local _, _, _, color = GetItemQualityColor(capturedQuality)
+          local chatLink = color .. "|Hitem:" .. capturedItemId .. ":0:0:0|h[" .. capturedItemName .. "]|h|r"
+          ChatFrameEditBox:Insert(chatLink)
         end
       end)
       
@@ -825,7 +847,14 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
           end
         end
         displayText = displayText .. " |cff00ff00(Expected " .. expectedPlus .. ")|r"
+        
+        -- Wrap entire row with red asterisks
+        itemText:SetText("|cffff0000*** |r" .. itemText:GetText())
+        displayText = displayText .. "|cffff0000 ***|r"
       end
+      
+      -- Set button width after potentially adding asterisks
+      itemBtn:SetWidth(itemText:GetStringWidth() + 5)
       
       plusText:SetText(displayText)
       
@@ -879,9 +908,19 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
       -- Show items from this record
       if record.items and table.getn(record.items) > 0 then
         for _, item in ipairs(record.items) do
-          local itemText = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-          itemText:SetPoint("TOPLEFT", 40, -yOffset)
-          itemText:SetWidth(430)
+          -- Create a frame to hold item name and plus text
+          local itemFrame = CreateFrame("Frame", nil, detailPanel)
+          itemFrame:SetWidth(430)
+          itemFrame:SetHeight(13)
+          itemFrame:SetPoint("TOPLEFT", 40, -yOffset)
+          
+          -- Item name button (for tooltip)
+          local itemBtn = CreateFrame("Button", nil, itemFrame)
+          itemBtn:SetHeight(13)
+          itemBtn:SetPoint("LEFT", 0, 0)
+          
+          local itemText = itemBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          itemText:SetPoint("LEFT", 0, 0)
           itemText:SetJustifyH("LEFT")
           
           -- Get item link for coloring
@@ -889,7 +928,7 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
           local displayText
           
           if itemLink and string.find(itemLink, "|H") then
-            displayText = itemLink .. " (+" .. item.plus .. ")"
+            displayText = "  " .. itemLink
           elseif itemName then
             local colorCode = "|cffffffff"
             if itemQuality == 0 then colorCode = "|cff9d9d9d"
@@ -899,13 +938,44 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
             elseif itemQuality == 4 then colorCode = "|cffa335ee"
             elseif itemQuality == 5 then colorCode = "|cffff8000"
             end
-            displayText = colorCode .. itemName .. "|r (+" .. item.plus .. ")"
+            displayText = "  " .. colorCode .. itemName .. "|r"
           else
-            displayText = item.name .. " (+" .. item.plus .. ")"
+            displayText = "  " .. item.name
           end
           
-          itemText:SetText("  " .. displayText)
-          table.insert(detailPanel.content, itemText)
+          itemText:SetText(displayText)
+          itemBtn:SetWidth(itemText:GetStringWidth() + 5)
+          
+          -- Capture values in closure
+          local capturedItemId = item.itemId
+          local capturedItemName = itemName
+          local capturedQuality = itemQuality
+          
+          -- Make it clickable to show item tooltip
+          itemBtn:SetScript("OnEnter", function()
+            if capturedItemId then
+              GameTooltip:SetOwner(itemBtn, "ANCHOR_CURSOR")
+              GameTooltip:SetHyperlink("item:" .. capturedItemId)
+              GameTooltip:Show()
+            end
+          end)
+          itemBtn:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+          end)
+          itemBtn:SetScript("OnClick", function()
+            if IsShiftKeyDown() and capturedItemId and capturedItemName and ChatFrameEditBox:IsVisible() then
+              local _, _, _, color = GetItemQualityColor(capturedQuality)
+              local chatLink = color .. "|Hitem:" .. capturedItemId .. ":0:0:0|h[" .. capturedItemName .. "]|h|r"
+              ChatFrameEditBox:Insert(chatLink)
+            end
+          end)
+          
+          -- Display SR+ value
+          local plusText = itemFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          plusText:SetPoint("LEFT", itemBtn, "RIGHT", 5, 0)
+          plusText:SetText(" (+" .. item.plus .. ")")
+          
+          table.insert(detailPanel.content, itemFrame)
           yOffset = yOffset + 13
         end
         yOffset = yOffset + 5
@@ -994,6 +1064,36 @@ function OGRH.SRValidation.ShowWindow()
     insets = {left = 4, right = 4, top = 4, bottom = 4}
   })
   frame:SetBackdropColor(0, 0, 0, 0.85)
+  
+  -- RollFor import button (top left)
+  local rollForBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  rollForBtn:SetWidth(110)
+  rollForBtn:SetHeight(22)
+  rollForBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -7)
+  rollForBtn:SetText("RollFor Import")
+  if OGRH and OGRH.StyleButton then
+    OGRH.StyleButton(rollForBtn)
+  end
+  
+  -- Tooltip
+  rollForBtn:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(rollForBtn, "ANCHOR_RIGHT")
+    GameTooltip:SetText("RollFor SR Import", 1, 1, 1)
+    GameTooltip:AddLine("Click to open soft reserve import window", 0.8, 0.8, 0.8, 1)
+    GameTooltip:Show()
+  end)
+  rollForBtn:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+  
+  -- Click handler
+  rollForBtn:SetScript("OnClick", function()
+    if RollFor and RollFor.key_bindings and RollFor.key_bindings.softres_toggle then
+      RollFor.key_bindings.softres_toggle()
+    else
+      OGRH.Msg("RollFor addon not found or not loaded.")
+    end
+  end)
   
   -- Title
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

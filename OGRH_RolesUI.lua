@@ -5,7 +5,7 @@
 --[[
   CHANGELOG:
   v1.16.0:
-  - Added Puppeteer integration: Tank roles automatically sync to Puppeteer's role system
+  - Added Puppeteer integration: Tank and Healer roles automatically sync to Puppeteer's role system
   - Added pfUI integration: Tank roles automatically sync to pfUI's tankrole system
   - Fixed role priority: Manual role assignments now take precedence over RollFor data
   - RollFor data only applied on first join or when "Sync RollFor" button is clicked
@@ -189,23 +189,26 @@ local function CreateRolesFrame()
                                     
                                     OGRH_SV.roles[draggedName] = newRole
                                     
-                                    -- Sync tank status to Puppeteer and pfUI
+                                    -- Sync tank and healer status to Puppeteer and pfUI
                                     local isTank = (newRole == "TANKS")
+                                    local isHealer = (newRole == "HEALERS")
                                     
                                     -- Update Puppeteer (use SetRoleAndUpdate to trigger UI refresh)
                                     if _G.Puppeteer and _G.Puppeteer.SetRoleAndUpdate then
                                         if isTank then
                                             _G.Puppeteer.SetRoleAndUpdate(draggedName, "Tank")
+                                        elseif isHealer then
+                                            _G.Puppeteer.SetRoleAndUpdate(draggedName, "Healer")
                                         else
-                                            -- Remove tank role if they had it
+                                            -- Remove tank or healer role if they had it
                                             local currentRole = _G.Puppeteer.GetAssignedRole and _G.Puppeteer.GetAssignedRole(draggedName)
-                                            if currentRole == "Tank" then
+                                            if currentRole == "Tank" or currentRole == "Healer" then
                                                 _G.Puppeteer.SetRoleAndUpdate(draggedName, "No Role")
                                             end
                                         end
                                     end
                                     
-                                    -- Update pfUI
+                                    -- Update pfUI (only supports tanks)
                                     if _G.pfUI and _G.pfUI.uf and _G.pfUI.uf.raid and _G.pfUI.uf.raid.tankrole then
                                         _G.pfUI.uf.raid.tankrole[draggedName] = isTank
                                         if _G.pfUI.uf.raid.Show then
@@ -557,10 +560,11 @@ local function CreateRolesFrame()
             end)
         end
         
-        -- Sync tank status to Puppeteer and pfUI for all players
+        -- Sync tank and healer status to Puppeteer and pfUI for all players
         local puppeteerNeedsUpdate = false
         for i = 1, table.getn(ROLE_COLUMNS) do
             local isTankColumn = (i == 1)  -- First column is Tanks
+            local isHealerColumn = (i == 2)  -- Second column is Healers
             for j = 1, table.getn(ROLE_COLUMNS[i].players) do
                 local playerName = ROLE_COLUMNS[i].players[j]
                 
@@ -569,17 +573,20 @@ local function CreateRolesFrame()
                     if isTankColumn then
                         _G.Puppeteer.SetAssignedRole(playerName, "Tank")
                         puppeteerNeedsUpdate = true
+                    elseif isHealerColumn then
+                        _G.Puppeteer.SetAssignedRole(playerName, "Healer")
+                        puppeteerNeedsUpdate = true
                     else
-                        -- Remove tank role if they had it
+                        -- Remove tank or healer role if they had it
                         local currentRole = _G.Puppeteer.GetAssignedRole and _G.Puppeteer.GetAssignedRole(playerName)
-                        if currentRole == "Tank" then
+                        if currentRole == "Tank" or currentRole == "Healer" then
                             _G.Puppeteer.SetAssignedRole(playerName, "No Role")
                             puppeteerNeedsUpdate = true
                         end
                     end
                 end
                 
-                -- Update pfUI
+                -- Update pfUI (only supports tanks)
                 if _G.pfUI and _G.pfUI.uf and _G.pfUI.uf.raid and _G.pfUI.uf.raid.tankrole then
                     _G.pfUI.uf.raid.tankrole[playerName] = isTankColumn
                 end

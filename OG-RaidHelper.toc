@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.8.2
-## Notes: Added Consume Monitor with buff tracking and reporting
+## Version: 1.8.4
+## Notes: Added RollFor import buttons, Puppeteer healer role sync
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua

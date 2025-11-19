@@ -459,6 +459,36 @@ function OGRH.Invites.ShowWindow()
   })
   frame:SetBackdropColor(0, 0, 0, 0.85)
   
+  -- RollFor import button (top left)
+  local rollForBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  rollForBtn:SetWidth(110)
+  rollForBtn:SetHeight(22)
+  rollForBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -7)
+  rollForBtn:SetText("RollFor Import")
+  if OGRH and OGRH.StyleButton then
+    OGRH.StyleButton(rollForBtn)
+  end
+  
+  -- Tooltip
+  rollForBtn:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(rollForBtn, "ANCHOR_RIGHT")
+    GameTooltip:SetText("RollFor SR Import", 1, 1, 1)
+    GameTooltip:AddLine("Click to open soft reserve import window", 0.8, 0.8, 0.8, 1)
+    GameTooltip:Show()
+  end)
+  rollForBtn:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+  
+  -- Click handler
+  rollForBtn:SetScript("OnClick", function()
+    if RollFor and RollFor.key_bindings and RollFor.key_bindings.softres_toggle then
+      RollFor.key_bindings.softres_toggle()
+    else
+      OGRH.Msg("RollFor addon not found or not loaded.")
+    end
+  end)
+  
   -- Title
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -15)
