@@ -393,8 +393,12 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       local yOffset = -5
       local encounters = OGRH_SV.encounterMgmt.encounters[frame.selectedRaid]
+      local selectedIndex = nil
       
       for i, encounterName in ipairs(encounters) do
+        if encounterName == frame.selectedEncounter then
+          selectedIndex = i
+        end
         local encounterBtn = CreateFrame("Button", nil, scrollChild)
         encounterBtn:SetWidth(145)
         encounterBtn:SetHeight(20)
@@ -447,6 +451,26 @@ function OGRH.ShowEncounterWindow(encounterName)
       -- Update scroll child height
       local contentHeight = math.abs(yOffset) + 5
       scrollChild:SetHeight(contentHeight)
+      
+      -- Scroll to keep selected encounter visible
+      local scrollFrame = frame.encountersScrollFrame
+      if scrollFrame and selectedIndex then
+        local buttonHeight = 22
+        local visibleHeight = scrollFrame:GetHeight()
+        local buttonTop = (selectedIndex - 1) * buttonHeight
+        local buttonBottom = buttonTop + buttonHeight
+        local currentScroll = scrollFrame:GetVerticalScroll()
+        local scrollBottom = currentScroll + visibleHeight
+        
+        -- If selected button is above visible area, scroll up to it
+        if buttonTop < currentScroll then
+          scrollFrame:SetVerticalScroll(buttonTop)
+        -- If selected button is below visible area, scroll down to it
+        elseif buttonBottom > scrollBottom then
+          scrollFrame:SetVerticalScroll(buttonBottom - visibleHeight)
+        end
+        -- Otherwise, don't change scroll position (button is already visible)
+      end
     end
     
     frame.RefreshEncountersList = RefreshEncountersList
@@ -2431,6 +2455,129 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       -- Helper function to create role container
       local function CreateRoleContainer(parent, role, roleIndex, xPos, yPos, width)
+        -- Consume Check role UI
+        if role.isConsumeCheck then
+          local maxConsumes = role.slots or 1
+          local container = CreateFrame("Frame", nil, parent)
+          container:SetWidth(width)
+          container:SetHeight(40 + (maxConsumes * 22))
+          container:SetPoint("TOPLEFT", parent, "TOPLEFT", xPos, yPos)
+          container:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 8,
+            insets = {left = 2, right = 2, top = 2, bottom = 2}
+          })
+          container:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+          
+          -- Role index label (top left)
+          local indexLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          indexLabel:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -5)
+          indexLabel:SetText("R" .. roleIndex)
+          indexLabel:SetTextColor(0.7, 0.7, 0.7)
+          
+          -- Role name (centered)
+          local titleText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+          titleText:SetPoint("TOP", container, "TOP", 5, -10)
+          titleText:SetText(role.name or "Consumes")
+          
+          -- Tag marker for title (T) - positioned to the left of title
+          local titleTag = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          titleTag:SetPoint("RIGHT", titleText, "LEFT", -3, 0)
+          titleTag:SetText("|cff888888T|r")
+          titleTag:SetTextColor(0.5, 0.5, 0.5)
+          
+          -- Capture roleIndex for closures
+          local capturedRoleIndex = roleIndex
+          
+          -- Consume slots
+          container.slots = {}
+          for i = 1, maxConsumes do
+            local slot = CreateFrame("Frame", nil, container)
+            slot:SetWidth(width - 20)
+            slot:SetHeight(20)
+            slot:SetPoint("TOP", container, "TOP", 0, -30 - ((i-1) * 22))
+            
+            -- Background
+            local bg = slot:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+            bg:SetVertexColor(0.1, 0.1, 0.1, 0.8)
+            slot.bg = bg
+            
+            -- Tag marker for consume (Cx)
+            local consumeTag = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            consumeTag:SetPoint("LEFT", slot, "LEFT", 2, 0)
+            consumeTag:SetText("|cff888888C" .. i .. "|r")
+            consumeTag:SetTextColor(0.5, 0.5, 0.5)
+            slot.consumeTag = consumeTag
+            
+            -- Consume selection button
+            local consumeBtn = CreateFrame("Button", nil, slot)
+            consumeBtn:SetWidth(width - 30)
+            consumeBtn:SetHeight(20)
+            consumeBtn:SetPoint("LEFT", consumeTag, "RIGHT", 2, 0)
+            
+            local consumeText = consumeBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            consumeText:SetPoint("LEFT", consumeBtn, "LEFT", 2, 0)
+            consumeText:SetWidth(width - 56)
+            consumeText:SetJustifyH("LEFT")
+            consumeBtn.consumeText = consumeText
+            
+            -- Combat icon (skull from raid markers)
+            local combatIcon = consumeBtn:CreateTexture(nil, "OVERLAY")
+            combatIcon:SetWidth(16)
+            combatIcon:SetHeight(16)
+            combatIcon:SetPoint("RIGHT", consumeBtn, "RIGHT", -2, 0)
+            combatIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+            combatIcon:SetTexCoord(0.75, 1, 0.25, 0.5)  -- Skull icon coordinates
+            consumeBtn.combatIcon = combatIcon
+            
+            -- Update text and icon based on role consume data
+            if role.consumes and role.consumes[i] then
+              local consumeData = role.consumes[i]
+              local displayText = ""
+              if consumeData.allowAlternate and consumeData.secondaryName and consumeData.secondaryName ~= "" then
+                displayText = consumeData.primaryName .. " / " .. consumeData.secondaryName
+              elseif consumeData.primaryName then
+                displayText = consumeData.primaryName
+              else
+                displayText = "|cff888888Click to select consume|r"
+              end
+              
+              -- Truncate text if too long
+              consumeText:SetText(displayText)
+              if consumeText:GetStringWidth() > (width - 56) then
+                while consumeText:GetStringWidth() > (width - 62) and string.len(displayText) > 3 do
+                  displayText = string.sub(displayText, 1, string.len(displayText) - 1)
+                  consumeText:SetText(displayText .. "...")
+                end
+              end
+              
+              -- Show/hide combat icon
+              if consumeData.checkDuringCombat then
+                combatIcon:Show()
+              else
+                combatIcon:Hide()
+              end
+            else
+              consumeText:SetText("|cff888888Click to select consume|r")
+              combatIcon:Hide()
+            end
+            
+            -- Click to select consume
+            consumeBtn:SetScript("OnClick", function()
+              OGRH.ShowConsumeSelectionDialog(frame.selectedRaid, frame.selectedEncounter, capturedRoleIndex, i)
+            end)
+            
+            table.insert(container.slots, slot)
+          end
+          
+          return container
+        end
+        
         local maxPlayers = role.slots or 1
         local container = CreateFrame("Frame", nil, parent)
         container:SetWidth(width)
@@ -3154,6 +3301,16 @@ function OGRH.ShowEncounterWindow(encounterName)
     if OGRH_EncounterFrame.RefreshRoleContainers then
       OGRH_EncounterFrame.RefreshRoleContainers()
     end
+    
+    -- Ensure scroll position is correct after frame is shown (delayed to next frame)
+    -- This handles the case where the frame is shown for the first time with a saved encounter
+    local delayFrame = CreateFrame("Frame")
+    delayFrame:SetScript("OnUpdate", function()
+      if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshEncountersList then
+        OGRH_EncounterFrame.RefreshEncountersList()
+      end
+      this:SetScript("OnUpdate", nil)
+    end)
   end
 end
 
@@ -3549,6 +3706,10 @@ function OGRH.ShowEncounterSetup()
     
     -- Function to refresh encounters list
     local function RefreshEncountersList()
+      -- Save current scroll position
+      local scrollFrame = frame.encountersScrollFrame
+      local savedScroll = scrollFrame and scrollFrame:GetVerticalScroll() or 0
+      
       -- Clear existing buttons
       if frame.encounterButtons then
         for _, btn in ipairs(frame.encounterButtons) do
@@ -3586,10 +3747,14 @@ function OGRH.ShowEncounterSetup()
       end
       
       local yOffset = -5
+      local selectedIndex = nil
       
       -- Add existing encounters for selected raid
       local encounters = OGRH_SV.encounterMgmt.encounters[frame.selectedRaid]
       for i, encounterName in ipairs(encounters) do
+        if encounterName == frame.selectedEncounter then
+          selectedIndex = i
+        end
         local encounterBtn = CreateFrame("Button", nil, scrollChild)
         encounterBtn:SetWidth(150)
         encounterBtn:SetHeight(20)
@@ -3733,15 +3898,40 @@ function OGRH.ShowEncounterSetup()
       scrollChild:SetHeight(contentHeight)
       
       -- Update scrollbar visibility
-      local scrollFrame = frame.encountersScrollFrame
       local scrollBar = frame.encountersScrollBar
       local scrollFrameHeight = scrollFrame:GetHeight()
       
       if contentHeight > scrollFrameHeight then
         scrollBar:Show()
         scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
-        scrollBar:SetValue(0)
-        scrollFrame:SetVerticalScroll(0)
+        
+        -- Restore or adjust scroll position to keep selected item visible
+        if selectedIndex then
+          local buttonHeight = 22
+          local visibleHeight = scrollFrameHeight
+          local buttonTop = (selectedIndex - 1) * buttonHeight
+          local buttonBottom = buttonTop + buttonHeight
+          local scrollBottom = savedScroll + visibleHeight
+          
+          -- If selected button is above visible area, scroll up to it
+          if buttonTop < savedScroll then
+            scrollBar:SetValue(buttonTop)
+            scrollFrame:SetVerticalScroll(buttonTop)
+          -- If selected button is below visible area, scroll down to it
+          elseif buttonBottom > scrollBottom then
+            local newScroll = buttonBottom - visibleHeight
+            scrollBar:SetValue(newScroll)
+            scrollFrame:SetVerticalScroll(newScroll)
+          else
+            -- Selected item is visible, restore saved scroll position
+            scrollBar:SetValue(savedScroll)
+            scrollFrame:SetVerticalScroll(savedScroll)
+          end
+        else
+          -- No selected item, restore saved scroll position
+          scrollBar:SetValue(savedScroll)
+          scrollFrame:SetVerticalScroll(savedScroll)
+        end
       else
         scrollBar:Hide()
         scrollFrame:SetVerticalScroll(0)
@@ -5268,7 +5458,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   if not OGRH_EditRoleFrame then
     local frame = CreateFrame("Frame", "OGRH_EditRoleFrame", UIParent)
     frame:SetWidth(350)
-    frame:SetHeight(280)
+    frame:SetHeight(380)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetFrameStrata("DIALOG")
     frame:SetBackdrop({
@@ -5291,10 +5481,23 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     title:SetPoint("TOP", frame, "TOP", 0, -10)
     title:SetText("Edit Role")
     
+    -- Consume Check Checkbox
+    local consumeCheckLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    consumeCheckLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -40)
+    consumeCheckLabel:SetText("Consume Check:")
+    frame.consumeCheckLabel = consumeCheckLabel
+    
+    local consumeCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    consumeCheckbox:SetPoint("LEFT", consumeCheckLabel, "RIGHT", 5, 0)
+    consumeCheckbox:SetWidth(24)
+    consumeCheckbox:SetHeight(24)
+    frame.consumeCheckbox = consumeCheckbox
+    
     -- Role Name Label
     local nameLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    nameLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -40)
+    nameLabel:SetPoint("TOPLEFT", consumeCheckLabel, "BOTTOMLEFT", 0, -10)
     nameLabel:SetText("Role Name:")
+    frame.nameLabel = nameLabel
     
     -- Role Name EditBox
     local nameEditBox = CreateFrame("EditBox", nil, frame)
@@ -5360,10 +5563,15 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     allowOtherRolesCheckbox:SetHeight(24)
     frame.allowOtherRolesCheckbox = allowOtherRolesCheckbox
     
-    -- Player Count Label
+    -- Player/Consume Count Label
     local countLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     countLabel:SetPoint("TOPLEFT", showAssignmentLabel, "BOTTOMLEFT", 0, -15)
     countLabel:SetText("Player Count:")
+    frame.countLabel = countLabel
+    frame.raidIconsLabel = raidIconsLabel
+    frame.showAssignmentLabel = showAssignmentLabel
+    frame.markPlayerLabel = markPlayerLabel
+    frame.allowOtherRolesLabel = allowOtherRolesLabel
     
     -- Player Count EditBox
     local countEditBox = CreateFrame("EditBox", nil, frame)
@@ -5386,57 +5594,144 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     countEditBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
     frame.countEditBox = countEditBox
     
-    -- Default Player Roles Label
+    -- Classes Label
     local rolesLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     rolesLabel:SetPoint("TOPLEFT", countLabel, "BOTTOMLEFT", 0, -15)
-    rolesLabel:SetText("Default Player Roles:")
+    rolesLabel:SetText("Classes:")
+    frame.rolesLabel = rolesLabel
     
-    -- Role checkboxes
-    local tankCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    tankCheck:SetPoint("TOPLEFT", rolesLabel, "BOTTOMLEFT", 10, -5)
-    tankCheck:SetWidth(24)
-    tankCheck:SetHeight(24)
-    local tankLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    tankLabel:SetPoint("LEFT", tankCheck, "RIGHT", 5, 0)
-    tankLabel:SetText("Tanks")
-    frame.tankCheck = tankCheck
+    -- All checkbox
+    local allCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    allCheck:SetPoint("TOPLEFT", rolesLabel, "BOTTOMLEFT", 10, -5)
+    allCheck:SetWidth(24)
+    allCheck:SetHeight(24)
+    local allLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    allLabel:SetPoint("LEFT", allCheck, "RIGHT", 5, 0)
+    allLabel:SetText("All")
+    frame.allCheck = allCheck
     
-    local healerCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    healerCheck:SetPoint("TOPLEFT", tankCheck, "BOTTOMLEFT", 0, -5)
-    healerCheck:SetWidth(24)
-    healerCheck:SetHeight(24)
-    local healerLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    healerLabel:SetPoint("LEFT", healerCheck, "RIGHT", 5, 0)
-    healerLabel:SetText("Healers")
-    frame.healerCheck = healerCheck
+    -- Class checkboxes - Column 1
+    local warriorCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    warriorCheck:SetPoint("TOPLEFT", allCheck, "BOTTOMLEFT", 0, -5)
+    warriorCheck:SetWidth(24)
+    warriorCheck:SetHeight(24)
+    local warriorLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    warriorLabel:SetPoint("LEFT", warriorCheck, "RIGHT", 5, 0)
+    warriorLabel:SetText("Warrior")
+    frame.warriorCheck = warriorCheck
     
-    local meleeCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    meleeCheck:SetPoint("LEFT", tankCheck, "LEFT", 120, 0)
-    meleeCheck:SetWidth(24)
-    meleeCheck:SetHeight(24)
-    local meleeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    meleeLabel:SetPoint("LEFT", meleeCheck, "RIGHT", 5, 0)
-    meleeLabel:SetText("Melee")
-    frame.meleeCheck = meleeCheck
+    local rogueCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    rogueCheck:SetPoint("TOPLEFT", warriorCheck, "BOTTOMLEFT", 0, -5)
+    rogueCheck:SetWidth(24)
+    rogueCheck:SetHeight(24)
+    local rogueLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rogueLabel:SetPoint("LEFT", rogueCheck, "RIGHT", 5, 0)
+    rogueLabel:SetText("Rogue")
+    frame.rogueCheck = rogueCheck
     
-    local rangedCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    rangedCheck:SetPoint("TOPLEFT", meleeCheck, "BOTTOMLEFT", 0, -5)
-    rangedCheck:SetWidth(24)
-    rangedCheck:SetHeight(24)
-    local rangedLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    rangedLabel:SetPoint("LEFT", rangedCheck, "RIGHT", 5, 0)
-    rangedLabel:SetText("Ranged")
-    frame.rangedCheck = rangedCheck
+    local hunterCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    hunterCheck:SetPoint("TOPLEFT", rogueCheck, "BOTTOMLEFT", 0, -5)
+    hunterCheck:SetWidth(24)
+    hunterCheck:SetHeight(24)
+    local hunterLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    hunterLabel:SetPoint("LEFT", hunterCheck, "RIGHT", 5, 0)
+    hunterLabel:SetText("Hunter")
+    frame.hunterCheck = hunterCheck
     
-    -- Make checkboxes act like radio buttons (only one can be selected)
-    local roleChecks = {tankCheck, healerCheck, meleeCheck, rangedCheck}
-    for _, check in ipairs(roleChecks) do
+    -- Class checkboxes - Column 2
+    local paladinCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    paladinCheck:SetPoint("LEFT", allCheck, "LEFT", 100, 0)
+    paladinCheck:SetWidth(24)
+    paladinCheck:SetHeight(24)
+    local paladinLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    paladinLabel:SetPoint("LEFT", paladinCheck, "RIGHT", 5, 0)
+    paladinLabel:SetText("Paladin")
+    frame.paladinCheck = paladinCheck
+    
+    local priestCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    priestCheck:SetPoint("TOPLEFT", paladinCheck, "BOTTOMLEFT", 0, -5)
+    priestCheck:SetWidth(24)
+    priestCheck:SetHeight(24)
+    local priestLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    priestLabel:SetPoint("LEFT", priestCheck, "RIGHT", 5, 0)
+    priestLabel:SetText("Priest")
+    frame.priestCheck = priestCheck
+    
+    local shamanCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    shamanCheck:SetPoint("TOPLEFT", priestCheck, "BOTTOMLEFT", 0, -5)
+    shamanCheck:SetWidth(24)
+    shamanCheck:SetHeight(24)
+    local shamanLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    shamanLabel:SetPoint("LEFT", shamanCheck, "RIGHT", 5, 0)
+    shamanLabel:SetText("Shaman")
+    frame.shamanCheck = shamanCheck
+    
+    local druidCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    druidCheck:SetPoint("TOPLEFT", shamanCheck, "BOTTOMLEFT", 0, -5)
+    druidCheck:SetWidth(24)
+    druidCheck:SetHeight(24)
+    local druidLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    druidLabel:SetPoint("LEFT", druidCheck, "RIGHT", 5, 0)
+    druidLabel:SetText("Druid")
+    frame.druidCheck = druidCheck
+    
+    -- Class checkboxes - Column 3
+    local mageCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    mageCheck:SetPoint("LEFT", paladinCheck, "LEFT", 100, 0)
+    mageCheck:SetWidth(24)
+    mageCheck:SetHeight(24)
+    local mageLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    mageLabel:SetPoint("LEFT", mageCheck, "RIGHT", 5, 0)
+    mageLabel:SetText("Mage")
+    frame.mageCheck = mageCheck
+    
+    local warlockCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    warlockCheck:SetPoint("TOPLEFT", mageCheck, "BOTTOMLEFT", 0, -5)
+    warlockCheck:SetWidth(24)
+    warlockCheck:SetHeight(24)
+    local warlockLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    warlockLabel:SetPoint("LEFT", warlockCheck, "RIGHT", 5, 0)
+    warlockLabel:SetText("Warlock")
+    frame.warlockCheck = warlockCheck
+    
+    -- Store all class checks for easy iteration
+    frame.classChecks = {
+      allCheck, warriorCheck, rogueCheck, hunterCheck,
+      paladinCheck, priestCheck, shamanCheck, druidCheck,
+      mageCheck, warlockCheck
+    }
+    
+    -- All checkbox behavior: uncheck all others when checked
+    allCheck:SetScript("OnClick", function()
+      if this:GetChecked() then
+        for _, check in ipairs(frame.classChecks) do
+          if check ~= allCheck then
+            check:SetChecked(false)
+            check:Disable()
+          end
+        end
+      else
+        for _, check in ipairs(frame.classChecks) do
+          if check ~= allCheck then
+            check:Enable()
+          end
+        end
+      end
+    end)
+    
+    -- Individual class checkboxes: uncheck All when any is checked
+    local classOnlyChecks = {
+      warriorCheck, rogueCheck, hunterCheck,
+      paladinCheck, priestCheck, shamanCheck, druidCheck,
+      mageCheck, warlockCheck
+    }
+    for _, check in ipairs(classOnlyChecks) do
       check:SetScript("OnClick", function()
         if this:GetChecked() then
-          -- Uncheck all others
-          for _, otherCheck in ipairs(roleChecks) do
-            if otherCheck ~= this then
-              otherCheck:SetChecked(false)
+          allCheck:SetChecked(false)
+          for _, otherCheck in ipairs(frame.classChecks) do
+            if otherCheck ~= allCheck then
+              otherCheck:Enable()
             end
           end
         end
@@ -5466,7 +5761,86 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   
   local frame = OGRH_EditRoleFrame
   
+  -- Function to update visibility based on consume check
+  local function UpdateConsumeCheckVisibility()
+    local isConsumeCheck = frame.consumeCheckbox:GetChecked()
+    
+    -- Hide/show elements based on consume check
+    if isConsumeCheck then
+      -- Set name to "Consumes" and hide name controls
+      frame.nameEditBox:SetText("Consumes")
+      frame.nameLabel:Hide()
+      frame.nameEditBox:Hide()
+      
+      -- Hide standard role options
+      frame.raidIconsLabel:Hide()
+      frame.raidIconsCheckbox:Hide()
+      frame.showAssignmentLabel:Hide()
+      frame.showAssignmentCheckbox:Hide()
+      frame.markPlayerLabel:Hide()
+      frame.markPlayerCheckbox:Hide()
+      frame.allowOtherRolesLabel:Hide()
+      frame.allowOtherRolesCheckbox:Hide()
+      
+      -- Reanchor count label to consume checkbox (since other labels are hidden)
+      frame.countLabel:ClearAllPoints()
+      frame.countLabel:SetPoint("TOPLEFT", frame.consumeCheckLabel, "BOTTOMLEFT", 0, -15)
+      frame.countLabel:SetText("Consume Count:")
+      
+      -- Resize dialog to fit (smaller height)
+      frame:SetHeight(280)
+    else
+      -- Show name controls
+      frame.nameLabel:Show()
+      frame.nameEditBox:Show()
+      
+      -- Show standard role options
+      frame.raidIconsLabel:Show()
+      frame.raidIconsCheckbox:Show()
+      frame.showAssignmentLabel:Show()
+      frame.showAssignmentCheckbox:Show()
+      frame.markPlayerLabel:Show()
+      frame.markPlayerCheckbox:Show()
+      frame.allowOtherRolesLabel:Show()
+      frame.allowOtherRolesCheckbox:Show()
+      
+      -- Reanchor count label back to showAssignmentLabel
+      frame.countLabel:ClearAllPoints()
+      frame.countLabel:SetPoint("TOPLEFT", frame.showAssignmentLabel, "BOTTOMLEFT", 0, -15)
+      frame.countLabel:SetText("Player Count:")
+      
+      -- Resize dialog back to full height
+      frame:SetHeight(380)
+    end
+  end
+  
+  -- Set consume checkbox click handler
+  frame.consumeCheckbox:SetScript("OnClick", function()
+    UpdateConsumeCheckVisibility()
+  end)
+  
+  -- Check if another role is already a consume check (only allow one)
+  local hasConsumeCheck = false
+  for i, role in ipairs(columnRoles) do
+    if i ~= roleIndex and role.isConsumeCheck then
+      hasConsumeCheck = true
+      break
+    end
+  end
+  
   -- Populate fields with current role data
+  frame.consumeCheckbox:SetChecked(roleData.isConsumeCheck or false)
+  
+  -- Hide consume check option entirely if another consume check already exists
+  if hasConsumeCheck and not roleData.isConsumeCheck then
+    frame.consumeCheckLabel:Hide()
+    frame.consumeCheckbox:Hide()
+  else
+    frame.consumeCheckLabel:Show()
+    frame.consumeCheckbox:Show()
+    frame.consumeCheckbox:Enable()
+  end
+  
   frame.nameEditBox:SetText(roleData.name or "")
   frame.raidIconsCheckbox:SetChecked(roleData.showRaidIcons or false)
   frame.showAssignmentCheckbox:SetChecked(roleData.showAssignment or false)
@@ -5474,31 +5848,67 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   frame.allowOtherRolesCheckbox:SetChecked(roleData.allowOtherRoles or false)
   frame.countEditBox:SetText(tostring(roleData.slots or 1))
   
-  -- Set default roles checkboxes (only one should be checked)
-  local defaultRoles = roleData.defaultRoles or {}
-  frame.tankCheck:SetChecked(defaultRoles.tanks or false)
-  frame.healerCheck:SetChecked(defaultRoles.healers or false)
-  frame.meleeCheck:SetChecked(defaultRoles.melee or false)
-  frame.rangedCheck:SetChecked(defaultRoles.ranged or false)
+  -- Set class checkboxes
+  local classes = roleData.classes or {}
+  frame.allCheck:SetChecked(classes.all or false)
+  frame.warriorCheck:SetChecked(classes.warrior or false)
+  frame.rogueCheck:SetChecked(classes.rogue or false)
+  frame.hunterCheck:SetChecked(classes.hunter or false)
+  frame.paladinCheck:SetChecked(classes.paladin or false)
+  frame.priestCheck:SetChecked(classes.priest or false)
+  frame.shamanCheck:SetChecked(classes.shaman or false)
+  frame.druidCheck:SetChecked(classes.druid or false)
+  frame.mageCheck:SetChecked(classes.mage or false)
+  frame.warlockCheck:SetChecked(classes.warlock or false)
+  
+  -- Trigger initial visibility update
+  UpdateConsumeCheckVisibility()
+  
+  -- If "All" is checked, disable other class checkboxes
+  if classes.all then
+    for _, check in ipairs(frame.classChecks) do
+      if check ~= frame.allCheck then
+        check:Disable()
+      end
+    end
+  end
   
   -- Save button handler
   frame.saveBtn:SetScript("OnClick", function()
+    -- Validate consume check limit
+    local isConsumeCheck = frame.consumeCheckbox:GetChecked()
+    if isConsumeCheck then
+      for i, role in ipairs(columnRoles) do
+        if i ~= roleIndex and role.isConsumeCheck then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Only one Consume Check role allowed per encounter.")
+          return
+        end
+      end
+    end
+    
     -- Update role data
     roleData.name = frame.nameEditBox:GetText()
+    roleData.isConsumeCheck = isConsumeCheck
     roleData.showRaidIcons = frame.raidIconsCheckbox:GetChecked()
     roleData.showAssignment = frame.showAssignmentCheckbox:GetChecked()
     roleData.markPlayer = frame.markPlayerCheckbox:GetChecked()
     roleData.allowOtherRoles = frame.allowOtherRolesCheckbox:GetChecked()
     roleData.slots = tonumber(frame.countEditBox:GetText()) or 1
     
-    -- Update default roles (clear all, then set the checked one)
-    if not roleData.defaultRoles then
-      roleData.defaultRoles = {}
+    -- Update classes
+    if not roleData.classes then
+      roleData.classes = {}
     end
-    roleData.defaultRoles.tanks = frame.tankCheck:GetChecked()
-    roleData.defaultRoles.healers = frame.healerCheck:GetChecked()
-    roleData.defaultRoles.melee = frame.meleeCheck:GetChecked()
-    roleData.defaultRoles.ranged = frame.rangedCheck:GetChecked()
+    roleData.classes.all = frame.allCheck:GetChecked()
+    roleData.classes.warrior = frame.warriorCheck:GetChecked()
+    roleData.classes.rogue = frame.rogueCheck:GetChecked()
+    roleData.classes.hunter = frame.hunterCheck:GetChecked()
+    roleData.classes.paladin = frame.paladinCheck:GetChecked()
+    roleData.classes.priest = frame.priestCheck:GetChecked()
+    roleData.classes.shaman = frame.shamanCheck:GetChecked()
+    roleData.classes.druid = frame.druidCheck:GetChecked()
+    roleData.classes.mage = frame.mageCheck:GetChecked()
+    roleData.classes.warlock = frame.warlockCheck:GetChecked()
     
     -- Refresh the roles list
     if refreshCallback then
@@ -5510,6 +5920,319 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   end)
   
   frame:Show()
+end
+
+-- Function to show consume selection dialog
+function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slotIndex)
+  -- Create or reuse dialog
+  if not OGRH_ConsumeSelectionDialog then
+    local dialog = CreateFrame("Frame", "OGRH_ConsumeSelectionDialog", UIParent)
+    dialog:SetWidth(350)
+    dialog:SetHeight(300)
+    dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+    dialog:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    dialog:SetBackdropColor(0, 0, 0, 0.95)
+    dialog:EnableMouse(true)
+    dialog:SetMovable(true)
+    dialog:RegisterForDrag("LeftButton")
+    dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
+    dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
+    
+    -- Title
+    local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", dialog, "TOP", 0, -10)
+    title:SetText("Select Consume")
+    
+    -- Allow alternate consume checkbox
+    local allowAltLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    allowAltLabel:SetPoint("TOPLEFT", dialog, "TOPLEFT", 15, -40)
+    allowAltLabel:SetText("Allow alternate consume:")
+    
+    local allowAltCheckbox = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
+    allowAltCheckbox:SetPoint("LEFT", allowAltLabel, "RIGHT", 5, 0)
+    allowAltCheckbox:SetWidth(24)
+    allowAltCheckbox:SetHeight(24)
+    dialog.allowAltCheckbox = allowAltCheckbox
+    
+    -- Check during Combat checkbox
+    local combatCheckLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    combatCheckLabel:SetPoint("TOPLEFT", allowAltLabel, "BOTTOMLEFT", 0, -8)
+    combatCheckLabel:SetText("Check during Combat:")
+    
+    local combatCheckbox = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
+    combatCheckbox:SetPoint("LEFT", combatCheckLabel, "RIGHT", 5, 0)
+    combatCheckbox:SetWidth(24)
+    combatCheckbox:SetHeight(24)
+    dialog.combatCheckbox = combatCheckbox
+    
+    -- Scroll frame for consume list
+    local scrollFrame = CreateFrame("ScrollFrame", nil, dialog)
+    scrollFrame:SetPoint("TOPLEFT", combatCheckLabel, "BOTTOMLEFT", 0, -10)
+    scrollFrame:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -30, 45)
+    
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetWidth(300)
+    scrollChild:SetHeight(1)
+    scrollFrame:SetScrollChild(scrollChild)
+    dialog.scrollChild = scrollChild
+    
+    -- Scrollbar
+    local scrollBar = CreateFrame("Slider", nil, scrollFrame)
+    scrollBar:SetPoint("TOPRIGHT", dialog, "TOPRIGHT", -10, -115)
+    scrollBar:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -10, 55)
+    scrollBar:SetWidth(16)
+    scrollBar:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    scrollBar:SetOrientation("VERTICAL")
+    scrollBar:SetMinMaxValues(0, 1)
+    scrollBar:SetValue(0)
+    scrollBar:SetScript("OnValueChanged", function()
+      scrollFrame:SetVerticalScroll(this:GetValue())
+    end)
+    dialog.scrollBar = scrollBar
+    
+    -- Mouse wheel scrolling
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function()
+      local delta = arg1
+      local current = scrollBar:GetValue()
+      local minVal, maxVal = scrollBar:GetMinMaxValues()
+      if delta > 0 then
+        scrollBar:SetValue(math.max(minVal, current - 20))
+      else
+        scrollBar:SetValue(math.min(maxVal, current + 20))
+      end
+    end)
+    
+    -- OK button
+    local okBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    okBtn:SetWidth(80)
+    okBtn:SetHeight(24)
+    okBtn:SetPoint("BOTTOM", dialog, "BOTTOM", -45, 15)
+    okBtn:SetText("OK")
+    dialog.okBtn = okBtn
+    
+    -- Cancel button
+    local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    cancelBtn:SetWidth(80)
+    cancelBtn:SetHeight(24)
+    cancelBtn:SetPoint("LEFT", okBtn, "RIGHT", 10, 0)
+    cancelBtn:SetText("Cancel")
+    cancelBtn:SetScript("OnClick", function()
+      dialog:Hide()
+    end)
+    
+    OGRH_ConsumeSelectionDialog = dialog
+  end
+  
+  local dialog = OGRH_ConsumeSelectionDialog
+  
+  -- Store parameters for OK button
+  dialog.raidName = raidName
+  dialog.encounterName = encounterName
+  dialog.roleIndex = roleIndex
+  dialog.slotIndex = slotIndex
+  dialog.selectedConsume = nil
+  
+  -- Load existing consume data for this slot
+  local existingConsumeData = nil
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and
+     OGRH_SV.encounterMgmt.roles[raidName] and
+     OGRH_SV.encounterMgmt.roles[raidName][encounterName] then
+    local encounterRoles = OGRH_SV.encounterMgmt.roles[raidName][encounterName]
+    local column1 = encounterRoles.column1 or {}
+    local column2 = encounterRoles.column2 or {}
+    
+    local role = nil
+    if roleIndex <= table.getn(column1) then
+      role = column1[roleIndex]
+    else
+      role = column2[roleIndex - table.getn(column1)]
+    end
+    
+    if role and role.consumes and role.consumes[slotIndex] then
+      existingConsumeData = role.consumes[slotIndex]
+      dialog.selectedConsume = existingConsumeData
+    end
+  end
+  
+  -- Set checkbox state from existing data
+  if existingConsumeData and existingConsumeData.allowAlternate then
+    dialog.allowAltCheckbox:SetChecked(true)
+  else
+    dialog.allowAltCheckbox:SetChecked(false)
+  end
+  
+  if existingConsumeData and existingConsumeData.checkDuringCombat then
+    dialog.combatCheckbox:SetChecked(true)
+  else
+    dialog.combatCheckbox:SetChecked(false)
+  end
+  
+  -- Setup OK button handler
+  dialog.okBtn:SetScript("OnClick", function()
+    if not dialog.selectedConsume then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a consume first.")
+      return
+    end
+    
+    -- Get the encounter data (stored in encounterMgmt.roles)
+    OGRH.EnsureSV()
+    if not OGRH_SV.encounterMgmt then
+      OGRH_SV.encounterMgmt = {raids = {}, encounters = {}, roles = {}}
+    end
+    if not OGRH_SV.encounterMgmt.roles then
+      OGRH_SV.encounterMgmt.roles = {}
+    end
+    if not OGRH_SV.encounterMgmt.roles[dialog.raidName] then
+      OGRH_SV.encounterMgmt.roles[dialog.raidName] = {}
+    end
+    if not OGRH_SV.encounterMgmt.roles[dialog.raidName][dialog.encounterName] then
+      OGRH_SV.encounterMgmt.roles[dialog.raidName][dialog.encounterName] = {column1 = {}, column2 = {}}
+    end
+    
+    local encounterRoles = OGRH_SV.encounterMgmt.roles[dialog.raidName][dialog.encounterName]
+    local column1 = encounterRoles.column1 or {}
+    local column2 = encounterRoles.column2 or {}
+    
+    -- Find the role based on roleIndex (1-based across both columns)
+    local role = nil
+    if dialog.roleIndex <= table.getn(column1) then
+      role = column1[dialog.roleIndex]
+    else
+      role = column2[dialog.roleIndex - table.getn(column1)]
+    end
+    
+    if not role then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Role not found.")
+      dialog:Hide()
+      return
+    end
+    
+    -- Initialize consumes array if needed
+    if not role.consumes then
+      role.consumes = {}
+    end
+    
+    -- Save consume selection
+    local allowAlt = dialog.allowAltCheckbox:GetChecked()
+    local checkCombat = dialog.combatCheckbox:GetChecked()
+    role.consumes[dialog.slotIndex] = {
+      primaryId = dialog.selectedConsume.primaryId,
+      primaryName = dialog.selectedConsume.primaryName,
+      secondaryId = dialog.selectedConsume.secondaryId,
+      secondaryName = dialog.selectedConsume.secondaryName,
+      allowAlternate = allowAlt,
+      checkDuringCombat = checkCombat
+    }
+    
+    -- Refresh the Encounter Planning UI
+    if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then
+      OGRH_EncounterFrame.RefreshRoleContainers()
+    end
+    
+    dialog:Hide()
+  end)
+  
+  -- Clear existing buttons
+  if dialog.consumeButtons then
+    for _, btn in ipairs(dialog.consumeButtons) do
+      btn:Hide()
+      btn:SetParent(nil)
+    end
+  end
+  dialog.consumeButtons = {}
+  
+  -- Load consumes from saved variables
+  OGRH.EnsureSV()
+  if not OGRH_SV.consumes or table.getn(OGRH_SV.consumes) == 0 then
+    local noConsumesText = dialog.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    noConsumesText:SetPoint("CENTER", dialog.scrollChild, "CENTER", 0, 0)
+    noConsumesText:SetText("|cff888888No consumes configured\nConfigure in Consumes menu|r")
+    noConsumesText:SetJustifyH("CENTER")
+    table.insert(dialog.consumeButtons, {placeholder = noConsumesText})
+    dialog:Show()
+    return
+  end
+  
+  local yOffset = -5
+  for i, consumeData in ipairs(OGRH_SV.consumes) do
+    local consumeBtn = CreateFrame("Button", nil, dialog.scrollChild)
+    consumeBtn:SetWidth(290)
+    consumeBtn:SetHeight(20)
+    consumeBtn:SetPoint("TOPLEFT", dialog.scrollChild, "TOPLEFT", 5, yOffset)
+    
+    local bg = consumeBtn:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+    consumeBtn.bg = bg
+    
+    local highlight = consumeBtn:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture("Interface\\Buttons\\WHITE8X8")
+    highlight:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+    
+    local consumeText = consumeBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    consumeText:SetPoint("LEFT", consumeBtn, "LEFT", 5, 0)
+    consumeText:SetText(consumeData.primaryName or "Unknown Item")
+    consumeText:SetWidth(280)
+    consumeText:SetJustifyH("LEFT")
+    
+    local capturedConsumeData = consumeData
+    local capturedBg = bg
+    consumeBtn:SetScript("OnClick", function()
+      -- Store selected consume (don't close dialog yet)
+      dialog.selectedConsume = capturedConsumeData
+      
+      -- Update visual feedback on all buttons
+      for _, otherBtn in ipairs(dialog.consumeButtons) do
+        if otherBtn.bg then
+          otherBtn.bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+        end
+      end
+      capturedBg:SetVertexColor(0.3, 0.5, 0.3, 0.7)
+    end)
+    
+    -- Highlight if this is the currently selected consume
+    if dialog.selectedConsume and 
+       dialog.selectedConsume.primaryId == consumeData.primaryId and
+       dialog.selectedConsume.primaryName == consumeData.primaryName then
+      bg:SetVertexColor(0.3, 0.5, 0.3, 0.7)
+    end
+    
+    table.insert(dialog.consumeButtons, consumeBtn)
+    yOffset = yOffset - 22
+  end
+  
+  -- Update scroll child height
+  local contentHeight = math.abs(yOffset) + 5
+  dialog.scrollChild:SetHeight(contentHeight)
+  
+  -- Update scrollbar
+  local scrollFrameHeight = dialog.scrollChild:GetParent():GetHeight()
+  if contentHeight > scrollFrameHeight then
+    dialog.scrollBar:Show()
+    dialog.scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+    dialog.scrollBar:SetValue(0)
+  else
+    dialog.scrollBar:Hide()
+  end
+  
+  dialog:Show()
 end
 
 -- Function to show Pool Defaults management window
