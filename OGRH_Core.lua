@@ -2401,28 +2401,6 @@ local function CreateMinimapButton()
       
       yOffset = yOffset - itemHeight - itemSpacing
       
-      -- Share item
-      local shareItem = CreateMenuItem("Share", function()
-        OGRH.CloseAllWindows("OGRH_ShareFrame")
-        
-        if OGRH.ShowShareWindow then
-          OGRH.ShowShareWindow()
-        end
-      end, menu, yOffset)
-      
-      yOffset = yOffset - itemHeight - itemSpacing
-      
-      -- Setup item
-      local setupItem = CreateMenuItem("Setup", function()
-        OGRH.CloseAllWindows("OGRH_EncounterSetupFrame")
-        
-        if OGRH.ShowEncounterSetup then
-          OGRH.ShowEncounterSetup()
-        end
-      end, menu, yOffset)
-      
-      yOffset = yOffset - itemHeight - itemSpacing
-      
       -- Invites item
       local invitesItem = CreateMenuItem("Invites", function()
         OGRH.CloseAllWindows("OGRH_InvitesFrame")
@@ -2461,7 +2439,7 @@ local function CreateMinimapButton()
       yOffset = yOffset - itemHeight - itemSpacing
       
       -- Trade Settings item
-      local tradeSettingsItem = CreateMenuItem("Trade Settings", function()
+      local tradeSettingsItem = CreateMenuItem("Setup Trade", function()
         if OGRH.ShowTradeSettings then
           OGRH.ShowTradeSettings()
         else
@@ -2472,11 +2450,33 @@ local function CreateMinimapButton()
       yOffset = yOffset - itemHeight - itemSpacing
       
       -- Consumes item
-      local consumesItem = CreateMenuItem("Consumes", function()
+      local consumesItem = CreateMenuItem("Setup Consumes", function()
         if OGRH.ShowConsumesSettings then
           OGRH.ShowConsumesSettings()
         else
           OGRH.Msg("Consumes module not loaded.")
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Setup item
+      local setupItem = CreateMenuItem("Setup Encounters", function()
+        OGRH.CloseAllWindows("OGRH_EncounterSetupFrame")
+        
+        if OGRH.ShowEncounterSetup then
+          OGRH.ShowEncounterSetup()
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Share item
+      local shareItem = CreateMenuItem("Import / Export", function()
+        OGRH.CloseAllWindows("OGRH_ShareFrame")
+        
+        if OGRH.ShowShareWindow then
+          OGRH.ShowShareWindow()
         end
       end, menu, yOffset)
       
