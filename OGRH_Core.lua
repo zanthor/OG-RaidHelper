@@ -1547,7 +1547,8 @@ function OGRH.ExportShareData()
     encounterRaidMarks = OGRH_SV.encounterRaidMarks or {},
     encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
     encounterAnnouncements = OGRH_SV.encounterAnnouncements or {},
-    tradeItems = OGRH_SV.tradeItems or {}
+    tradeItems = OGRH_SV.tradeItems or {},
+    consumes = OGRH_SV.consumes or {}
   }
   
   -- Serialize to string (using a simple format)
@@ -1603,6 +1604,9 @@ function OGRH.ImportShareData(dataString)
   if importData.tradeItems then
     OGRH_SV.tradeItems = importData.tradeItems
   end
+  if importData.consumes then
+    OGRH_SV.consumes = importData.consumes
+  end
   
   OGRH.Msg("|cff00ff00Success:|r Encounter data imported.")
   
@@ -1622,6 +1626,9 @@ function OGRH.ImportShareData(dataString)
   end
   if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRaidsList then
     OGRH_EncounterFrame.RefreshRaidsList()
+  end
+  if OGRH_ConsumesFrame and OGRH_ConsumesFrame.RefreshConsumesList then
+    OGRH_ConsumesFrame.RefreshConsumesList()
   end
 end
 

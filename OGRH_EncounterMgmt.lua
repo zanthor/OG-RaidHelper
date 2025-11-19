@@ -2568,8 +2568,9 @@ function OGRH.ShowEncounterWindow(encounterName)
             end
             
             -- Click to select consume
+            local capturedSlotIndex = i
             consumeBtn:SetScript("OnClick", function()
-              OGRH.ShowConsumeSelectionDialog(frame.selectedRaid, frame.selectedEncounter, capturedRoleIndex, i)
+              OGRH.ShowConsumeSelectionDialog(frame.selectedRaid, frame.selectedEncounter, capturedRoleIndex, capturedSlotIndex)
             end)
             
             table.insert(container.slots, slot)
@@ -5594,11 +5595,50 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     countEditBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
     frame.countEditBox = countEditBox
     
-    -- Classes Label
+    -- Role/Classes Label (text changes based on consume check)
     local rolesLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     rolesLabel:SetPoint("TOPLEFT", countLabel, "BOTTOMLEFT", 0, -15)
-    rolesLabel:SetText("Classes:")
+    rolesLabel:SetText("Default Role:")
     frame.rolesLabel = rolesLabel
+    
+    -- Default Role checkboxes (Tank/Healers/Melee/Ranged)
+    local tanksCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    tanksCheck:SetPoint("TOPLEFT", rolesLabel, "BOTTOMLEFT", 10, -5)
+    tanksCheck:SetWidth(24)
+    tanksCheck:SetHeight(24)
+    local tanksLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    tanksLabel:SetPoint("LEFT", tanksCheck, "RIGHT", 5, 0)
+    tanksLabel:SetText("Tanks")
+    frame.tanksCheck = tanksCheck
+    
+    local healersCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    healersCheck:SetPoint("TOPLEFT", tanksCheck, "BOTTOMLEFT", 0, -5)
+    healersCheck:SetWidth(24)
+    healersCheck:SetHeight(24)
+    local healersLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    healersLabel:SetPoint("LEFT", healersCheck, "RIGHT", 5, 0)
+    healersLabel:SetText("Healers")
+    frame.healersCheck = healersCheck
+    
+    local meleeCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    meleeCheck:SetPoint("TOPLEFT", healersCheck, "BOTTOMLEFT", 0, -5)
+    meleeCheck:SetWidth(24)
+    meleeCheck:SetHeight(24)
+    local meleeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    meleeLabel:SetPoint("LEFT", meleeCheck, "RIGHT", 5, 0)
+    meleeLabel:SetText("Melee")
+    frame.meleeCheck = meleeCheck
+    
+    local rangedCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    rangedCheck:SetPoint("TOPLEFT", meleeCheck, "BOTTOMLEFT", 0, -5)
+    rangedCheck:SetWidth(24)
+    rangedCheck:SetHeight(24)
+    local rangedLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rangedLabel:SetPoint("LEFT", rangedCheck, "RIGHT", 5, 0)
+    rangedLabel:SetText("Ranged")
+    frame.rangedCheck = rangedCheck
+    
+    frame.defaultRoleChecks = {tanksCheck, healersCheck, meleeCheck, rangedCheck}
     
     -- All checkbox
     local allCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
@@ -5609,6 +5649,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     allLabel:SetPoint("LEFT", allCheck, "RIGHT", 5, 0)
     allLabel:SetText("All")
     frame.allCheck = allCheck
+    frame.allLabel = allLabel
     
     -- Class checkboxes - Column 1
     local warriorCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
@@ -5619,6 +5660,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     warriorLabel:SetPoint("LEFT", warriorCheck, "RIGHT", 5, 0)
     warriorLabel:SetText("Warrior")
     frame.warriorCheck = warriorCheck
+    frame.warriorLabel = warriorLabel
     
     local rogueCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     rogueCheck:SetPoint("TOPLEFT", warriorCheck, "BOTTOMLEFT", 0, -5)
@@ -5628,6 +5670,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     rogueLabel:SetPoint("LEFT", rogueCheck, "RIGHT", 5, 0)
     rogueLabel:SetText("Rogue")
     frame.rogueCheck = rogueCheck
+    frame.rogueLabel = rogueLabel
     
     local hunterCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     hunterCheck:SetPoint("TOPLEFT", rogueCheck, "BOTTOMLEFT", 0, -5)
@@ -5637,6 +5680,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     hunterLabel:SetPoint("LEFT", hunterCheck, "RIGHT", 5, 0)
     hunterLabel:SetText("Hunter")
     frame.hunterCheck = hunterCheck
+    frame.hunterLabel = hunterLabel
     
     -- Class checkboxes - Column 2
     local paladinCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
@@ -5647,6 +5691,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     paladinLabel:SetPoint("LEFT", paladinCheck, "RIGHT", 5, 0)
     paladinLabel:SetText("Paladin")
     frame.paladinCheck = paladinCheck
+    frame.paladinLabel = paladinLabel
     
     local priestCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     priestCheck:SetPoint("TOPLEFT", paladinCheck, "BOTTOMLEFT", 0, -5)
@@ -5656,6 +5701,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     priestLabel:SetPoint("LEFT", priestCheck, "RIGHT", 5, 0)
     priestLabel:SetText("Priest")
     frame.priestCheck = priestCheck
+    frame.priestLabel = priestLabel
     
     local shamanCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     shamanCheck:SetPoint("TOPLEFT", priestCheck, "BOTTOMLEFT", 0, -5)
@@ -5665,6 +5711,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     shamanLabel:SetPoint("LEFT", shamanCheck, "RIGHT", 5, 0)
     shamanLabel:SetText("Shaman")
     frame.shamanCheck = shamanCheck
+    frame.shamanLabel = shamanLabel
     
     local druidCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     druidCheck:SetPoint("TOPLEFT", shamanCheck, "BOTTOMLEFT", 0, -5)
@@ -5674,6 +5721,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     druidLabel:SetPoint("LEFT", druidCheck, "RIGHT", 5, 0)
     druidLabel:SetText("Druid")
     frame.druidCheck = druidCheck
+    frame.druidLabel = druidLabel
     
     -- Class checkboxes - Column 3
     local mageCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
@@ -5684,6 +5732,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     mageLabel:SetPoint("LEFT", mageCheck, "RIGHT", 5, 0)
     mageLabel:SetText("Mage")
     frame.mageCheck = mageCheck
+    frame.mageLabel = mageLabel
     
     local warlockCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     warlockCheck:SetPoint("TOPLEFT", mageCheck, "BOTTOMLEFT", 0, -5)
@@ -5693,6 +5742,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     warlockLabel:SetPoint("LEFT", warlockCheck, "RIGHT", 5, 0)
     warlockLabel:SetText("Warlock")
     frame.warlockCheck = warlockCheck
+    frame.warlockLabel = warlockLabel
     
     -- Store all class checks for easy iteration
     frame.classChecks = {
@@ -5700,6 +5750,27 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       paladinCheck, priestCheck, shamanCheck, druidCheck,
       mageCheck, warlockCheck
     }
+    
+    -- Store class labels for visibility toggling
+    frame.classLabels = {
+      frame.allLabel, frame.warriorLabel, frame.rogueLabel, frame.hunterLabel,
+      frame.paladinLabel, frame.priestLabel, frame.shamanLabel, frame.druidLabel,
+      frame.mageLabel, frame.warlockLabel
+    }
+    
+    -- Initially hide class checkboxes and labels (show default roles by default)
+    allCheck:Hide()
+    frame.allLabel:Hide()
+    for _, check in ipairs(frame.classChecks) do
+      if check ~= allCheck then
+        check:Hide()
+      end
+    end
+    for _, label in ipairs(frame.classLabels) do
+      if label ~= frame.allLabel then
+        label:Hide()
+      end
+    end
     
     -- All checkbox behavior: uncheck all others when checked
     allCheck:SetScript("OnClick", function()
@@ -5787,6 +5858,24 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       frame.countLabel:SetPoint("TOPLEFT", frame.consumeCheckLabel, "BOTTOMLEFT", 0, -15)
       frame.countLabel:SetText("Consume Count:")
       
+      -- Change label to Classes and show class checkboxes
+      frame.rolesLabel:SetText("Classes:")
+      for _, check in ipairs(frame.defaultRoleChecks) do
+        check:Hide()
+      end
+      frame.allCheck:Show()
+      frame.allLabel:Show()
+      for _, check in ipairs(frame.classChecks) do
+        if check ~= frame.allCheck then
+          check:Show()
+        end
+      end
+      for _, label in ipairs(frame.classLabels) do
+        if label ~= frame.allLabel then
+          label:Show()
+        end
+      end
+      
       -- Resize dialog to fit (smaller height)
       frame:SetHeight(280)
     else
@@ -5808,6 +5897,24 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       frame.countLabel:ClearAllPoints()
       frame.countLabel:SetPoint("TOPLEFT", frame.showAssignmentLabel, "BOTTOMLEFT", 0, -15)
       frame.countLabel:SetText("Player Count:")
+      
+      -- Change label to Default Role and show default role checkboxes
+      frame.rolesLabel:SetText("Default Role:")
+      for _, check in ipairs(frame.defaultRoleChecks) do
+        check:Show()
+      end
+      frame.allCheck:Hide()
+      frame.allLabel:Hide()
+      for _, check in ipairs(frame.classChecks) do
+        if check ~= frame.allCheck then
+          check:Hide()
+        end
+      end
+      for _, label in ipairs(frame.classLabels) do
+        if label ~= frame.allLabel then
+          label:Hide()
+        end
+      end
       
       -- Resize dialog back to full height
       frame:SetHeight(380)
@@ -5848,6 +5955,13 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   frame.allowOtherRolesCheckbox:SetChecked(roleData.allowOtherRoles or false)
   frame.countEditBox:SetText(tostring(roleData.slots or 1))
   
+  -- Set default role checkboxes
+  local defaultRoles = roleData.defaultRoles or {}
+  frame.tanksCheck:SetChecked(defaultRoles.tanks or false)
+  frame.healersCheck:SetChecked(defaultRoles.healers or false)
+  frame.meleeCheck:SetChecked(defaultRoles.melee or false)
+  frame.rangedCheck:SetChecked(defaultRoles.ranged or false)
+  
   -- Set class checkboxes
   local classes = roleData.classes or {}
   frame.allCheck:SetChecked(classes.all or false)
@@ -5861,14 +5975,21 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   frame.mageCheck:SetChecked(classes.mage or false)
   frame.warlockCheck:SetChecked(classes.warlock or false)
   
-  -- Trigger initial visibility update
+  -- Trigger initial visibility update (this will show/hide appropriate checkboxes)
   UpdateConsumeCheckVisibility()
   
   -- If "All" is checked, disable other class checkboxes
-  if classes.all then
+  if classes.all and roleData.isConsumeCheck then
     for _, check in ipairs(frame.classChecks) do
       if check ~= frame.allCheck then
         check:Disable()
+      end
+    end
+  else
+    -- Re-enable class checkboxes if "All" is not checked
+    for _, check in ipairs(frame.classChecks) do
+      if check ~= frame.allCheck then
+        check:Enable()
       end
     end
   end
@@ -5895,20 +6016,39 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     roleData.allowOtherRoles = frame.allowOtherRolesCheckbox:GetChecked()
     roleData.slots = tonumber(frame.countEditBox:GetText()) or 1
     
-    -- Update classes
-    if not roleData.classes then
-      roleData.classes = {}
+    -- Update default roles (for standard roles)
+    if not isConsumeCheck then
+      if not roleData.defaultRoles then
+        roleData.defaultRoles = {}
+      end
+      roleData.defaultRoles.tanks = frame.tanksCheck:GetChecked()
+      roleData.defaultRoles.healers = frame.healersCheck:GetChecked()
+      roleData.defaultRoles.melee = frame.meleeCheck:GetChecked()
+      roleData.defaultRoles.ranged = frame.rangedCheck:GetChecked()
+      
+      -- Clear classes for standard roles
+      roleData.classes = nil
     end
-    roleData.classes.all = frame.allCheck:GetChecked()
-    roleData.classes.warrior = frame.warriorCheck:GetChecked()
-    roleData.classes.rogue = frame.rogueCheck:GetChecked()
-    roleData.classes.hunter = frame.hunterCheck:GetChecked()
-    roleData.classes.paladin = frame.paladinCheck:GetChecked()
-    roleData.classes.priest = frame.priestCheck:GetChecked()
-    roleData.classes.shaman = frame.shamanCheck:GetChecked()
-    roleData.classes.druid = frame.druidCheck:GetChecked()
-    roleData.classes.mage = frame.mageCheck:GetChecked()
-    roleData.classes.warlock = frame.warlockCheck:GetChecked()
+    
+    -- Update classes (for consume checks)
+    if isConsumeCheck then
+      if not roleData.classes then
+        roleData.classes = {}
+      end
+      roleData.classes.all = frame.allCheck:GetChecked()
+      roleData.classes.warrior = frame.warriorCheck:GetChecked()
+      roleData.classes.rogue = frame.rogueCheck:GetChecked()
+      roleData.classes.hunter = frame.hunterCheck:GetChecked()
+      roleData.classes.paladin = frame.paladinCheck:GetChecked()
+      roleData.classes.priest = frame.priestCheck:GetChecked()
+      roleData.classes.shaman = frame.shamanCheck:GetChecked()
+      roleData.classes.druid = frame.druidCheck:GetChecked()
+      roleData.classes.mage = frame.mageCheck:GetChecked()
+      roleData.classes.warlock = frame.warlockCheck:GetChecked()
+      
+      -- Clear defaultRoles for consume checks
+      roleData.defaultRoles = nil
+    end
     
     -- Refresh the roles list
     if refreshCallback then
@@ -7724,12 +7864,17 @@ function OGRH.PrepareEncounterAnnouncement()
     return
   end
   
-  -- Send announcement
-  for _, line in ipairs(announcementLines) do
-    SendChatMessage(line, "RAID")
+  -- Send announcement using SendAnnouncement (which checks for raid warning permission)
+  if OGRH.SendAnnouncement then
+    OGRH.SendAnnouncement(announcementLines)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement sent to raid chat (" .. table.getn(announcementLines) .. " lines).")
+  else
+    -- Fallback if SendAnnouncement not loaded
+    for _, line in ipairs(announcementLines) do
+      SendChatMessage(line, "RAID")
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement sent to raid chat (" .. table.getn(announcementLines) .. " lines).")
   end
-  
-  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Announcement sent to raid chat (" .. table.getn(announcementLines) .. " lines).")
 end
 
 function OGRH.OpenEncounterPlanning()
