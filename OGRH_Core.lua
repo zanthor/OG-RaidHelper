@@ -1537,13 +1537,18 @@ end
 function OGRH.ExportShareData()
   OGRH.EnsureSV()
   
-  -- Collect all encounter management data
+  -- Collect all encounter management data (excluding player data)
+  local encounterMgmt = {}
+  if OGRH_SV.encounterMgmt then
+    encounterMgmt.raids = OGRH_SV.encounterMgmt.raids
+    encounterMgmt.encounters = OGRH_SV.encounterMgmt.encounters
+    encounterMgmt.roles = OGRH_SV.encounterMgmt.roles
+    -- Explicitly exclude playerPools, encounterPools, encounterAssignments, poolDefaults
+  end
+  
   local exportData = {
     version = "1.0",
-    encounterMgmt = OGRH_SV.encounterMgmt or { raids = {}, encounters = {} },
-    poolDefaults = OGRH_SV.poolDefaults or {},
-    encounterPools = OGRH_SV.encounterPools or {},
-    encounterAssignments = OGRH_SV.encounterAssignments or {},
+    encounterMgmt = encounterMgmt,
     encounterRaidMarks = OGRH_SV.encounterRaidMarks or {},
     encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
     encounterAnnouncements = OGRH_SV.encounterAnnouncements or {},
@@ -1579,18 +1584,9 @@ function OGRH.ImportShareData(dataString)
   
   OGRH.EnsureSV()
   
-  -- Import all encounter management data
+  -- Import all encounter management data (excluding player data which comes from sync messages)
   if importData.encounterMgmt then
     OGRH_SV.encounterMgmt = importData.encounterMgmt
-  end
-  if importData.poolDefaults then
-    OGRH_SV.poolDefaults = importData.poolDefaults
-  end
-  if importData.encounterPools then
-    OGRH_SV.encounterPools = importData.encounterPools
-  end
-  if importData.encounterAssignments then
-    OGRH_SV.encounterAssignments = importData.encounterAssignments
   end
   if importData.encounterRaidMarks then
     OGRH_SV.encounterRaidMarks = importData.encounterRaidMarks
