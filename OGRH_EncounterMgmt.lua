@@ -790,6 +790,12 @@ function OGRH.ShowEncounterWindow(encounterName)
     
     -- Auto Assign functionality
     autoAssignBtn:SetScript("OnClick", function()
+      -- Check permission
+      if not OGRH.CanEdit or not OGRH.CanEdit() then
+        OGRH.Msg("Only the raid lead can modify assignments.")
+        return
+      end
+      
       local button = arg1 or "LeftButton"
       
       -- Right-click: Clear all encounter data
@@ -1908,6 +1914,17 @@ function OGRH.ShowEncounterWindow(encounterName)
     
     -- Function to toggle edit mode
     local function SetEditMode(enabled)
+      -- Check if player has permission to edit
+      local canEdit = OGRH.CanEdit and OGRH.CanEdit()
+      
+      -- If trying to enable but no permission, disable and show message
+      if enabled and not canEdit then
+        enabled = false
+        frame.editMode = false
+        editToggleBtn:SetText("|cffff0000Edit: Locked|r")
+        return
+      end
+      
       frame.editMode = enabled
       
       if enabled then
@@ -1916,12 +1933,12 @@ function OGRH.ShowEncounterWindow(encounterName)
         editToggleBtn:SetText("|cffff0000Edit: Locked|r")
       end
       
-      -- Enable/disable announcement EditBoxes
+      -- Enable/disable announcement EditBoxes (only if have permission)
       if frame.announcementLines then
         for i = 1, table.getn(frame.announcementLines) do
-          frame.announcementLines[i]:EnableKeyboard(enabled)
-          frame.announcementLines[i]:EnableMouse(enabled)
-          if not enabled then
+          frame.announcementLines[i]:EnableKeyboard(enabled and canEdit)
+          frame.announcementLines[i]:EnableMouse(enabled and canEdit)
+          if not enabled or not canEdit then
             frame.announcementLines[i]:ClearFocus()
           end
         end
@@ -1951,6 +1968,12 @@ function OGRH.ShowEncounterWindow(encounterName)
     
     -- Toggle edit mode on click
     editToggleBtn:SetScript("OnClick", function()
+      -- Check permission
+      if not frame.editMode and (not OGRH.CanEdit or not OGRH.CanEdit()) then
+        OGRH.Msg("Only the raid lead can unlock editing.")
+        return
+      end
+      
       SetEditMode(not frame.editMode)
     end)
     
@@ -2326,6 +2349,11 @@ function OGRH.ShowEncounterWindow(encounterName)
         playerBtn.playerName = playerName
         playerBtn:RegisterForDrag("LeftButton")
         playerBtn:SetScript("OnDragStart", function()
+          -- Check permission
+          if not OGRH.CanEdit or not OGRH.CanEdit() then
+            return
+          end
+          
           -- Create drag frame
           local dragFrame = CreateFrame("Frame", nil, UIParent)
           dragFrame:SetWidth(150)
@@ -2981,6 +3009,11 @@ function OGRH.ShowEncounterWindow(encounterName)
           
           -- Drag start
           dragBtn:SetScript("OnDragStart", function()
+            -- Check permission
+            if not OGRH.CanEdit or not OGRH.CanEdit() then
+              return
+            end
+            
             local slotRoleIndex = this.roleIndex
             local slotSlotIndex = this.slotIndex
             
@@ -3159,6 +3192,12 @@ function OGRH.ShowEncounterWindow(encounterName)
             local slotSlotIndex = this.slotIndex
             
             if button == "RightButton" then
+              -- Check permission
+              if not OGRH.CanEdit or not OGRH.CanEdit() then
+                OGRH.Msg("Only the raid lead can modify assignments.")
+                return
+              end
+              
               -- Right click: Unassign player
               if OGRH_SV.encounterAssignments and
                  OGRH_SV.encounterAssignments[frame.selectedRaid] and
@@ -4384,6 +4423,12 @@ function OGRH.ShowEncounterSetup()
         
         -- Click to edit role
         roleBtn:SetScript("OnClick", function()
+          -- Check permission
+          if not OGRH.CanEdit or not OGRH.CanEdit() then
+            OGRH.Msg("Only the raid lead can edit roles.")
+            return
+          end
+          
           OGRH.ShowEditRoleDialog(
             frame.selectedRaid,
             frame.selectedEncounter,

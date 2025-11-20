@@ -452,10 +452,24 @@ addonFrame:SetScript("OnEvent", function()
         end
       -- Handle addon poll
       elseif message == "ADDON_POLL" then
-        -- Respond to poll
+        -- Respond to poll only if we have Leader or Assistant rank
         local playerName = UnitName("player")
         if sender ~= playerName then
-          SendAddonMessage(OGRH.ADDON_PREFIX, "ADDON_POLL_RESPONSE", "RAID")
+          local hasPermission = false
+          local numRaid = GetNumRaidMembers()
+          if numRaid > 0 then
+            for i = 1, numRaid do
+              local name, rank = GetRaidRosterInfo(i)
+              if name == playerName and (rank == 2 or rank == 1) then
+                hasPermission = true
+                break
+              end
+            end
+          end
+          
+          if hasPermission then
+            SendAddonMessage(OGRH.ADDON_PREFIX, "ADDON_POLL_RESPONSE", "RAID")
+          end
         end
       -- Handle addon poll response
       elseif message == "ADDON_POLL_RESPONSE" then
@@ -526,15 +540,17 @@ addonFrame:SetScript("OnEvent", function()
           return
         end
         
-        -- Check if sync is locked (send only mode)
+        -- Check if sync is locked (send only mode) - but allow from designated raid lead
         OGRH.EnsureSV()
-        if OGRH_SV.syncLocked then
+        local isFromRaidLead = (OGRH.RaidLead and OGRH.RaidLead.currentLead and sender == OGRH.RaidLead.currentLead)
+        
+        if OGRH_SV.syncLocked and not isFromRaidLead then
           DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r Ignored encounter sync from " .. sender .. " (sync is locked)")
           return
         end
         
-        -- Check if sender is raid leader or assistant
-        local isAuthorized = false
+        -- Check if sender is raid leader or assistant (or designated raid lead)
+        local isAuthorized = isFromRaidLead
         local numRaidMembers = GetNumRaidMembers()
         
         if numRaidMembers > 0 then
@@ -731,12 +747,6 @@ addonFrame:SetScript("OnEvent", function()
           return
         end
         
-        -- Check if sync is locked (receive only if unlocked)
-        OGRH.EnsureSV()
-        if OGRH_SV.syncLocked then
-          return
-        end
-        
         -- Check if sender is the designated raid lead
         local isAuthorized = false
         if OGRH.RaidLead and OGRH.RaidLead.currentLead then
@@ -748,6 +758,9 @@ addonFrame:SetScript("OnEvent", function()
         if not isAuthorized then
           return
         end
+        
+        -- Allow updates from raid lead even if sync is locked
+        -- (syncLocked only prevents manual editing, not receiving from lead)
         
         -- Parse: raid;encounter;roleIndex;slotIndex;playerName;checksum
         local content = string.sub(message, 19)

@@ -18,8 +18,14 @@ function OGRH.IsRaidLead()
   return OGRH.RaidLead.currentLead == playerName
 end
 
--- Check if local player can edit (is raid lead)
+-- Check if local player can edit (is raid lead, or not in raid)
 function OGRH.CanEdit()
+  -- If not in a raid, allow editing
+  if GetNumRaidMembers() == 0 then
+    return true
+  end
+  
+  -- If in a raid, must be the designated raid lead
   return OGRH.IsRaidLead()
 end
 
@@ -52,6 +58,22 @@ end
 function OGRH.PollAddonUsers()
   if GetNumRaidMembers() == 0 then
     OGRH.Msg("You must be in a raid to poll for addon users.")
+    return
+  end
+  
+  -- Check if local player is raid leader or assistant
+  local playerName = UnitName("player")
+  local hasPermission = false
+  for i = 1, GetNumRaidMembers() do
+    local name, rank = GetRaidRosterInfo(i)
+    if name == playerName and (rank == 2 or rank == 1) then
+      hasPermission = true
+      break
+    end
+  end
+  
+  if not hasPermission then
+    OGRH.Msg("Only raid leaders or assistants can select a raid lead.")
     return
   end
   
