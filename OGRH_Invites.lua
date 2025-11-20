@@ -690,22 +690,26 @@ function OGRH.Invites.ShowWindow()
       local numRaid = GetNumRaidMembers()
       local numParty = GetNumPartyMembers()
       
-      -- If someone joined the party and we're not in a raid yet, convert to raid
-      if numRaid == 0 and numParty > 0 then
-        ConvertToRaid()
-        OGRH.Msg("Party detected - converting to raid...")
-        -- Wait a moment then invite rest
-        OGRH.Invites.scheduleRestOfInvites = true
+      -- Only auto-convert if we're within the invite window (60 seconds after clicking Invite All)
+      local currentTime = GetTime()
+      if OGRH.Invites.autoConvertExpiry and currentTime < OGRH.Invites.autoConvertExpiry then
+        -- If someone joined the party and we're not in a raid yet, convert to raid
+        if numRaid == 0 and numParty > 0 then
+          ConvertToRaid()
+          OGRH.Msg("Party detected - converting to raid...")
+          -- Wait a moment then invite rest
+          OGRH.Invites.scheduleRestOfInvites = true
+        end
+        
+        -- If we just converted to raid and have pending invites, send them
+        if numRaid > 0 and OGRH.Invites.scheduleRestOfInvites then
+          OGRH.Invites.scheduleRestOfInvites = false
+          OGRH.Msg("Raid formed - inviting remaining online players...")
+          OGRH.Invites.InviteAllOnline()
+        end
       end
       
-      -- If we just converted to raid and have pending invites, send them
-      if numRaid > 0 and OGRH.Invites.scheduleRestOfInvites then
-        OGRH.Invites.scheduleRestOfInvites = false
-        OGRH.Msg("Raid formed - inviting remaining online players...")
-        OGRH.Invites.InviteAllOnline()
-      end
-      
-      -- Refresh the list to update statuses
+      -- Always refresh the list to update statuses
       OGRH.Invites.RefreshPlayerList()
     end
   end)
@@ -922,6 +926,9 @@ function OGRH.Invites.InviteAllOnline()
   local numParty = GetNumPartyMembers()
   local wasSolo = (numRaid == 0 and numParty == 0)
   
+  -- Enable auto-convert for 60 seconds
+  OGRH.Invites.autoConvertExpiry = GetTime() + 60
+  
   for _, playerData in ipairs(players) do
     if not OGRH.Invites.IsPlayerInRaid(playerData.name) then
       local status, online = OGRH.Invites.GetPlayerStatus(playerData.name)
@@ -939,7 +946,7 @@ function OGRH.Invites.InviteAllOnline()
   
   if inviteCount > 0 then
     if wasSolo and inviteCount >= 4 then
-      OGRH.Msg("Sent " .. inviteCount .. " invites. Will auto-convert to raid and invite rest when someone joins.")
+      OGRH.Msg("Sent " .. inviteCount .. " invites. Will auto-convert to raid and invite rest when someone joins (60s window).")
     else
       OGRH.Msg("Sent invites to " .. inviteCount .. " online players.")
     end
