@@ -104,6 +104,7 @@ syncBtn:SetScript("OnEnter", function()
   GameTooltip:AddLine(" ", 1, 1, 1)
   GameTooltip:AddLine("Left-click: Sync encounter", 0.7, 0.7, 0.7)
   GameTooltip:AddLine("Right-click: Select raid lead", 0.7, 0.7, 0.7)
+  GameTooltip:AddLine("Shift+Left-click: Take over as raid lead", 0.7, 0.7, 0.7)
   GameTooltip:Show()
 end)
 
@@ -118,6 +119,37 @@ syncBtn:SetScript("OnClick", function()
     -- Right-click: Poll for addon users and select raid lead
     if OGRH.PollAddonUsers then
       OGRH.PollAddonUsers()
+    end
+    return
+  end
+  
+  -- Shift+Left-click: Take over as raid lead
+  if IsShiftKeyDown() then
+    if GetNumRaidMembers() == 0 then
+      OGRH.Msg("You must be in a raid to take over as raid lead.")
+      return
+    end
+    
+    -- Check if player has raid leader or assistant rank
+    local playerName = UnitName("player")
+    local hasPermission = false
+    for i = 1, GetNumRaidMembers() do
+      local name, rank = GetRaidRosterInfo(i)
+      if name == playerName and (rank == 2 or rank == 1) then
+        hasPermission = true
+        break
+      end
+    end
+    
+    if not hasPermission then
+      OGRH.Msg("Only raid leaders or assistants can take over as raid lead.")
+      return
+    end
+    
+    -- Set self as raid lead and broadcast
+    if OGRH.SetRaidLead then
+      OGRH.SetRaidLead(playerName)
+      OGRH.Msg("You are now the raid lead.")
     end
     return
   end
