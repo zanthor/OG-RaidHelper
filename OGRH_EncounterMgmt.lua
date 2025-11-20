@@ -11,14 +11,9 @@ OGRH.EncounterMgmt = OGRH.EncounterMgmt or {}
 -- Storage for encounter assignments
 local encounterData = {}
 
--- Get currently selected encounter (for sync from MainUI)
+-- Get currently selected encounter for main UI (not planning window)
 function OGRH.GetCurrentEncounter()
-  -- Check frame first
-  if OGRH_EncounterFrame and OGRH_EncounterFrame.selectedRaid and OGRH_EncounterFrame.selectedEncounter then
-    return OGRH_EncounterFrame.selectedRaid, OGRH_EncounterFrame.selectedEncounter
-  end
-  
-  -- Fall back to saved variables
+  -- Always use saved variables for main UI selection
   if OGRH_SV and OGRH_SV.ui then
     return OGRH_SV.ui.selectedRaid, OGRH_SV.ui.selectedEncounter
   end
@@ -300,7 +295,7 @@ function OGRH.ShowEncounterWindow(encounterName)
             frame.selectedEncounter = nil
           end
           frame.selectedRaid = capturedRaidName
-          OGRH_SV.ui.selectedRaid = capturedRaidName
+          -- DO NOT update main UI state - planning window is independent
           
           -- Select first encounter if available
           local firstEncounter = nil
@@ -309,7 +304,7 @@ function OGRH.ShowEncounterWindow(encounterName)
              table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaidName]) > 0 then
             firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaidName][1]
             frame.selectedEncounter = firstEncounter
-            OGRH_SV.ui.selectedEncounter = firstEncounter
+            -- DO NOT update main UI state - planning window is independent
           end
           
           RefreshRaidsList()
@@ -322,14 +317,9 @@ function OGRH.ShowEncounterWindow(encounterName)
           if frame.RefreshPlayersList then
             frame.RefreshPlayersList()
           end
-          if OGRH.UpdateEncounterNavButton then
-            OGRH.UpdateEncounterNavButton()
-          end
+          -- DO NOT update main UI nav button - planning window is independent
           
-          -- Broadcast encounter change
-          if firstEncounter and OGRH.BroadcastEncounterSelection then
-            OGRH.BroadcastEncounterSelection(capturedRaidName, firstEncounter)
-          end
+          -- DO NOT broadcast encounter change - planning window is independent
         end)
         
         table.insert(frame.raidButtons, raidBtn)
@@ -426,7 +416,7 @@ function OGRH.ShowEncounterWindow(encounterName)
         local capturedEncounterName = encounterName
         encounterBtn:SetScript("OnClick", function()
           frame.selectedEncounter = capturedEncounterName
-          OGRH_SV.ui.selectedEncounter = capturedEncounterName
+          -- DO NOT update main UI state - planning window is independent
           RefreshEncountersList()
           if frame.RefreshRoleContainers then
             frame.RefreshRoleContainers()
@@ -434,19 +424,11 @@ function OGRH.ShowEncounterWindow(encounterName)
           if frame.RefreshPlayersList then
             frame.RefreshPlayersList()
           end
-          if OGRH.UpdateEncounterNavButton then
-            OGRH.UpdateEncounterNavButton()
-          end
+          -- DO NOT update main UI nav button - planning window is independent
           
-          -- Update consume monitor if enabled
-          if OGRH.ShowConsumeMonitor then
-            OGRH.ShowConsumeMonitor()
-          end
+          -- DO NOT update consume monitor - it follows main UI, not planning window
           
-          -- Broadcast encounter change
-          if frame.selectedRaid and OGRH.BroadcastEncounterSelection then
-            OGRH.BroadcastEncounterSelection(frame.selectedRaid, capturedEncounterName)
-          end
+          -- DO NOT broadcast encounter change - planning window is independent
         end)
         
         table.insert(frame.encounterButtons, encounterBtn)
@@ -6447,12 +6429,9 @@ function OGRH.UpdateEncounterNavButton()
   local prevBtn = OGRH.encounterNav.prevEncBtn
   local nextBtn = OGRH.encounterNav.nextEncBtn
   
-  -- Get raid and encounter from frame if it exists, otherwise from saved variables
+  -- Always get raid and encounter from main UI saved variables only
   local raidName, encounterName
-  if OGRH_EncounterFrame then
-    raidName = OGRH_EncounterFrame.selectedRaid
-    encounterName = OGRH_EncounterFrame.selectedEncounter
-  elseif OGRH_SV and OGRH_SV.ui then
+  if OGRH_SV and OGRH_SV.ui then
     raidName = OGRH_SV.ui.selectedRaid
     encounterName = OGRH_SV.ui.selectedEncounter
   end
@@ -6511,7 +6490,7 @@ function OGRH.UpdateEncounterNavButton()
 end
 
 function OGRH.NavigateToPreviousEncounter()
-  -- Get current encounter from frame or saved variables
+  -- Get current encounter from main UI selection
   local raidName, currentEncounter = OGRH.GetCurrentEncounter()
   
   if not raidName or not currentEncounter then
@@ -6524,19 +6503,11 @@ function OGRH.NavigateToPreviousEncounter()
     
     for i = 1, table.getn(encounters) do
       if encounters[i] == currentEncounter and i > 1 then
-        -- Update saved variables
+        -- Update main UI saved variables only
         OGRH_SV.ui.selectedEncounter = encounters[i - 1]
         
-        -- Update frame if it exists
-        if OGRH_EncounterFrame then
-          OGRH_EncounterFrame.selectedEncounter = encounters[i - 1]
-          if OGRH_EncounterFrame.RefreshEncountersList then
-            OGRH_EncounterFrame.RefreshEncountersList()
-          end
-          if OGRH_EncounterFrame.RefreshRoleContainers then
-            OGRH_EncounterFrame.RefreshRoleContainers()
-          end
-        end
+        -- Do NOT update planning window frame
+        -- Planning window maintains its own independent selection
         
         OGRH.UpdateEncounterNavButton()
         
@@ -6554,7 +6525,7 @@ function OGRH.NavigateToPreviousEncounter()
 end
 
 function OGRH.NavigateToNextEncounter()
-  -- Get current encounter from frame or saved variables
+  -- Get current encounter from main UI selection
   local raidName, currentEncounter = OGRH.GetCurrentEncounter()
   
   if not raidName or not currentEncounter then
@@ -6567,19 +6538,11 @@ function OGRH.NavigateToNextEncounter()
     
     for i = 1, table.getn(encounters) do
       if encounters[i] == currentEncounter and i < table.getn(encounters) then
-        -- Update saved variables
+        -- Update main UI saved variables only
         OGRH_SV.ui.selectedEncounter = encounters[i + 1]
         
-        -- Update frame if it exists
-        if OGRH_EncounterFrame then
-          OGRH_EncounterFrame.selectedEncounter = encounters[i + 1]
-          if OGRH_EncounterFrame.RefreshEncountersList then
-            OGRH_EncounterFrame.RefreshEncountersList()
-          end
-          if OGRH_EncounterFrame.RefreshRoleContainers then
-            OGRH_EncounterFrame.RefreshRoleContainers()
-          end
-        end
+        -- Do NOT update planning window frame
+        -- Planning window maintains its own independent selection
         
         OGRH.UpdateEncounterNavButton()
         
@@ -6927,71 +6890,29 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         btn:SetScript("OnClick", function()
           menu:Hide()
           
-          -- Check if window is currently open
-          local wasOpen = OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible()
-          
-          -- Only create/show window if it was already open
-          if wasOpen then
-            -- Select this raid
-            OGRH_EncounterFrame.selectedRaid = capturedRaid
-            
-            -- Select first encounter if available
-            local firstEncounter = nil
-            if OGRH_SV.encounterMgmt.encounters and 
-               OGRH_SV.encounterMgmt.encounters[capturedRaid] and
-               table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
-              firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
-              OGRH_EncounterFrame.selectedEncounter = firstEncounter
-            end
-            
-            -- Refresh the window
-            if OGRH_EncounterFrame.RefreshRaidsList then
-              OGRH_EncounterFrame.RefreshRaidsList()
-            end
-            if OGRH_EncounterFrame.RefreshEncountersList then
-              OGRH_EncounterFrame.RefreshEncountersList()
-            end
-            if OGRH_EncounterFrame.RefreshRoleContainers then
-              OGRH_EncounterFrame.RefreshRoleContainers()
-            end
-            
-            -- Broadcast encounter change
-            if firstEncounter then
-              OGRH.BroadcastEncounterSelection(capturedRaid, firstEncounter)
-            end
-          else
-            -- Window not open, create frame but keep it hidden
-            if not OGRH_EncounterFrame then
-              OGRH.ShowEncounterWindow()
-              OGRH_EncounterFrame:Hide()
-            end
-            
-            -- Select this raid
-            OGRH_EncounterFrame.selectedRaid = capturedRaid
-            
-            -- Select first encounter if available
-            local firstEncounter = nil
-            if OGRH_SV.encounterMgmt.encounters and 
-               OGRH_SV.encounterMgmt.encounters[capturedRaid] and
-               table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
-              firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
-              OGRH_EncounterFrame.selectedEncounter = firstEncounter
-            end
-            
-            -- Update saved variables for next time
-            OGRH.EnsureSV()
-            OGRH_SV.lastSelectedRaid = capturedRaid
-            if firstEncounter then
-              OGRH_SV.lastSelectedEncounter = firstEncounter
-            end
-            
-            -- Broadcast encounter change
-            if firstEncounter then
-              OGRH.BroadcastEncounterSelection(capturedRaid, firstEncounter)
-            end
+          -- Select first encounter if available
+          local firstEncounter = nil
+          if OGRH_SV.encounterMgmt.encounters and 
+             OGRH_SV.encounterMgmt.encounters[capturedRaid] and
+             table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
+            firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
           end
           
+          -- Update Main UI state
+          OGRH.EnsureSV()
+          OGRH_SV.ui.selectedRaid = capturedRaid
+          OGRH_SV.ui.selectedEncounter = firstEncounter
+          
+          -- Broadcast encounter change to raid
+          if firstEncounter then
+            OGRH.BroadcastEncounterSelection(capturedRaid, firstEncounter)
+          end
+          
+          -- Update navigation button and consume monitor
           OGRH.UpdateEncounterNavButton()
+          if OGRH.ShowConsumeMonitor then
+            OGRH.ShowConsumeMonitor()
+          end
         end)
         
         table.insert(menu.buttons, btn)

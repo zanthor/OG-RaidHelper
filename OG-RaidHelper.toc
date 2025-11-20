@@ -6,6 +6,7 @@
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
+OGRH_RaidLead.lua
 OGRH_MainUI.lua
 OGRH_RolesUI.lua
 OGRH_EncounterMgmt.lua

@@ -272,23 +272,80 @@ function OGRH.BroadcastAssignmentUpdate(raid, encounter, roleIndex, slotIndex, p
     return
   end
   
-  -- Only send if we're raid leader or assistant
-  local canSend = false
-  for i = 1, GetNumRaidMembers() do
-    local name, rank = GetRaidRosterInfo(i)
-    if name == UnitName("player") and (rank == 2 or rank == 1) then
-      canSend = true
-      break
-    end
-  end
-  
-  if not canSend then
+  -- Only send if we're the designated raid lead
+  if not OGRH.IsRaidLead or not OGRH.IsRaidLead() then
     return
   end
   
   local checksum = OGRH.CalculateAssignmentChecksum(raid, encounter)
   local data = raid .. ";" .. encounter .. ";" .. roleIndex .. ";" .. slotIndex .. ";" .. (playerName or "") .. ";" .. checksum
   SendAddonMessage(OGRH.ADDON_PREFIX, "ASSIGNMENT_UPDATE;" .. data, "RAID")
+end
+
+-- Broadcast full encounter sync (for raid lead)
+function OGRH.BroadcastFullEncounterSync()
+  if GetNumRaidMembers() == 0 then
+    OGRH.Msg("You must be in a raid to sync.")
+    return
+  end
+  
+  -- Get current encounter
+  if not OGRH.GetCurrentEncounter then
+    return
+  end
+  
+  local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+  if not currentRaid or not currentEncounter then
+    OGRH.Msg("No encounter selected to sync.")
+    return
+  end
+  
+  -- Build sync data package
+  OGRH.EnsureSV()
+  local syncData = {
+    raid = currentRaid,
+    encounter = currentEncounter,
+    roles = {},
+    assignments = {},
+    marks = {},
+    numbers = {},
+    announcements = ""
+  }
+  
+  -- Get roles configuration
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and 
+     OGRH_SV.encounterMgmt.roles[currentRaid] and 
+     OGRH_SV.encounterMgmt.roles[currentRaid][currentEncounter] then
+    syncData.roles = OGRH_SV.encounterMgmt.roles[currentRaid][currentEncounter]
+  end
+  
+  -- Get player assignments
+  if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[currentRaid] and 
+     OGRH_SV.encounterAssignments[currentRaid][currentEncounter] then
+    syncData.assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
+  end
+  
+  -- Get raid marks
+  if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[currentRaid] and 
+     OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter] then
+    syncData.marks = OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter]
+  end
+  
+  -- Get assignment numbers
+  if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[currentRaid] and 
+     OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter] then
+    syncData.numbers = OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter]
+  end
+  
+  -- Get announcements
+  if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[currentRaid] and 
+     OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter] then
+    syncData.announcements = OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter]
+  end
+  
+  -- Serialize and send
+  local serialized = OGRH.Serialize(syncData)
+  SendAddonMessage(OGRH.ADDON_PREFIX, "ENCOUNTER_SYNC;" .. serialized, "RAID")
 end
 
 -- Request full sync from sender
@@ -391,6 +448,45 @@ addonFrame:SetScript("OnEvent", function()
             -- Set flag to capture AFK messages
             OGRH.readyCheckInProgress = true
             DoReadyCheck()
+          end
+        end
+      -- Handle addon poll
+      elseif message == "ADDON_POLL" then
+        -- Respond to poll
+        local playerName = UnitName("player")
+        if sender ~= playerName then
+          SendAddonMessage(OGRH.ADDON_PREFIX, "ADDON_POLL_RESPONSE", "RAID")
+        end
+      -- Handle addon poll response
+      elseif message == "ADDON_POLL_RESPONSE" then
+        if OGRH.HandleAddonPollResponse then
+          OGRH.HandleAddonPollResponse(sender)
+        end
+      -- Handle raid lead set
+      elseif string.sub(message, 1, 14) == "RAID_LEAD_SET;" then
+        local leadName = string.sub(message, 15)
+        if OGRH.RaidLead then
+          OGRH.RaidLead.currentLead = leadName
+          if OGRH.UpdateRaidLeadUI then
+            OGRH.UpdateRaidLeadUI()
+          end
+        end
+      -- Handle raid lead query (someone asking who the current lead is)
+      elseif message == "RAID_LEAD_QUERY" then
+        -- Respond with current lead if we know it
+        if OGRH.RaidLead and OGRH.RaidLead.currentLead then
+          SendAddonMessage(OGRH.ADDON_PREFIX, "RAID_LEAD_SET;" .. OGRH.RaidLead.currentLead, "RAID")
+        end
+      -- Handle sync request from non-lead
+      elseif message == "SYNC_REQUEST" then
+        -- Only respond if we're the raid lead
+        if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+          -- Send current encounter sync
+          if OGRH.GetCurrentEncounter then
+            local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+            if currentRaid and currentEncounter and OGRH.BroadcastFullEncounterSync then
+              OGRH.BroadcastFullEncounterSync()
+            end
           end
         end
       -- Handle announcement broadcast
@@ -606,32 +702,23 @@ addonFrame:SetScript("OnEvent", function()
             end
             
             if encounterExists then
-              -- Create frame if it doesn't exist (but don't show it)
-              if not OGRH_EncounterFrame then
-                OGRH.ShowEncounterWindow()
-                OGRH_EncounterFrame:Hide()
-              end
+              -- Update main UI selection only (don't touch planning window)
+              OGRH.EnsureSV()
+              if not OGRH_SV.ui then OGRH_SV.ui = {} end
+              OGRH_SV.ui.selectedRaid = raidName
+              OGRH_SV.ui.selectedEncounter = encounterName
               
-              -- Update selection
-              OGRH_EncounterFrame.selectedRaid = raidName
-              OGRH_EncounterFrame.selectedEncounter = encounterName
-              
-              -- Refresh UI if window is open
-              if OGRH_EncounterFrame:IsVisible() then
-                if OGRH_EncounterFrame.RefreshRaidsList then
-                  OGRH_EncounterFrame.RefreshRaidsList()
-                end
-                if OGRH_EncounterFrame.RefreshEncountersList then
-                  OGRH_EncounterFrame.RefreshEncountersList()
-                end
-                if OGRH_EncounterFrame.RefreshRoleContainers then
-                  OGRH_EncounterFrame.RefreshRoleContainers()
-                end
-              end
+              -- Do NOT update planning window frame
+              -- Planning window maintains its own independent selection
               
               -- Always update the main UI encounter button
               if OGRH.UpdateEncounterNavButton then
                 OGRH.UpdateEncounterNavButton()
+              end
+              
+              -- Update consume monitor
+              if OGRH.ShowConsumeMonitor then
+                OGRH.ShowConsumeMonitor()
               end
             end
           end
@@ -650,17 +737,11 @@ addonFrame:SetScript("OnEvent", function()
           return
         end
         
-        -- Check if sender is raid leader or assistant
+        -- Check if sender is the designated raid lead
         local isAuthorized = false
-        local numRaidMembers = GetNumRaidMembers()
-        
-        if numRaidMembers > 0 then
-          for i = 1, numRaidMembers do
-            local name, rank = GetRaidRosterInfo(i)
-            if name == sender and (rank == 2 or rank == 1) then
-              isAuthorized = true
-              break
-            end
+        if OGRH.RaidLead and OGRH.RaidLead.currentLead then
+          if sender == OGRH.RaidLead.currentLead then
+            isAuthorized = true
           end
         end
         
