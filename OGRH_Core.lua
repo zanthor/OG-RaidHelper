@@ -2102,72 +2102,15 @@ function OGRH.ShowTradeSettings()
   instructions:SetPoint("TOPLEFT", 20, -45)
   instructions:SetText("Configure trade items and quantities:")
   
-  -- List backdrop
-  local listBackdrop = CreateFrame("Frame", nil, frame)
-  listBackdrop:SetPoint("TOPLEFT", 17, -75)
-  listBackdrop:SetPoint("BOTTOMRIGHT", -17, 10)
-  listBackdrop:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 12,
-    insets = {left = 3, right = 3, top = 3, bottom = 3}
-  })
-  listBackdrop:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+  -- Create scroll list using template
+  local listWidth = frame:GetWidth() - 34
+  local listHeight = frame:GetHeight() - 85
+  local outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGRH.CreateStyledScrollList(frame, listWidth, listHeight)
+  outerFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 17, -75)
   
-  -- Scroll frame
-  local scrollFrame = CreateFrame("ScrollFrame", nil, listBackdrop)
-  scrollFrame:SetPoint("TOPLEFT", listBackdrop, "TOPLEFT", 5, -5)
-  scrollFrame:SetPoint("BOTTOMRIGHT", listBackdrop, "BOTTOMRIGHT", -22, 5)
-  
-  -- Scroll child
-  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-  scrollChild:SetWidth(235)
-  scrollChild:SetHeight(1)
-  scrollFrame:SetScrollChild(scrollChild)
   frame.scrollChild = scrollChild
   frame.scrollFrame = scrollFrame
-  
-  -- Create scrollbar
-  local scrollBar = CreateFrame("Slider", nil, scrollFrame)
-  scrollBar:SetPoint("TOPRIGHT", listBackdrop, "TOPRIGHT", -5, -16)
-  scrollBar:SetPoint("BOTTOMRIGHT", listBackdrop, "BOTTOMRIGHT", -5, 16)
-  scrollBar:SetWidth(16)
-  scrollBar:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 3, right = 3, top = 3, bottom = 3}
-  })
-  scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-  scrollBar:SetOrientation("VERTICAL")
-  scrollBar:SetMinMaxValues(0, 1)
-  scrollBar:SetValue(0)
-  scrollBar:SetValueStep(22)
-  scrollBar:Hide()
   frame.scrollBar = scrollBar
-  
-  scrollBar:SetScript("OnValueChanged", function()
-    scrollFrame:SetVerticalScroll(this:GetValue())
-  end)
-  
-  scrollFrame:EnableMouseWheel(true)
-  scrollFrame:SetScript("OnMouseWheel", function()
-    if not scrollBar:IsShown() then
-      return
-    end
-    
-    local delta = arg1
-    local current = scrollBar:GetValue()
-    local minVal, maxVal = scrollBar:GetMinMaxValues()
-    
-    if delta > 0 then
-      scrollBar:SetValue(math.max(minVal, current - 22))
-    else
-      scrollBar:SetValue(math.min(maxVal, current + 22))
-    end
-  end)
   
   frame:Show()
   OGRH.RefreshTradeSettings()
@@ -2192,22 +2135,15 @@ function OGRH.RefreshTradeSettings()
   local items = OGRH_SV.tradeItems
   
   local yOffset = -5
-  local rowHeight = 22
-  local rowSpacing = 2
+  local rowHeight = OGRH.LIST_ITEM_HEIGHT
+  local rowSpacing = OGRH.LIST_ITEM_SPACING
+  
+  local contentWidth = OGRH_TradeSettingsFrame.scrollChild:GetWidth()
   
   for i, itemData in ipairs(items) do
-    local row = CreateFrame("Button", nil, scrollChild)
-    row:SetWidth(235)
-    row:SetHeight(rowHeight)
+    local row = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
     row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    
-    -- Background
-    local bg = row:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-    bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-    row.bg = bg
     
     local idx = i
     
@@ -2303,22 +2239,11 @@ function OGRH.RefreshTradeSettings()
   end
   
   -- Add "Add Item" placeholder row at the bottom
-  local addItemBtn = CreateFrame("Button", nil, scrollChild)
-  addItemBtn:SetWidth(235)
-  addItemBtn:SetHeight(rowHeight)
+  local addItemBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
   addItemBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
   
-  -- Background
-  local bg = addItemBtn:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-  bg:SetVertexColor(0.1, 0.3, 0.1, 0.5)
-  
-  -- Highlight
-  local highlight = addItemBtn:CreateTexture(nil, "HIGHLIGHT")
-  highlight:SetAllPoints()
-  highlight:SetTexture("Interface\\Buttons\\WHITE8X8")
-  highlight:SetVertexColor(0.2, 0.5, 0.2, 0.5)
+  -- Custom green color for add button
+  OGRH.SetListItemColor(addItemBtn, 0.1, 0.3, 0.1, 0.5)
   
   -- Text
   local addText = addItemBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -2334,22 +2259,21 @@ function OGRH.RefreshTradeSettings()
   
   -- Update scroll child height
   local contentHeight = math.abs(yOffset) + 5
-  scrollChild:SetHeight(contentHeight)
+  scrollChild:SetHeight(math.max(contentHeight, 1))
   
   -- Update scrollbar visibility
-  local scrollFrame = OGRH_TradeSettingsFrame.scrollFrame
   local scrollBar = OGRH_TradeSettingsFrame.scrollBar
+  local scrollFrame = OGRH_TradeSettingsFrame.scrollFrame
   local scrollFrameHeight = scrollFrame:GetHeight()
   
   if contentHeight > scrollFrameHeight then
     scrollBar:Show()
     scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
     scrollBar:SetValue(0)
-    scrollFrame:SetVerticalScroll(0)
   else
     scrollBar:Hide()
-    scrollFrame:SetVerticalScroll(0)
   end
+  scrollFrame:SetVerticalScroll(0)
 end
 
 -- Show add trade item dialog

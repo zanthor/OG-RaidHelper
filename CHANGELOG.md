@@ -1,5 +1,29 @@
 # OG-RaidHelper Changelog
 
+## Version 1.11.5 - Consume Settings UI Standardization
+**Release Date:** November 21, 2025
+
+### UI Improvements
+- **Consume Settings Interface**: Applied standard UI template to consumables list
+  - Replaced custom scroll frame with standardized template
+  - List items now use consistent height, spacing, and styling
+  - Used `CreateStyledListItem` template for both regular items and "Add Consume" button
+  - Applied custom green color to "Add Consume" button using `SetListItemColor`
+  - Proper scrollbar management with standard template functions
+  - Consistent with other interfaces (Auto Promote, Raid Invites, SR+ Validation, Addon Audit, Trade Settings)
+
+## Version 1.11.4 - Trade Settings UI Standardization
+**Release Date:** November 21, 2025
+
+### UI Improvements
+- **Trade Settings Interface**: Applied standard UI template to trade items list
+  - Replaced custom scroll frame with standardized template
+  - List items now use consistent height, spacing, and styling
+  - Used `CreateStyledListItem` template for both regular items and "Add Item" button
+  - Applied custom green color to "Add Item" button using `SetListItemColor`
+  - Proper scrollbar management with standard template functions
+  - Consistent with other interfaces (Auto Promote, Raid Invites, SR+ Validation, Addon Audit)
+
 ## Version 1.11.3 - Addon Audit UI Standardization
 **Release Date:** November 21, 2025
 
