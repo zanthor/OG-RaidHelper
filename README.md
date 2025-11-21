@@ -1,4 +1,4 @@
-w# OG-RaidHelper
+# OG-RaidHelper
 
 **Version:** 1.8.1  
 **Author:** Gnuzmas
