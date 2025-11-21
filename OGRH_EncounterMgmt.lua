@@ -136,98 +136,22 @@ function OGRH.ShowEncounterWindow(encounterName)
     raidsLabel:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 10, -10)
     raidsLabel:SetText("Raids:")
     
-    -- Raids list frame
-    local raidsListFrame = CreateFrame("Frame", nil, leftPanel)
+    -- Raids list frame with standardized scroll list (no scrollbar)
+    local raidsListFrame, raidsScrollFrame, raidsScrollChild, raidsScrollBar, raidsContentWidth = OGRH.CreateStyledScrollList(leftPanel, 155, 165, true)
     raidsListFrame:SetPoint("TOPLEFT", raidsLabel, "BOTTOMLEFT", 0, -5)
-    raidsListFrame:SetWidth(155)
-    raidsListFrame:SetHeight(165)
-    raidsListFrame:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 12,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    raidsListFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
-    
-    -- Create scroll frame for raids
-    local raidsScrollFrame = CreateFrame("ScrollFrame", nil, raidsListFrame)
-    raidsScrollFrame:SetPoint("TOPLEFT", raidsListFrame, "TOPLEFT", 5, -5)
-    raidsScrollFrame:SetPoint("BOTTOMRIGHT", raidsListFrame, "BOTTOMRIGHT", -5, 5)
-    
-    local raidsScrollChild = CreateFrame("Frame", nil, raidsScrollFrame)
-    raidsScrollChild:SetWidth(145)
-    raidsScrollChild:SetHeight(1)
-    raidsScrollFrame:SetScrollChild(raidsScrollChild)
     frame.raidsScrollChild = raidsScrollChild
     frame.raidsScrollFrame = raidsScrollFrame
-    
-    -- Enable mouse wheel scrolling for raids list
-    raidsScrollFrame:EnableMouseWheel(true)
-    raidsScrollFrame:SetScript("OnMouseWheel", function()
-      local delta = arg1
-      local current = raidsScrollFrame:GetVerticalScroll()
-      local maxScroll = raidsScrollChild:GetHeight() - raidsScrollFrame:GetHeight()
-      if maxScroll < 0 then maxScroll = 0 end
-      
-      local newScroll = current - (delta * 20)
-      if newScroll < 0 then
-        newScroll = 0
-      elseif newScroll > maxScroll then
-        newScroll = maxScroll
-      end
-      raidsScrollFrame:SetVerticalScroll(newScroll)
-    end)
     
     -- Encounters label
     local encountersLabel = leftPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     encountersLabel:SetPoint("TOPLEFT", raidsListFrame, "BOTTOMLEFT", 0, -10)
     encountersLabel:SetText("Encounters:")
     
-    -- Encounters list frame
-    local encountersListFrame = CreateFrame("Frame", nil, leftPanel)
+    -- Encounters list frame with standardized scroll list (no scrollbar)
+    local encountersListFrame, encountersScrollFrame, encountersScrollChild, encountersScrollBar, encountersContentWidth = OGRH.CreateStyledScrollList(leftPanel, 155, 165, true)
     encountersListFrame:SetPoint("TOPLEFT", encountersLabel, "BOTTOMLEFT", 0, -5)
-    encountersListFrame:SetWidth(155)
-    encountersListFrame:SetHeight(165)
-    encountersListFrame:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 12,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    encountersListFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
-    
-    -- Create scroll frame for encounters
-    local encountersScrollFrame = CreateFrame("ScrollFrame", nil, encountersListFrame)
-    encountersScrollFrame:SetPoint("TOPLEFT", encountersListFrame, "TOPLEFT", 5, -5)
-    encountersScrollFrame:SetPoint("BOTTOMRIGHT", encountersListFrame, "BOTTOMRIGHT", -5, 5)
-    
-    local encountersScrollChild = CreateFrame("Frame", nil, encountersScrollFrame)
-    encountersScrollChild:SetWidth(145)
-    encountersScrollChild:SetHeight(1)
-    encountersScrollFrame:SetScrollChild(encountersScrollChild)
     frame.encountersScrollChild = encountersScrollChild
     frame.encountersScrollFrame = encountersScrollFrame
-    
-    -- Enable mouse wheel scrolling for encounters list
-    encountersScrollFrame:EnableMouseWheel(true)
-    encountersScrollFrame:SetScript("OnMouseWheel", function()
-      local delta = arg1
-      local current = encountersScrollFrame:GetVerticalScroll()
-      local maxScroll = encountersScrollChild:GetHeight() - encountersScrollFrame:GetHeight()
-      if maxScroll < 0 then maxScroll = 0 end
-      
-      local newScroll = current - (delta * 20)
-      if newScroll < 0 then
-        newScroll = 0
-      elseif newScroll > maxScroll then
-        newScroll = maxScroll
-      end
-      encountersScrollFrame:SetVerticalScroll(newScroll)
-    end)
     
     -- Track selected raid and encounter
     frame.selectedRaid = nil
@@ -264,21 +188,11 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       -- Add existing raids
       for i, raidName in ipairs(OGRH_SV.encounterMgmt.raids) do
-        local raidBtn = CreateFrame("Button", nil, scrollChild)
-        raidBtn:SetWidth(145)
-        raidBtn:SetHeight(20)
+        local raidBtn = OGRH.CreateStyledListItem(scrollChild, raidsContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         raidBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
         
-        -- Background
-        local bg = raidBtn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        if frame.selectedRaid == raidName then
-          bg:SetVertexColor(0.2, 0.4, 0.2, 0.8)
-        else
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-        end
-        raidBtn.bg = bg
+        -- Set selection state
+        OGRH.SetListItemSelected(raidBtn, frame.selectedRaid == raidName)
         
         -- Raid name text
         local nameText = raidBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -323,7 +237,7 @@ function OGRH.ShowEncounterWindow(encounterName)
         end)
         
         table.insert(frame.raidButtons, raidBtn)
-        yOffset = yOffset - 22
+        yOffset = yOffset - (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
       end
       
       -- Update scroll child height
@@ -389,21 +303,11 @@ function OGRH.ShowEncounterWindow(encounterName)
         if encounterName == frame.selectedEncounter then
           selectedIndex = i
         end
-        local encounterBtn = CreateFrame("Button", nil, scrollChild)
-        encounterBtn:SetWidth(145)
-        encounterBtn:SetHeight(20)
+        local encounterBtn = OGRH.CreateStyledListItem(scrollChild, encountersContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         encounterBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
         
-        -- Background
-        local bg = encounterBtn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        if frame.selectedEncounter == encounterName then
-          bg:SetVertexColor(0.2, 0.4, 0.2, 0.8)
-        else
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-        end
-        encounterBtn.bg = bg
+        -- Set selection state
+        OGRH.SetListItemSelected(encounterBtn, frame.selectedEncounter == encounterName)
         
         -- Encounter name text
         local nameText = encounterBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -432,7 +336,7 @@ function OGRH.ShowEncounterWindow(encounterName)
         end)
         
         table.insert(frame.encounterButtons, encounterBtn)
-        yOffset = yOffset - 22
+        yOffset = yOffset - (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
       end
       
       -- Update scroll child height
@@ -697,68 +601,13 @@ function OGRH.ShowEncounterWindow(encounterName)
       end
     end)
     
-    -- Guild list frame
-    local guildListFrame = CreateFrame("Frame", nil, playersPanel)
+    -- Guild list frame with standardized scroll list
+    local guildListFrame, guildScrollFrame, guildScrollChild, guildScrollBar, guildContentWidth = OGRH.CreateStyledScrollList(playersPanel, 180, 280)
     guildListFrame:SetPoint("TOP", searchBox, "BOTTOM", 0, -5)
-    guildListFrame:SetWidth(180)
-    guildListFrame:SetHeight(280)
-    guildListFrame:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 12,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    guildListFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
-    
-    -- Create scroll frame for guild list
-    local guildScrollFrame = CreateFrame("ScrollFrame", nil, guildListFrame)
-    guildScrollFrame:SetPoint("TOPLEFT", guildListFrame, "TOPLEFT", 5, -5)
-    guildScrollFrame:SetPoint("BOTTOMRIGHT", guildListFrame, "BOTTOMRIGHT", -25, 5)
-    
-    local guildScrollChild = CreateFrame("Frame", nil, guildScrollFrame)
-    guildScrollChild:SetWidth(155)
-    guildScrollChild:SetHeight(1)
-    guildScrollFrame:SetScrollChild(guildScrollChild)
     frame.guildScrollChild = guildScrollChild
     frame.guildScrollFrame = guildScrollFrame
-    
-    -- Create scrollbar for player list
-    local guildScrollBar = CreateFrame("Slider", nil, guildListFrame)
-    guildScrollBar:SetPoint("TOPRIGHT", guildListFrame, "TOPRIGHT", -5, -16)
-    guildScrollBar:SetPoint("BOTTOMRIGHT", guildListFrame, "BOTTOMRIGHT", -5, 16)
-    guildScrollBar:SetWidth(16)
-    guildScrollBar:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 8,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    guildScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    guildScrollBar:SetOrientation("VERTICAL")
-    guildScrollBar:SetMinMaxValues(0, 1)
-    guildScrollBar:SetValue(0)
-    guildScrollBar:SetValueStep(22)
     frame.guildScrollBar = guildScrollBar
-    
-    guildScrollBar:SetScript("OnValueChanged", function()
-      guildScrollFrame:SetVerticalScroll(this:GetValue())
-    end)
-    
-    -- Enable mouse wheel scrolling for guild list
-    guildScrollFrame:EnableMouseWheel(true)
-    guildScrollFrame:SetScript("OnMouseWheel", function()
-      local delta = arg1
-      local current = guildScrollBar:GetValue()
-      local minVal, maxVal = guildScrollBar:GetMinMaxValues()
-      
-      if delta > 0 then
-        guildScrollBar:SetValue(math.max(minVal, current - 22))
-      else
-        guildScrollBar:SetValue(math.min(maxVal, current + 22))
-      end
-    end)
+    frame.guildContentWidth = guildContentWidth
     
     -- Bottom right panel: Additional info area (fills remaining space = 146px)
     local bottomPanel = CreateFrame("Frame", nil, frame)
@@ -2325,17 +2174,8 @@ function OGRH.ShowEncounterWindow(encounterName)
         local playerName = playerData.name
         local playerClass = playerData.class
         
-        local playerBtn = CreateFrame("Button", nil, scrollChild)
-        playerBtn:SetWidth(170)
-        playerBtn:SetHeight(20)
+        local playerBtn = OGRH.CreateStyledListItem(scrollChild, frame.guildContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         playerBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 2, -yOffset)
-        
-        -- Background
-        local bg = playerBtn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        bg:SetVertexColor(0.2, 0.2, 0.2, 0.8)
-        playerBtn.bg = bg
         
         -- Player name with class color
         local classColor = RAID_CLASS_COLORS[playerClass] or {r=1, g=1, b=1}
@@ -2463,28 +2303,27 @@ function OGRH.ShowEncounterWindow(encounterName)
           frame.draggedPlayerName = nil
         end)
         
-        -- Highlight on hover
-        playerBtn:SetScript("OnEnter", function()
-          bg:SetVertexColor(0.3, 0.3, 0.4, 0.9)
-        end)
-        
-        playerBtn:SetScript("OnLeave", function()
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0.8)
-        end)
-        
-        yOffset = yOffset + 22
+        yOffset = yOffset + (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
       end
       
       -- Update scroll child height
       scrollChild:SetHeight(math.max(yOffset, 1))
       
-      -- Update scrollbar range
+      -- Update scrollbar visibility and range
       local scrollBar = frame.guildScrollBar
-      if scrollBar then
-        local maxScroll = scrollChild:GetHeight() - frame.guildScrollFrame:GetHeight()
-        if maxScroll < 0 then maxScroll = 0 end
-        scrollBar:SetMinMaxValues(0, maxScroll)
-        scrollBar:SetValue(0)
+      local scrollFrame = frame.guildScrollFrame
+      if scrollBar and scrollFrame then
+        local contentHeight = scrollChild:GetHeight()
+        local scrollFrameHeight = scrollFrame:GetHeight()
+        
+        if contentHeight > scrollFrameHeight then
+          scrollBar:Show()
+          scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+          scrollBar:SetValue(0)
+        else
+          scrollBar:Hide()
+        end
+        scrollFrame:SetVerticalScroll(0)
       end
     end
     
@@ -3503,74 +3342,14 @@ function OGRH.ShowEncounterSetup()
     raidsLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -55)
     raidsLabel:SetText("Raids:")
     
-    -- Raids list
-    local raidsListFrame = CreateFrame("Frame", nil, contentFrame)
+    -- Raids list using template
+    local raidsListWidth = 180
+    local raidsListHeight = 175
+    local raidsListFrame, raidsScrollFrame, raidsScrollChild, raidsScrollBar, raidsContentWidth = OGRH.CreateStyledScrollList(contentFrame, raidsListWidth, raidsListHeight, true)
     raidsListFrame:SetPoint("TOPLEFT", raidsLabel, "BOTTOMLEFT", 0, -5)
-    raidsListFrame:SetWidth(180)
-    raidsListFrame:SetHeight(175)
-    raidsListFrame:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 12,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    raidsListFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    
-    -- Create scroll frame for raids
-    local raidsScrollFrame = CreateFrame("ScrollFrame", nil, raidsListFrame)
-    raidsScrollFrame:SetPoint("TOPLEFT", raidsListFrame, "TOPLEFT", 5, -5)
-    raidsScrollFrame:SetPoint("BOTTOMRIGHT", raidsListFrame, "BOTTOMRIGHT", -22, 5)
-    
-    local raidsScrollChild = CreateFrame("Frame", nil, raidsScrollFrame)
-    raidsScrollChild:SetWidth(150)
-    raidsScrollChild:SetHeight(1)
-    raidsScrollFrame:SetScrollChild(raidsScrollChild)
     frame.raidsScrollChild = raidsScrollChild
     frame.raidsScrollFrame = raidsScrollFrame
-    
-    -- Create raids scrollbar
-    local raidsScrollBar = CreateFrame("Slider", nil, raidsScrollFrame)
-    raidsScrollBar:SetPoint("TOPRIGHT", raidsListFrame, "TOPRIGHT", -5, -16)
-    raidsScrollBar:SetPoint("BOTTOMRIGHT", raidsListFrame, "BOTTOMRIGHT", -5, 16)
-    raidsScrollBar:SetWidth(16)
-    raidsScrollBar:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 8,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    raidsScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    raidsScrollBar:SetOrientation("VERTICAL")
-    raidsScrollBar:SetMinMaxValues(0, 1)
-    raidsScrollBar:SetValue(0)
-    raidsScrollBar:SetValueStep(22)
-    raidsScrollBar:Hide()
     frame.raidsScrollBar = raidsScrollBar
-    
-    raidsScrollBar:SetScript("OnValueChanged", function()
-      raidsScrollFrame:SetVerticalScroll(this:GetValue())
-    end)
-    
-    raidsScrollFrame:EnableMouseWheel(true)
-    raidsScrollFrame:SetScript("OnMouseWheel", function()
-      -- Only scroll if scrollbar is visible
-      if not raidsScrollBar:IsShown() then
-        return
-      end
-      
-      local delta = arg1
-      local current = raidsScrollBar:GetValue()
-      local minVal, maxVal = raidsScrollBar:GetMinMaxValues()
-      
-      if delta > 0 then
-        raidsScrollBar:SetValue(math.max(minVal, current - 22))
-      else
-        raidsScrollBar:SetValue(math.min(maxVal, current + 22))
-      end
-    end)
-    
     frame.raidsListFrame = raidsListFrame
     
     -- Storage for raid data (use SavedVariables)
@@ -3592,24 +3371,17 @@ function OGRH.ShowEncounterSetup()
       
       local yOffset = -5
       local scrollChild = frame.raidsScrollChild
+      local contentWidth = scrollChild:GetWidth()
       
       -- Add existing raids
       for i, raidName in ipairs(OGRH_SV.encounterMgmt.raids) do
-        local raidBtn = CreateFrame("Button", nil, scrollChild)
-        raidBtn:SetWidth(150)
-        raidBtn:SetHeight(20)
+        local raidBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         raidBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
         
-        -- Background
-        local bg = raidBtn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        -- Set selection state
         if frame.selectedRaid == raidName then
-          bg:SetVertexColor(0.2, 0.4, 0.2, 0.8)  -- Highlight if selected
-        else
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+          OGRH.SetListItemSelected(raidBtn, true)
         end
-        raidBtn.bg = bg
         
         -- Raid name text
         local nameText = raidBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -3700,26 +3472,12 @@ function OGRH.ShowEncounterSetup()
         end)
         
         table.insert(frame.raidButtons, raidBtn)
-        yOffset = yOffset - 22
+        yOffset = yOffset - OGRH.LIST_ITEM_HEIGHT - OGRH.LIST_ITEM_SPACING
       end
       
       -- Add "Add Raid" placeholder row at the bottom
-      local addRaidBtn = CreateFrame("Button", nil, scrollChild)
-      addRaidBtn:SetWidth(150)
-      addRaidBtn:SetHeight(20)
+      local addRaidBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
       addRaidBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
-      
-      -- Background
-      local bg = addRaidBtn:CreateTexture(nil, "BACKGROUND")
-      bg:SetAllPoints()
-      bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-      bg:SetVertexColor(0.1, 0.3, 0.1, 0.5)
-      
-      -- Highlight
-      local highlight = addRaidBtn:CreateTexture(nil, "HIGHLIGHT")
-      highlight:SetAllPoints()
-      highlight:SetTexture("Interface\\Buttons\\WHITE8X8")
-      highlight:SetVertexColor(0.2, 0.5, 0.2, 0.5)
       
       -- Text
       local addText = addRaidBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -3731,26 +3489,15 @@ function OGRH.ShowEncounterSetup()
       end)
       
       table.insert(frame.raidButtons, addRaidBtn)
-      yOffset = yOffset - 22
+      yOffset = yOffset - OGRH.LIST_ITEM_HEIGHT
       
       -- Update scroll child height
       local contentHeight = math.abs(yOffset) + 5
-      scrollChild:SetHeight(contentHeight)
+      scrollChild:SetHeight(math.max(contentHeight, 1))
       
-      -- Update scrollbar visibility
+      -- Update scroll (scrollbar always hidden)
       local scrollFrame = frame.raidsScrollFrame
-      local scrollBar = frame.raidsScrollBar
-      local scrollFrameHeight = scrollFrame:GetHeight()
-      
-      if contentHeight > scrollFrameHeight then
-        scrollBar:Show()
-        scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
-        scrollBar:SetValue(0)
-        scrollFrame:SetVerticalScroll(0)
-      else
-        scrollBar:Hide()
-        scrollFrame:SetVerticalScroll(0)
-      end
+      scrollFrame:SetVerticalScroll(0)
     end
     
     frame.RefreshRaidsList = RefreshRaidsList
@@ -3760,74 +3507,14 @@ function OGRH.ShowEncounterSetup()
     encountersLabel:SetPoint("TOPLEFT", raidsListFrame, "BOTTOMLEFT", 0, -15)
     encountersLabel:SetText("Encounters:")
     
-    -- Encounters list
-    local encountersListFrame = CreateFrame("Frame", nil, contentFrame)
+    -- Encounters list using template
+    local encountersListWidth = 180
+    local encountersListHeight = 175
+    local encountersListFrame, encountersScrollFrame, encountersScrollChild, encountersScrollBar, encountersContentWidth = OGRH.CreateStyledScrollList(contentFrame, encountersListWidth, encountersListHeight, true)
     encountersListFrame:SetPoint("TOPLEFT", encountersLabel, "BOTTOMLEFT", 0, -5)
-    encountersListFrame:SetWidth(180)
-    encountersListFrame:SetHeight(175)
-    encountersListFrame:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 12,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    encountersListFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    
-    -- Create scroll frame for encounters
-    local encountersScrollFrame = CreateFrame("ScrollFrame", nil, encountersListFrame)
-    encountersScrollFrame:SetPoint("TOPLEFT", encountersListFrame, "TOPLEFT", 5, -5)
-    encountersScrollFrame:SetPoint("BOTTOMRIGHT", encountersListFrame, "BOTTOMRIGHT", -22, 5)
-    
-    local encountersScrollChild = CreateFrame("Frame", nil, encountersScrollFrame)
-    encountersScrollChild:SetWidth(150)
-    encountersScrollChild:SetHeight(1)
-    encountersScrollFrame:SetScrollChild(encountersScrollChild)
     frame.encountersScrollChild = encountersScrollChild
     frame.encountersScrollFrame = encountersScrollFrame
-    
-    -- Create encounters scrollbar
-    local encountersScrollBar = CreateFrame("Slider", nil, encountersScrollFrame)
-    encountersScrollBar:SetPoint("TOPRIGHT", encountersListFrame, "TOPRIGHT", -5, -16)
-    encountersScrollBar:SetPoint("BOTTOMRIGHT", encountersListFrame, "BOTTOMRIGHT", -5, 16)
-    encountersScrollBar:SetWidth(16)
-    encountersScrollBar:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 8,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    encountersScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    encountersScrollBar:SetOrientation("VERTICAL")
-    encountersScrollBar:SetMinMaxValues(0, 1)
-    encountersScrollBar:SetValue(0)
-    encountersScrollBar:SetValueStep(22)
-    encountersScrollBar:Hide()
     frame.encountersScrollBar = encountersScrollBar
-    
-    encountersScrollBar:SetScript("OnValueChanged", function()
-      encountersScrollFrame:SetVerticalScroll(this:GetValue())
-    end)
-    
-    encountersScrollFrame:EnableMouseWheel(true)
-    encountersScrollFrame:SetScript("OnMouseWheel", function()
-      -- Only scroll if scrollbar is visible
-      if not encountersScrollBar:IsShown() then
-        return
-      end
-      
-      local delta = arg1
-      local current = encountersScrollBar:GetValue()
-      local minVal, maxVal = encountersScrollBar:GetMinMaxValues()
-      
-      if delta > 0 then
-        encountersScrollBar:SetValue(math.max(minVal, current - 22))
-      else
-        encountersScrollBar:SetValue(math.min(maxVal, current + 22))
-      end
-    end)
-    
     frame.encountersListFrame = encountersListFrame
     
     -- Track selected encounter
@@ -3877,6 +3564,7 @@ function OGRH.ShowEncounterSetup()
       
       local yOffset = -5
       local selectedIndex = nil
+      local contentWidth = scrollChild:GetWidth()
       
       -- Add existing encounters for selected raid
       local encounters = OGRH_SV.encounterMgmt.encounters[frame.selectedRaid]
@@ -3884,21 +3572,13 @@ function OGRH.ShowEncounterSetup()
         if encounterName == frame.selectedEncounter then
           selectedIndex = i
         end
-        local encounterBtn = CreateFrame("Button", nil, scrollChild)
-        encounterBtn:SetWidth(150)
-        encounterBtn:SetHeight(20)
+        local encounterBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         encounterBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
         
-        -- Background
-        local bg = encounterBtn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        -- Set selection state
         if frame.selectedEncounter == encounterName then
-          bg:SetVertexColor(0.2, 0.4, 0.2, 0.8)  -- Highlight if selected
-        else
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+          OGRH.SetListItemSelected(encounterBtn, true)
         end
-        encounterBtn.bg = bg
         
         -- Encounter name text
         local nameText = encounterBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -3990,24 +3670,12 @@ function OGRH.ShowEncounterSetup()
         end)
         
         table.insert(frame.encounterButtons, encounterBtn)
-        yOffset = yOffset - 22
+        yOffset = yOffset - OGRH.LIST_ITEM_HEIGHT - OGRH.LIST_ITEM_SPACING
       end
       
       -- Add "Add Encounter" placeholder row at the bottom
-      local addEncounterBtn = CreateFrame("Button", nil, scrollChild)
-      addEncounterBtn:SetWidth(150)
-      addEncounterBtn:SetHeight(20)
+      local addEncounterBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
       addEncounterBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
-      
-      local bg = addEncounterBtn:CreateTexture(nil, "BACKGROUND")
-      bg:SetAllPoints()
-      bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-      bg:SetVertexColor(0.1, 0.3, 0.1, 0.5)
-      
-      local highlight = addEncounterBtn:CreateTexture(nil, "HIGHLIGHT")
-      highlight:SetAllPoints()
-      highlight:SetTexture("Interface\\Buttons\\WHITE8X8")
-      highlight:SetVertexColor(0.2, 0.5, 0.2, 0.5)
       
       local addText = addEncounterBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
       addText:SetPoint("CENTER", addEncounterBtn, "CENTER", 0, 0)
@@ -4020,21 +3688,18 @@ function OGRH.ShowEncounterSetup()
       end)
       
       table.insert(frame.encounterButtons, addEncounterBtn)
-      yOffset = yOffset - 22
+      yOffset = yOffset - OGRH.LIST_ITEM_HEIGHT
       
       -- Update scroll child height
       local contentHeight = math.abs(yOffset) + 5
-      scrollChild:SetHeight(contentHeight)
+      scrollChild:SetHeight(math.max(contentHeight, 1))
       
       -- Update scrollbar visibility
-      local scrollBar = frame.encountersScrollBar
+      local scrollFrame = frame.encountersScrollFrame
       local scrollFrameHeight = scrollFrame:GetHeight()
       
       if contentHeight > scrollFrameHeight then
-        scrollBar:Show()
-        scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
-        
-        -- Restore or adjust scroll position to keep selected item visible
+        -- Restore or adjust scroll position to keep selected item visible (scrollbar always hidden)
         if selectedIndex then
           local buttonHeight = 22
           local visibleHeight = scrollFrameHeight
@@ -4044,25 +3709,20 @@ function OGRH.ShowEncounterSetup()
           
           -- If selected button is above visible area, scroll up to it
           if buttonTop < savedScroll then
-            scrollBar:SetValue(buttonTop)
             scrollFrame:SetVerticalScroll(buttonTop)
           -- If selected button is below visible area, scroll down to it
           elseif buttonBottom > scrollBottom then
             local newScroll = buttonBottom - visibleHeight
-            scrollBar:SetValue(newScroll)
             scrollFrame:SetVerticalScroll(newScroll)
           else
             -- Selected item is visible, restore saved scroll position
-            scrollBar:SetValue(savedScroll)
             scrollFrame:SetVerticalScroll(savedScroll)
           end
         else
           -- No selected item, restore saved scroll position
-          scrollBar:SetValue(savedScroll)
           scrollFrame:SetVerticalScroll(savedScroll)
         end
       else
-        scrollBar:Hide()
         scrollFrame:SetVerticalScroll(0)
       end
     end
@@ -4097,88 +3757,20 @@ function OGRH.ShowEncounterSetup()
     rolesLabel:SetPoint("TOPLEFT", designFrame, "TOPLEFT", 10, -10)
     rolesLabel:SetText("Roles:")
     
-    -- Left column frame
-    local rolesListFrame = CreateFrame("Frame", nil, designFrame)
+    -- Left column frame with standardized scroll list (no scrollbar)
+    local rolesListFrame, rolesScrollFrame, rolesScrollChild, rolesScrollBar, rolesContentWidth = OGRH.CreateStyledScrollList(designFrame, 165, 340, true)
     rolesListFrame:SetPoint("TOPLEFT", rolesLabel, "BOTTOMLEFT", 0, -5)
-    rolesListFrame:SetWidth(165)
-    rolesListFrame:SetHeight(340)
-    rolesListFrame:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 12,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    rolesListFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
-    
-    -- Create scroll frame for roles
-    local rolesScrollFrame = CreateFrame("ScrollFrame", nil, rolesListFrame)
-    rolesScrollFrame:SetPoint("TOPLEFT", rolesListFrame, "TOPLEFT", 5, -5)
-    rolesScrollFrame:SetPoint("BOTTOMRIGHT", rolesListFrame, "BOTTOMRIGHT", -22, 5)
-    
-    local rolesScrollChild = CreateFrame("Frame", nil, rolesScrollFrame)
-    rolesScrollChild:SetWidth(135)
-    rolesScrollChild:SetHeight(1)
-    rolesScrollFrame:SetScrollChild(rolesScrollChild)
     frame.rolesScrollChild = rolesScrollChild
     frame.rolesScrollFrame = rolesScrollFrame
-    
-    -- Create roles scrollbar
-    local rolesScrollBar = CreateFrame("Slider", nil, rolesScrollFrame)
-    rolesScrollBar:SetPoint("TOPRIGHT", rolesListFrame, "TOPRIGHT", -5, -16)
-    rolesScrollBar:SetPoint("BOTTOMRIGHT", rolesListFrame, "BOTTOMRIGHT", -5, 16)
-    rolesScrollBar:SetWidth(16)
-    rolesScrollBar:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 8,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    rolesScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    rolesScrollBar:SetOrientation("VERTICAL")
-    rolesScrollBar:SetMinMaxValues(0, 1)
-    rolesScrollBar:SetValue(0)
-    rolesScrollBar:SetValueStep(22)
-    rolesScrollBar:Hide()
     frame.rolesScrollBar = rolesScrollBar
-    
-    rolesScrollBar:SetScript("OnValueChanged", function()
-      rolesScrollFrame:SetVerticalScroll(this:GetValue())
-    end)
-    
-    rolesScrollFrame:EnableMouseWheel(true)
-    rolesScrollFrame:SetScript("OnMouseWheel", function()
-      -- Only scroll if scrollbar is visible
-      if not rolesScrollBar:IsShown() then
-        return
-      end
-      
-      local delta = arg1
-      local current = rolesScrollBar:GetValue()
-      local minVal, maxVal = rolesScrollBar:GetMinMaxValues()
-      
-      if delta > 0 then
-        rolesScrollBar:SetValue(math.max(minVal, current - 22))
-      else
-        rolesScrollBar:SetValue(math.min(maxVal, current + 22))
-      end
-    end)
+    frame.rolesContentWidth = rolesContentWidth
     
     -- Right column frame (no label, vertically aligned with left)
-    local rolesListFrame2 = CreateFrame("Frame", nil, designFrame)
+    local rolesListFrame2, rolesScrollFrame2, rolesScrollChild2, rolesScrollBar2, rolesContentWidth2 = OGRH.CreateStyledScrollList(designFrame, 165, 340, true)
     rolesListFrame2:SetPoint("TOPLEFT", rolesListFrame, "TOPRIGHT", 15, 0)
-    rolesListFrame2:SetWidth(165)
-    rolesListFrame2:SetHeight(340)
-    rolesListFrame2:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 12,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    rolesListFrame2:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+    frame.rolesScrollChild2 = rolesScrollChild2
+    frame.rolesScrollFrame2 = rolesScrollFrame2
+    frame.rolesScrollBar2 = rolesScrollBar2
     
     -- Create drag cursor frame (follows mouse during drag operations)
     local dragCursor = CreateFrame("Frame", nil, UIParent)
@@ -4206,59 +3798,6 @@ function OGRH.ShowEncounterSetup()
         local scale = UIParent:GetEffectiveScale()
         local x, y = GetCursorPosition()
         dragCursor:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / scale, y / scale)
-      end
-    end)
-    
-    -- Create scroll frame for roles column 2
-    local rolesScrollFrame2 = CreateFrame("ScrollFrame", nil, rolesListFrame2)
-    rolesScrollFrame2:SetPoint("TOPLEFT", rolesListFrame2, "TOPLEFT", 5, -5)
-    rolesScrollFrame2:SetPoint("BOTTOMRIGHT", rolesListFrame2, "BOTTOMRIGHT", -22, 5)
-    
-    local rolesScrollChild2 = CreateFrame("Frame", nil, rolesScrollFrame2)
-    rolesScrollChild2:SetWidth(135)
-    rolesScrollChild2:SetHeight(1)
-    rolesScrollFrame2:SetScrollChild(rolesScrollChild2)
-    frame.rolesScrollChild2 = rolesScrollChild2
-    frame.rolesScrollFrame2 = rolesScrollFrame2
-    
-    -- Create roles scrollbar 2
-    local rolesScrollBar2 = CreateFrame("Slider", nil, rolesScrollFrame2)
-    rolesScrollBar2:SetPoint("TOPRIGHT", rolesListFrame2, "TOPRIGHT", -5, -16)
-    rolesScrollBar2:SetPoint("BOTTOMRIGHT", rolesListFrame2, "BOTTOMRIGHT", -5, 16)
-    rolesScrollBar2:SetWidth(16)
-    rolesScrollBar2:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 8,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    rolesScrollBar2:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    rolesScrollBar2:SetOrientation("VERTICAL")
-    rolesScrollBar2:SetMinMaxValues(0, 1)
-    rolesScrollBar2:SetValue(0)
-    rolesScrollBar2:SetValueStep(22)
-    rolesScrollBar2:Hide()
-    frame.rolesScrollBar2 = rolesScrollBar2
-    
-    rolesScrollBar2:SetScript("OnValueChanged", function()
-      rolesScrollFrame2:SetVerticalScroll(this:GetValue())
-    end)
-    
-    rolesScrollFrame2:EnableMouseWheel(true)
-    rolesScrollFrame2:SetScript("OnMouseWheel", function()
-      -- Only scroll if scrollbar is visible
-      if not rolesScrollBar2:IsShown() then
-        return
-      end
-      
-      local delta = arg1
-      local current = rolesScrollBar2:GetValue()
-      local minVal, maxVal = rolesScrollBar2:GetMinMaxValues()
-      
-      if delta > 0 then
-        rolesScrollBar2:SetValue(math.max(minVal, current - 22))
-      else
-        rolesScrollBar2:SetValue(math.min(maxVal, current + 22))
       end
     end)
     
@@ -4392,21 +3931,13 @@ function OGRH.ShowEncounterSetup()
       
       -- Helper function to create a role button
       local function CreateRoleButton(roleIndex, role, columnRoles, scrollChild, isColumn2)
-        local roleBtn = CreateFrame("Button", nil, scrollChild)
-        roleBtn:SetWidth(135)
-        roleBtn:SetHeight(20)
+        local roleBtn = OGRH.CreateStyledListItem(scrollChild, frame.rolesContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         
         local yOffset = isColumn2 and yOffset2 or yOffset1
         roleBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
         
         -- Make draggable
         roleBtn:RegisterForDrag("LeftButton")
-        
-        -- Background
-        local bg = roleBtn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
         
         -- Role name text
         local nameText = roleBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -4443,7 +3974,7 @@ function OGRH.ShowEncounterSetup()
         roleBtn:SetScript("OnDragStart", function()
           this.isDragging = true
           -- Visual feedback on original button
-          bg:SetVertexColor(0.3, 0.5, 0.3, 0.8)
+          OGRH.SetListItemColor(roleBtn, 0.3, 0.5, 0.3, 0.8)
           
           -- Show drag cursor
           if frame.dragCursor and frame.dragCursorText then
@@ -4454,7 +3985,7 @@ function OGRH.ShowEncounterSetup()
         
         roleBtn:SetScript("OnDragStop", function()
           this.isDragging = false
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+          OGRH.SetListItemSelected(roleBtn, false)
           
           -- Hide drag cursor
           if frame.dragCursor then
@@ -4620,9 +4151,9 @@ function OGRH.ShowEncounterSetup()
         table.insert(frame.roleButtons, roleBtn)
         
         if isColumn2 then
-          yOffset2 = yOffset2 - 22
+          yOffset2 = yOffset2 - (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
         else
-          yOffset1 = yOffset1 - 22
+          yOffset1 = yOffset1 - (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
         end
       end  -- End of CreateRoleButton function
       
@@ -4638,20 +4169,8 @@ function OGRH.ShowEncounterSetup()
       
       -- Add "Add Role" button to both columns at the bottom
       -- Left column Add Role button
-      local addRoleBtn1 = CreateFrame("Button", nil, scrollChild1)
-      addRoleBtn1:SetWidth(135)
-      addRoleBtn1:SetHeight(20)
+      local addRoleBtn1 = OGRH.CreateStyledListItem(scrollChild1, frame.rolesContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
       addRoleBtn1:SetPoint("TOPLEFT", scrollChild1, "TOPLEFT", 0, yOffset1)
-      
-      local bg1 = addRoleBtn1:CreateTexture(nil, "BACKGROUND")
-      bg1:SetAllPoints()
-      bg1:SetTexture("Interface\\Buttons\\WHITE8X8")
-      bg1:SetVertexColor(0.1, 0.3, 0.1, 0.5)
-      
-      local highlight1 = addRoleBtn1:CreateTexture(nil, "HIGHLIGHT")
-      highlight1:SetAllPoints()
-      highlight1:SetTexture("Interface\\Buttons\\WHITE8X8")
-      highlight1:SetVertexColor(0.2, 0.5, 0.2, 0.5)
       
       local addText1 = addRoleBtn1:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
       addText1:SetPoint("CENTER", addRoleBtn1, "CENTER", 0, 0)
@@ -4664,23 +4183,11 @@ function OGRH.ShowEncounterSetup()
       end)
       
       table.insert(frame.roleButtons, addRoleBtn1)
-      yOffset1 = yOffset1 - 22
+      yOffset1 = yOffset1 - (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
       
       -- Right column Add Role button
-      local addRoleBtn2 = CreateFrame("Button", nil, scrollChild2)
-      addRoleBtn2:SetWidth(135)
-      addRoleBtn2:SetHeight(20)
+      local addRoleBtn2 = OGRH.CreateStyledListItem(scrollChild2, frame.rolesContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
       addRoleBtn2:SetPoint("TOPLEFT", scrollChild2, "TOPLEFT", 0, yOffset2)
-      
-      local bg2 = addRoleBtn2:CreateTexture(nil, "BACKGROUND")
-      bg2:SetAllPoints()
-      bg2:SetTexture("Interface\\Buttons\\WHITE8X8")
-      bg2:SetVertexColor(0.1, 0.3, 0.1, 0.5)
-      
-      local highlight2 = addRoleBtn2:CreateTexture(nil, "HIGHLIGHT")
-      highlight2:SetAllPoints()
-      highlight2:SetTexture("Interface\\Buttons\\WHITE8X8")
-      highlight2:SetVertexColor(0.2, 0.5, 0.2, 0.5)
       
       local addText2 = addRoleBtn2:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
       addText2:SetPoint("CENTER", addRoleBtn2, "CENTER", 0, 0)
@@ -4693,7 +4200,7 @@ function OGRH.ShowEncounterSetup()
       end)
       
       table.insert(frame.roleButtons, addRoleBtn2)
-      yOffset2 = yOffset2 - 22
+      yOffset2 = yOffset2 - (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
       
       -- Update scroll child heights
       local contentHeight1 = math.abs(yOffset1) + 5
@@ -4702,35 +4209,13 @@ function OGRH.ShowEncounterSetup()
       local contentHeight2 = math.abs(yOffset2) + 5
       scrollChild2:SetHeight(contentHeight2)
       
-      -- Update scrollbars for column 1
+      -- Update scroll for column 1 (scrollbar always hidden)
       local scrollFrame1 = frame.rolesScrollFrame
-      local scrollBar1 = frame.rolesScrollBar
-      local scrollFrameHeight1 = scrollFrame1:GetHeight()
+      scrollFrame1:SetVerticalScroll(0)
       
-      if contentHeight1 > scrollFrameHeight1 then
-        scrollBar1:Show()
-        scrollBar1:SetMinMaxValues(0, contentHeight1 - scrollFrameHeight1)
-        scrollBar1:SetValue(0)
-        scrollFrame1:SetVerticalScroll(0)
-      else
-        scrollBar1:Hide()
-        scrollFrame1:SetVerticalScroll(0)
-      end
-      
-      -- Update scrollbars for column 2
+      -- Update scroll for column 2 (scrollbar always hidden)
       local scrollFrame2 = frame.rolesScrollFrame2
-      local scrollBar2 = frame.rolesScrollBar2
-      local scrollFrameHeight2 = scrollFrame2:GetHeight()
-      
-      if contentHeight2 > scrollFrameHeight2 then
-        scrollBar2:Show()
-        scrollBar2:SetMinMaxValues(0, contentHeight2 - scrollFrameHeight2)
-        scrollBar2:SetValue(0)
-        scrollFrame2:SetVerticalScroll(0)
-      else
-        scrollBar2:Hide()
-        scrollFrame2:SetVerticalScroll(0)
-      end
+      scrollFrame2:SetVerticalScroll(0)
     end
     
     frame.RefreshRolesList = RefreshRolesList

@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.11.5
-## Notes: Standardized Consume Settings UI with template system
+## Version: 1.11.8
+## Notes: Auto-promote improvements and UI polish
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua

@@ -166,7 +166,7 @@ end
 
 -- Create a standardized scrolling list with frame
 -- Returns: outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth
-function OGRH.CreateStyledScrollList(parent, width, height)
+function OGRH.CreateStyledScrollList(parent, width, height, hideScrollBar)
   if not parent then return nil end
   
   -- Outer container frame with backdrop
@@ -183,14 +183,17 @@ function OGRH.CreateStyledScrollList(parent, width, height)
   })
   outerFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
   
+  -- Adjust content width based on whether scrollbar will be shown
+  local scrollBarSpace = hideScrollBar and 0 or 20
+  
   -- Scroll frame inside the outer frame
   local scrollFrame = CreateFrame("ScrollFrame", nil, outerFrame)
   scrollFrame:SetPoint("TOPLEFT", outerFrame, "TOPLEFT", 5, -5)
-  scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -25, 5)
+  scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -(5 + scrollBarSpace), 5)
   
   -- Scroll child
   local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-  local contentWidth = width - 30  -- width - margins - scrollbar area
+  local contentWidth = width - 10 - scrollBarSpace  -- width - margins - scrollbar area
   scrollChild:SetWidth(contentWidth)
   scrollChild:SetHeight(1)
   scrollFrame:SetScrollChild(scrollChild)
@@ -222,14 +225,33 @@ function OGRH.CreateStyledScrollList(parent, width, height)
   -- Enable mouse wheel scrolling
   scrollFrame:EnableMouseWheel(true)
   scrollFrame:SetScript("OnMouseWheel", function()
-    if not scrollBar:IsShown() then return end
     local delta = arg1
-    local current = scrollBar:GetValue()
-    local minVal, maxVal = scrollBar:GetMinMaxValues()
-    if delta > 0 then
-      scrollBar:SetValue(math.max(minVal, current - 22))
+    local current, minVal, maxVal
+    
+    if hideScrollBar then
+      -- When scrollbar is hidden, directly manipulate scroll position
+      current = scrollFrame:GetVerticalScroll()
+      maxVal = scrollChild:GetHeight() - scrollFrame:GetHeight()
+      if maxVal < 0 then maxVal = 0 end
+      minVal = 0
+      
+      local newScroll = current - (delta * 20)
+      if newScroll < minVal then
+        newScroll = minVal
+      elseif newScroll > maxVal then
+        newScroll = maxVal
+      end
+      scrollFrame:SetVerticalScroll(newScroll)
     else
-      scrollBar:SetValue(math.min(maxVal, current + 22))
+      -- When scrollbar is visible, use it for scrolling
+      if not scrollBar:IsShown() then return end
+      current = scrollBar:GetValue()
+      minVal, maxVal = scrollBar:GetMinMaxValues()
+      if delta > 0 then
+        scrollBar:SetValue(math.max(minVal, current - 22))
+      else
+        scrollBar:SetValue(math.min(maxVal, current + 22))
+      end
     end
   end)
   
@@ -241,6 +263,7 @@ OGRH.LIST_COLORS = {
   SELECTED = {r = 0.2, g = 0.4, b = 0.2, a = 0.8},    -- Green highlight for selected items
   INACTIVE = {r = 0.2, g = 0.2, b = 0.2, a = 0.5},    -- Gray for normal/inactive items
   HOVER = {r = 0.2, g = 0.5, b = 0.2, a = 0.5}        -- Brighter green for mouseover
+  --HOVER = { r = 1.0, g = 0.0, b = 0.0, a = 0.5 }        -- Brighter green for mouseover
 }
 
 -- Standard list item dimensions
@@ -653,6 +676,24 @@ addonFrame:SetScript("OnEvent", function()
             -- Set flag to capture AFK messages
             OGRH.readyCheckInProgress = true
             DoReadyCheck()
+          end
+        end
+      -- Handle auto-promote request from assistant
+      elseif string.find(message, "^AUTOPROMOTE_REQUEST:") then
+        -- Only process if we are the raid leader
+        if IsRaidLeader and IsRaidLeader() == 1 then
+          local playerToPromote = string.gsub(message, "^AUTOPROMOTE_REQUEST:", "")
+          if playerToPromote and playerToPromote ~= "" then
+            -- Find the player in the raid and promote them
+            local numRaid = GetNumRaidMembers()
+            for i = 1, numRaid do
+              local name, rank = GetRaidRosterInfo(i)
+              if name == playerToPromote and rank == 0 then
+                PromoteToAssistant(playerToPromote)
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-promoted " .. playerToPromote .. " to assistant (requested by " .. sender .. ").")
+                break
+              end
+            end
           end
         end
       -- Handle addon poll
@@ -2241,9 +2282,6 @@ function OGRH.RefreshTradeSettings()
   -- Add "Add Item" placeholder row at the bottom
   local addItemBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
   addItemBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
-  
-  -- Custom green color for add button
-  OGRH.SetListItemColor(addItemBtn, 0.1, 0.3, 0.1, 0.5)
   
   -- Text
   local addText = addItemBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")

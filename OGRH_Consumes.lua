@@ -54,6 +54,7 @@ function OGRH.ShowConsumesSettings()
   closeBtn:SetHeight(24)
   closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
   closeBtn:SetText("Close")
+  OGRH.StyleButton(closeBtn)
   closeBtn:SetScript("OnClick", function() frame:Hide() end)
   
   -- Instructions
@@ -195,9 +196,6 @@ function OGRH.RefreshConsumesSettings()
   -- Add "Add Consume" placeholder row at the bottom
   local addItemBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
   addItemBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
-  
-  -- Custom green color for add button
-  OGRH.SetListItemColor(addItemBtn, 0.1, 0.3, 0.1, 0.5)
   
   -- Text
   local addText = addItemBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")

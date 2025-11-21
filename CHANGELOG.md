@@ -1,5 +1,45 @@
 # OG-RaidHelper Changelog
 
+## Version 1.11.8 - Auto-Promote Improvements
+**Release Date:** November 21, 2025
+
+### Features
+- **Auto-Promote Enhancements**:
+  - Session tracking: Players are only auto-promoted once per session (prevents re-promoting demoted players)
+  - Assistant support: Raid assistants can now trigger auto-promotes by sending requests to the raid leader
+  - Uses same message protocol as remote ready checks
+
+### UI Improvements
+- **Consume Settings**: Close button now uses standard button styling for consistency
+
+## Version 1.11.7 - Encounter Setup List Items Standardization
+**Release Date:** November 21, 2025
+
+### UI Improvements
+- **Encounter Setup Interface**: Applied standard UI template to all list items
+  - Raids list items: Now use `CreateStyledListItem` with hover effects
+  - Encounters list items: Now use `CreateStyledListItem` with hover effects
+  - Roles list items (both columns): Now use `CreateStyledListItem` with hover effects
+  - "Add Role" buttons: Standardized with custom green color using `SetListItemColor`
+  - All items now respond to global hover color changes in `OGRH.LIST_COLORS`
+  - Consistent spacing using `OGRH.LIST_ITEM_HEIGHT` and `OGRH.LIST_ITEM_SPACING` constants
+  - Proper drag-and-drop color feedback using `SetListItemSelected` and `SetListItemColor`
+
+## Version 1.11.6 - Encounter Setup UI Standardization
+**Release Date:** November 21, 2025
+
+### UI Improvements
+- **Encounter Setup Interface**: Applied standard UI template to scroll frames
+  - Raids list: Replaced custom scroll frame with standardized template
+  - Encounters list: Replaced custom scroll frame with standardized template
+  - Roles assignment area: Replaced custom scroll frame with standardized template
+  - All lists now use consistent scrollbar management
+
+### Bug Fixes
+- **Consume Settings**: Fixed secondary item field showing "nil" instead of empty string when not set
+  - Edit dialog now properly handles nil/0 secondary item values
+  - Prevents validation errors when saving consume items without secondary options
+
 ## Version 1.11.5 - Consume Settings UI Standardization
 **Release Date:** November 21, 2025
 

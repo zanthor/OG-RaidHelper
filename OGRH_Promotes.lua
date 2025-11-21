@@ -49,11 +49,14 @@ local function GetClassColor(name)
   return 1, 1, 1
 end
 
+-- Session tracking for auto-promotes (resets when UI is reloaded)
+local promotedThisSession = {}
+
 -- Auto-promote logic
 local function CheckAndPromotePlayers()
   EnsurePromotesSV()
   
-  -- Only run if we're raid leader
+  -- Only run if we're in a raid
   local numRaidMembers = GetNumRaidMembers()
   if numRaidMembers == 0 then
     return
@@ -61,16 +64,22 @@ local function CheckAndPromotePlayers()
   
   local playerName = UnitName("player")
   local isLeader = false
+  local isAssistant = false
   
   for i = 1, numRaidMembers do
     local name, rank = GetRaidRosterInfo(i)
-    if name == playerName and rank == 2 then
-      isLeader = true
+    if name == playerName then
+      if rank == 2 then
+        isLeader = true
+      elseif rank == 1 then
+        isAssistant = true
+      end
       break
     end
   end
   
-  if not isLeader then
+  -- If neither leader nor assistant, don't do anything
+  if not isLeader and not isAssistant then
     return
   end
   
@@ -78,14 +87,23 @@ local function CheckAndPromotePlayers()
   for i = 1, numRaidMembers do
     local name, rank = GetRaidRosterInfo(i)
     if name and rank == 0 then  -- Regular member (not leader or assistant)
-      -- Check if they're in the auto-promote list
-      for _, promoteEntry in ipairs(OGRH_SV.autoPromotes) do
-        local promoteName = type(promoteEntry) == "table" and promoteEntry.name or promoteEntry
-        if name == promoteName then
-          -- Promote them
-          PromoteToAssistant("raid"..i)
-          OGRH.Msg("Auto-promoted " .. name .. " to assistant.")
-          break
+      -- Check if they're in the auto-promote list and haven't been promoted this session
+      if not promotedThisSession[name] then
+        for _, promoteEntry in ipairs(OGRH_SV.autoPromotes) do
+          local promoteName = type(promoteEntry) == "table" and promoteEntry.name or promoteEntry
+          if name == promoteName then
+            if isLeader then
+              -- Leader can promote directly
+              PromoteToAssistant(name)
+              promotedThisSession[name] = true
+              OGRH.Msg("Auto-promoted " .. name .. " to assistant.")
+            elseif isAssistant then
+              -- Assistant sends request to leader
+              SendAddonMessage(OGRH.ADDON_PREFIX, "AUTOPROMOTE_REQUEST:" .. name, "RAID")
+              promotedThisSession[name] = true  -- Mark as promoted to avoid spam
+            end
+            break
+          end
         end
       end
     end
