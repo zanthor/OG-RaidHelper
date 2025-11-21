@@ -1,8 +1,8 @@
 # OG-RaidHelper
 
 **Version:** 1.8.1  
-**Author:** Gnuzmas
-**Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo
+**Author:** Gnuzmas  
+**Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo  
 **Compatible with:** World of Warcraft 1.12.1 (Vanilla / Turtle WoW)
 
 A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
@@ -13,8 +13,10 @@ A comprehensive raid management addon for organizing encounters, assigning roles
 
 ## Dependencies
 
-**Required:**
-- **[RollFor](https://github.com/jasonp1992/RollFor)** - Soft-reserve addon that provides the underlying SR data for the Raid Invites and SR+ Validation features. OG-RaidHelper reads RollFor's encoded soft-reserve data to display player SR+ values and item lists.
+**Recommended:**
+- **[RollFor](https://github.com/jasonp1992/RollFor)** - Soft-reserve addon that provides the underlying data for the Raid Invites and SR+ Validation features. OG-RaidHelper reads RollFor's encoded soft-reserve data to display players, roles and SR+ values for items.
+- **[Puppeteer](https://github.com/OldManAlpha/Puppeteer)** - Raid Frames with Support for Tank and Healer roles.  OG-RaidHelper automatically sets roles on players.
+- **[pfUI](https://github.com/shagu/pfUI)** - Raid Frames with support for Tank roles.  OG-RaidHelper automatically sets roles on players.
 
 **Installation:**
 1. Install RollFor addon first
@@ -26,9 +28,7 @@ A comprehensive raid management addon for organizing encounters, assigning roles
 
 This addon is entirely vibe coded using Claude Sonnet 3.5 and 4.5.  I deliberately kept myself out of the code because I want to bolster my knowledge of AI in the workplace, and what better way to do that than to create an entire TWoW addon.
 
-The documentation that follows is also entirely created by Claude, and I can tell you right now Claude did some acid at some point and he has hallucinations from time to time.  I already found and removed one blatant error in the documentation, but I'm sure there's more.
-
-That said it's 1:00AM and I've had about 5 hours of sleep a night for the past 4 nights working on this addon.'
+The documentation that follows was entirely created by Claude, and I can tell you right now Claude did some acid at some point and he has hallucinations from time to time.  I'm working on improving the documentation but since this is targeted at raiders, not readers, it's been a low priority over development of the addon.
 
 ---
 ## First Run
