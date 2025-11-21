@@ -1,5 +1,42 @@
 # OG-RaidHelper Changelog
 
+## Version 1.11.2 - SR+ Validation UI Standardization
+**Release Date:** November 21, 2025
+
+### Bug Fixes
+- **SR+ Validation Logic**: Fixed validation for new players with SR+ items
+  - Now correctly checks that ALL items must be at +0 for new players
+  - Previously only checked total SR+ value, allowing mixed values like one item at +0 and another at +20
+
+### UI Improvements
+- **SR+ Validation Interface**: Applied standard UI template to player list
+  - Replaced red/green background colors with status labels
+  - Added three validation states: "Validated" (bright green), "Passed" (gray), "Error" (red)
+  - "Validated": Player's current SR+ exactly matches their last validation record
+  - "Passed": Player's SR+ passes auto-validation rules (increases within limits)
+  - "Error": Player's SR+ has unexpected changes requiring attention
+  - Right panel now matches left panel height
+  - Reduced spacing between panels from ~10px to 5px
+  - List items use standardized height and spacing constants
+
+### Technical Changes
+- Added `OGRH.LIST_ITEM_HEIGHT` and `OGRH.LIST_ITEM_SPACING` constants for consistent dimensions
+- Updated Invites and Promotes windows to use template constants
+- Added `OGRH.SRValidation.GetValidationStatus()` function for determining validation state
+
+## Version 1.11.1 - UI Template Application
+**Release Date:** November 21, 2025
+
+### Bug Fixes
+- **Raid Invites List Styling**: Applied standard UI template to Raid Invites window
+  - Fixed list item backgrounds not displaying properly
+  - Issue was caused by dynamic container sizing with anchor points
+  - Now uses explicit width/height calculations before creating scroll list
+  - List items now display with proper gray backgrounds and hover effects
+
+### UI Improvements
+- Aligned RollFor Import button to match Close button dimensions and padding
+
 ## Version 1.11.0 - Auto Promote & UI Standardization
 **Release Date:** November 21, 2025
 

@@ -306,8 +306,8 @@ function OGRH.RefreshAutoPromote()
   end
   rightScrollChild.rows = {}
   
-  local rowHeight = 20
-  local rowSpacing = 2
+  local rowHeight = OGRH.LIST_ITEM_HEIGHT
+  local rowSpacing = OGRH.LIST_ITEM_SPACING
   
   -- Sort promote list alphabetically
   local promoteList = {}
@@ -351,19 +351,12 @@ function OGRH.RefreshAutoPromote()
   for i, playerData in ipairs(promoteList) do
     local playerName = playerData.name
     local playerClass = playerData.class
-    local row = CreateFrame("Button", nil, leftScrollChild)
-    row:SetWidth(OGRH_AutoPromoteFrame.leftContentWidth)
-    row:SetHeight(rowHeight)
+    
+    -- Create styled list item
+    local row = OGRH.CreateStyledListItem(leftScrollChild, OGRH_AutoPromoteFrame.leftContentWidth, rowHeight, "Button")
     row:SetPoint("TOPLEFT", leftScrollChild, "TOPLEFT", 0, yOffset)
     row:RegisterForDrag("LeftButton")
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    
-    -- Background
-    local bg = row:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-    bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-    row.bg = bg
     
     -- Player name with class color
     local classColor = playerClass and RAID_CLASS_COLORS[playerClass] or {r=1, g=1, b=1}
@@ -534,27 +527,12 @@ function OGRH.RefreshAutoPromote()
       
       lastSection = memberData.section
     end
-    local row = CreateFrame("Button", nil, rightScrollChild)
-    row:SetWidth(OGRH_AutoPromoteFrame.rightContentWidth)
-    row:SetHeight(rowHeight)
+    
+    -- Create styled list item
+    local row = OGRH.CreateStyledListItem(rightScrollChild, OGRH_AutoPromoteFrame.rightContentWidth, rowHeight, "Button")
     row:SetPoint("TOPLEFT", rightScrollChild, "TOPLEFT", 0, yOffset)
     row:RegisterForDrag("LeftButton")
     row:RegisterForClicks("LeftButtonUp")
-    
-    -- Background
-    local bg = row:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-    bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-    row.bg = bg
-    
-    -- Hover highlight
-    row:SetScript("OnEnter", function()
-      bg:SetVertexColor(0.3, 0.3, 0.3, 0.7)
-    end)
-    row:SetScript("OnLeave", function()
-      bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
-    end)
     
     -- Player name with class color
     local classColor = RAID_CLASS_COLORS[memberData.class] or {r=1, g=1, b=1}

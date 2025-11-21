@@ -236,6 +236,131 @@ function OGRH.CreateStyledScrollList(parent, width, height)
   return outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth
 end
 
+-- Standard list item colors
+OGRH.LIST_COLORS = {
+  SELECTED = {r = 0.2, g = 0.4, b = 0.2, a = 0.8},    -- Green highlight for selected items
+  INACTIVE = {r = 0.2, g = 0.2, b = 0.2, a = 0.5},    -- Gray for normal/inactive items
+  HOVER = {r = 0.2, g = 0.5, b = 0.2, a = 0.5}        -- Brighter green for mouseover
+}
+
+-- Standard list item dimensions
+OGRH.LIST_ITEM_HEIGHT = 20
+OGRH.LIST_ITEM_SPACING = 2
+
+-- Create a standardized list item with background and hover effects
+-- Returns: itemFrame with .bg property for runtime color changes
+function OGRH.CreateStyledListItem(parent, width, height, frameType)
+  if not parent then return nil end
+  
+  height = height or OGRH.LIST_ITEM_HEIGHT  -- Use default if not specified
+  frameType = frameType or "Button"  -- Default to Button for clickable items
+  
+  local item = CreateFrame(frameType, nil, parent)
+  item:SetWidth(width)
+  item:SetHeight(height)
+  
+  -- For Frame types, use backdrop instead of texture
+  if frameType == "Frame" then
+    item:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      tile = false,
+      insets = {left = 0, right = 0, top = 0, bottom = 0}
+    })
+    item:SetBackdropColor(
+      OGRH.LIST_COLORS.INACTIVE.r,
+      OGRH.LIST_COLORS.INACTIVE.g,
+      OGRH.LIST_COLORS.INACTIVE.b,
+      OGRH.LIST_COLORS.INACTIVE.a
+    )
+    -- For consistency with Button types, store a reference to the item for color changes
+    item.bg = item  -- Reference to self for SetBackdropColor
+  else
+    -- For Button types, use texture approach
+    local bg = item:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    bg:SetVertexColor(
+      OGRH.LIST_COLORS.INACTIVE.r,
+      OGRH.LIST_COLORS.INACTIVE.g,
+      OGRH.LIST_COLORS.INACTIVE.b,
+      OGRH.LIST_COLORS.INACTIVE.a
+    )
+    bg:Show()  -- Explicitly show the texture
+    item.bg = bg
+  end
+  
+  item:Show()  -- Explicitly show the item frame
+  
+  -- Add hover and selection effects only for Button frames
+  if frameType == "Button" then
+    item:SetScript("OnEnter", function()
+      -- Don't change color on hover if item is selected
+      if not this.isSelected then
+        this.bg:SetVertexColor(
+          OGRH.LIST_COLORS.HOVER.r,
+          OGRH.LIST_COLORS.HOVER.g,
+          OGRH.LIST_COLORS.HOVER.b,
+          OGRH.LIST_COLORS.HOVER.a
+        )
+      end
+    end)
+    
+    item:SetScript("OnLeave", function()
+      -- Restore color based on selection state
+      if this.isSelected then
+        this.bg:SetVertexColor(
+          OGRH.LIST_COLORS.SELECTED.r,
+          OGRH.LIST_COLORS.SELECTED.g,
+          OGRH.LIST_COLORS.SELECTED.b,
+          OGRH.LIST_COLORS.SELECTED.a
+        )
+      else
+        this.bg:SetVertexColor(
+          OGRH.LIST_COLORS.INACTIVE.r,
+          OGRH.LIST_COLORS.INACTIVE.g,
+          OGRH.LIST_COLORS.INACTIVE.b,
+          OGRH.LIST_COLORS.INACTIVE.a
+        )
+      end
+    end)
+  end
+  -- Frame type: no dynamic styling, just uses default INACTIVE color via backdrop
+  
+  return item
+end
+
+-- Helper function to set list item state (selected/inactive)
+function OGRH.SetListItemSelected(item, isSelected)
+  if not item or not item.bg then return end
+  
+  item.isSelected = isSelected
+  
+  local color = isSelected and OGRH.LIST_COLORS.SELECTED or OGRH.LIST_COLORS.INACTIVE
+  
+  -- Check if bg is a texture or the frame itself (backdrop)
+  if item.bg.SetVertexColor then
+    -- Texture-based (Button)
+    item.bg:SetVertexColor(color.r, color.g, color.b, color.a)
+  elseif item.bg.SetBackdropColor then
+    -- Backdrop-based (Frame)
+    item.bg:SetBackdropColor(color.r, color.g, color.b, color.a)
+  end
+end
+
+-- Helper function to set custom list item color (if standard colors don't fit)
+function OGRH.SetListItemColor(item, r, g, b, a)
+  if not item or not item.bg then return end
+  
+  -- Check if bg is a texture or the frame itself (backdrop)
+  if item.bg.SetVertexColor then
+    -- Texture-based (Button)
+    item.bg:SetVertexColor(r, g, b, a)
+  elseif item.bg.SetBackdropColor then
+    -- Backdrop-based (Frame)
+    item.bg:SetBackdropColor(r, g, b, a)
+  end
+end
+
 -- Ready Check functionality
 function OGRH.DoReadyCheck()
   -- Check if in a raid

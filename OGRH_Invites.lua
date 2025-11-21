@@ -462,8 +462,8 @@ function OGRH.Invites.ShowWindow()
   -- RollFor import button (top left)
   local rollForBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   rollForBtn:SetWidth(110)
-  rollForBtn:SetHeight(22)
-  rollForBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -7)
+  rollForBtn:SetHeight(24)
+  rollForBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
   rollForBtn:SetText("RollFor Import")
   if OGRH and OGRH.StyleButton then
     OGRH.StyleButton(rollForBtn)
@@ -542,70 +542,22 @@ function OGRH.Invites.ShowWindow()
   actionsHeader:SetPoint("LEFT", 320, 0)
   actionsHeader:SetText("Actions")
   
-  -- List backdrop
-  local listBackdrop = CreateFrame("Frame", nil, frame)
-  listBackdrop:SetPoint("TOPLEFT", 17, -95)
-  listBackdrop:SetPoint("BOTTOMRIGHT", -17, 50)
-  listBackdrop:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 12,
-    insets = {left = 3, right = 3, top = 3, bottom = 3}
-  })
-  listBackdrop:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+  -- Create a container frame for the player list that fills available space
+  local listContainer = CreateFrame("Frame", nil, frame)
+  listContainer:SetPoint("TOPLEFT", 17, -95)
+  local containerWidth = frame:GetWidth() - 34
+  local containerHeight = frame:GetHeight() - 145  -- Available vertical space
+  listContainer:SetWidth(containerWidth)
+  listContainer:SetHeight(containerHeight)
   
-  -- Scroll frame
-  local scrollFrame = CreateFrame("ScrollFrame", nil, listBackdrop)
-  scrollFrame:SetPoint("TOPLEFT", listBackdrop, "TOPLEFT", 5, -5)
-  scrollFrame:SetPoint("BOTTOMRIGHT", listBackdrop, "BOTTOMRIGHT", -22, 5)
+  -- Create styled scroll list using standardized function
+  local listFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGRH.CreateStyledScrollList(listContainer, containerWidth, containerHeight)
+  listFrame:SetAllPoints(listContainer)
   
-  -- Scroll child
-  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-  scrollChild:SetWidth(540)
-  scrollChild:SetHeight(1)
-  scrollFrame:SetScrollChild(scrollChild)
   frame.scrollChild = scrollChild
   frame.scrollFrame = scrollFrame
-  
-  -- Create scrollbar
-  local scrollBar = CreateFrame("Slider", nil, scrollFrame)
-  scrollBar:SetPoint("TOPRIGHT", listBackdrop, "TOPRIGHT", -5, -16)
-  scrollBar:SetPoint("BOTTOMRIGHT", listBackdrop, "BOTTOMRIGHT", -5, 16)
-  scrollBar:SetWidth(16)
-  scrollBar:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 3, right = 3, top = 3, bottom = 3}
-  })
-  scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-  scrollBar:SetOrientation("VERTICAL")
-  scrollBar:SetMinMaxValues(0, 1)
-  scrollBar:SetValue(0)
-  scrollBar:SetValueStep(24)
-  scrollBar:Hide()
   frame.scrollBar = scrollBar
-  
-  scrollBar:SetScript("OnValueChanged", function()
-    scrollFrame:SetVerticalScroll(this:GetValue())
-  end)
-  
-  scrollFrame:EnableMouseWheel(true)
-  scrollFrame:SetScript("OnMouseWheel", function()
-    if not scrollBar:IsShown() then return end
-    
-    local delta = arg1
-    local current = scrollBar:GetValue()
-    local minVal, maxVal = scrollBar:GetMinMaxValues()
-    
-    if delta > 0 then
-      scrollBar:SetValue(math.max(minVal, current - 24))
-    else
-      scrollBar:SetValue(math.min(maxVal, current + 24))
-    end
-  end)
+  frame.contentWidth = contentWidth
   
   -- Bottom action buttons
   local inviteAllBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -785,52 +737,37 @@ function OGRH.Invites.RefreshPlayerList()
   
   -- Create rows
   local yOffset = -5
-  local rowHeight = 24
-  local rowSpacing = 2
+  local rowHeight = OGRH.LIST_ITEM_HEIGHT
+  local rowSpacing = OGRH.LIST_ITEM_SPACING
   
   for i, playerData in ipairs(playersNotInRaid) do
-    local row = CreateFrame("Frame", nil, scrollChild)
-    row:SetWidth(540)
-    row:SetHeight(rowHeight)
+    -- Create styled list item
+    local row = OGRH.CreateStyledListItem(scrollChild, OGRH_InvitesFrame.contentWidth, rowHeight, "Button")
     row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
     
-    -- Background
-    local bg = row:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-    -- Color based on status
+    -- Set background color based on status
     if playerData.status == STATUS.IN_RAID then
-      bg:SetVertexColor(0.1, 0.3, 0.1, 0.5)
-    elseif playerData.status == STATUS.OFFLINE then
-      bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+      OGRH.SetListItemColor(row, 0.1, 0.3, 0.1, 0.5)
     elseif playerData.status == STATUS.DECLINED then
-      bg:SetVertexColor(0.3, 0.1, 0.1, 0.5)
+      OGRH.SetListItemColor(row, 0.3, 0.1, 0.1, 0.5)
     elseif playerData.status == STATUS.INVITED then
-      bg:SetVertexColor(0.2, 0.2, 0.3, 0.5)
-    else
-      bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+      OGRH.SetListItemColor(row, 0.2, 0.2, 0.3, 0.5)
     end
+    -- For OFFLINE and default: use the standard INACTIVE color from template
     
-    -- Player name (colored by class if available)
-    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    nameText:SetPoint("LEFT", 5, 0)
+    -- Player name with class color
+    local classColor = playerData.class and RAID_CLASS_COLORS[playerData.class] or {r=1, g=1, b=1}
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameText:SetPoint("LEFT", row, "LEFT", 5, 0)
     nameText:SetWidth(130)
     nameText:SetJustifyH("LEFT")
-    
-    -- Use OGRH.ColorName which handles class coloring
-    if playerData.class then
-      -- Store in nameClass for ColorName to work
-      OGRH.Roles.nameClass[playerData.name] = playerData.class
-      nameText:SetText(OGRH.ColorName(playerData.name))
-    else
-      -- No class info, just show name in white
-      nameText:SetText(playerData.name)
-    end
+    nameText:SetTextColor(classColor.r, classColor.g, classColor.b)
+    nameText:SetText(playerData.name)
     
     -- Role (show OGRH bucket instead of RollFor spec)
-    local roleText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    roleText:SetPoint("LEFT", 140, 0)
-    roleText:SetWidth(115)
+    local roleText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    roleText:SetPoint("LEFT", row, "LEFT", 140, 0)
+    roleText:SetWidth(80)
     roleText:SetJustifyH("LEFT")
     local ogrh_role = OGRH.Invites.MapRollForRoleToOGRH(playerData.role)
     local displayRole = ogrh_role or playerData.role or "Unknown"
@@ -847,9 +784,9 @@ function OGRH.Invites.RefreshPlayerList()
     roleText:SetText(displayRole)
     
     -- Status
-    local statusText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    statusText:SetPoint("LEFT", 230, 0)
-    statusText:SetWidth(100)
+    local statusText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statusText:SetPoint("LEFT", row, "LEFT", 225, 0)
+    statusText:SetWidth(90)
     statusText:SetJustifyH("LEFT")
     if playerData.status == STATUS.OFFLINE then
       statusText:SetText("|cff888888Offline|r")
@@ -863,20 +800,19 @@ function OGRH.Invites.RefreshPlayerList()
       statusText:SetText("|cffccccccUnknown|r")
     end
     
-    -- Action buttons
     -- Invite button
     local inviteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
     inviteBtn:SetWidth(50)
     inviteBtn:SetHeight(20)
-    inviteBtn:SetPoint("LEFT", 320, 0)
+    inviteBtn:SetPoint("LEFT", row, "LEFT", 320, 0)
     inviteBtn:SetText("Invite")
     OGRH.StyleButton(inviteBtn)
     local playerName = playerData.name
     inviteBtn:SetScript("OnClick", function()
       OGRH.Invites.InvitePlayer(playerName)
     end)
-    -- Disable only if offline
-    if playerData and playerData.status and playerData.status == STATUS.OFFLINE then
+    -- Disable if offline
+    if playerData.status == STATUS.OFFLINE then
       inviteBtn:Disable()
     end
     
@@ -887,12 +823,11 @@ function OGRH.Invites.RefreshPlayerList()
     whisperBtn:SetPoint("LEFT", inviteBtn, "RIGHT", 2, 0)
     whisperBtn:SetText("Msg")
     OGRH.StyleButton(whisperBtn)
-    local playerName = playerData.name
     whisperBtn:SetScript("OnClick", function()
       OGRH.Invites.WhisperPlayer(playerName)
     end)
     -- Disable if offline
-    if playerData and playerData.status and playerData.status == STATUS.OFFLINE then
+    if playerData.status == STATUS.OFFLINE then
       whisperBtn:Disable()
     end
     

@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.11.0
-## Notes: Added Auto Promote feature and standardized list formatting template
+## Version: 1.11.2
+## Notes: Standardized SR+ Validation UI and fixed validation logic
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua

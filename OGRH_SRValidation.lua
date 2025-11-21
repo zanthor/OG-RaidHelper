@@ -386,6 +386,66 @@ function OGRH.SRValidation.EditItemPlus(playerName, itemId, currentPlus)
 end
 
 -- Validate player's SR+ (check if it increased by more than 10 from last validation)
+-- Get validation status: "Validated", "Passed", or "Error"
+function OGRH.SRValidation.GetValidationStatus(playerName, currentSRPlus)
+  OGRH.SRValidation.EnsureSV()
+  
+  -- Normalize currentSRPlus
+  currentSRPlus = currentSRPlus or 0
+  
+  local records = OGRH_SV.srValidation.records[playerName]
+  if not records or table.getn(records) == 0 then
+    -- No previous records - check all items are at +0
+    local currentItems = OGRH.SRValidation.GetPlayerItems(playerName)
+    for _, item in ipairs(currentItems) do
+      if (item.plus or 0) > 0 then
+        return "Error"  -- New player with item that has plus > 0
+      end
+    end
+    return "Passed"  -- New player with all items at +0
+  end
+  
+  -- Get most recent validation
+  local lastRecord = records[table.getn(records)]
+  
+  -- Check if current SR+ matches the last validation exactly
+  if lastRecord.srPlus == currentSRPlus then
+    -- Check if all items match exactly
+    local currentItems = OGRH.SRValidation.GetPlayerItems(playerName)
+    local allMatch = true
+    
+    if table.getn(currentItems) ~= table.getn(lastRecord.items or {}) then
+      allMatch = false
+    else
+      for _, currentItem in ipairs(currentItems) do
+        local found = false
+        for _, lastItem in ipairs(lastRecord.items or {}) do
+          if lastItem.itemId == currentItem.itemId and lastItem.plus == currentItem.plus then
+            found = true
+            break
+          end
+        end
+        if not found then
+          allMatch = false
+          break
+        end
+      end
+    end
+    
+    if allMatch then
+      return "Validated"  -- Exact match with last validation
+    end
+  end
+  
+  -- Not validated, check if it passes auto-validation
+  local isValid, reason = OGRH.SRValidation.ValidatePlayer(playerName, currentSRPlus)
+  if isValid then
+    return "Passed"
+  else
+    return "Error"
+  end
+end
+
 function OGRH.SRValidation.ValidatePlayer(playerName, currentSRPlus)
   OGRH.SRValidation.EnsureSV()
   
@@ -612,7 +672,7 @@ function OGRH.SRValidation.RefreshPlayerList()
   
   local frame = OGRH_SRValidationFrame
   local scrollFrame = frame.scrollFrame
-  local scrollChild = scrollFrame.scrollChild
+  local scrollChild = frame.scrollChild
   
   -- Clear existing buttons
   if scrollChild.buttons then
@@ -624,18 +684,21 @@ function OGRH.SRValidation.RefreshPlayerList()
   scrollChild.buttons = {}
   
   local yOffset = 0
-  local buttonHeight = 20
+  local buttonHeight = OGRH.LIST_ITEM_HEIGHT
+  local buttonSpacing = OGRH.LIST_ITEM_SPACING
   
   -- Players already sorted by GetSoftResPlayers, validate each one
   local validatedPlayers = {}
   for _, playerData in ipairs(players) do
     local currentSRPlus = OGRH.SRValidation.GetPlayerSRPlus(playerData)
+    local status = OGRH.SRValidation.GetValidationStatus(playerData.name, currentSRPlus)
     local isValid, reason = OGRH.SRValidation.ValidatePlayer(playerData.name, currentSRPlus)
     
     table.insert(validatedPlayers, {
       name = playerData.name,
       data = playerData,
       srPlus = currentSRPlus,
+      status = status,
       isValid = isValid,
       reason = reason
     })
@@ -643,33 +706,40 @@ function OGRH.SRValidation.RefreshPlayerList()
   
   -- Create buttons for each player
   for _, playerInfo in ipairs(validatedPlayers) do
-    local btn = CreateFrame("Button", nil, scrollChild)
-    btn:SetWidth(175)
-    btn:SetHeight(buttonHeight)
-    btn:SetPoint("TOPLEFT", 5, -yOffset)
-    
-    -- Background highlight for validation status
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(btn)
-    if playerInfo.isValid then
-      bg:SetTexture(0, 0.5, 0, 0.3) -- Green
-    else
-      bg:SetTexture(0.5, 0, 0, 0.3) -- Red
-    end
-    btn.bg = bg
+    local btn = OGRH.CreateStyledListItem(scrollChild, frame.contentWidth, buttonHeight, "Button")
+    btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -5 - yOffset)
     
     -- Player name with class color (using existing class cache)
-    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    text:SetPoint("LEFT", 5, 0)
-    text:SetJustifyH("LEFT")
+    local classColor = playerInfo.data.class and RAID_CLASS_COLORS[playerInfo.data.class] or {r=1, g=1, b=1}
+    local nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameText:SetPoint("LEFT", btn, "LEFT", 5, 0)
+    nameText:SetWidth(120)
+    nameText:SetJustifyH("LEFT")
+    nameText:SetTextColor(classColor.r, classColor.g, classColor.b)
+    nameText:SetText(playerInfo.name)
+    btn.text = nameText
     
+    -- Status label (right-aligned)
+    local statusText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statusText:SetPoint("RIGHT", btn, "RIGHT", -5, 0)
+    statusText:SetJustifyH("RIGHT")
+    
+    if playerInfo.status == "Validated" then
+      statusText:SetText("Validated")
+      statusText:SetTextColor(0.3, 0.8, 0.3)  -- Bright green
+    elseif playerInfo.status == "Passed" then
+      statusText:SetText("Passed")
+      statusText:SetTextColor(0.6, 0.6, 0.6)  -- Gray
+    else  -- Error
+      statusText:SetText("Error")
+      statusText:SetTextColor(1, 0.3, 0.3)  -- Red
+    end
+    btn.statusText = statusText
+    
+    -- Store class in cache for ColorName
     if playerInfo.data.class then
       OGRH.Roles.nameClass[playerInfo.name] = playerInfo.data.class
-      text:SetText(OGRH.ColorName(playerInfo.name))
-    else
-      text:SetText(playerInfo.name)
     end
-    btn.text = text
     
     -- Click handler
     local playerName = playerInfo.name
@@ -679,27 +749,22 @@ function OGRH.SRValidation.RefreshPlayerList()
       OGRH.SRValidation.SelectPlayer(playerName, playerData, playerSRPlus)
     end)
     
-    -- Hover effect - capture bg and isValid in closure
-    local btnBg = bg
-    local isValid = playerInfo.isValid
-    btn:SetScript("OnEnter", function()
-      btnBg:SetTexture(0.2, 0.2, 0.2, 0.5)
-    end)
-    btn:SetScript("OnLeave", function()
-      if isValid then
-        btnBg:SetTexture(0, 0.5, 0, 0.3)
-      else
-        btnBg:SetTexture(0.5, 0, 0, 0.3)
-      end
-    end)
-    
     table.insert(scrollChild.buttons, btn)
-    yOffset = yOffset + buttonHeight
+    yOffset = yOffset + buttonHeight + buttonSpacing
   end
   
   -- Update scroll child height
   local contentHeight = yOffset + 5
   scrollChild:SetHeight(contentHeight)
+  
+  -- Update scrollbar
+  local scrollFrameHeight = scrollFrame:GetHeight()
+  if contentHeight > scrollFrameHeight then
+    frame.scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+    frame.scrollBar:Show()
+  else
+    frame.scrollBar:Hide()
+  end
   
   -- Reset scroll position
   scrollFrame:SetVerticalScroll(0)
@@ -1103,52 +1168,28 @@ function OGRH.SRValidation.ShowWindow()
   
   -- Left panel - Player list with scroll
   local leftPanel = CreateFrame("Frame", nil, frame)
-  leftPanel:SetWidth(220)
-  leftPanel:SetHeight(432)
   leftPanel:SetPoint("TOPLEFT", 10, -35)
-  leftPanel:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    edgeSize = 8,
-    insets = {left = 2, right = 2, top = 2, bottom = 2}
-  })
-  leftPanel:SetBackdropColor(0, 0, 0, 0.5)
+  local leftPanelWidth = 220
+  local leftPanelHeight = 432
+  leftPanel:SetWidth(leftPanelWidth)
+  leftPanel:SetHeight(leftPanelHeight)
   frame.leftPanel = leftPanel
   
-  -- Scroll frame for player list
-  local scrollFrame = CreateFrame("ScrollFrame", nil, leftPanel)
-  scrollFrame:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 5, -5)
-  scrollFrame:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", -5, 5)
+  -- Create styled scroll list using standardized function
+  local listFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGRH.CreateStyledScrollList(leftPanel, leftPanelWidth, leftPanelHeight)
+  listFrame:SetAllPoints(leftPanel)
+  
   frame.scrollFrame = scrollFrame
-  
-  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-  scrollChild:SetWidth(210)
-  scrollChild:SetHeight(scrollFrame:GetHeight())
-  scrollFrame:SetScrollChild(scrollChild)
-  scrollFrame.scrollChild = scrollChild
+  frame.scrollChild = scrollChild
+  frame.scrollBar = scrollBar
+  frame.contentWidth = contentWidth
   scrollChild.buttons = {}
-  
-  -- Mouse wheel scrolling
-  scrollFrame:EnableMouseWheel(true)
-  scrollFrame:SetScript("OnMouseWheel", function()
-    local delta = arg1
-    local current = scrollFrame:GetVerticalScroll()
-    local maxScroll = scrollChild:GetHeight() - scrollFrame:GetHeight()
-    
-    if maxScroll < 0 then maxScroll = 0 end
-    
-    if delta > 0 then
-      scrollFrame:SetVerticalScroll(math.max(0, current - 24))
-    else
-      scrollFrame:SetVerticalScroll(math.min(maxScroll, current + 24))
-    end
-  end)
   
   -- Right panel - Player details
   local rightPanel = CreateFrame("Frame", nil, frame)
   rightPanel:SetWidth(490)
-  rightPanel:SetHeight(459)
-  rightPanel:SetPoint("TOPRIGHT", -10, -35)
+  rightPanel:SetHeight(leftPanelHeight)  -- Match left panel height
+  rightPanel:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 5, 0)  -- 5px spacing from left panel
   rightPanel:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
