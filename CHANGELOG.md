@@ -1,5 +1,16 @@
 # OG-RaidHelper Changelog
 
+## Version 1.11.3 - Addon Audit UI Standardization
+**Release Date:** November 21, 2025
+
+### UI Improvements
+- **Addon Audit Interface**: Applied standard UI template to addon list
+  - Replaced custom scroll frame with standardized template
+  - List items now use consistent height, spacing, and styling
+  - Added proper scrollbar management
+  - Selection highlighting now uses standard template functions
+  - Consistent with other interfaces (Auto Promote, Raid Invites, SR+ Validation)
+
 ## Version 1.11.2 - SR+ Validation UI Standardization
 **Release Date:** November 21, 2025
 

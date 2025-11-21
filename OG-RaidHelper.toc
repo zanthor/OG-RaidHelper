@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.11.2
-## Notes: Standardized SR+ Validation UI and fixed validation logic
+## Version: 1.11.3
+## Notes: Standardized Addon Audit UI with template system
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua

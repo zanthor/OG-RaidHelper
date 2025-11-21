@@ -297,16 +297,20 @@ function AddonAudit.CreateFrame()
   
   -- Left Panel (Addon List)
   local leftPanel = CreateFrame("Frame", "OGRH_AddonAuditLeftPanel", frame)
-  leftPanel:SetWidth(LEFT_PANEL_WIDTH)
-  leftPanel:SetHeight(FRAME_HEIGHT - 80)
+  local leftPanelWidth = LEFT_PANEL_WIDTH
+  local leftPanelHeight = FRAME_HEIGHT - 80
+  leftPanel:SetWidth(leftPanelWidth)
+  leftPanel:SetHeight(leftPanelHeight)
   leftPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", PANEL_PADDING, -40)
-  leftPanel:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 12,
-    insets = { left = 2, right = 2, top = 2, bottom = 2 }
-  })
-  leftPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+  
+  -- Create styled scroll list using standardized function
+  local listFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGRH.CreateStyledScrollList(leftPanel, leftPanelWidth, leftPanelHeight)
+  listFrame:SetAllPoints(leftPanel)
+  
+  leftPanel.scrollFrame = scrollFrame
+  leftPanel.scrollChild = scrollChild
+  leftPanel.scrollBar = scrollBar
+  leftPanel.contentWidth = contentWidth
   
   local leftHeader = leftPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   leftHeader:SetPoint("TOP", leftPanel, "TOP", 0, -8)
@@ -376,42 +380,51 @@ end
 ------------------------------
 
 function AddonAudit.CreateAddonListItems(parentFrame)
-  local yOffset = -30
+  local scrollChild = parentFrame.scrollChild
+  local contentWidth = parentFrame.contentWidth
+  local yOffset = 0
+  local rowHeight = OGRH.LIST_ITEM_HEIGHT
+  local rowSpacing = OGRH.LIST_ITEM_SPACING
   
   for i, addon in ipairs(addonList) do
-    local btn = CreateFrame("Button", "OGRH_AddonListItem" .. i, parentFrame)
-    btn:SetWidth(LEFT_PANEL_WIDTH - 10)
-    btn:SetHeight(ITEM_HEIGHT)
-    btn:SetPoint("TOP", parentFrame, "TOP", 0, yOffset)
-    btn:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 8,
-      insets = { left = 2, right = 2, top = 2, bottom = 2 }
-    })
-    btn:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+    local btn = OGRH.CreateStyledListItem(scrollChild, contentWidth, rowHeight, "Button")
+    btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -5 - yOffset)
     
-    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    text:SetPoint("LEFT", btn, "LEFT", 8, 0)
+    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    text:SetPoint("LEFT", btn, "LEFT", 5, 0)
     text:SetText(addon.displayName)
     btn.text = text
     
     btn.addonData = addon
     btn:SetScript("OnClick", function()
       AddonAudit.SelectAddon(this.addonData)
-    end)
-    btn:SetScript("OnEnter", function()
-      this:SetBackdropColor(0.3, 0.3, 0.3, 0.9)
-    end)
-    btn:SetScript("OnLeave", function()
-      if selectedAddon == this.addonData then
-        this:SetBackdropColor(0.1, 0.4, 0.1, 0.9)
-      else
-        this:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
+      
+      -- Update selection highlight
+      for _, otherBtn in ipairs(scrollChild.buttons or {}) do
+        OGRH.SetListItemSelected(otherBtn, false)
       end
+      OGRH.SetListItemSelected(this, true)
     end)
     
-    yOffset = yOffset - (ITEM_HEIGHT + 5)
+    if not scrollChild.buttons then
+      scrollChild.buttons = {}
+    end
+    table.insert(scrollChild.buttons, btn)
+    
+    yOffset = yOffset + rowHeight + rowSpacing
+  end
+  
+  -- Update scroll child height
+  local contentHeight = yOffset + 5
+  scrollChild:SetHeight(contentHeight)
+  
+  -- Update scrollbar
+  local scrollFrameHeight = parentFrame.scrollFrame:GetHeight()
+  if contentHeight > scrollFrameHeight then
+    parentFrame.scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+    parentFrame.scrollBar:Show()
+  else
+    parentFrame.scrollBar:Hide()
   end
 end
 
