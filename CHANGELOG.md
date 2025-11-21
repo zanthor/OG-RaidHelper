@@ -1,5 +1,28 @@
 # OG-RaidHelper Changelog
 
+## Version 1.10.0 - Factory Defaults & UI Improvements
+**Release Date:** November 21, 2025
+
+### New Features
+- **Factory Defaults System**: Configure default raid settings that load automatically on first run
+  - New OGRH_Defaults.lua file for storing factory default configurations
+  - "Defaults" button in Import/Export Data window to load factory defaults
+  - First-run detection automatically loads defaults if configured
+  - Easy configuration: Export your raid setup and paste into defaults file
+
+### UI Improvements
+- Renamed "Share Raid Data" window to "Import / Export Data" for clarity
+- Redesigned button layout with 6 evenly-spaced, centered buttons
+  - Export, Import, Defaults, Sync, Clear, Close
+- Improved button sizing and spacing for better visual consistency
+- All buttons now fit proportionally across window width
+
+### Technical Changes
+- Added OGRH_Defaults.lua to load order after OGRH_Core.lua
+- Factory defaults use direct Lua table format (no string parsing needed)
+- First-run check validates table structure with version field
+- LoadFactoryDefaults() function copies default data to SavedVariables
+
 ## Version 1.9.0 - Raid Lead System
 **Release Date:** November 20, 2025
 

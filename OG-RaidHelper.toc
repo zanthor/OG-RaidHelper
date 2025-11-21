@@ -1,11 +1,12 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.9.0
-## Notes: Added Raid Lead system for coordinated encounter planning with automatic sync and permission controls
+## Version: 1.10.0
+## Notes: Added factory defaults system and improved Import/Export interface
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
+OGRH_Defaults.lua
 OGRH_RaidLead.lua
 OGRH_MainUI.lua
 OGRH_RolesUI.lua

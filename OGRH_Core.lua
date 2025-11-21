@@ -72,7 +72,14 @@ function OGRH.EnsureSV()
   end
 end
 local _svf = CreateFrame("Frame"); _svf:RegisterEvent("VARIABLES_LOADED")
-_svf:SetScript("OnEvent", function() OGRH.EnsureSV() end)
+_svf:SetScript("OnEvent", function() 
+  OGRH.EnsureSV()
+  -- Load factory defaults on first run if configured
+  if OGRH_SV.firstRun ~= false and OGRH.FactoryDefaults and type(OGRH.FactoryDefaults) == "table" and OGRH.FactoryDefaults.version then
+    OGRH.LoadFactoryDefaults()
+    OGRH_SV.firstRun = false
+  end
+end)
 OGRH.EnsureSV()
 
 function OGRH.Msg(s) if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[OGRH]|r "..tostring(s)) end end
@@ -1422,7 +1429,7 @@ function OGRH.ShowShareWindow()
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
-    title:SetText("Share Raid Data")
+    title:SetText("Import / Export Data")
     
     -- Instructions
     local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1482,32 +1489,23 @@ function OGRH.ShowShareWindow()
       scrollFrame:UpdateScrollChildRect()
     end)
     
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    closeBtn:SetWidth(80)
-    closeBtn:SetHeight(25)
-    closeBtn:SetPoint("BOTTOMRIGHT", -20, 15)
-    closeBtn:SetText("Close")
-    OGRH.StyleButton(closeBtn)
-    closeBtn:SetScript("OnClick", function() frame:Hide() end)
-    
-    -- Clear button
-    local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    clearBtn:SetWidth(80)
-    clearBtn:SetHeight(25)
-    clearBtn:SetPoint("RIGHT", closeBtn, "LEFT", -10, 0)
-    clearBtn:SetText("Clear")
-    OGRH.StyleButton(clearBtn)
-    clearBtn:SetScript("OnClick", function()
-      editBox:SetText("")
-      editBox:SetFocus()
-    end)
+    -- Button sizing: 6 buttons centered in frame
+    -- Frame width = 600px
+    -- 6 buttons at 80px each = 480px
+    -- 5 gaps at 8px each = 40px
+    -- Total button row = 520px
+    -- Left margin = (600 - 520) / 2 = 40px for centered layout
+    local btnWidth = 80
+    local btnHeight = 25
+    local btnGap = 8
+    local totalBtnWidth = (btnWidth * 6) + (btnGap * 5)  -- 520px
+    local sideMargin = (frame:GetWidth() - totalBtnWidth) / 2  -- Dynamically center based on frame width
     
     -- Export button
     local exportBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    exportBtn:SetWidth(100)
-    exportBtn:SetHeight(25)
-    exportBtn:SetPoint("BOTTOMLEFT", 20, 15)
+    exportBtn:SetWidth(btnWidth)
+    exportBtn:SetHeight(btnHeight)
+    exportBtn:SetPoint("BOTTOMLEFT", sideMargin, 15)
     exportBtn:SetText("Export")
     OGRH.StyleButton(exportBtn)
     exportBtn:SetScript("OnClick", function()
@@ -1519,11 +1517,11 @@ function OGRH.ShowShareWindow()
       end
     end)
     
-    -- Import button (moved next to Export)
+    -- Import button
     local importBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    importBtn:SetWidth(100)
-    importBtn:SetHeight(25)
-    importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 10, 0)
+    importBtn:SetWidth(btnWidth)
+    importBtn:SetHeight(btnHeight)
+    importBtn:SetPoint("LEFT", exportBtn, "RIGHT", btnGap, 0)
     importBtn:SetText("Import")
     OGRH.StyleButton(importBtn)
     importBtn:SetScript("OnClick", function()
@@ -1537,18 +1535,52 @@ function OGRH.ShowShareWindow()
       end
     end)
     
-    -- Pull from Raid button (in Import's old location)
+    -- Load Defaults button
+    local defaultsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    defaultsBtn:SetWidth(btnWidth)
+    defaultsBtn:SetHeight(btnHeight)
+    defaultsBtn:SetPoint("LEFT", importBtn, "RIGHT", btnGap, 0)
+    defaultsBtn:SetText("Defaults")
+    OGRH.StyleButton(defaultsBtn)
+    defaultsBtn:SetScript("OnClick", function()
+      if OGRH.LoadFactoryDefaults then
+        OGRH.LoadFactoryDefaults()
+      end
+    end)
+    
+    -- Pull from Raid button
     local pullBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    pullBtn:SetWidth(120)
-    pullBtn:SetHeight(25)
-    pullBtn:SetPoint("RIGHT", clearBtn, "LEFT", -10, 0)
-    pullBtn:SetText("Pull from Raid")
+    pullBtn:SetWidth(btnWidth)
+    pullBtn:SetHeight(btnHeight)
+    pullBtn:SetPoint("LEFT", defaultsBtn, "RIGHT", btnGap, 0)
+    pullBtn:SetText("Sync")
     OGRH.StyleButton(pullBtn)
     pullBtn:SetScript("OnClick", function()
       if OGRH.RequestRaidData then
         OGRH.RequestRaidData()
       end
     end)
+    
+    -- Clear button
+    local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    clearBtn:SetWidth(btnWidth)
+    clearBtn:SetHeight(btnHeight)
+    clearBtn:SetPoint("LEFT", pullBtn, "RIGHT", btnGap, 0)
+    clearBtn:SetText("Clear")
+    OGRH.StyleButton(clearBtn)
+    clearBtn:SetScript("OnClick", function()
+      editBox:SetText("")
+      editBox:SetFocus()
+    end)
+    
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    closeBtn:SetWidth(btnWidth)
+    closeBtn:SetHeight(btnHeight)
+    closeBtn:SetPoint("LEFT", clearBtn, "RIGHT", btnGap, 0)
+    closeBtn:SetText("Close")
+    OGRH.StyleButton(closeBtn)
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
     OGRH_ShareFrame = frame
   end
@@ -1706,6 +1738,59 @@ function OGRH.ImportShareData(dataString)
   else
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r encounterMgmt.raids is nil after import!")
   end
+  
+  -- Refresh any open windows
+  if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshAll then
+    OGRH_EncounterSetupFrame.RefreshAll()
+  end
+  if OGRH_TradeSettingsFrame and OGRH_TradeSettingsFrame.RefreshList then
+    OGRH_TradeSettingsFrame.RefreshList()
+  end
+  if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRaidsList then
+    OGRH_EncounterFrame.RefreshRaidsList()
+  end
+  if OGRH_ConsumesFrame and OGRH_ConsumesFrame.RefreshConsumesList then
+    OGRH_ConsumesFrame.RefreshConsumesList()
+  end
+end
+
+-- Load factory defaults from OGRH_Defaults.lua
+function OGRH.LoadFactoryDefaults()
+  if not OGRH.FactoryDefaults or type(OGRH.FactoryDefaults) ~= "table" then
+    OGRH.Msg("|cffff0000Error:|r No factory defaults configured in OGRH_Defaults.lua")
+    OGRH.Msg("Edit OGRH_Defaults.lua and paste your export string after the = sign.")
+    return
+  end
+  
+  -- Check if it has the version field (basic validation)
+  if not OGRH.FactoryDefaults.version then
+    OGRH.Msg("|cffff0000Error:|r Invalid factory defaults format in OGRH_Defaults.lua")
+    return
+  end
+  
+  OGRH.EnsureSV()
+  
+  -- Import all encounter management data directly from the table
+  if OGRH.FactoryDefaults.encounterMgmt then
+    OGRH_SV.encounterMgmt = OGRH.FactoryDefaults.encounterMgmt
+  end
+  if OGRH.FactoryDefaults.encounterRaidMarks then
+    OGRH_SV.encounterRaidMarks = OGRH.FactoryDefaults.encounterRaidMarks
+  end
+  if OGRH.FactoryDefaults.encounterAssignmentNumbers then
+    OGRH_SV.encounterAssignmentNumbers = OGRH.FactoryDefaults.encounterAssignmentNumbers
+  end
+  if OGRH.FactoryDefaults.encounterAnnouncements then
+    OGRH_SV.encounterAnnouncements = OGRH.FactoryDefaults.encounterAnnouncements
+  end
+  if OGRH.FactoryDefaults.tradeItems then
+    OGRH_SV.tradeItems = OGRH.FactoryDefaults.tradeItems
+  end
+  if OGRH.FactoryDefaults.consumes then
+    OGRH_SV.consumes = OGRH.FactoryDefaults.consumes
+  end
+  
+  OGRH.Msg("|cff00ff00Factory defaults loaded successfully!|r")
   
   -- Refresh any open windows
   if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshAll then
