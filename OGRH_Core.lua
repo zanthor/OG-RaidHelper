@@ -99,6 +99,7 @@ function OGRH.CloseAllWindows(exceptFrame)
     "OGRH_SRValidationFrame",
     "OGRH_AddonAuditFrame",
     "OGRH_TradeSettingsFrame",
+    "OGRH_AutoPromoteFrame",
     "OGRH_TradeMenu",
     "OGRH_EncountersMenu",
     "OGRH_ConsumesFrame"
@@ -161,6 +162,78 @@ function OGRH.StyleButton(button)
     this:SetBackdropColor(0.25, 0.35, 0.35, 1)
     this:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
   end)
+end
+
+-- Create a standardized scrolling list with frame
+-- Returns: outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth
+function OGRH.CreateStyledScrollList(parent, width, height)
+  if not parent then return nil end
+  
+  -- Outer container frame with backdrop
+  local outerFrame = CreateFrame("Frame", nil, parent)
+  outerFrame:SetWidth(width)
+  outerFrame:SetHeight(height)
+  outerFrame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  outerFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+  
+  -- Scroll frame inside the outer frame
+  local scrollFrame = CreateFrame("ScrollFrame", nil, outerFrame)
+  scrollFrame:SetPoint("TOPLEFT", outerFrame, "TOPLEFT", 5, -5)
+  scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -25, 5)
+  
+  -- Scroll child
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  local contentWidth = width - 30  -- width - margins - scrollbar area
+  scrollChild:SetWidth(contentWidth)
+  scrollChild:SetHeight(1)
+  scrollFrame:SetScrollChild(scrollChild)
+  
+  -- Scrollbar
+  local scrollBar = CreateFrame("Slider", nil, outerFrame)
+  scrollBar:SetPoint("TOPRIGHT", outerFrame, "TOPRIGHT", -5, -16)
+  scrollBar:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -5, 16)
+  scrollBar:SetWidth(16)
+  scrollBar:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 8,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollBar:SetOrientation("VERTICAL")
+  scrollBar:SetMinMaxValues(0, 1)
+  scrollBar:SetValue(0)
+  scrollBar:SetValueStep(22)
+  scrollBar:Hide()
+  
+  scrollBar:SetScript("OnValueChanged", function()
+    scrollFrame:SetVerticalScroll(this:GetValue())
+  end)
+  
+  -- Enable mouse wheel scrolling
+  scrollFrame:EnableMouseWheel(true)
+  scrollFrame:SetScript("OnMouseWheel", function()
+    if not scrollBar:IsShown() then return end
+    local delta = arg1
+    local current = scrollBar:GetValue()
+    local minVal, maxVal = scrollBar:GetMinMaxValues()
+    if delta > 0 then
+      scrollBar:SetValue(math.max(minVal, current - 22))
+    else
+      scrollBar:SetValue(math.min(maxVal, current + 22))
+    end
+  end)
+  
+  return outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth
 end
 
 -- Ready Check functionality
@@ -2492,7 +2565,7 @@ local function CreateMinimapButton()
       menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
       menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
       menu:SetWidth(160)
-      menu:SetHeight(210)
+      menu:SetHeight(228)
       menu:Hide()
       
       -- Close menu when clicking outside
@@ -2623,6 +2696,17 @@ local function CreateMinimapButton()
           OGRH.ShowTradeSettings()
         else
           OGRH.Msg("Trade Settings module not loaded.")
+        end
+      end, menu, yOffset)
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Auto Promote item
+      local autoPromoteItem = CreateMenuItem("Auto Promote", function()
+        if OGRH.ShowAutoPromote then
+          OGRH.ShowAutoPromote()
+        else
+          OGRH.Msg("Auto Promote module not loaded.")
         end
       end, menu, yOffset)
       

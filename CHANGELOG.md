@@ -1,5 +1,32 @@
 # OG-RaidHelper Changelog
 
+## Version 1.11.0 - Auto Promote & UI Standardization
+**Release Date:** November 21, 2025
+
+### New Features
+- **Auto Promote System**: Automatically promote specific players to assistant when they join raids
+  - Maintain a list of players who should always receive assistant rank
+  - Drag/drop or click to add players from raid/guild roster
+  - Search functionality to quickly find players
+  - Players organized by In Raid / Online / Offline status
+  - Class-colored player names for easy identification
+  - Auto-promotion triggers on raid roster updates
+  - Accessible via "Auto Promote" in main menu
+
+### UI Improvements
+- **Standardized List Formatting**: Created reusable scroll list template
+  - `OGRH.CreateStyledScrollList()` function for consistent scroll lists
+  - Standardized spacing, scrollbar positioning, and backdrop styling
+  - Returns content width for consistent row sizing
+  - Applied to Auto Promote interface (both left and right lists)
+  - Includes mouse wheel support and automatic scrollbar show/hide
+
+### Technical Changes
+- Added OGRH_Promotes.lua with auto-promote logic and UI
+- Auto-promote data stored in OGRH_SV.autoPromotes as table format
+- CreateStyledScrollList() template added to OGRH_Core.lua
+- Migrates old string format to new table format with class info
+
 ## Version 1.10.0 - Factory Defaults & UI Improvements
 **Release Date:** November 21, 2025
 

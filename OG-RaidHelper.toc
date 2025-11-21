@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.10.0
-## Notes: Added factory defaults system and improved Import/Export interface
+## Version: 1.11.0
+## Notes: Added Auto Promote feature and standardized list formatting template
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
@@ -17,3 +17,4 @@ OGRH_Invites.lua
 OGRH_SRValidation.lua
 OGRH_AddonAudit.lua
 OGRH_Consumes.lua
+OGRH_Promotes.lua
