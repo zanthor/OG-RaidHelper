@@ -635,16 +635,6 @@ function OGRH.BroadcastFullSync(raid, encounter)
   OGRH.BroadcastFullEncounterSync()
 end
 
--- Request full sync from sender
-function OGRH.RequestFullSync(targetPlayer, raid, encounter)
-  if GetNumRaidMembers() == 0 then
-    return
-  end
-  
-  local data = targetPlayer .. ";" .. raid .. ";" .. encounter
-  SendAddonMessage(OGRH.ADDON_PREFIX, "REQUEST_FULL_SYNC;" .. data, "RAID")
-end
-
 -- Simple table serialization for addon messages
 function OGRH.Serialize(tbl)
   if type(tbl) ~= "table" then return tostring(tbl) end
@@ -883,11 +873,7 @@ addonFrame:SetScript("OnEvent", function()
           if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, encounters = {}} end
           if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
           if not OGRH_SV.encounterMgmt.encounters then OGRH_SV.encounterMgmt.encounters = {} end
-          if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
           if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
-          if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
-          if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
-          if not OGRH_SV.encounterAnnouncements then OGRH_SV.encounterAnnouncements = {} end
           
           -- Add raid to raids list if it doesn't exist
           local raidExists = false
@@ -918,21 +904,9 @@ addonFrame:SetScript("OnEvent", function()
             table.insert(OGRH_SV.encounterMgmt.encounters[syncData.raid], syncData.encounter)
           end
           
-          -- Replace/create raid structure
-          if not OGRH_SV.encounterMgmt.roles[syncData.raid] then
-            OGRH_SV.encounterMgmt.roles[syncData.raid] = {}
-          end
+          -- Initialize assignment storage
           if not OGRH_SV.encounterAssignments[syncData.raid] then
             OGRH_SV.encounterAssignments[syncData.raid] = {}
-          end
-          if not OGRH_SV.encounterRaidMarks[syncData.raid] then
-            OGRH_SV.encounterRaidMarks[syncData.raid] = {}
-          end
-          if not OGRH_SV.encounterAssignmentNumbers[syncData.raid] then
-            OGRH_SV.encounterAssignmentNumbers[syncData.raid] = {}
-          end
-          if not OGRH_SV.encounterAnnouncements[syncData.raid] then
-            OGRH_SV.encounterAnnouncements[syncData.raid] = {}
           end
           
           -- Validate structure checksum (required - assignments only)
@@ -1075,8 +1049,6 @@ addonFrame:SetScript("OnEvent", function()
               -- Apply assignments
               OGRH.EnsureSV()
               if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
-              if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
-              if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
               
               if not OGRH_SV.encounterAssignments[syncData.raid] then
                 OGRH_SV.encounterAssignments[syncData.raid] = {}
@@ -1263,153 +1235,6 @@ addonFrame:SetScript("OnEvent", function()
           end
         end
       -- Handle full sync request
-      elseif string.sub(message, 1, 18) == "REQUEST_FULL_SYNC;" then
-        -- Block from self
-        local playerName = UnitName("player")
-        if sender == playerName then
-          return
-        end
-        
-        -- Parse: targetPlayer;raid;encounter
-        local content = string.sub(message, 19)
-        local parts = {}
-        local lastPos = 1
-        for i = 1, 3 do
-          local pos = string.find(content, ";", lastPos, true)
-          if pos then
-            table.insert(parts, string.sub(content, lastPos, pos - 1))
-            lastPos = pos + 1
-          else
-            table.insert(parts, string.sub(content, lastPos))
-            break
-          end
-        end
-        
-        if table.getn(parts) >= 3 then
-          local targetPlayer = parts[1]
-          local raid = parts[2]
-          local encounter = parts[3]
-          
-          -- Only respond if we're the target
-          if targetPlayer ~= playerName then
-            return
-          end
-          
-          -- Send full sync data back via whisper
-          local syncData = {
-            raid = raid,
-            encounter = encounter,
-            roles = {},
-            assignments = {},
-            marks = {},
-            numbers = {},
-            announcements = ""
-          }
-          
-          OGRH.EnsureSV()
-          
-          if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and 
-             OGRH_SV.encounterMgmt.roles[raid] and 
-             OGRH_SV.encounterMgmt.roles[raid][encounter] then
-            syncData.roles = OGRH_SV.encounterMgmt.roles[raid][encounter]
-          end
-          
-          if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[raid] and 
-             OGRH_SV.encounterAssignments[raid][encounter] then
-            syncData.assignments = OGRH_SV.encounterAssignments[raid][encounter]
-          end
-          
-          if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[raid] and 
-             OGRH_SV.encounterRaidMarks[raid][encounter] then
-            syncData.marks = OGRH_SV.encounterRaidMarks[raid][encounter]
-          end
-          
-          if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[raid] and 
-             OGRH_SV.encounterAssignmentNumbers[raid][encounter] then
-            syncData.numbers = OGRH_SV.encounterAssignmentNumbers[raid][encounter]
-          end
-          
-          if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[raid] and 
-             OGRH_SV.encounterAnnouncements[raid][encounter] then
-            syncData.announcements = OGRH_SV.encounterAnnouncements[raid][encounter]
-          end
-          
-          local serialized = OGRH.Serialize(syncData)
-          SendAddonMessage(OGRH.ADDON_PREFIX, "FULL_SYNC_RESPONSE;" .. sender .. ";" .. serialized, "RAID")
-        end
-      -- Handle full sync response
-      elseif string.sub(message, 1, 19) == "FULL_SYNC_RESPONSE;" then
-        -- Parse: requesterName;serializedData
-        local content = string.sub(message, 20)
-        local semicolonPos = string.find(content, ";", 1, true)
-        
-        if semicolonPos then
-          local requesterName = string.sub(content, 1, semicolonPos - 1)
-          local playerName = UnitName("player")
-          
-          -- Only process if we're the requester
-          if requesterName ~= playerName then
-            return
-          end
-          
-          local serialized = string.sub(content, semicolonPos + 1)
-          local syncData = OGRH.Deserialize(serialized)
-          
-          if syncData and syncData.raid and syncData.encounter then
-            -- Apply the full sync data (same as ENCOUNTER_SYNC handler)
-            OGRH.EnsureSV()
-            if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, encounters = {}} end
-            if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
-            if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
-            if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
-            if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
-            if not OGRH_SV.encounterAnnouncements then OGRH_SV.encounterAnnouncements = {} end
-            
-            if not OGRH_SV.encounterMgmt.roles[syncData.raid] then
-              OGRH_SV.encounterMgmt.roles[syncData.raid] = {}
-            end
-            if not OGRH_SV.encounterAssignments[syncData.raid] then
-              OGRH_SV.encounterAssignments[syncData.raid] = {}
-            end
-            if not OGRH_SV.encounterRaidMarks[syncData.raid] then
-              OGRH_SV.encounterRaidMarks[syncData.raid] = {}
-            end
-            if not OGRH_SV.encounterAssignmentNumbers[syncData.raid] then
-              OGRH_SV.encounterAssignmentNumbers[syncData.raid] = {}
-            end
-            if not OGRH_SV.encounterAnnouncements[syncData.raid] then
-              OGRH_SV.encounterAnnouncements[syncData.raid] = {}
-            end
-            
-            if syncData.roles then
-              OGRH_SV.encounterMgmt.roles[syncData.raid][syncData.encounter] = syncData.roles
-            end
-            if syncData.assignments then
-              OGRH_SV.encounterAssignments[syncData.raid][syncData.encounter] = syncData.assignments
-            end
-            if syncData.raidMarks then
-              OGRH_SV.encounterRaidMarks[syncData.raid][syncData.encounter] = syncData.raidMarks
-            end
-            if syncData.assignmentNumbers then
-              OGRH_SV.encounterAssignmentNumbers[syncData.raid][syncData.encounter] = syncData.assignmentNumbers
-            end
-            if syncData.announcements then
-              OGRH_SV.encounterAnnouncements[syncData.raid][syncData.encounter] = syncData.announcements
-            end
-            
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received full sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
-            
-            -- Refresh UI if showing this encounter
-            if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
-              if OGRH_EncounterFrame.selectedRaid == syncData.raid and
-                 OGRH_EncounterFrame.selectedEncounter == syncData.encounter then
-                if OGRH_EncounterFrame.RefreshRoleContainers then
-                  OGRH_EncounterFrame.RefreshRoleContainers()
-                end
-              end
-            end
-          end
-        end
       -- Handle raid data request
       elseif message == "REQUEST_RAID_DATA" then
         -- Block from self
