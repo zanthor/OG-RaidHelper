@@ -1345,6 +1345,100 @@ addonFrame:SetScript("OnEvent", function()
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Complete data received from " .. sender)
           end
         end
+      -- Handle structure sync request
+      elseif message == "REQUEST_STRUCTURE_SYNC" then
+        -- Block from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Only respond if we're the raid lead
+        local isRaidLead = false
+        if OGRH.RaidLead and OGRH.RaidLead.currentLead then
+          if OGRH.RaidLead.currentLead == playerName then
+            isRaidLead = true
+          end
+        end
+        
+        if isRaidLead then
+          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Structure sync requested by " .. sender)
+          OGRH.BroadcastStructureSync()
+        end
+      -- Handle structure sync chunk
+      elseif string.sub(message, 1, 21) == "STRUCTURE_SYNC_CHUNK;" then
+        -- Block from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Only collect if we're waiting for structure sync
+        if not OGRH.waitingForStructureSync then
+          return
+        end
+        
+        -- Parse: chunkIndex;totalChunks;data
+        local content = string.sub(message, 22)
+        local semicolon1 = string.find(content, ";", 1, true)
+        if not semicolon1 then return end
+        
+        local chunkIndex = tonumber(string.sub(content, 1, semicolon1 - 1))
+        local remainder = string.sub(content, semicolon1 + 1)
+        
+        local semicolon2 = string.find(remainder, ";", 1, true)
+        if not semicolon2 then return end
+        
+        local totalChunks = tonumber(string.sub(remainder, 1, semicolon2 - 1))
+        local chunkData = string.sub(remainder, semicolon2 + 1)
+        
+        -- Initialize storage
+        if not OGRH.structureSyncChunks then
+          OGRH.structureSyncChunks = {}
+        end
+        
+        if not OGRH.structureSyncChunks[sender] then
+          OGRH.structureSyncChunks[sender] = {
+            chunks = {},
+            total = totalChunks,
+            received = 0,
+            complete = false,
+            data = ""
+          }
+        end
+        
+        local senderData = OGRH.structureSyncChunks[sender]
+        
+        -- Store chunk if not already received
+        if not senderData.chunks[chunkIndex] then
+          senderData.chunks[chunkIndex] = chunkData
+          senderData.received = senderData.received + 1
+          
+          OGRH.Msg("Received structure chunk " .. chunkIndex .. "/" .. totalChunks .. " from " .. sender)
+          
+          -- Check if complete
+          if senderData.received == senderData.total then
+            -- Reassemble data
+            local fullData = ""
+            for i = 1, totalChunks do
+              if senderData.chunks[i] then
+                fullData = fullData .. senderData.chunks[i]
+              end
+            end
+            senderData.data = fullData
+            senderData.complete = true
+            
+            -- Import the data
+            if OGRH.ImportShareData then
+              OGRH.ImportShareData(fullData)
+              OGRH.Msg("Structure sync complete from " .. sender .. ".")
+            end
+            
+            -- Clean up
+            OGRH.waitingForStructureSync = false
+            OGRH.structureSyncChunks = {}
+          end
+        end
       end
     end
   elseif event == "CHAT_MSG_SYSTEM" then
@@ -1795,8 +1889,8 @@ function OGRH.ShowShareWindow()
     pullBtn:SetText("Sync")
     OGRH.StyleButton(pullBtn)
     pullBtn:SetScript("OnClick", function()
-      if OGRH.RequestRaidData then
-        OGRH.RequestRaidData()
+      if OGRH.RequestStructureSync then
+        OGRH.RequestStructureSync()
       end
     end)
     
@@ -1896,6 +1990,99 @@ function OGRH.ProcessRaidDataResponses()
   end
   
   OGRH.raidDataChunks = {}
+end
+
+-- Request structure sync from raid lead (or broadcast if you are the lead)
+function OGRH.RequestStructureSync()
+  if GetNumRaidMembers() == 0 then
+    OGRH.Msg("You must be in a raid.")
+    return
+  end
+  
+  -- Check if we're the raid lead
+  local isRaidLead = false
+  if OGRH.RaidLead and OGRH.RaidLead.currentLead then
+    local playerName = UnitName("player")
+    if OGRH.RaidLead.currentLead == playerName then
+      isRaidLead = true
+    end
+  end
+  
+  if isRaidLead then
+    -- We're the raid lead, broadcast structure sync
+    OGRH.BroadcastStructureSync()
+  else
+    -- Request structure sync from raid lead
+    SendAddonMessage(OGRH.ADDON_PREFIX, "REQUEST_STRUCTURE_SYNC", "RAID")
+    OGRH.Msg("Requesting structure sync from raid lead...")
+    
+    -- Store that we're waiting for structure sync
+    OGRH.waitingForStructureSync = true
+    OGRH.structureSyncChunks = {}
+    
+    -- Set timeout (90 seconds)
+    if not OGRH.structureSyncTimer then
+      OGRH.structureSyncTimer = CreateFrame("Frame")
+    end
+    
+    OGRH.structureSyncTimer:SetScript("OnUpdate", nil)
+    local elapsed = 0
+    OGRH.structureSyncTimer:SetScript("OnUpdate", function()
+      elapsed = elapsed + arg1
+      if elapsed >= 90 then
+        OGRH.structureSyncTimer:SetScript("OnUpdate", nil)
+        if OGRH.waitingForStructureSync then
+          OGRH.waitingForStructureSync = false
+          OGRH.Msg("Structure sync timed out.")
+        end
+      end
+    end)
+  end
+end
+
+-- Broadcast structure sync (raid lead only)
+function OGRH.BroadcastStructureSync()
+  if GetNumRaidMembers() == 0 then
+    OGRH.Msg("You must be in a raid.")
+    return
+  end
+  
+  -- Export data
+  if not OGRH.ExportShareData then
+    OGRH.Msg("Export function not available.")
+    return
+  end
+  
+  local data = OGRH.ExportShareData()
+  local chunkSize = 200
+  local totalChunks = math.ceil(string.len(data) / chunkSize)
+  
+  OGRH.Msg("Broadcasting structure sync to raid...")
+  
+  -- Send chunks with delay between them
+  local chunkIndex = 0
+  local chunkTimer = CreateFrame("Frame")
+  local chunkElapsed = 0
+  
+  chunkTimer:SetScript("OnUpdate", function()
+    chunkElapsed = chunkElapsed + arg1
+    if chunkElapsed >= 0.5 then
+      chunkElapsed = 0
+      chunkIndex = chunkIndex + 1
+      
+      if chunkIndex <= totalChunks then
+        local startPos = (chunkIndex - 1) * chunkSize + 1
+        local endPos = math.min(chunkIndex * chunkSize, string.len(data))
+        local chunk = string.sub(data, startPos, endPos)
+        
+        local msg = "STRUCTURE_SYNC_CHUNK;" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
+        SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
+      else
+        chunkTimer:SetScript("OnUpdate", nil)
+        OGRH.Msg("Structure sync complete (" .. totalChunks .. " chunks sent).")
+      end
+    end
+  end)
 end
 
 -- Export data to string
