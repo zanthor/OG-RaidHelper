@@ -469,6 +469,44 @@ function OGRH.BroadcastEncounterSelection(raidName, encounterName)
 end
 
 -- Calculate checksum of encounter assignments
+-- Calculate structure checksum based on roles configuration
+function OGRH.CalculateStructureChecksum(raid, encounter)
+  OGRH.EnsureSV()
+  if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.roles or
+     not OGRH_SV.encounterMgmt.roles[raid] or
+     not OGRH_SV.encounterMgmt.roles[raid][encounter] then
+    return "0"
+  end
+  
+  local roles = OGRH_SV.encounterMgmt.roles[raid][encounter]
+  local checksum = 0
+  
+  -- Hash role names and slot counts from both columns
+  if roles.column1 then
+    for i, role in ipairs(roles.column1) do
+      local name = role.name or ""
+      local slots = role.slots or 1
+      for j = 1, string.len(name) do
+        checksum = checksum + string.byte(name, j) * i * 10
+      end
+      checksum = checksum + slots * i * 1000
+    end
+  end
+  
+  if roles.column2 then
+    for i, role in ipairs(roles.column2) do
+      local name = role.name or ""
+      local slots = role.slots or 1
+      for j = 1, string.len(name) do
+        checksum = checksum + string.byte(name, j) * i * 20
+      end
+      checksum = checksum + slots * i * 2000
+    end
+  end
+  
+  return tostring(checksum)
+end
+
 function OGRH.CalculateAssignmentChecksum(raid, encounter)
   OGRH.EnsureSV()
   if not OGRH_SV.encounterAssignments or 
@@ -505,12 +543,12 @@ function OGRH.BroadcastAssignmentUpdate(raid, encounter, roleIndex, slotIndex, p
     return
   end
   
-  local checksum = OGRH.CalculateAssignmentChecksum(raid, encounter)
-  local data = raid .. ";" .. encounter .. ";" .. roleIndex .. ";" .. slotIndex .. ";" .. (playerName or "") .. ";" .. checksum
+  local structureChecksum = OGRH.CalculateStructureChecksum(raid, encounter)
+  local data = raid .. ";" .. encounter .. ";" .. roleIndex .. ";" .. slotIndex .. ";" .. (playerName or "") .. ";" .. structureChecksum
   SendAddonMessage(OGRH.ADDON_PREFIX, "ASSIGNMENT_UPDATE;" .. data, "RAID")
 end
 
--- Broadcast full encounter sync (for raid lead)
+-- Broadcast full encounter assignment sync (assignments only, no structure)
 function OGRH.BroadcastFullEncounterSync()
   if GetNumRaidMembers() == 0 then
     OGRH.Msg("You must be in a raid to sync.")
@@ -528,24 +566,17 @@ function OGRH.BroadcastFullEncounterSync()
     return
   end
   
-  -- Build sync data package
+  -- Calculate structure checksum
+  local structureChecksum = OGRH.CalculateStructureChecksum(currentRaid, currentEncounter)
+  
+  -- Build sync data package (assignments only, no structure elements like marks/numbers)
   OGRH.EnsureSV()
   local syncData = {
     raid = currentRaid,
     encounter = currentEncounter,
-    roles = {},
-    assignments = {},
-    marks = {},
-    numbers = {},
-    announcements = ""
+    structureChecksum = structureChecksum,
+    assignments = {}
   }
-  
-  -- Get roles configuration
-  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and 
-     OGRH_SV.encounterMgmt.roles[currentRaid] and 
-     OGRH_SV.encounterMgmt.roles[currentRaid][currentEncounter] then
-    syncData.roles = OGRH_SV.encounterMgmt.roles[currentRaid][currentEncounter]
-  end
   
   -- Get player assignments
   if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[currentRaid] and 
@@ -553,27 +584,55 @@ function OGRH.BroadcastFullEncounterSync()
     syncData.assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
   end
   
-  -- Get raid marks
-  if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[currentRaid] and 
-     OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter] then
-    syncData.marks = OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter]
-  end
-  
-  -- Get assignment numbers
-  if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[currentRaid] and 
-     OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter] then
-    syncData.numbers = OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter]
-  end
-  
-  -- Get announcements
-  if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[currentRaid] and 
-     OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter] then
-    syncData.announcements = OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter]
-  end
-  
-  -- Serialize and send
+  -- Serialize
   local serialized = OGRH.Serialize(syncData)
-  SendAddonMessage(OGRH.ADDON_PREFIX, "ENCOUNTER_SYNC;" .. serialized, "RAID")
+  local dataLen = string.len(serialized)
+  
+  -- Check if we need to chunk (message limit is ~240 bytes including prefix)
+  if dataLen > 220 then
+    -- Send as chunks
+    local chunkSize = 200
+    local totalChunks = math.ceil(dataLen / chunkSize)
+    
+    -- Send chunks with delay
+    local chunkIndex = 0
+    local chunkTimer = CreateFrame("Frame")
+    local chunkElapsed = 0
+    
+    chunkTimer:SetScript("OnUpdate", function()
+      chunkElapsed = chunkElapsed + arg1
+      if chunkElapsed >= 0.3 then
+        chunkElapsed = 0
+        chunkIndex = chunkIndex + 1
+        
+        if chunkIndex <= totalChunks then
+          local startPos = (chunkIndex - 1) * chunkSize + 1
+          local endPos = math.min(chunkIndex * chunkSize, dataLen)
+          local chunk = string.sub(serialized, startPos, endPos)
+          
+          local msg = "ENCOUNTER_SYNC_CHUNK;" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
+          SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
+        else
+          chunkTimer:SetScript("OnUpdate", nil)
+        end
+      end
+    end)
+  else
+    -- Send in single message
+    SendAddonMessage(OGRH.ADDON_PREFIX, "ENCOUNTER_SYNC;" .. serialized, "RAID")
+  end
+end
+
+-- Wrapper for legacy code that passes raid/encounter parameters
+-- Sets current encounter then calls BroadcastFullEncounterSync()
+function OGRH.BroadcastFullSync(raid, encounter)
+  -- Set the specified encounter as current
+  if OGRH.SetCurrentEncounter then
+    OGRH.SetCurrentEncounter(raid, encounter)
+  end
+  
+  -- Call the new sync function
+  OGRH.BroadcastFullEncounterSync()
 end
 
 -- Request full sync from sender
@@ -876,21 +935,37 @@ addonFrame:SetScript("OnEvent", function()
             OGRH_SV.encounterAnnouncements[syncData.raid] = {}
           end
           
-          -- Replace encounter data
-          if syncData.roles then
-            OGRH_SV.encounterMgmt.roles[syncData.raid][syncData.encounter] = syncData.roles
+          -- Validate structure checksum (required - assignments only)
+          if not syncData.structureChecksum then
+            -- No structure checksum - reject (old format no longer supported)
+            OGRH.Msg("Received sync without structure validation - ignored.")
+            OGRH.Msg("Raid lead needs to update their addon.")
+            return
           end
+          
+          local localChecksum = OGRH.CalculateStructureChecksum(syncData.raid, syncData.encounter)
+          if localChecksum ~= syncData.structureChecksum then
+            OGRH.Msg("Assignment sync error: Structure mismatch!")
+            OGRH.Msg("Your encounter structure is out of date.")
+            OGRH.Msg("Use Import/Export > Sync to update from raid lead.")
+            
+            -- Mark sync button as error (set red)
+            OGRH.syncError = true
+            if OGRH.syncButton then
+              OGRH.syncButton:SetText("|cffff0000Sync|r")
+            end
+            return
+          end
+          
+          -- Clear any previous error
+          OGRH.syncError = false
+          if OGRH.syncButton then
+            OGRH.syncButton:SetText("Sync")
+          end
+          
+          -- Apply assignments only (NO ROLES, NO MARKS, NO NUMBERS - use Import/Export > Sync for structure)
           if syncData.assignments then
             OGRH_SV.encounterAssignments[syncData.raid][syncData.encounter] = syncData.assignments
-          end
-          if syncData.raidMarks then
-            OGRH_SV.encounterRaidMarks[syncData.raid][syncData.encounter] = syncData.raidMarks
-          end
-          if syncData.assignmentNumbers then
-            OGRH_SV.encounterAssignmentNumbers[syncData.raid][syncData.encounter] = syncData.assignmentNumbers
-          end
-          if syncData.announcements then
-            OGRH_SV.encounterAnnouncements[syncData.raid][syncData.encounter] = syncData.announcements
           end
           
           DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received encounter sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
@@ -911,6 +986,122 @@ addonFrame:SetScript("OnEvent", function()
                 OGRH_EncounterFrame.RefreshRoleContainers()
               end
             end
+          end
+        end
+      -- Handle encounter sync chunk
+      elseif string.sub(message, 1, 21) == "ENCOUNTER_SYNC_CHUNK;" then
+        -- Block from self
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Parse: chunkIndex;totalChunks;data
+        local content = string.sub(message, 22)
+        local semicolon1 = string.find(content, ";", 1, true)
+        if not semicolon1 then return end
+        
+        local chunkIndex = tonumber(string.sub(content, 1, semicolon1 - 1))
+        local remainder = string.sub(content, semicolon1 + 1)
+        
+        local semicolon2 = string.find(remainder, ";", 1, true)
+        if not semicolon2 then return end
+        
+        local totalChunks = tonumber(string.sub(remainder, 1, semicolon2 - 1))
+        local chunkData = string.sub(remainder, semicolon2 + 1)
+        
+        -- Initialize storage
+        if not OGRH.encounterSyncChunks then
+          OGRH.encounterSyncChunks = {}
+        end
+        
+        if not OGRH.encounterSyncChunks[sender] then
+          OGRH.encounterSyncChunks[sender] = {
+            chunks = {},
+            total = totalChunks,
+            received = 0,
+            complete = false,
+            data = ""
+          }
+        end
+        
+        local senderData = OGRH.encounterSyncChunks[sender]
+        
+        -- Store chunk if not already received
+        if not senderData.chunks[chunkIndex] then
+          senderData.chunks[chunkIndex] = chunkData
+          senderData.received = senderData.received + 1
+          
+          -- Check if complete
+          if senderData.received == senderData.total then
+            -- Reassemble data
+            local fullData = ""
+            for i = 1, totalChunks do
+              if senderData.chunks[i] then
+                fullData = fullData .. senderData.chunks[i]
+              end
+            end
+            senderData.data = fullData
+            senderData.complete = true
+            
+            -- Process the sync data
+            local syncData = OGRH.Deserialize(fullData)
+            if syncData and syncData.raid and syncData.encounter then
+              -- Validate structure checksum
+              if syncData.structureChecksum then
+                local localChecksum = OGRH.CalculateStructureChecksum(syncData.raid, syncData.encounter)
+                if localChecksum ~= syncData.structureChecksum then
+                  OGRH.Msg("Assignment sync error: Structure mismatch!")
+                  OGRH.Msg("Your encounter structure is out of date.")
+                  OGRH.Msg("Use Import/Export > Sync to update from raid lead.")
+                  
+                  -- Mark sync button as error
+                  OGRH.syncError = true
+                  if OGRH.syncButton then
+                    OGRH.syncButton:SetText("|cffff0000Sync|r")
+                  end
+                  
+                  OGRH.encounterSyncChunks = {}
+                  return
+                end
+              end
+              
+              -- Clear any previous error
+              OGRH.syncError = false
+              if OGRH.syncButton then
+                OGRH.syncButton:SetText("Sync")
+              end
+              
+              -- Apply assignments
+              OGRH.EnsureSV()
+              if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
+              if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
+              if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
+              
+              if not OGRH_SV.encounterAssignments[syncData.raid] then
+                OGRH_SV.encounterAssignments[syncData.raid] = {}
+              end
+              
+              -- Apply assignments only (NO MARKS, NO NUMBERS - structure elements)
+              if syncData.assignments then
+                OGRH_SV.encounterAssignments[syncData.raid][syncData.encounter] = syncData.assignments
+              end
+              
+              OGRH.Msg("Received assignment sync from " .. sender)
+              
+              -- Refresh UI if showing this encounter
+              if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+                if OGRH_EncounterFrame.selectedRaid == syncData.raid and
+                   OGRH_EncounterFrame.selectedEncounter == syncData.encounter then
+                  if OGRH_EncounterFrame.RefreshRoleContainers then
+                    OGRH_EncounterFrame.RefreshRoleContainers()
+                  end
+                end
+              end
+            end
+            
+            -- Clean up
+            OGRH.encounterSyncChunks = {}
           end
         end
       -- Handle encounter selection broadcast
@@ -1030,10 +1221,28 @@ addonFrame:SetScript("OnEvent", function()
           local slotIndex = tonumber(parts[4])
           local newPlayerName = parts[5]
           if newPlayerName == "" then newPlayerName = nil end
-          local senderChecksum = parts[6]
+          local senderStructureChecksum = parts[6]
           
-          -- Calculate our checksum before update
-          local ourChecksum = OGRH.CalculateAssignmentChecksum(raid, encounter)
+          -- Validate structure checksum
+          local localStructureChecksum = OGRH.CalculateStructureChecksum(raid, encounter)
+          if localStructureChecksum ~= senderStructureChecksum then
+            OGRH.Msg("Assignment update error: Structure mismatch!")
+            OGRH.Msg("Your encounter structure is out of date.")
+            OGRH.Msg("Use Import/Export > Sync to update from raid lead.")
+            
+            -- Mark sync button as error (set red)
+            OGRH.syncError = true
+            if OGRH.syncButton then
+              OGRH.syncButton:SetText("|cffff0000Sync|r")
+            end
+            return
+          end
+          
+          -- Clear any previous error
+          OGRH.syncError = false
+          if OGRH.syncButton then
+            OGRH.syncButton:SetText("Sync")
+          end
           
           -- Apply update
           if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
@@ -1042,14 +1251,6 @@ addonFrame:SetScript("OnEvent", function()
           if not OGRH_SV.encounterAssignments[raid][encounter][roleIndex] then OGRH_SV.encounterAssignments[raid][encounter][roleIndex] = {} end
           
           OGRH_SV.encounterAssignments[raid][encounter][roleIndex][slotIndex] = newPlayerName
-          
-          -- Calculate new checksum after update
-          local newChecksum = OGRH.CalculateAssignmentChecksum(raid, encounter)
-          
-          -- If checksums don't match, request full sync
-          if newChecksum ~= senderChecksum then
-            OGRH.RequestFullSync(sender, raid, encounter)
-          end
           
           -- Refresh UI if showing this encounter
           if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then

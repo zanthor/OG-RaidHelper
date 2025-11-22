@@ -1,5 +1,22 @@
 # OG-RaidHelper Changelog
 
+## Version 1.11.9 - Assignment Sync Fixes
+**Release Date:** November 22, 2025
+
+### Bug Fixes
+- **Assignment Sync System**:
+  - Fixed Main UI Sync button using legacy code - now uses proper structure validation
+  - Fixed Auto Assign not syncing - created `OGRH.BroadcastFullSync()` wrapper function
+  - Fixed Clear encounter sync call using non-existent function
+  - Removed marks and numbers from assignment syncs (structure elements should only update via Import/Export)
+  - Assignment syncs now only transmit player assignments, not structure elements
+  - Ensures separation of concerns: assignment syncs = player assignments only, structure syncs = roles/marks/numbers
+
+### Technical Improvements
+- **Code Cleanup**: Replaced 60+ lines of legacy sync code with unified function calls
+- **Data Integrity**: Structure elements (marks, numbers) now exclusively managed through Import/Export > Sync
+- **Consistency**: All sync operations now use structure checksum validation
+
 ## Version 1.11.8 - Auto-Promote Improvements
 **Release Date:** November 21, 2025
 

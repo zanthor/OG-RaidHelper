@@ -156,7 +156,7 @@ syncBtn:SetScript("OnClick", function()
   
   -- Left-click: Send sync or request sync
   if OGRH.IsRaidLead and OGRH.IsRaidLead() then
-    -- Raid lead: Send current encounter to all players
+    -- Raid lead: Send current encounter to all players using the new sync function
     if not OGRH.GetCurrentEncounter then
       OGRH.Msg("Encounter management not loaded.")
       return
@@ -168,53 +168,8 @@ syncBtn:SetScript("OnClick", function()
       return
     end
     
-    -- Build sync data package
-    local syncData = {
-      raid = currentRaid,
-      encounter = currentEncounter,
-      roles = {},
-      assignments = {},
-      marks = {},
-      numbers = {},
-      announcements = ""
-    }
-    
-    -- Get roles configuration
-    if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and 
-       OGRH_SV.encounterMgmt.roles[currentRaid] and 
-       OGRH_SV.encounterMgmt.roles[currentRaid][currentEncounter] then
-      syncData.roles = OGRH_SV.encounterMgmt.roles[currentRaid][currentEncounter]
-    end
-    
-    -- Get player assignments
-    if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[currentRaid] and 
-       OGRH_SV.encounterAssignments[currentRaid][currentEncounter] then
-      syncData.assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
-    end
-    
-    -- Get raid marks
-    if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[currentRaid] and 
-       OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter] then
-      syncData.marks = OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter]
-    end
-    
-    -- Get assignment numbers
-    if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[currentRaid] and 
-       OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter] then
-      syncData.numbers = OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter]
-    end
-    
-    -- Get announcements
-    if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[currentRaid] and 
-       OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter] then
-      syncData.announcements = OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter]
-    end
-    
-    -- Serialize and send
-    local serialized = OGRH.Serialize(syncData)
-    OGRH.SendAddonMessage("ENCOUNTER_SYNC", serialized)
-    
-    OGRH.Msg("Encounter configuration for " .. currentEncounter .. " synced to raid.")
+    -- Use the new assignment sync function with structure validation
+    OGRH.BroadcastFullEncounterSync()
   else
     -- Non-raid lead: Request sync from raid lead
     if OGRH.RequestSyncFromLead then
