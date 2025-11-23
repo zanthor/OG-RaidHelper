@@ -384,6 +384,101 @@ function OGRH.SetListItemColor(item, r, g, b, a)
   end
 end
 
+-- Ready Check Timer Frame
+function OGRH.ShowReadyCheckTimer()
+  -- Create frame if it doesn't exist
+  if not OGRH_ReadyCheckTimerFrame then
+    local frame = CreateFrame("Frame", "OGRH_ReadyCheckTimerFrame", UIParent)
+    frame:SetWidth(180)
+    frame:SetHeight(32)
+    frame:SetFrameStrata("HIGH")
+    frame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      edgeSize = 12,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.85)
+    frame:Hide()
+    
+    -- Text label
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOP", frame, "TOP", 0, -6)
+    label:SetText("Ready Check")
+    frame.label = label
+    
+    -- Status bar
+    local statusBar = CreateFrame("StatusBar", nil, frame)
+    statusBar:SetPoint("LEFT", frame, "LEFT", 8, -8)
+    statusBar:SetPoint("RIGHT", frame, "RIGHT", -8, -8)
+    statusBar:SetHeight(10)
+    statusBar:SetStatusBarTexture("Interface/TargetingFrame/UI-StatusBar")
+    statusBar:SetStatusBarColor(0.2, 0.8, 0.2, 1)
+    statusBar:SetMinMaxValues(0, 30)
+    statusBar:SetValue(30)
+    frame.statusBar = statusBar
+    
+    -- Timer text
+    local timerText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timerText:SetPoint("CENTER", statusBar, "CENTER", 0, 0)
+    timerText:SetText("30s")
+    frame.timerText = timerText
+    
+    -- OnUpdate script for countdown
+    frame:SetScript("OnUpdate", function()
+      if not frame.startTime or not frame:IsVisible() then return end
+      
+      local elapsed = GetTime() - frame.startTime
+      local remaining = 30 - elapsed
+      
+      if remaining <= 0 then
+        frame:Hide()
+        return
+      end
+      
+      -- Update bar and text
+      frame.statusBar:SetValue(remaining)
+      frame.timerText:SetText(string.format("%.1fs", remaining))
+      
+      -- Change color as time runs out
+      if remaining <= 10 then
+        frame.statusBar:SetStatusBarColor(0.8, 0.2, 0.2, 1)
+      elseif remaining <= 20 then
+        frame.statusBar:SetStatusBarColor(0.8, 0.8, 0.2, 1)
+      end
+    end)
+    
+    OGRH_ReadyCheckTimerFrame = frame
+  end
+  
+  local frame = OGRH_ReadyCheckTimerFrame
+  
+  -- Position frame below main UI (or below consume status if it exists)
+  if OGRH_Main and OGRH_Main:IsVisible() then
+    -- Check if there's a consume status frame visible
+    -- For now, position below main UI
+    frame:ClearAllPoints()
+    frame:SetPoint("TOP", OGRH_Main, "BOTTOM", 0, -5)
+  else
+    -- Fallback to center of screen
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", -380, 100)
+  end
+  
+  -- Reset and show
+  frame.startTime = GetTime()
+  frame.statusBar:SetValue(30)
+  frame.statusBar:SetStatusBarColor(0.2, 0.8, 0.2, 1)
+  frame.timerText:SetText("30s")
+  frame:Show()
+end
+
+function OGRH.HideReadyCheckTimer()
+  if OGRH_ReadyCheckTimerFrame then
+    OGRH_ReadyCheckTimerFrame:Hide()
+  end
+end
+
 -- Ready Check functionality
 function OGRH.DoReadyCheck()
   -- Check if in a raid
@@ -395,8 +490,14 @@ function OGRH.DoReadyCheck()
   
   -- Check if player is raid leader
   if IsRaidLeader and IsRaidLeader() == 1 then
-    -- Set flag to capture AFK messages
+    -- Set flag to capture ready check responses
     OGRH.readyCheckInProgress = true
+    OGRH.readyCheckResponses = {
+      notReady = {},
+      afk = {}
+    }
+    -- Show timer
+    OGRH.ShowReadyCheckTimer()
     DoReadyCheck()
   -- Check if player is raid assistant
   elseif IsRaidOfficer and IsRaidOfficer() == 1 then
@@ -710,20 +811,34 @@ end
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("CHAT_MSG_ADDON")
 addonFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+addonFrame:RegisterEvent("READY_CHECK")
 addonFrame:SetScript("OnEvent", function()
-  if event == "CHAT_MSG_ADDON" then
+  if event == "READY_CHECK" then
+    -- Show timer for all players when ready check starts
+    OGRH.ShowReadyCheckTimer()
+  elseif event == "CHAT_MSG_ADDON" then
     local prefix, message, distribution, sender = arg1, arg2, arg3, arg4
     
     if prefix == OGRH.ADDON_PREFIX then
+      -- Handle ready check complete broadcast
+      if message == "READYCHECK_COMPLETE" then
+        -- Hide timer when raid leader reports results
+        OGRH.HideReadyCheckTimer()
       -- Handle ready check request from assistant
-      if message == "READYCHECK_REQUEST" then
+      elseif message == "READYCHECK_REQUEST" then
         -- Only process if we are the raid leader
         if IsRaidLeader and IsRaidLeader() == 1 then
           -- Check if remote ready checks are allowed
           OGRH.EnsureSV()
           if OGRH_SV.allowRemoteReadyCheck then
-            -- Set flag to capture AFK messages
+            -- Set flag to capture ready check responses
             OGRH.readyCheckInProgress = true
+            OGRH.readyCheckResponses = {
+              notReady = {},
+              afk = {}
+            }
+            -- Show timer
+            OGRH.ShowReadyCheckTimer()
             DoReadyCheck()
           end
         end
@@ -1468,19 +1583,39 @@ addonFrame:SetScript("OnEvent", function()
       end
     end
   elseif event == "CHAT_MSG_SYSTEM" then
-    -- Capture ready check AFK messages
+    -- Capture ready check responses
     if OGRH.readyCheckInProgress and IsRaidLeader() == 1 then
       local msg = arg1
       
-      -- Check for "No players are AFK" or "The following players are AFK:"
-      if msg and string.find(msg, "No players are AFK") then
-        -- Echo "No players are AFK" with header color
-        OGRH.SayRW(OGRH.Header("No players are AFK"))
+      -- Initialize tracking if not already done
+      if not OGRH.readyCheckResponses then
+        OGRH.readyCheckResponses = {
+          notReady = {},
+          afk = {}
+        }
+      end
+      
+      -- Capture "not ready" responses
+      -- Note: In vanilla WoW, "ready" responses don't generate system messages
+      -- Format: "PlayerName is not ready."
+      local isNotReadyMsg = msg and string.find(msg, " is not ready")
+      
+      if isNotReadyMsg then
+        local playerName = string.gsub(msg, " is not ready.*", "")
+        playerName = string.gsub(playerName, "^%s*(.-)%s*$", "%1")
+        if playerName ~= "" then
+          table.insert(OGRH.readyCheckResponses.notReady, playerName)
+        end
+        -- Don't continue to summary check
+      -- Check for final AFK summary messages
+      elseif msg and string.find(msg, "No players are AFK") then
+        -- Report all responses
+        OGRH.ReportReadyCheckResults()
         OGRH.readyCheckInProgress = false
+        OGRH.readyCheckResponses = nil
       elseif msg and string.find(msg, "The following players are AFK:") then
         -- Parse the player names from the message
         local playersPart = string.gsub(msg, "The following players are AFK: ", "")
-        local players = {}
         
         -- Split by comma and space
         local pos = 1
@@ -1498,53 +1633,101 @@ addonFrame:SetScript("OnEvent", function()
           -- Trim whitespace
           playerName = string.gsub(playerName, "^%s*(.-)%s*$", "%1")
           if playerName ~= "" then
-            table.insert(players, playerName)
+            table.insert(OGRH.readyCheckResponses.afk, playerName)
           end
         end
         
-        -- Build lookup table of raid members with class and online status
-        local raidInfo = {}
-        local numRaid = GetNumRaidMembers() or 0
-        for j = 1, numRaid do
-          local name, _, _, _, class, _, _, online = GetRaidRosterInfo(j)
-          if name then
-            raidInfo[name] = {class = class, online = online}
-          end
-        end
-        
-        -- Build colored message
-        local coloredPlayers = {}
-        for i = 1, table.getn(players) do
-          local playerName = players[i]
-          local info = raidInfo[playerName]
-          local coloredName
-          
-          if info and info.class then
-            -- Use the class from raid roster to color the name
-            local classUpper = string.upper(info.class)
-            local classColorHex = OGRH.ClassColorHex(classUpper)
-            coloredName = classColorHex .. playerName .. "|r"
-          else
-            -- Fallback to white if class not found
-            coloredName = playerName
-          end
-          
-          -- Add asterisk if offline
-          if info and not info.online then
-            coloredName = coloredName .. OGRH.COLOR.ROLE .. "*" .. OGRH.COLOR.RESET
-          end
-          
-          table.insert(coloredPlayers, coloredName)
-        end
-        
-        -- Build the final message
-        local coloredMsg = OGRH.Header("The following players are AFK:") .. " " .. table.concat(coloredPlayers, ", ")
-        OGRH.SayRW(coloredMsg)
+        -- Report all responses
+        OGRH.ReportReadyCheckResults()
         OGRH.readyCheckInProgress = false
+        OGRH.readyCheckResponses = nil
       end
     end
   end
 end)
+
+-- Report ready check results
+function OGRH.ReportReadyCheckResults()
+  if not OGRH.readyCheckResponses then return end
+  
+  -- Hide the timer
+  OGRH.HideReadyCheckTimer()
+  
+  -- Broadcast to other addon users to hide their timers
+  SendAddonMessage(OGRH.ADDON_PREFIX, "READYCHECK_COMPLETE", "RAID")
+  
+  -- Build lookup table of raid members with class and online status
+  local raidInfo = {}
+  local numRaid = GetNumRaidMembers() or 0
+  for j = 1, numRaid do
+    local name, _, _, _, class, _, _, online = GetRaidRosterInfo(j)
+    if name then
+      raidInfo[name] = {class = class, online = online}
+    end
+  end
+  
+  -- Helper function to color player names
+  local function ColorPlayerName(playerName, isOffline)
+    local info = raidInfo[playerName]
+    local coloredName
+    
+    if info and info.class then
+      local classUpper = string.upper(info.class)
+      local classColorHex = OGRH.ClassColorHex(classUpper)
+      coloredName = classColorHex .. playerName .. "|r"
+    else
+      coloredName = playerName
+    end
+    
+    -- Add asterisk if offline
+    if isOffline or (info and not info.online) then
+      coloredName = coloredName .. OGRH.COLOR.ROLE .. "*" .. OGRH.COLOR.RESET
+    end
+    
+    return coloredName
+  end
+  
+  local messages = {}
+  local prefix = OGRH.Announce("OGRH: ")
+  
+  -- Report not ready players (most important)
+  if table.getn(OGRH.readyCheckResponses.notReady) > 0 then
+    local coloredPlayers = {}
+    for _, playerName in ipairs(OGRH.readyCheckResponses.notReady) do
+      table.insert(coloredPlayers, ColorPlayerName(playerName))
+    end
+    table.insert(messages, prefix .. OGRH.Header("Not Ready:") .. " " .. table.concat(coloredPlayers, ", "))
+  end
+  
+  -- Report AFK players
+  if table.getn(OGRH.readyCheckResponses.afk) > 0 then
+    local coloredPlayers = {}
+    for _, playerName in ipairs(OGRH.readyCheckResponses.afk) do
+      table.insert(coloredPlayers, ColorPlayerName(playerName))
+    end
+    table.insert(messages, prefix .. OGRH.Header("AFK:") .. " " .. table.concat(coloredPlayers, ", "))
+  end
+  
+  -- Calculate ready count
+  -- Note: In vanilla WoW, "ready" responses don't generate system messages
+  -- Only "not ready" and AFK generate messages, so we calculate ready by subtraction
+  local notReadyCount = table.getn(OGRH.readyCheckResponses.notReady or {})
+  local afkCount = table.getn(OGRH.readyCheckResponses.afk or {})
+  local readyCount = numRaid - notReadyCount - afkCount
+  
+  if table.getn(messages) == 0 then
+    -- Everyone is ready
+    table.insert(messages, prefix .. OGRH.Header("All players are ready!") .. " (" .. readyCount .. "/" .. numRaid .. ")")
+  else
+    -- Add summary
+    table.insert(messages, prefix .. OGRH.Header("Ready:") .. " " .. readyCount .. "/" .. numRaid)
+  end
+  
+  -- Send all messages
+  for _, msg in ipairs(messages) do
+    OGRH.SayRW(msg)
+  end
+end
 
 -- Helper functions for colored text
 function OGRH.Header(text) return OGRH.COLOR.HEADER .. text .. OGRH.COLOR.RESET end
