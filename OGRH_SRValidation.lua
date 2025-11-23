@@ -3,7 +3,11 @@
 
 -- Namespace
 OGRH = OGRH or {}
-OGRH.SRValidation = {}
+OGRH.SRValidation = {
+  cachedSoftresData = nil,  -- Cache decoded softres data
+  cachedDataTimestamp = 0,  -- When data was last cached
+  cacheExpiry = 5  -- Cache expires after 5 seconds
+}
 
 -- Local references
 local selectedPlayer = nil
@@ -150,23 +154,45 @@ function OGRH.SRValidation.GetPlayerSRPlus(playerData)
   return playerData.srPlus or 0
 end
 
--- Get items for a specific player from RollFor data
-function OGRH.SRValidation.GetPlayerItems(playerName)
+-- Get cached or fresh softres data
+function OGRH.SRValidation.GetCachedSoftresData()
+  local now = GetTime()
+  
+  -- Return cached data if still valid
+  if OGRH.SRValidation.cachedSoftresData and 
+     (now - OGRH.SRValidation.cachedDataTimestamp) < OGRH.SRValidation.cacheExpiry then
+    return OGRH.SRValidation.cachedSoftresData
+  end
+  
+  -- Decode and cache new data
   if not RollFor or not RollForCharDb or not RollForCharDb.softres then
-    return {}
+    return nil
   end
   
   local encodedData = RollForCharDb.softres.data
   if not encodedData or encodedData == "" then
-    return {}
+    return nil
   end
   
   local decodedData = RollFor.SoftRes.decode(encodedData)
   if not decodedData then
-    return {}
+    return nil
   end
   
   local softresData = RollFor.SoftResDataTransformer.transform(decodedData)
+  if not softresData then
+    return nil
+  end
+  
+  OGRH.SRValidation.cachedSoftresData = softresData
+  OGRH.SRValidation.cachedDataTimestamp = now
+  
+  return softresData
+end
+
+-- Get items for a specific player from RollFor data
+function OGRH.SRValidation.GetPlayerItems(playerName)
+  local softresData = OGRH.SRValidation.GetCachedSoftresData()
   if not softresData then
     return {}
   end
@@ -176,10 +202,9 @@ function OGRH.SRValidation.GetPlayerItems(playerName)
     if type(itemData) == "table" and itemData.rollers then
       for _, roller in ipairs(itemData.rollers) do
         if roller and roller.name == playerName then
-          -- Get item name from WoW API using itemId
-          local itemName = GetItemInfo(itemId) or "Item " .. tostring(itemId)
+          -- Defer GetItemInfo - just store itemId, name will be resolved on display
           table.insert(items, {
-            name = itemName,
+            name = nil,  -- Will be resolved lazily
             plus = roller.sr_plus or 0,
             itemId = itemId
           })
@@ -700,6 +725,18 @@ function OGRH.SRValidation.RefreshPlayerList()
   local buttonHeight = OGRH.LIST_ITEM_HEIGHT
   local buttonSpacing = OGRH.LIST_ITEM_SPACING
   
+  -- Pre-warm item cache - query all unique item IDs to cache them
+  local softresData = OGRH.SRValidation.GetCachedSoftresData()
+  if softresData then
+    local itemCache = {}
+    for itemId in pairs(softresData) do
+      if not itemCache[itemId] then
+        GetItemInfo(itemId)  -- Warm the cache
+        itemCache[itemId] = true
+      end
+    end
+  end
+  
   -- Players already sorted by GetSoftResPlayers, validate each one
   local validatedPlayers = {}
   for _, playerData in ipairs(players) do
@@ -789,6 +826,70 @@ function OGRH.SRValidation.RefreshPlayerList()
   scrollFrame:SetVerticalScroll(0)
 end
 
+-- Find the next player that needs review (prioritize: Error > Passed > Validated)
+function OGRH.SRValidation.FindNextPlayerToReview(currentPlayerName)
+  local players, metadata = OGRH.SRValidation.GetSRPlusData()
+  if not players then
+    return nil
+  end
+  
+  -- Build list of players with their status
+  local playerList = {}
+  local currentIndex = nil
+  
+  for i, playerData in ipairs(players) do
+    local currentSRPlus = OGRH.SRValidation.GetPlayerSRPlus(playerData)
+    local status = OGRH.SRValidation.GetValidationStatus(playerData.name, currentSRPlus)
+    
+    table.insert(playerList, {
+      name = playerData.name,
+      data = playerData,
+      srPlus = currentSRPlus,
+      status = status,
+      index = i
+    })
+    
+    if playerData.name == currentPlayerName then
+      currentIndex = i
+    end
+  end
+  
+  if not currentIndex then
+    currentIndex = 0
+  end
+  
+  -- Priority 1: Find next Error after current position
+  for i = currentIndex + 1, table.getn(playerList) do
+    if playerList[i].status == "Error" then
+      return playerList[i]
+    end
+  end
+  
+  -- Priority 2: Find next Passed after current position
+  for i = currentIndex + 1, table.getn(playerList) do
+    if playerList[i].status == "Passed" then
+      return playerList[i]
+    end
+  end
+  
+  -- Priority 3: Wrap around - find first Error from beginning
+  for i = 1, currentIndex do
+    if playerList[i].status == "Error" then
+      return playerList[i]
+    end
+  end
+  
+  -- Priority 4: Wrap around - find first Passed from beginning
+  for i = 1, currentIndex do
+    if playerList[i].status == "Passed" then
+      return playerList[i]
+    end
+  end
+  
+  -- All players are validated, return nil
+  return nil
+end
+
 -- Select a player and show their details
 function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
   selectedPlayer = playerName
@@ -870,6 +971,7 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
       itemText:SetJustifyH("LEFT")
       
       -- Get item info from WoW API (returns name, link, quality, ...)
+      -- Should be cached from pre-warming in RefreshPlayerList
       local itemName, itemLink, itemQuality = GetItemInfo(item.itemId)
       
       -- Check if this item has an increase
@@ -890,7 +992,8 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
         end
         displayText = colorCode .. itemName .. "|r"
       else
-        displayText = item.name
+        -- Fallback if item info not available yet
+        displayText = "Item " .. tostring(item.itemId)
       end
       
       itemText:SetText(displayText)
@@ -1036,7 +1139,8 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
             end
             displayText = "  " .. colorCode .. itemName .. "|r"
           else
-            displayText = "  " .. item.name
+            -- Fallback: use stored name from record, or item ID
+            displayText = "  " .. (item.name or ("Item " .. tostring(item.itemId)))
           end
           
           itemText:SetText(displayText)
@@ -1101,7 +1205,15 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
     if saved then
       OGRH.Msg("Validation saved for " .. playerName)
       OGRH.SRValidation.RefreshPlayerList()
-      OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
+      
+      -- Auto-select the next player that needs review
+      local nextPlayer = OGRH.SRValidation.FindNextPlayerToReview(playerName)
+      if nextPlayer then
+        OGRH.SRValidation.SelectPlayer(nextPlayer.name, nextPlayer.data, nextPlayer.srPlus)
+      else
+        -- No more players need review, re-select current player
+        OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
+      end
     end
   end)
   table.insert(detailPanel.content, validateBtn)
@@ -1259,6 +1371,8 @@ function OGRH.SRValidation.ShowWindow()
     OGRH.StyleButton(refreshBtn)
   end
   refreshBtn:SetScript("OnClick", function()
+    -- Invalidate cache to force fresh data
+    OGRH.SRValidation.cachedSoftresData = nil
     OGRH.SRValidation.RefreshPlayerList()
   end)
   

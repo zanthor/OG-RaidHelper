@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.11.9
-## Notes: Assignment sync fixes and structure validation improvements
+## Version: 1.11.10
+## Notes: SR+ Validation UI improvements and performance optimizations
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua

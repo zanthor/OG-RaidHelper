@@ -1,5 +1,27 @@
 # OG-RaidHelper Changelog
 
+## Version 1.11.10 - SR+ Validation UI Improvements
+**Release Date:** November 22, 2025
+
+### Features
+- **SR+ Validation Window**:
+  - Added selection highlighting to player list - selected player now clearly highlighted
+  - Auto-select next record after clicking "Save Validation" for faster workflow
+  - Smart selection order prioritizes: Error > Passed > Validated
+  - Window title now updates when clicking Refresh to reflect current raid instance
+
+### Performance Improvements
+- **SR+ Validation Loading**:
+  - Added caching for decoded RollFor data (5 second cache)
+  - Pre-warm GetItemInfo cache before building UI to reduce lag
+  - Deferred item name lookups to avoid blocking on initial load
+  - Significantly improved window load time, especially on first open
+
+### Bug Fixes
+- **SR+ Validation Display**: Fixed nil concatenation errors when displaying items whose data isn't cached yet
+  - Added proper fallbacks for item names in both current and historical displays
+  - Now shows "Item [itemId]" when item info not available instead of crashing
+
 ## Version 1.11.9 - Assignment Sync Fixes
 **Release Date:** November 22, 2025
 
