@@ -279,6 +279,9 @@ function AddonAudit.CreateFrame()
   frame:SetFrameStrata("HIGH")
   frame:Hide()
   
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(frame, "OGRH_AddonAuditFrame")
+  
   -- Header
   local header = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   header:SetPoint("TOP", frame, "TOP", 0, -10)

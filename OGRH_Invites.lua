@@ -658,6 +658,9 @@ function OGRH.Invites.ShowWindow()
     end
   end)
   
+  -- Enable ESC key to close
+  OGRH.MakeFrameCloseOnEscape(frame, "OGRH_InvitesFrame")
+  
   frame:Show()
   OGRH.Invites.RefreshPlayerList()
 end
@@ -978,6 +981,9 @@ function OGRH.Invites.ShowWhisperDialog(playerName)
   cancelBtn:SetScript("OnClick", function()
     dialog:Hide()
   end)
+  
+  -- Enable ESC key to close
+  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_WhisperDialog")
   
   dialog:Show()
   messageInput:SetFocus()

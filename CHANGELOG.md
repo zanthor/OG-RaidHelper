@@ -1,5 +1,20 @@
 # OG-RaidHelper Changelog
 
+## Version 1.11.11 - ESC Key Handling
+**Release Date:** November 23, 2025
+
+### Features
+- **ESC Key Support**: Added ESC key handling to all windows and dialogs
+  - All main windows now close when pressing ESC (Invites, SR+ Validation, Encounter Planning, etc.)
+  - All dialogs now close when pressing ESC (Edit Role, Player Selection, Consume Selection, etc.)
+  - Minimap menu closes on ESC key press
+  - Uses standard WoW UISpecialFrames mechanism for proper integration
+
+### Bug Fixes
+- **ESC Key Behavior**: Fixed ESC key opening game menu instead of closing OGRH windows
+  - Removed conflicting keyboard handler that interfered with default ESC behavior
+  - Now matches behavior of other addons like pfQuest
+
 ## Version 1.11.10 - SR+ Validation UI Improvements
 **Release Date:** November 22, 2025
 

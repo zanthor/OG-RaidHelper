@@ -406,6 +406,9 @@ function OGRH.SRValidation.EditItemPlus(playerName, itemId, currentPlus)
     editFrame:Hide()
   end)
   
+  -- Enable ESC key to close
+  OGRH.MakeFrameCloseOnEscape(editFrame, "OGRH_EditSRPlusFrame")
+  
   editFrame:Show()
   editBox:SetFocus()
 end
@@ -1386,6 +1389,9 @@ function OGRH.SRValidation.ShowWindow()
     OGRH.StyleButton(closeBtn)
   end
   closeBtn:SetScript("OnClick", function() frame:Hide() end)
+  
+  -- Enable ESC key to close
+  OGRH.MakeFrameCloseOnEscape(frame, "OGRH_SRValidationFrame")
   
   frame:Show()
   OGRH.SRValidation.RefreshPlayerList()

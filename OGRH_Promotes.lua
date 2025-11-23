@@ -159,6 +159,9 @@ function OGRH.ShowAutoPromote()
   })
   frame:SetBackdropColor(0, 0, 0, 0.85)
   
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(frame, "OGRH_AutoPromoteFrame")
+  
   -- Title
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -15)

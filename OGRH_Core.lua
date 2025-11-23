@@ -384,6 +384,24 @@ function OGRH.SetListItemColor(item, r, g, b, a)
   end
 end
 
+-- Helper function to make a frame close on ESC key
+function OGRH.MakeFrameCloseOnEscape(frame, frameName, closeCallback)
+  if not frame or not frameName then return end
+  
+  -- Register with Blizzard's UI panel system for ESC key handling
+  -- This is the standard WoW method used by pfQuest and other addons
+  table.insert(UISpecialFrames, frameName)
+  
+  -- If a custom close callback is provided, hook it to the frame's OnHide
+  if closeCallback and type(closeCallback) == "function" then
+    local originalOnHide = frame:GetScript("OnHide")
+    frame:SetScript("OnHide", function()
+      if originalOnHide then originalOnHide() end
+      closeCallback()
+    end)
+  end
+end
+
 -- Ready Check Timer Frame
 function OGRH.ShowReadyCheckTimer()
   -- Create frame if it doesn't exist
@@ -1968,6 +1986,9 @@ function OGRH.ShowShareWindow()
     })
     frame:SetBackdropColor(0, 0, 0, 0.85)
     
+    -- Register ESC key handler
+    OGRH.MakeFrameCloseOnEscape(frame, "OGRH_ShareFrame")
+    
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -15)
@@ -2521,6 +2542,9 @@ function OGRH.ShowTradeSettings()
   })
   frame:SetBackdropColor(0, 0, 0, 0.85)
   
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(frame, "OGRH_TradeSettingsFrame")
+  
   -- Title
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -15)
@@ -2737,6 +2761,9 @@ function OGRH.ShowAddTradeItemDialog()
   })
   dialog:SetBackdropColor(0, 0, 0, 0.9)
   
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_AddTradeItemDialog")
+  
   -- Title
   local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -15)
@@ -2881,6 +2908,9 @@ function OGRH.ShowEditTradeItemDialog(itemIndex)
     insets = {left = 4, right = 4, top = 4, bottom = 4}
   })
   dialog:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_EditTradeItemDialog")
   
   -- Title
   local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -3050,6 +3080,9 @@ local function CreateMinimapButton()
       menu:SetWidth(160)
       menu:SetHeight(228)
       menu:Hide()
+      
+      -- Register ESC key handler
+      OGRH.MakeFrameCloseOnEscape(menu, "OGRH_MinimapMenu")
       
       -- Close menu when clicking outside
       menu:SetScript("OnShow", function()

@@ -100,6 +100,9 @@ function OGRH.ShowEncounterWindow(encounterName)
     frame:SetScript("OnDragStart", function() frame:StartMoving() end)
     frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
     
+    -- Register ESC key handler
+    OGRH.MakeFrameCloseOnEscape(frame, "OGRH_EncounterFrame")
+    
     -- Title bar
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", frame, "TOP", 0, -10)
@@ -3318,6 +3321,9 @@ function OGRH.ShowEncounterSetup()
     frame:SetScript("OnDragStart", function() frame:StartMoving() end)
     frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
     
+    -- Register ESC key handler
+    OGRH.MakeFrameCloseOnEscape(frame, "OGRH_EncounterSetupFrame")
+    
     -- Title bar
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", frame, "TOP", 0, -10)
@@ -4670,6 +4676,9 @@ function OGRH.ShowPlayerSelectionDialog(raidName, encounterName, targetRoleIndex
     frame:SetScript("OnDragStart", function() frame:StartMoving() end)
     frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
     
+    -- Register ESC key handler
+    OGRH.MakeFrameCloseOnEscape(frame, "OGRH_PlayerSelectionFrame")
+    
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", frame, "TOP", 0, -10)
@@ -5049,6 +5058,9 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function() frame:StartMoving() end)
     frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    
+    -- Register ESC key handler
+    OGRH.MakeFrameCloseOnEscape(frame, "OGRH_EditRoleFrame")
     
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -5677,6 +5689,9 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
     dialog:RegisterForDrag("LeftButton")
     dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
     dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
+    
+    -- Register ESC key handler
+    OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_ConsumeSelectionDialog")
     
     -- Title
     local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

@@ -43,6 +43,9 @@ function OGRH.ShowConsumesSettings()
   })
   frame:SetBackdropColor(0, 0, 0, 0.85)
   
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(frame, "OGRH_ConsumesFrame")
+  
   -- Title
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -15)
@@ -255,6 +258,9 @@ function OGRH.ShowAddConsumeDialog()
   })
   dialog:SetBackdropColor(0, 0, 0, 0.9)
   
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_AddConsumeDialog")
+  
   -- Title
   local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -15)
@@ -419,6 +425,9 @@ function OGRH.ShowEditConsumeDialog(itemIndex)
     insets = {left = 4, right = 4, top = 4, bottom = 4}
   })
   dialog:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_EditConsumeDialog")
   
   -- Title
   local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
