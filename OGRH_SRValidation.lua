@@ -674,6 +674,19 @@ function OGRH.SRValidation.RefreshPlayerList()
   local scrollFrame = frame.scrollFrame
   local scrollChild = frame.scrollChild
   
+  -- Update title with current metadata
+  if frame.title and metadata then
+    local raidName = "Unknown Raid"
+    local instanceId = ""
+    if metadata.instance then
+      if OGRH.Invites and OGRH.Invites.GetInstanceName then
+        raidName = OGRH.Invites.GetInstanceName(metadata.instance)
+      end
+      instanceId = " (" .. tostring(metadata.instance) .. ")"
+    end
+    frame.title:SetText("SR+ Validation - " .. raidName .. instanceId)
+  end
+  
   -- Clear existing buttons
   if scrollChild.buttons then
     for _, btn in ipairs(scrollChild.buttons) do
@@ -708,6 +721,7 @@ function OGRH.SRValidation.RefreshPlayerList()
   for _, playerInfo in ipairs(validatedPlayers) do
     local btn = OGRH.CreateStyledListItem(scrollChild, frame.contentWidth, buttonHeight, "Button")
     btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -5 - yOffset)
+    btn.playerName = playerInfo.name  -- Store player name for selection tracking
     
     -- Player name with class color (using existing class cache)
     local classColor = playerInfo.data.class and RAID_CLASS_COLORS[playerInfo.data.class] or {r=1, g=1, b=1}
@@ -739,6 +753,11 @@ function OGRH.SRValidation.RefreshPlayerList()
     -- Store class in cache for ColorName
     if playerInfo.data.class then
       OGRH.Roles.nameClass[playerInfo.name] = playerInfo.data.class
+    end
+    
+    -- Set initial selection state based on currently selected player
+    if selectedPlayer == playerInfo.name then
+      OGRH.SetListItemSelected(btn, true)
     end
     
     -- Click handler
@@ -776,6 +795,18 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
   
   if not OGRH_SRValidationFrame or not OGRH_SRValidationFrame.detailPanel then
     return
+  end
+  
+  -- Update selection state in the list
+  local scrollChild = OGRH_SRValidationFrame.scrollChild
+  if scrollChild and scrollChild.buttons then
+    for _, btn in ipairs(scrollChild.buttons) do
+      if btn.playerName == playerName then
+        OGRH.SetListItemSelected(btn, true)
+      else
+        OGRH.SetListItemSelected(btn, false)
+      end
+    end
   end
   
   local detailPanel = OGRH_SRValidationFrame.detailPanel

@@ -289,24 +289,16 @@ end
 -- Map instance ID to name
 function OGRH.Invites.GetInstanceName(instanceId)
   local instances = {
-    [48] = "Molten Core",
-    [94] = "Blackwing Lair",
-    [95] = "Molten Core",
-    [96] = "Onyxia's Lair",
-    [97] = "Onyxia's Lair",
-    [98] = "Ruins of Ahn'Qiraj",
-    [99] = "Temple of Ahn'Qiraj",
-    [100] = "Zul'Gurub",
-    [101] = "Lower Karazhan Halls",
-    [102] = "Emerald Sanctum",
-    [109] = "Karazhan",
-    [249] = "Onyxia's Lair",
-    [309] = "Zul'Gurub",
-    [409] = "Molten Core",
-    [469] = "Blackwing Lair",
-    [509] = "Ruins of Ahn'Qiraj",
-    [531] = "Ahn'Qiraj Temple",
-    [533] = "Naxxramas"
+    [100] = "Zul'Gurub", -- wd
+    [98] = "Ruins of Ahn'Qiraj", -- wd
+    [101] = "Lower Karazhan Halls", -- wd
+    [95] = "Molten Core", -- wd
+    [94] = "Blackwing Lair", -- wd
+    [99] = "Temple of Ahn'Qiraj", --wd
+    [96] = "Naxxramas", --wd
+    [109] = "Karazhan", -- wd
+    [97] = "Onyxia's Lair", -- wd
+    [102] = "Emerald Sanctum", -- wd 
   }
   return instances[tonumber(instanceId)] or "Unknown Raid (ID: " .. tostring(instanceId) .. ")"
 end
