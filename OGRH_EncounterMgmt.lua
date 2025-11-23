@@ -5213,6 +5213,25 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     
     frame.defaultRoleChecks = {tanksCheck, healersCheck, meleeCheck, rangedCheck}
     
+    -- Make default role checkboxes behave like radio buttons (only one can be selected)
+    local function SetupRoleRadioButton(checkButton, otherChecks)
+      checkButton:SetScript("OnClick", function()
+        if this:GetChecked() then
+          -- Uncheck all other role checkboxes
+          for _, otherCheck in ipairs(otherChecks) do
+            if otherCheck ~= this then
+              otherCheck:SetChecked(false)
+            end
+          end
+        end
+      end)
+    end
+    
+    SetupRoleRadioButton(tanksCheck, frame.defaultRoleChecks)
+    SetupRoleRadioButton(healersCheck, frame.defaultRoleChecks)
+    SetupRoleRadioButton(meleeCheck, frame.defaultRoleChecks)
+    SetupRoleRadioButton(rangedCheck, frame.defaultRoleChecks)
+    
     -- All checkbox
     local allCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     allCheck:SetPoint("TOPLEFT", rolesLabel, "BOTTOMLEFT", 10, -5)
