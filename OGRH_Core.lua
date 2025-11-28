@@ -660,26 +660,75 @@ function OGRH.CalculateStructureChecksum(raid, encounter)
   local roles = OGRH_SV.encounterMgmt.roles[raid][encounter]
   local checksum = 0
   
-  -- Hash role names and slot counts from both columns
+  -- Helper function to hash a role's complete settings
+  local function HashRole(role, columnMultiplier, roleIndex)
+    local hash = 0
+    
+    -- Hash role name
+    local name = role.name or ""
+    for j = 1, string.len(name) do
+      hash = hash + string.byte(name, j) * roleIndex * columnMultiplier
+    end
+    
+    -- Hash slot count
+    local slots = role.slots or 1
+    hash = hash + slots * roleIndex * columnMultiplier * 100
+    
+    -- Hash boolean flags
+    hash = hash + (role.isConsumeCheck and 1 or 0) * roleIndex * columnMultiplier * 200
+    hash = hash + (role.showRaidIcons and 1 or 0) * roleIndex * columnMultiplier * 300
+    hash = hash + (role.showAssignment and 1 or 0) * roleIndex * columnMultiplier * 400
+    hash = hash + (role.markPlayer and 1 or 0) * roleIndex * columnMultiplier * 500
+    hash = hash + (role.allowOtherRoles and 1 or 0) * roleIndex * columnMultiplier * 600
+    
+    -- Hash defaultRoles (tanks, healers, melee, ranged)
+    if role.defaultRoles then
+      hash = hash + (role.defaultRoles.tanks and 1 or 0) * roleIndex * columnMultiplier * 700
+      hash = hash + (role.defaultRoles.healers and 1 or 0) * roleIndex * columnMultiplier * 800
+      hash = hash + (role.defaultRoles.melee and 1 or 0) * roleIndex * columnMultiplier * 900
+      hash = hash + (role.defaultRoles.ranged and 1 or 0) * roleIndex * columnMultiplier * 1000
+    end
+    
+    -- Hash classes (for consume checks)
+    if role.classes then
+      hash = hash + (role.classes.all and 1 or 0) * roleIndex * columnMultiplier * 1100
+      hash = hash + (role.classes.warrior and 1 or 0) * roleIndex * columnMultiplier * 1200
+      hash = hash + (role.classes.rogue and 1 or 0) * roleIndex * columnMultiplier * 1300
+      hash = hash + (role.classes.hunter and 1 or 0) * roleIndex * columnMultiplier * 1400
+      hash = hash + (role.classes.paladin and 1 or 0) * roleIndex * columnMultiplier * 1500
+      hash = hash + (role.classes.priest and 1 or 0) * roleIndex * columnMultiplier * 1600
+      hash = hash + (role.classes.shaman and 1 or 0) * roleIndex * columnMultiplier * 1700
+      hash = hash + (role.classes.druid and 1 or 0) * roleIndex * columnMultiplier * 1800
+      hash = hash + (role.classes.mage and 1 or 0) * roleIndex * columnMultiplier * 1900
+      hash = hash + (role.classes.warlock and 1 or 0) * roleIndex * columnMultiplier * 2000
+    end
+    
+    -- Hash consume data (item IDs and allowAlternate flags)
+    if role.consumes then
+      for k, consume in ipairs(role.consumes) do
+        if consume.primaryId then
+          hash = hash + consume.primaryId * roleIndex * columnMultiplier * k * 2100
+        end
+        if consume.secondaryId then
+          hash = hash + consume.secondaryId * roleIndex * columnMultiplier * k * 2200
+        end
+        hash = hash + (consume.allowAlternate and 1 or 0) * roleIndex * columnMultiplier * k * 2300
+      end
+    end
+    
+    return hash
+  end
+  
+  -- Hash role names, slot counts, and all settings from both columns
   if roles.column1 then
     for i, role in ipairs(roles.column1) do
-      local name = role.name or ""
-      local slots = role.slots or 1
-      for j = 1, string.len(name) do
-        checksum = checksum + string.byte(name, j) * i * 10
-      end
-      checksum = checksum + slots * i * 1000
+      checksum = checksum + HashRole(role, 10, i)
     end
   end
   
   if roles.column2 then
     for i, role in ipairs(roles.column2) do
-      local name = role.name or ""
-      local slots = role.slots or 1
-      for j = 1, string.len(name) do
-        checksum = checksum + string.byte(name, j) * i * 20
-      end
-      checksum = checksum + slots * i * 2000
+      checksum = checksum + HashRole(role, 20, i)
     end
   end
   
