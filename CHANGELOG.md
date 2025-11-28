@@ -1,5 +1,20 @@
 # OG-RaidHelper Changelog
 
+## Version 1.15.2 - Consume Tag Display Fix
+**Release Date:** November 28, 2025
+
+### Bug Fixes
+- **Consume Tag Formatting**: Fixed [Rx.Cy] consume tags not displaying properly in announcements
+  - Item links now preserve color codes and formatting correctly
+  - Removed erroneous color reset codes that were breaking item link format
+  - Consume items now display as clickable, colored item links in both tooltips and raid chat
+  - Cleaned up debug code from previous troubleshooting
+
+### Technical Details
+- **Item Link Preservation**: Consume tag replacements now use special `__NOCOLOR__` marker to prevent color wrapping
+- **Replacement Logic**: Added special case handling for item links that must be inserted exactly as-is
+- **Broadcast System**: Previously disabled announcement broadcast system remains disabled (not needed for non-staged announcements)
+
 ## Version 1.15.1 - Sync RollFor Bug Fix
 **Release Date:** November 27, 2025
 
