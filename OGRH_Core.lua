@@ -89,6 +89,52 @@ function OGRH.Mod1(n,t) return math.mod(n-1, t)+1 end
 function OGRH.CanRW() if IsRaidLeader and IsRaidLeader()==1 then return true end if IsRaidOfficer and IsRaidOfficer()==1 then return true end return false end
 function OGRH.SayRW(text) if OGRH.CanRW() then SendChatMessage(text, "RAID_WARNING") else SendChatMessage(text, "RAID") end end
 
+-- Helper function to create an item link for chat messages
+-- Takes a consumeData table with primaryId, secondaryId, allowAlternate
+-- Optional escapeForProcessing parameter - if true, uses || instead of | for tag replacement processing
+-- Returns a formatted string with clickable item links ready for chat
+function OGRH.FormatConsumeItemLinks(consumeData, escapeForProcessing)
+  if not consumeData then return "" end
+  
+  local items = {}
+  
+  -- Add primary item
+  if consumeData.primaryId then
+    table.insert(items, consumeData.primaryId)
+  end
+  
+  -- Add secondary item if alternate allowed
+  if consumeData.allowAlternate and consumeData.secondaryId then
+    table.insert(items, consumeData.secondaryId)
+  end
+  
+  -- Build line with item links
+  if table.getn(items) > 0 then
+    local lineText = ""
+    for j = 1, table.getn(items) do
+      local itemId = items[j]
+      local itemName, itemLink, quality = GetItemInfo(itemId)
+      
+      if j > 1 then
+        lineText = lineText .. " / "
+      end
+      
+      -- Construct chat link - itemLink from GetItemInfo is in format "item:id:0:0:0"
+      if itemLink and itemName then
+        local _, _, _, color = GetItemQualityColor(quality)
+        lineText = lineText .. color .. "|H" .. itemLink .. "|h[" .. itemName .. "]|h|r"
+      elseif itemName then
+        lineText = lineText .. itemName
+      else
+        lineText = lineText .. "Item " .. itemId
+      end
+    end
+    return lineText
+  end
+  
+  return ""
+end
+
 -- Centralized window management - close all dialog windows except the specified one
 function OGRH.CloseAllWindows(exceptFrame)
   local windows = {
@@ -541,10 +587,23 @@ function OGRH.StoreAndBroadcastAnnouncement(lines)
     timestamp = time()
   }
   
-  -- Broadcast to other addon users in raid
-  -- Use a different delimiter (semicolon) to avoid pipe confusion
-  local message = "ANNOUNCE;" .. table.concat(lines, ";")
-  SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
+  -- DISABLED: Announcement broadcasting via addon channel
+  -- This feature is no longer used since we're not staging announcements
+  -- Also, SendAddonMessage cannot handle item links with pipe characters
+  --[[
+  local hasItemLinks = false
+  for _, line in ipairs(lines) do
+    if string.find(line, "|H", 1, true) then
+      hasItemLinks = true
+      break
+    end
+  end
+  
+  if not hasItemLinks then
+    local message = "ANNOUNCE;" .. table.concat(lines, ";")
+    SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
+  end
+  --]]
 end
 
 -- Helper function: Send announcement lines and store for re-announce
@@ -1217,6 +1276,9 @@ addonFrame:SetScript("OnEvent", function()
           end
         end
       -- Handle announcement broadcast
+      -- DISABLED: Announcement receive handler
+      -- This feature is no longer used since we're not staging announcements
+      --[[
       elseif string.sub(message, 1, 9) == "ANNOUNCE;" then
         -- Parse the announcement lines (semicolon delimited)
         local content = string.sub(message, 10)
@@ -1245,6 +1307,7 @@ addonFrame:SetScript("OnEvent", function()
             timestamp = time()
           }
         end
+      --]]
       -- Handle encounter sync
       elseif string.sub(message, 1, 15) == "ENCOUNTER_SYNC;" then
         -- Block sync from self

@@ -1049,6 +1049,24 @@ function OGRH.ShowEncounterWindow(encounterName)
           return false -- No players with this assignment
         end
         
+        -- Check [Rx.Cy] tags (Consume items)
+        roleNum, consumeNum = string.match(tagText, "^%[R(%d+)%.C(%d+)%]$")
+        if roleNum and consumeNum then
+          local roleIndex = tonumber(roleNum)
+          local consumeIndex = tonumber(consumeNum)
+          
+          -- Check if role is a consume check role and has consume data
+          if roles and roles[roleIndex] and roles[roleIndex].isConsumeCheck then
+            if roles[roleIndex].consumes and roles[roleIndex].consumes[consumeIndex] then
+              local consumeData = roles[roleIndex].consumes[consumeIndex]
+              -- Valid if primary name is set
+              return consumeData.primaryName ~= nil and consumeData.primaryName ~= ""
+            end
+          end
+          
+          return false -- Invalid consume reference
+        end
+        
         return true -- Not a tag, consider it valid
       end
       
@@ -1098,7 +1116,7 @@ function OGRH.ShowEncounterWindow(encounterName)
               local content = string.sub(result, openBracket + 1, closeBracket - 1)
               
               -- Check if this block contains at least one tag
-              if string.find(content, "%[R%d+%.[TPMA]") then
+              if string.find(content, "%[R%d+%.[TPMAC]") then
                 -- This is a conditional block
                 bestStart = openBracket
                 bestEnd = closeBracket
@@ -1129,7 +1147,7 @@ function OGRH.ShowEncounterWindow(encounterName)
           local pos = 1
           
           while true do
-            local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPMA][^%]]*%]", pos)
+            local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPMAC][^%]]*%]", pos)
             if not tagStart then break end
             
             local tagText = string.sub(contentToCheck, tagStart, tagEnd)
@@ -1495,6 +1513,49 @@ function OGRH.ShowEncounterWindow(encounterName)
         pos = tagEnd + 1
       end
       
+      -- Find [Rx.Cy] tags (Consume items from Consume Check role)
+      pos = 1
+      while true do
+        local tagStart, tagEnd, roleNum, consumeNum = string.find(result, "%[R(%d+)%.C(%d+)%]", pos)
+        if not tagStart then break end
+        
+        local roleIndex = tonumber(roleNum)
+        local consumeIndex = tonumber(consumeNum)
+        
+        -- Check if this role is a consume check role
+        if roles and roles[roleIndex] and roles[roleIndex].isConsumeCheck then
+          local consumeRole = roles[roleIndex]
+          
+          -- Check if consume data exists for this index
+          if consumeRole.consumes and consumeRole.consumes[consumeIndex] then
+            local consumeData = consumeRole.consumes[consumeIndex]
+            
+            -- Use the helper function to format item links (no escaping needed)
+            local consumeText = ""
+            if OGRH.FormatConsumeItemLinks then
+              consumeText = OGRH.FormatConsumeItemLinks(consumeData, false)
+            end
+            
+            if consumeText ~= "" then
+              -- Item links have their own color codes and must be inserted exactly as-is
+              -- Use special marker to indicate this replacement should not be wrapped
+              AddReplacement(tagStart, tagEnd, consumeText, "__NOCOLOR__", false)
+            else
+              -- No consume configured - replace with empty string
+              AddReplacement(tagStart, tagEnd, "", "", false)
+            end
+          else
+            -- Invalid consume index - replace with empty string
+            AddReplacement(tagStart, tagEnd, "", "", false)
+          end
+        else
+          -- Not a consume check role - replace with empty string
+          AddReplacement(tagStart, tagEnd, "", "", false)
+        end
+        
+        pos = tagEnd + 1
+      end
+      
       -- Sort replacements by position (descending) so we can replace from end to start
       table.sort(replacements, function(a, b) return a.startPos > b.startPos end)
       
@@ -1506,6 +1567,9 @@ function OGRH.ShowEncounterWindow(encounterName)
         if repl.text == "" then
           -- Empty replacement - just remove the tag
           result = before .. after
+        elseif repl.color == "__NOCOLOR__" then
+          -- Special case: Item links that must be inserted exactly as-is
+          result = before .. repl.text .. after
         else
           -- Non-empty replacement - add with color codes
           result = before .. repl.color .. repl.text .. OGRH.COLOR.RESET .. after
@@ -1513,6 +1577,12 @@ function OGRH.ShowEncounterWindow(encounterName)
       end
       
       -- Color any plain text with ROLE color
+      -- BUT: If the result contains item links (|H), skip this processing entirely
+      -- Item links are fragile and must be sent exactly as-is
+      if string.find(result, "|H", 1, true) then
+        return result
+      end
+      
       -- Split by color codes to identify plain text
       local finalResult = ""
       local lastPos = 1
@@ -1520,9 +1590,10 @@ function OGRH.ShowEncounterWindow(encounterName)
       while true do
         -- Find next color code
         local colorStart = string.find(result, "|c%x%x%x%x%x%x%x%x", lastPos)
+        local hyperlinkStart = nil  -- Not needed since we skip if |H exists
         
         if not colorStart then
-          -- No more color codes, add remaining text
+          -- No more color codes or hyperlinks, add remaining text
           local remaining = string.sub(result, lastPos)
           if remaining ~= "" then
             finalResult = finalResult .. OGRH.COLOR.ROLE .. remaining .. OGRH.COLOR.RESET
@@ -1562,10 +1633,14 @@ function OGRH.ShowEncounterWindow(encounterName)
     announceBtn:SetScript("OnClick", function()
       local button = arg1 or "LeftButton"
       
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DEBUG Step 1: Announce button clicked, button=" .. button .. "|r")
+      
       if not frame.selectedRaid or not frame.selectedEncounter then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
         return
       end
+      
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DEBUG Step 2: Raid and encounter selected|r")
       
       -- Right-click: Announce consumes
       if button == "RightButton" then
@@ -1664,6 +1739,8 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       -- Left-click: Normal announcement
       
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DEBUG Step 3: Left-click normal announcement path|r")
+      
       -- Get role configuration
       local roles = OGRH_SV.encounterMgmt.roles
       if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
@@ -1736,6 +1813,7 @@ function OGRH.ShowEncounterWindow(encounterName)
         return
       end
       
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DEBUG Step 9: Calling OGRH.SendAnnouncement|r")
       -- Send announcement and store for re-announce
       if OGRH.SendAnnouncement then
         OGRH.SendAnnouncement(announcementLines)

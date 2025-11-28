@@ -11,6 +11,15 @@ Tags use the format `[Rx.TYPE]` where:
 
 ## Available Tags
 
+- **[Rx.T]** - Role title
+- **[Rx.Py]** - Player name in slot y
+- **[Rx.P]** - All players in role
+- **[Rx.PA]** - All players with assignment numbers
+- **[Rx.My]** - Raid mark for player y
+- **[Rx.Ay]** - Assignment number for player y
+- **[Rx.A=y]** - All players with assignment y
+- **[Rx.Cy]** - Consume item in slot y (Consume Check role only)
+
 ### Role Title: `[Rx.T]`
 Displays the name/title of the role.
 
@@ -100,6 +109,21 @@ Group 2: Zanthor Healer2
 ```
 **Note:** Shows only players whose assignment number matches the specified value.
 
+### Consume Item: `[Rx.Cy]`
+Displays the consume item(s) configured in slot `y` of a Consume Check role `x` as clickable item links.
+
+**Example:**
+```
+Bring [R5.C1] and [R5.C2] for this encounter
+```
+**Output:**
+```
+Bring [Greater Fire Protection Potion] and [Flask of the Titans] for this encounter
+```
+_(Items appear as colored, clickable links in-game)_
+
+**Note:** Only works with roles marked as "Consume Check". If the consume slot allows alternates, displays both items separated by " / ".
+
 ## Raid Mark Symbols
 
 When using `[Rx.My]` tags, the following symbols are returned:
@@ -119,6 +143,15 @@ When using `[Rx.Ay]` tags, numbers 1-9 are displayed. 0 is treated as "not set" 
 - Click the assignment button next to each player to set their number (left-click increments, right-click decrements)
 - Use assignment numbers for grouping, priorities, or any custom ordering system
 
+## Consume Items
+
+When using `[Rx.Cy]` tags:
+- The role `x` must be marked as a "Consume Check" role (configured in Role Edit window)
+- Consume items are configured by clicking the consume slots in the Encounter Planning window
+- Items are displayed as clickable, quality-colored item links (just like linking items in chat)
+- If "Allow Alternate" is checked, both items are displayed separated by " / "
+- Consume items can be announced separately using right-click on the Announce button
+
 ## Complete Example
 
 **Example:**
@@ -128,6 +161,7 @@ Line 2: [R2.T]: [R2.P]
 Line 3: [R5.T]: [R5.P1] and [R5.P2]
 Line 4: Kill priority: [R3.M1] then [R3.M2]
 Line 5: Group 1: [R2.A=1] | Group 2: [R2.A=2]
+Line 6: Required consumes: [R6.C1], [R6.C2]
 ```
 
 **Actual Output (when Announce is clicked):**
@@ -137,7 +171,9 @@ Off Tanks: Gnuzmas Zanthor Tankthree
 Healers: Fatherkaii and Lightbringer
 Kill priority: {Skull} then {Cross}
 Group 1: Gnuzmas Healer1 | Group 2: Zanthor Healer2
+Required consumes: [Greater Fire Protection Potion], [Flask of the Titans]
 ```
+_(Consume items appear as clickable, quality-colored links in-game)_
 
 ## Role Numbering
 
@@ -205,12 +241,30 @@ This creates three levels:
 2. "with [R2.P1]" (shown if R2.P1 assigned)
 3. "and [R2.P2]" (shown if both R2.P1 AND R2.P2 assigned)
 
+### Using Consume Tags with Conditionals
+
+Consume tags work with conditional blocks to show optional consume requirements:
+
+**Example:**
+```
+Bring [R5.C1][ and [R5.C2]][ and [R5.C3]]
+```
+
+**Outputs:**
+- If only C1 configured: `Bring [Greater Fire Protection Potion]`
+- If C1 and C2 configured: `Bring [Greater Fire Protection Potion] and [Flask of the Titans]`
+- If all configured: `Bring [Greater Fire Protection Potion] and [Flask of the Titans] and [Elixir of the Mongoose]`
+
+_(Items shown in brackets appear as clickable, quality-colored links in-game)_
+
 ## Notes
 
 - Tags that reference non-existent roles or players will remain unchanged (shown as-is)
 - Empty announcement lines are not sent to raid chat
 - You must have Auto Assign run (or manually assign players) before tags will be replaced with actual names
 - Raid marks must be set using the icon buttons next to player names
+- Consume tags only work with roles marked as "Consume Check" - configure these in the Role Edit window
+- Consume items must be configured by clicking the consume slots in the Encounter Planning window
 - Announcements are sent to raid chat when the "Announce" button is clicked
 - Conditional blocks are processed from innermost to outermost
 - OR blocks automatically clean up unassigned tags for cleaner output

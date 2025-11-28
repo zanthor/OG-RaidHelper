@@ -667,6 +667,7 @@ For complete tag documentation, see **[ANNOUNCEMENT_TAGS.md](ANNOUNCEMENT_TAGS.m
 - `[Rx.Py]` - Player name (e.g., "Tankmedady")
 - `[Rx.My]` - Raid mark (e.g., "{Star}")
 - `[Rx.Ay]` - Assignment number (1-9)
+- `[Rx.Cy]` - Consume item (e.g., "Greater Fire Protection Potion")
 
 **Example:**
 ```
