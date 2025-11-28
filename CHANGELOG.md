@@ -1,5 +1,72 @@
 # OG-RaidHelper Changelog
 
+## Version 1.15.1 - Sync RollFor Bug Fix
+**Release Date:** November 27, 2025
+
+### Bug Fixes
+- **Sync RollFor**: Fixed issue where clicking "Sync RollFor" button moved players NOT in RollFor data
+  - Now only updates roles for players who are actually in RollFor data
+  - Players not in RollFor keep their current/manually assigned roles
+  - Fixed both sender and receiver to use consistent logic
+  - Prevents unwanted role changes based on class defaults
+
+## Version 1.15.0 - Roles UI Synchronization
+**Release Date:** November 27, 2025
+
+### Features
+- **Roles UI Broadcasting**:
+  - Player role changes now broadcast to entire raid in real-time
+  - When raid admin/L/A drags a player to a different role, all raid members see the change
+  - "Sync RollFor" button now broadcasts to entire raid
+  - All raid members' Roles UI stays synchronized automatically
+
+- **Permission System**:
+  - Only Raid Leader (L), Assistants (A), or designated Raid Admin can:
+    - Drag players between roles
+    - Click Poll or column headers to start polls
+    - Use "Sync RollFor" button
+  - Non-admin players see permission error message if they attempt restricted actions
+  - Prevents conflicting role assignments from multiple sources
+
+### Technical Details
+- **New Addon Messages**:
+  - `ROLE_CHANGE;playerName;newRole` - broadcasts when player moved between roles
+  - `ROLLFOR_SYNC` - broadcasts when "Sync RollFor" button clicked
+- **New Permission Function**:
+  - `OGRH.CanManageRoles()` - checks if player is L, A, or raid admin
+  - Returns true if not in raid (solo editing allowed)
+  - Used to gate all role management actions
+
+### Bug Fixes
+- **Role Consistency**: Fixed issue where role changes weren't visible to other raid members
+- **RollFor Sync**: Fixed "Sync RollFor" only applying locally instead of raid-wide
+
+## Version 1.14.1 - Raid Lead Poll Version & Checksum Display
+**Release Date:** November 27, 2025
+
+### Features
+- **Raid Lead Selection UI Enhancement**:
+  - Added "Version" column showing each player's addon version (1.14.1)
+  - Added "Checksum" column showing structure data checksum for sync verification
+  - Color-coded display: Green = matching version/checksum, Red = mismatch
+  - Added "Refresh" button to re-poll after syncing structure data
+  - Expanded frame width to 360px to accommodate new columns
+  - Right-click the blue "Sync" button to open raid lead selection poll
+
+### Technical Details
+- **Checksum Calculation**:
+  - New `CalculateAllStructureChecksum()` function hashes ALL structure data
+  - Includes: raids list, encounters list, roles, marks, assignment numbers, announcements, trade items, consumes
+  - Matches EXACTLY the data exported by Import/Export > Sync
+  - Each player calculates their own checksum when responding to poll
+  - Enables quick verification that all raid members have matching structure data
+
+### Bug Fixes
+- **Poll Response Parsing**: Fixed string parsing bugs in ADDON_POLL_RESPONSE handler
+  - Fixed prefix length check (19 characters, not 20)
+  - Fixed data extraction offset (position 21, not 22)
+  - Poll now correctly displays all raid members with addon installed
+
 ## Version 1.11.11 - ESC Key Handling
 **Release Date:** November 23, 2025
 

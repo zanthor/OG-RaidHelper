@@ -29,6 +29,61 @@ function OGRH.CanEdit()
   return OGRH.IsRaidLead()
 end
 
+-- Check if local player can navigate encounters (change Main UI selection)
+-- Check if local player can manage roles (is raid lead, L, or A)
+function OGRH.CanManageRoles()
+  -- If not in a raid, allow role management
+  if GetNumRaidMembers() == 0 then
+    return true
+  end
+  
+  -- Check if player is the designated raid admin
+  if OGRH.IsRaidLead() then
+    return true
+  end
+  
+  -- Check if player is raid leader or assistant
+  local playerName = UnitName("player")
+  for i = 1, GetNumRaidMembers() do
+    local name, rank = GetRaidRosterInfo(i)
+    if name == playerName then
+      if rank == 2 or rank == 1 then  -- 2 = Leader, 1 = Assistant
+        return true
+      end
+      break
+    end
+  end
+  
+  return false
+ end
+
+function OGRH.CanNavigateEncounter()
+  -- If not in a raid, allow navigation
+  if GetNumRaidMembers() == 0 then
+    return true
+  end
+  
+  -- Check if player is the designated raid admin
+  if OGRH.IsRaidLead() then
+    return true
+  end
+  
+  -- Check if player is raid leader or assistant
+  local playerName = UnitName("player")
+  for i = 1, GetNumRaidMembers() do
+    local name, rank = GetRaidRosterInfo(i)
+    if name == playerName then
+      -- rank 2 = leader, rank 1 = assistant
+      if rank == 2 or rank == 1 then
+        return true
+      end
+      break
+    end
+  end
+  
+  return false
+end
+
 -- Set the raid lead
 function OGRH.SetRaidLead(playerName)
   OGRH.RaidLead.currentLead = playerName
@@ -100,27 +155,40 @@ function OGRH.PollAddonUsers()
     end
   end
   
+  -- Calculate checksum for ALL structure data
+  local checksum = "0"
+  if OGRH.CalculateAllStructureChecksum then
+    checksum = OGRH.CalculateAllStructureChecksum()
+  end
+  
   table.insert(OGRH.RaidLead.pollResponses, {
     name = selfName,
-    rank = selfRank
+    rank = selfRank,
+    version = OGRH.VERSION or "Unknown",
+    checksum = checksum
   })
   
-  -- Wait 2 seconds then show results
+  -- Show UI immediately
+  OGRH.ShowRaidLeadSelectionUI()
+  
+  -- Keep poll open for 5 seconds to accept responses
   OGRH.ScheduleFunc(function()
     OGRH.RaidLead.pollInProgress = false
     local count = table.getn(OGRH.RaidLead.pollResponses)
     OGRH.Msg("Poll complete: " .. count .. " player(s) with addon detected.")
-    OGRH.ShowRaidLeadSelectionUI()
-  end, 2)
+  end, 5)
   
   OGRH.Msg("Polling raid for addon users...")
 end
 
 -- Handle poll response
-function OGRH.HandleAddonPollResponse(sender)
+function OGRH.HandleAddonPollResponse(sender, version, checksum)
   if not OGRH.RaidLead.pollInProgress then
     return
   end
+  
+  version = version or "Unknown"
+  checksum = checksum or "0"
   
   -- Check if already in list
   for i = 1, table.getn(OGRH.RaidLead.pollResponses) do
@@ -145,8 +213,15 @@ function OGRH.HandleAddonPollResponse(sender)
   
   table.insert(OGRH.RaidLead.pollResponses, {
     name = sender,
-    rank = senderRank
+    rank = senderRank,
+    version = version,
+    checksum = checksum
   })
+  
+  -- Refresh the UI if it's visible
+  if OGRH_RaidLeadSelectionFrame and OGRH_RaidLeadSelectionFrame:IsVisible() and OGRH_RaidLeadSelectionFrame.Rebuild then
+    OGRH_RaidLeadSelectionFrame.Rebuild()
+  end
 end
 
 -- Show raid lead selection UI
@@ -158,7 +233,7 @@ function OGRH.ShowRaidLeadSelectionUI()
   end
   
   local frame = CreateFrame("Frame", "OGRH_RaidLeadSelectionFrame", UIParent)
-  frame:SetWidth(195)
+  frame:SetWidth(360)  -- Increased width for version and checksum columns
   frame:SetHeight(260)
   frame:SetPoint("CENTER", UIParent, "CENTER")
   frame:SetFrameStrata("DIALOG")
@@ -177,6 +252,23 @@ function OGRH.ShowRaidLeadSelectionUI()
     insets = {left = 4, right = 4, top = 4, bottom = 4}
   })
   frame:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Refresh button
+  local refreshBtn = CreateFrame("Button", nil, frame)
+  refreshBtn:SetWidth(60)
+  refreshBtn:SetHeight(24)
+  refreshBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -75, -10)
+  
+  local refreshBtnText = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  refreshBtnText:SetPoint("CENTER", 0, 0)
+  refreshBtnText:SetText("Refresh")
+  refreshBtn.text = refreshBtnText
+  
+  OGRH.StyleButton(refreshBtn)
+  refreshBtn:SetScript("OnClick", function()
+    -- Re-poll
+    OGRH.PollAddonUsers()
+  end)
   
   -- Close button
   local closeBtn = CreateFrame("Button", nil, frame)
@@ -199,11 +291,27 @@ function OGRH.ShowRaidLeadSelectionUI()
   title:SetText("Select Raid Lead:")
   title:SetTextColor(1, 0.82, 0)
   
+  -- Column headers
+  local nameHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  nameHeader:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -38)
+  nameHeader:SetText("Name")
+  nameHeader:SetTextColor(1, 0.82, 0)
+  
+  local versionHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  versionHeader:SetPoint("TOPLEFT", frame, "TOPLEFT", 155, -38)
+  versionHeader:SetText("Version")
+  versionHeader:SetTextColor(1, 0.82, 0)
+  
+  local checksumHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  checksumHeader:SetPoint("TOPLEFT", frame, "TOPLEFT", 235, -38)
+  checksumHeader:SetText("Checksum")
+  checksumHeader:SetTextColor(1, 0.82, 0)
+  
   -- Player list panel (matching raids panel style)
   local playerPanel = CreateFrame("Frame", nil, frame)
-  playerPanel:SetWidth(175)
-  playerPanel:SetHeight(210)
-  playerPanel:SetPoint("TOP", frame, "TOP", 0, -38)
+  playerPanel:SetWidth(340)  -- Increased width
+  playerPanel:SetHeight(190)  -- Reduced height to make room for headers
+  playerPanel:SetPoint("TOP", frame, "TOP", 0, -55)  -- Moved down for headers
   playerPanel:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -222,7 +330,7 @@ function OGRH.ShowRaidLeadSelectionUI()
   scrollFrame:EnableMouseWheel(true)
   
   local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-  scrollChild:SetWidth(165)
+  scrollChild:SetWidth(330)  -- Increased for new columns
   scrollChild:SetHeight(1)
   scrollFrame:SetScrollChild(scrollChild)
   frame.scrollChild = scrollChild
@@ -314,7 +422,7 @@ function OGRH.ShowRaidLeadSelectionUI()
       
       if not frame.playerButtons[i] then
         local btn = CreateFrame("Button", nil, scrollChild)
-        btn:SetWidth(165)
+        btn:SetWidth(330)  -- Increased width
         btn:SetHeight(18)
         btn:SetPoint("TOPLEFT", 0, yOffset)
         
@@ -322,11 +430,23 @@ function OGRH.ShowRaidLeadSelectionUI()
         local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         text:SetPoint("LEFT", 5, 0)
         text:SetJustifyH("LEFT")
+        text:SetWidth(130)  -- Constrain name width
         btn.text = text
         
         local rankText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        rankText:SetPoint("RIGHT", -5, 0)
+        rankText:SetPoint("LEFT", 140, 0)
         btn.rankText = rankText
+        
+        local versionText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        versionText:SetPoint("LEFT", 145, 0)
+        versionText:SetJustifyH("LEFT")
+        versionText:SetWidth(70)
+        btn.versionText = versionText
+        
+        local checksumText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        checksumText:SetPoint("LEFT", 225, 0)
+        checksumText:SetJustifyH("LEFT")
+        btn.checksumText = checksumText
         
         frame.playerButtons[i] = btn
       end
@@ -387,6 +507,28 @@ function OGRH.ShowRaidLeadSelectionUI()
         btn.rankText:SetText("|cffffff00A|r")
       else
         btn.rankText:SetText("")
+      end
+      
+      -- Display version (color red if different from local)
+      local localVersion = OGRH.VERSION or "Unknown"
+      local displayVersion = response.version or "Unknown"
+      if displayVersion ~= localVersion then
+        btn.versionText:SetText("|cffff0000" .. displayVersion .. "|r")
+      else
+        btn.versionText:SetText("|cff00ff00" .. displayVersion .. "|r")
+      end
+      
+      -- Display checksum (color red if different from local)
+      local localChecksum = "0"
+      if OGRH.CalculateAllStructureChecksum then
+        localChecksum = OGRH.CalculateAllStructureChecksum()
+      end
+      
+      local displayChecksum = response.checksum or "0"
+      if displayChecksum ~= localChecksum then
+        btn.checksumText:SetText("|cffff0000" .. displayChecksum .. "|r")
+      else
+        btn.checksumText:SetText("|cff00ff00" .. displayChecksum .. "|r")
       end
       
       -- Click handler

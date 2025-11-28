@@ -98,13 +98,25 @@ syncBtn:SetScript("OnEnter", function()
     leadName = OGRH.RaidLead.currentLead
   end
   
+  local isRaidLead = OGRH.IsRaidLead and OGRH.IsRaidLead()
+  
   GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-  GameTooltip:SetText("Raid Lead System", 1, 1, 1)
+  GameTooltip:SetText("Encounter Sync", 1, 1, 1)
   GameTooltip:AddLine("Current Raid Lead: " .. leadName, 1, 0.82, 0)
   GameTooltip:AddLine(" ", 1, 1, 1)
-  GameTooltip:AddLine("Left-click: Sync encounter", 0.7, 0.7, 0.7)
+  
+  if isRaidLead then
+    GameTooltip:AddLine("Left-click: Broadcast current encounter", 0.7, 0.7, 0.7)
+    GameTooltip:AddLine("  (Syncs player assignments only)", 0.5, 0.5, 0.5)
+  else
+    GameTooltip:AddLine("Left-click: Request current encounter", 0.7, 0.7, 0.7)
+    GameTooltip:AddLine("  (Request assignments from raid lead)", 0.5, 0.5, 0.5)
+  end
+  
   GameTooltip:AddLine("Right-click: Select raid lead", 0.7, 0.7, 0.7)
   GameTooltip:AddLine("Shift+Left-click: Take over as raid lead", 0.7, 0.7, 0.7)
+  GameTooltip:AddLine(" ", 1, 1, 1)
+  GameTooltip:AddLine("Structure sync moved to Encounter Planning", 0.5, 0.5, 0.5)
   GameTooltip:Show()
 end)
 
@@ -156,7 +168,7 @@ syncBtn:SetScript("OnClick", function()
   
   -- Left-click: Send sync or request sync
   if OGRH.IsRaidLead and OGRH.IsRaidLead() then
-    -- Raid lead: Send current encounter to all players using the new sync function
+    -- Raid lead: Send current encounter assignments to all players
     if not OGRH.GetCurrentEncounter then
       OGRH.Msg("Encounter management not loaded.")
       return
@@ -164,14 +176,15 @@ syncBtn:SetScript("OnClick", function()
     
     local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
     if not currentRaid or not currentEncounter then
-      OGRH.Msg("No encounter selected to sync. Open Encounter Planning and select an encounter first.")
+      OGRH.Msg("No encounter selected. Navigate to an encounter using < > buttons first.")
       return
     end
     
-    -- Use the new assignment sync function with structure validation
+    -- Broadcast full encounter sync (assignments only, not structure)
     OGRH.BroadcastFullEncounterSync()
+    OGRH.Msg("Broadcasting player assignments for " .. currentEncounter .. "...")
   else
-    -- Non-raid lead: Request sync from raid lead
+    -- Non-raid lead: Request current encounter sync from raid lead
     if OGRH.RequestSyncFromLead then
       OGRH.RequestSyncFromLead()
     end
@@ -244,6 +257,14 @@ OGRH.StyleButton(announceBtn)
 announceBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 announceBtn:SetScript("OnClick", function()
   local button = arg1 or "LeftButton"
+  
+  -- Check authorization - must be raid lead, raid leader, or assistant
+  if GetNumRaidMembers() > 0 then
+    if not OGRH.CanNavigateEncounter or not OGRH.CanNavigateEncounter() then
+      OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can announce.")
+      return
+    end
+  end
   
   if button == "RightButton" then
     -- Right-click: Announce consumes

@@ -145,6 +145,11 @@ local function CreateRolesFrame()
                     dragText:SetText(nameText:GetText())
                     
                     nameButton:SetScript("OnDragStart", function()
+                        -- Check permissions
+                        if not OGRH.CanManageRoles or not OGRH.CanManageRoles() then
+                            return
+                        end
+                        
                         dragFrame:Show()
                         dragFrame:SetScript("OnUpdate", function()
                             local x, y = GetCursorPosition()
@@ -188,6 +193,12 @@ local function CreateRolesFrame()
                                     else newRole = "RANGED" end
                                     
                                     OGRH_SV.roles[draggedName] = newRole
+                                    
+                                    -- Broadcast role change to raid
+                                    if GetNumRaidMembers() > 0 then
+                                        local msg = "ROLE_CHANGE;" .. draggedName .. ";" .. newRole
+                                        SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
+                                    end
                                     
                                     -- Sync tank and healer status to Puppeteer and pfUI
                                     local isTank = (newRole == "TANKS")
@@ -322,6 +333,12 @@ local function CreateRolesFrame()
     end
 
     pollBtn:SetScript("OnClick", function()
+        -- Check permissions
+        if not OGRH.CanManageRoles or not OGRH.CanManageRoles() then
+            OGRH.Msg("Only raid leader, assistants, or raid admin can start polls.")
+            return
+        end
+        
         if OGRH.Poll then
             if OGRH.Poll.IsActive and OGRH.Poll.IsActive() then
                 -- Cancel ongoing poll
@@ -396,6 +413,12 @@ local function CreateRolesFrame()
         
         -- Add click functionality to start role-specific poll
         headerBtn:SetScript("OnClick", function()
+            -- Check permissions
+            if not OGRH.CanManageRoles or not OGRH.CanManageRoles() then
+                OGRH.Msg("Only raid leader, assistants, or raid admin can start polls.")
+                return
+            end
+            
             if OGRH.Poll then
                 if OGRH.Poll.IsActive and OGRH.Poll.IsActive() then
                     -- Poll is active, cancel it
@@ -482,8 +505,8 @@ local function CreateRolesFrame()
                         -- Mark player as known
                         knownPlayers[name] = true
                         
-                        -- Priority 1: Use manually saved role assignment (if exists)
-                        if OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
+                        -- Priority 1: Use manually saved role assignment (if exists and not forcing RollFor sync)
+                        if not forceSyncRollFor and OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
                             local savedRole = OGRH_SV.roles[name]
                             if savedRole == "TANKS" then roleIndex = 1
                             elseif savedRole == "HEALERS" then roleIndex = 2
@@ -514,13 +537,36 @@ local function CreateRolesFrame()
                                 if not OGRH_SV.roles then OGRH_SV.roles = {} end
                                 OGRH_SV.roles[name] = rollForRole
                             else
-                                -- Priority 3: Fall back to class defaults (only if no RollFor data)
-                                if class == "WARRIOR" then
-                                    roleIndex = 1  -- Tanks
-                                elseif class == "PRIEST" or (class == "PALADIN") or (class == "DRUID") then
-                                    roleIndex = 2  -- Healers
-                                elseif class == "ROGUE" then
-                                    roleIndex = 3  -- Melee
+                                -- No RollFor data for this player
+                                if forceSyncRollFor then
+                                    -- Forced sync but player not in RollFor - do nothing, keep current position
+                                    -- Check if they have a saved role assignment to preserve
+                                    if OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
+                                        local savedRole = OGRH_SV.roles[name]
+                                        if savedRole == "TANKS" then roleIndex = 1
+                                        elseif savedRole == "HEALERS" then roleIndex = 2
+                                        elseif savedRole == "MELEE" then roleIndex = 3
+                                        elseif savedRole == "RANGED" then roleIndex = 4
+                                        end
+                                    else
+                                        -- No saved role and not in RollFor - fall back to class defaults
+                                        if class == "WARRIOR" then
+                                            roleIndex = 1  -- Tanks
+                                        elseif class == "PRIEST" or (class == "PALADIN") or (class == "DRUID") then
+                                            roleIndex = 2  -- Healers
+                                        elseif class == "ROGUE" then
+                                            roleIndex = 3  -- Melee
+                                        end
+                                    end
+                                else
+                                    -- First join and not in RollFor - fall back to class defaults
+                                    if class == "WARRIOR" then
+                                        roleIndex = 1  -- Tanks
+                                    elseif class == "PRIEST" or (class == "PALADIN") or (class == "DRUID") then
+                                        roleIndex = 2  -- Healers
+                                    elseif class == "ROGUE" then
+                                        roleIndex = 3  -- Melee
+                                    end
                                 end
                             end
                         else
@@ -617,15 +663,43 @@ local function CreateRolesFrame()
     -- Setup Sync RollFor button click handler (now that functions are defined)
     if frame.syncBtn then
         frame.syncBtn:SetScript("OnClick", function()
-            -- Clear all role assignments first
-            if OGRH_SV and OGRH_SV.roles then
-                OGRH_SV.roles = {}
+            -- Check permissions
+            if not OGRH.CanManageRoles or not OGRH.CanManageRoles() then
+                OGRH.Msg("Only raid leader, assistants, or raid admin can sync RollFor data.")
+                return
             end
             
-            -- Force update with RollFor data taking priority (pass true to forceSyncRollFor)
-            UpdatePlayerLists(true)
+            -- Only update roles for players who are in RollFor data
+            -- Leave everyone else where they are
+            if OGRH.Invites and OGRH.Invites.GetSoftResPlayers then
+                local softResPlayers = OGRH.Invites.GetSoftResPlayers()
+                local updateCount = 0
+                
+                for _, playerData in ipairs(softResPlayers) do
+                    local playerName = playerData.name
+                    local rollForRole = OGRH.Invites.MapRollForRoleToOGRH(playerData.role)
+                    
+                    if rollForRole then
+                        -- Save the RollFor role
+                        if not OGRH_SV then OGRH_SV = {} end
+                        if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                        OGRH_SV.roles[playerName] = rollForRole
+                        updateCount = updateCount + 1
+                    end
+                end
+                
+                -- Refresh the display
+                UpdatePlayerLists(false)
+                
+                OGRH.Msg("Synced " .. updateCount .. " player(s) from RollFor soft-res data.")
+            else
+                OGRH.Msg("RollFor data not available.")
+            end
             
-            OGRH.Msg("Synced roles from RollFor soft-res data.")
+            -- Broadcast to raid
+            if GetNumRaidMembers() > 0 then
+                SendAddonMessage(OGRH.ADDON_PREFIX, "ROLLFOR_SYNC", "RAID")
+            end
         end)
     end
     
