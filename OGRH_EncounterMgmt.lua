@@ -838,6 +838,53 @@ function OGRH.ShowEncounterWindow(encounterName)
       local roleAssignments = {}  -- roleIndex -> {slotIndex -> playerName}
       local assignmentCount = 0
       
+      -- Helper function to get player's class
+      local function GetPlayerClassInRaid(playerName)
+        -- First try the global class cache/lookup function
+        if OGRH.GetPlayerClass then
+          local cachedClass = OGRH.GetPlayerClass(playerName)
+          if cachedClass then
+            return cachedClass
+          end
+        end
+        
+        -- Fallback: check raid roster directly
+        local numRaidMembers = GetNumRaidMembers()
+        if numRaidMembers > 0 then
+          for i = 1, numRaidMembers do
+            local name, _, _, _, class = GetRaidRosterInfo(i)
+            if name == playerName and class then
+              return string.upper(class)
+            end
+          end
+        end
+        return nil
+      end
+      
+      -- Helper function to get player's role from RolesUI ROLE_COLUMNS
+      local function GetPlayerRole(playerName)
+        if not OGRH.rolesFrame or not OGRH.rolesFrame.ROLE_COLUMNS then
+          return nil
+        end
+        
+        local roleColumns = OGRH.rolesFrame.ROLE_COLUMNS
+        -- roleColumns: 1=Tanks, 2=Healers, 3=Melee, 4=Ranged
+        local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
+        
+        for colIndex = 1, table.getn(roleColumns) do
+          local players = roleColumns[colIndex].players
+          if players then
+            for _, name in ipairs(players) do
+              if name == playerName then
+                return roleNames[colIndex]
+              end
+            end
+          end
+        end
+        
+        return nil
+      end
+      
       -- Process each role in order
       for _, roleData in ipairs(allRoles) do
         local role = roleData.role
@@ -848,27 +895,110 @@ function OGRH.ShowEncounterWindow(encounterName)
           roleAssignments[roleIndex] = {}
         end
         
-        -- Get available players for this role based on defaultRoles
-        local availablePlayers = {}
-        
-        -- Build list of current raid members
+        -- Build list of current raid members (includes offline)
         local raidMembers = {}
         local numRaidMembers = GetNumRaidMembers()
         if numRaidMembers > 0 then
           for i = 1, numRaidMembers do
-            local name = GetRaidRosterInfo(i)
+            local name, rank, subgroup, level, class, fileName, zone, online, isDead = GetRaidRosterInfo(i)
             if name then
               raidMembers[name] = true
             end
           end
         end
         
+        -- PHASE 1: Try to fill slots from bottom up using class priority
+        local nextSlotToFill = maxSlots  -- Start from bottom slot
+        
+        if role.classPriority then
+          -- Process slots from bottom to top
+          for slotIdx = maxSlots, 1, -1 do
+            if role.classPriority[slotIdx] and table.getn(role.classPriority[slotIdx]) > 0 then
+              local priorityList = role.classPriority[slotIdx]
+              
+              -- Try each class in priority order
+              for _, className in ipairs(priorityList) do
+                local assigned = false
+                
+                -- Build sorted list of players with this class
+                local classPlayers = {}
+                -- Iterate through raid members and check their class/role
+                for playerName, _ in pairs(raidMembers) do
+                  if not assignedPlayers[playerName] then
+                    local playerClass = GetPlayerClassInRaid(playerName)
+                    local playerRole = GetPlayerRole(playerName)
+                    
+                    if playerClass and playerRole and string.upper(playerClass) == string.upper(className) then
+                      
+                      local roleMatches = false
+                      
+                      -- Check if this slot/class has specific classPriorityRoles configured
+                      if role.classPriorityRoles and role.classPriorityRoles[slotIdx] and role.classPriorityRoles[slotIdx][className] then
+                        -- Use classPriorityRoles (specific role checkboxes for this class)
+                        local allowedRoles = role.classPriorityRoles[slotIdx][className]
+                        
+                        -- Check if ANY checkbox is enabled
+                        local anyRoleEnabled = allowedRoles.Tanks or allowedRoles.Healers or allowedRoles.Melee or allowedRoles.Ranged
+                        
+                        if not anyRoleEnabled then
+                          -- No checkboxes enabled = accept from any role
+                          roleMatches = true
+                        elseif playerRole == "TANKS" and allowedRoles.Tanks then
+                          roleMatches = true
+                        elseif playerRole == "HEALERS" and allowedRoles.Healers then
+                          roleMatches = true
+                        elseif playerRole == "MELEE" and allowedRoles.Melee then
+                          roleMatches = true
+                        elseif playerRole == "RANGED" and allowedRoles.Ranged then
+                          roleMatches = true
+                        end
+                      else
+                        -- No classPriorityRoles for this class
+                        -- In Phase 1 (class priority), if class is in priority list, accept from any role
+                        roleMatches = true
+                      end
+                      
+                      if roleMatches then
+                        table.insert(classPlayers, playerName)
+                      end
+                    end
+                  end
+                end
+                
+                -- Sort alphabetically for consistent results
+                table.sort(classPlayers)
+                
+                -- Assign first available player
+                if table.getn(classPlayers) > 0 then
+                  local playerName = classPlayers[1]
+                  roleAssignments[roleIndex][slotIdx] = playerName
+                  assignedPlayers[playerName] = true
+                  assignmentCount = assignmentCount + 1
+                  assigned = true
+                  nextSlotToFill = slotIdx - 1
+                  break  -- Move to next slot
+                end
+              end
+              
+              -- If we assigned someone, break the slot loop to move to next slot
+              if assigned then
+                -- Continue to next slot (loop handles this)
+              end
+            end
+          end
+        end
+        
+        -- PHASE 2: Fill remaining empty slots using defaultRoles (fallback)
         if role.defaultRoles then
-          -- Get all players from RolesUI who match the defaultRoles
-          if OGRH_SV.roles then
-            for playerName, playerRole in pairs(OGRH_SV.roles) do
-              -- Check if player is in the raid
-              if raidMembers[playerName] then
+          local availablePlayers = {}
+          
+          -- Iterate through raid members and check their roles
+          for playerName, _ in pairs(raidMembers) do
+            -- Check if player is not already assigned (or allowOtherRoles is true)
+            if not assignedPlayers[playerName] or role.allowOtherRoles then
+              local playerRole = GetPlayerRole(playerName)
+              
+              if playerRole then
                 -- Check if player's role matches any enabled defaultRole
                 local matches = false
                 
@@ -883,36 +1013,35 @@ function OGRH.ShowEncounterWindow(encounterName)
                 end
                 
                 if matches then
-                  -- Check if player is already assigned (unless allowOtherRoles is true)
-                  if not assignedPlayers[playerName] or role.allowOtherRoles then
-                    table.insert(availablePlayers, playerName)
-                  end
+                  table.insert(availablePlayers, playerName)
                 end
               end
             end
           end
-        end
-        
-        -- Assign players to slots
-        local slotIndex = 1
-        for i = 1, table.getn(availablePlayers) do
-          if slotIndex > maxSlots then
-            break
-          end
           
-          local playerName = availablePlayers[i]
+          -- Sort alphabetically for consistent results
+          table.sort(availablePlayers)
           
-          -- Check if we can assign this player
-          local canAssign = true
-          if assignedPlayers[playerName] and not role.allowOtherRoles then
-            canAssign = false
-          end
-          
-          if canAssign then
-            roleAssignments[roleIndex][slotIndex] = playerName
-            assignedPlayers[playerName] = true
-            assignmentCount = assignmentCount + 1
-            slotIndex = slotIndex + 1
+          -- Fill remaining empty slots
+          local playerIdx = 1
+          for slotIdx = 1, maxSlots do
+            if not roleAssignments[roleIndex][slotIdx] and playerIdx <= table.getn(availablePlayers) then
+              local playerName = availablePlayers[playerIdx]
+              
+              -- Check if we can assign this player
+              local canAssign = true
+              if assignedPlayers[playerName] and not role.allowOtherRoles then
+                canAssign = false
+              end
+              
+              if canAssign then
+                roleAssignments[roleIndex][slotIdx] = playerName
+                assignedPlayers[playerName] = true
+                assignmentCount = assignmentCount + 1
+              end
+              
+              playerIdx = playerIdx + 1
+            end
           end
         end
       end
@@ -1633,14 +1762,10 @@ function OGRH.ShowEncounterWindow(encounterName)
     announceBtn:SetScript("OnClick", function()
       local button = arg1 or "LeftButton"
       
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DEBUG Step 1: Announce button clicked, button=" .. button .. "|r")
-      
       if not frame.selectedRaid or not frame.selectedEncounter then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
         return
       end
-      
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DEBUG Step 2: Raid and encounter selected|r")
       
       -- Right-click: Announce consumes
       if button == "RightButton" then
@@ -1739,8 +1864,6 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       -- Left-click: Normal announcement
       
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DEBUG Step 3: Left-click normal announcement path|r")
-      
       -- Get role configuration
       local roles = OGRH_SV.encounterMgmt.roles
       if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
@@ -1813,7 +1936,6 @@ function OGRH.ShowEncounterWindow(encounterName)
         return
       end
       
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DEBUG Step 9: Calling OGRH.SendAnnouncement|r")
       -- Send announcement and store for re-announce
       if OGRH.SendAnnouncement then
         OGRH.SendAnnouncement(announcementLines)
@@ -3387,7 +3509,39 @@ function OGRH.ShowEncounterWindow(encounterName)
                 slot.nameText:SetTextColor(1, 1, 1)
               end
             else
-              slot.nameText:SetText("[Empty]")
+              -- Build placeholder text from class priority and default roles
+              local placeholderText = "[Empty]"
+              
+              -- Get highest priority class if configured
+              local priorityClass = nil
+              if role.classPriority and role.classPriority[slotIdx] and table.getn(role.classPriority[slotIdx]) > 0 then
+                priorityClass = role.classPriority[slotIdx][1]
+              end
+              
+              -- Get default role text
+              local defaultRoleText = nil
+              if role.defaultRoles then
+                local roleNames = {}
+                if role.defaultRoles.tanks then table.insert(roleNames, "Tanks") end
+                if role.defaultRoles.healers then table.insert(roleNames, "Healers") end
+                if role.defaultRoles.melee then table.insert(roleNames, "Melee") end
+                if role.defaultRoles.ranged then table.insert(roleNames, "Ranged") end
+                
+                if table.getn(roleNames) > 0 then
+                  defaultRoleText = table.concat(roleNames, "/")
+                end
+              end
+              
+              -- Build final text
+              if priorityClass and defaultRoleText then
+                placeholderText = "[" .. priorityClass .. "/" .. defaultRoleText .. "]"
+              elseif priorityClass then
+                placeholderText = "[" .. priorityClass .. "]"
+              elseif defaultRoleText then
+                placeholderText = "[" .. defaultRoleText .. "]"
+              end
+              
+              slot.nameText:SetText(placeholderText)
               slot.nameText:SetTextColor(0.53, 0.53, 0.53)
             end
           end

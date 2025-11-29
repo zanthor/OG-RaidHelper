@@ -1,5 +1,15 @@
 # OG-RaidHelper Changelog
 
+## Version 1.15.2 - Auto-Assign Class Priority Fixes
+**Release Date:** November 29, 2025
+
+### Fixed
+- Auto-assign now correctly assigns players based on class priority system
+- Fixed role matching logic for classes without role checkboxes (Warlock, Mage, Rogue)
+- Classes in priority list with no role checkboxes configured now accept players from any role
+- Classes with role checkboxes enabled only accept players matching those specific roles
+- Classes with role checkboxes but none enabled accept players from any role
+
 ## Version 1.17.0 - Class Priority System
 **Release Date:** November 29, 2025
 
