@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.15.2
-## Notes: ESC key handling for all windows and dialogs
+## Version: 1.15.3
+## Notes: Update disc priest default role
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
