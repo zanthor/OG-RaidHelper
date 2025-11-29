@@ -738,6 +738,8 @@ function OGRH.HashRole(role, columnMultiplier, roleIndex)
     hash = hash + (role.showAssignment and 1 or 0) * roleIndex * columnMultiplier * 400
     hash = hash + (role.markPlayer and 1 or 0) * roleIndex * columnMultiplier * 500
     hash = hash + (role.allowOtherRoles and 1 or 0) * roleIndex * columnMultiplier * 600
+    hash = hash + (role.invertFillOrder and 1 or 0) * roleIndex * columnMultiplier * 610
+    hash = hash + (role.linkRole and 1 or 0) * roleIndex * columnMultiplier * 620
     
     -- Hash defaultRoles (tanks, healers, melee, ranged)
     if role.defaultRoles then
@@ -808,6 +810,15 @@ function OGRH.HashRole(role, columnMultiplier, roleIndex)
               hash = hash + (roles.Ranged and 1 or 0) * roleIndex * columnMultiplier * slotNum * 4004
             end
           end
+        end
+      end
+    end
+    
+    -- Hash linked roles
+    if role.linkedRoles then
+      for i, linkedRoleIndex in ipairs(role.linkedRoles) do
+        if type(linkedRoleIndex) == "number" then
+          hash = hash + linkedRoleIndex * roleIndex * columnMultiplier * i * 5000
         end
       end
     end

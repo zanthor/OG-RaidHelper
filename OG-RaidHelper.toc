@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.17.0
-## Notes: Added Class Priority system for slot assignment preferences
+## Version: 1.18.0
+## Notes: Added Link Role feature for alternating slot assignments
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
@@ -12,6 +12,7 @@ OGRH_MainUI.lua
 OGRH_RolesUI.lua
 OGRH_EncounterMgmt.lua
 OGRH_ClassPriority.lua
+OGRH_LinkRole.lua
 OGRH_Poll.lua
 OGRH_Trade.lua
 OGRH_Invites.lua

@@ -1,5 +1,33 @@
 # OG-RaidHelper Changelog
 
+## Version 1.18.0 - Link Role Feature
+**Release Date:** November 29, 2025
+
+### Features
+- **Link Role System**: Connect multiple roles together for alternating assignment
+  - New "Link Role" checkbox in Edit Role dialog (below Invert Fill Order)
+  - Link button appears in role header when Link Role is enabled
+  - Link Role dialog allows selecting which roles to link together
+  - Bidirectional linking: linking Role A to Role B automatically links Role B to Role A
+  - Linked roles are included in checksum validation for proper sync
+
+- **Alternating Auto-Assign**: Auto-assign now distributes players across linked roles
+  - Slots filled in alternating order (Role A Slot 1, Role B Slot 1, Role A Slot 2, etc.)
+  - Works with both class priority and defaultRoles fallback
+  - Each slot in the alternating queue uses class priority if configured, otherwise falls back to defaultRoles
+  - Ensures fair distribution of players across linked roles
+
+- **Invert Fill Order**: New checkbox in Edit Role dialog
+  - Controls fill direction for auto-assign (top-down by default, bottom-up when enabled)
+  - Works independently for each role
+  - Phase 2 (defaultRoles fallback) always fills top-down
+
+### Technical
+- Added OGRH_LinkRole.lua for Link Role dialog management
+- Updated HashRole function to include linkedRoles and invertFillOrder in checksums
+- Linked roles processed as a group in auto-assign to maintain alternating order
+- Role skip tracking prevents linked roles from being processed multiple times
+
 ## Version 1.15.2 - Auto-Assign Class Priority Fixes
 **Release Date:** November 29, 2025
 
