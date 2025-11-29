@@ -386,31 +386,21 @@ function OGRH.RefreshAutoPromote()
     nameText:SetTextColor(classColor.r, classColor.g, classColor.b)
     nameText:SetText(playerName)
     
-    -- Delete button
-    local deleteBtn = CreateFrame("Button", nil, row)
-    deleteBtn:SetWidth(16)
-    deleteBtn:SetHeight(16)
-    deleteBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-    
-    local deleteIcon = deleteBtn:CreateTexture(nil, "ARTWORK")
-    deleteIcon:SetWidth(16)
-    deleteIcon:SetHeight(16)
-    deleteIcon:SetAllPoints(deleteBtn)
-    deleteIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
-    deleteIcon:SetTexCoord(0.5, 0.75, 0.25, 0.5)  -- Cross/X icon
-    
-    local deleteHighlight = deleteBtn:CreateTexture(nil, "HIGHLIGHT")
-    deleteHighlight:SetWidth(16)
-    deleteHighlight:SetHeight(16)
-    deleteHighlight:SetAllPoints(deleteBtn)
-    deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
-    deleteHighlight:SetBlendMode("ADD")
-    
+    -- Add delete button using template (no up/down buttons needed)
     local idx = i
-    deleteBtn:SetScript("OnClick", function()
-      table.remove(OGRH_SV.autoPromotes, idx)
-      OGRH.RefreshAutoPromote()
-    end)
+    OGRH.AddListItemButtons(
+      row,
+      idx,
+      table.getn(promoteList),
+      nil,  -- No move up
+      nil,  -- No move down
+      function()
+        -- Delete
+        table.remove(OGRH_SV.autoPromotes, idx)
+        OGRH.RefreshAutoPromote()
+      end,
+      true  -- Hide up/down buttons
+    )
     
     table.insert(leftScrollChild.rows, row)
     yOffset = yOffset - rowHeight - rowSpacing

@@ -317,6 +317,77 @@ OGRH.LIST_COLORS = {
 OGRH.LIST_ITEM_HEIGHT = 20
 OGRH.LIST_ITEM_SPACING = 2
 
+-- Add standardized up/down/delete buttons to a list item
+-- Parameters:
+--   listItem: The parent frame (list item) to attach buttons to
+--   index: Current index in the list (1-based)
+--   listLength: Total number of items in the list
+--   onMoveUp: Callback function when up button clicked
+--   onMoveDown: Callback function when down button clicked
+--   onDelete: Callback function when delete button clicked
+--   hideUpDown: Optional boolean, if true only shows delete button
+-- Returns: deleteButton, downButton, upButton (for manual positioning if needed)
+function OGRH.AddListItemButtons(listItem, index, listLength, onMoveUp, onMoveDown, onDelete, hideUpDown)
+  if not listItem then return nil, nil, nil end
+  
+  local buttonSize = 32
+  local buttonSpacing = -10
+  
+  -- Delete button (X mark)
+  local deleteBtn = CreateFrame("Button", nil, listItem)
+  deleteBtn:SetWidth(buttonSize)
+  deleteBtn:SetHeight(buttonSize)
+  deleteBtn:SetPoint("RIGHT", listItem, "RIGHT", -2, 0)
+  deleteBtn:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+  deleteBtn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
+  deleteBtn:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
+  
+  if onDelete then
+    deleteBtn:SetScript("OnClick", onDelete)
+  end
+  
+  -- If hideUpDown is true, only return delete button
+  if hideUpDown then
+    return deleteBtn, nil, nil
+  end
+  
+  -- Down button (scroll down arrow)
+  local downBtn = CreateFrame("Button", nil, listItem)
+  downBtn:SetWidth(buttonSize)
+  downBtn:SetHeight(buttonSize)
+  downBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -buttonSpacing, 0)
+  downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+  downBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
+  downBtn:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled")
+  
+  -- Disable down button if this is the last item
+  if index >= listLength then
+    downBtn:Disable()
+  elseif onMoveDown then
+    downBtn:SetScript("OnClick", onMoveDown)
+  end
+  
+  -- Up button (scroll up arrow)
+  local upBtn = CreateFrame("Button", nil, listItem)
+  upBtn:SetWidth(buttonSize)
+  upBtn:SetHeight(buttonSize)
+  upBtn:SetPoint("RIGHT", downBtn, "LEFT", -buttonSpacing, 0)
+  upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
+  upBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
+  upBtn:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled")
+  
+  -- Disable up button if this is the first item
+  if index <= 1 then
+    upBtn:Disable()
+  elseif onMoveUp then
+    upBtn:SetScript("OnClick", onMoveUp)
+  end
+  
+  return deleteBtn, downBtn, upBtn
+end
+
 -- Create a standardized list item with background and hover effects
 -- Returns: itemFrame with .bg property for runtime color changes
 function OGRH.CreateStyledListItem(parent, width, height, frameType)
@@ -3414,64 +3485,31 @@ function OGRH.RefreshTradeSettings()
       end
     end)
     
-    -- Delete button (X mark - raid target icon 7)
-    local deleteBtn = CreateFrame("Button", nil, row)
-    deleteBtn:SetWidth(16)
-    deleteBtn:SetHeight(16)
-    deleteBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-    
-    local deleteIcon = deleteBtn:CreateTexture(nil, "ARTWORK")
-    deleteIcon:SetWidth(16)
-    deleteIcon:SetHeight(16)
-    deleteIcon:SetAllPoints(deleteBtn)
-    deleteIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
-    deleteIcon:SetTexCoord(0.5, 0.75, 0.25, 0.5)  -- Cross/X icon (raid mark 7)
-    
-    local deleteHighlight = deleteBtn:CreateTexture(nil, "HIGHLIGHT")
-    deleteHighlight:SetWidth(16)
-    deleteHighlight:SetHeight(16)
-    deleteHighlight:SetAllPoints(deleteBtn)
-    deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
-    deleteHighlight:SetBlendMode("ADD")
-    
-    deleteBtn:SetScript("OnClick", function()
-      table.remove(OGRH_SV.tradeItems, idx)
-      OGRH.RefreshTradeSettings()
-    end)
-    
-    -- Down button
-    local downBtn = CreateFrame("Button", nil, row)
-    downBtn:SetWidth(32)
-    downBtn:SetHeight(32)
-    downBtn:SetPoint("RIGHT", deleteBtn, "LEFT", 5, 0)
-    downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-    downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
-    downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
-    downBtn:SetScript("OnClick", function()
-      if idx < table.getn(OGRH_SV.tradeItems) then
-        local temp = OGRH_SV.tradeItems[idx + 1]
-        OGRH_SV.tradeItems[idx + 1] = OGRH_SV.tradeItems[idx]
-        OGRH_SV.tradeItems[idx] = temp
-        OGRH.RefreshTradeSettings()
-      end
-    end)
-    
-    -- Up button
-    local upBtn = CreateFrame("Button", nil, row)
-    upBtn:SetWidth(32)
-    upBtn:SetHeight(32)
-    upBtn:SetPoint("RIGHT", downBtn, "LEFT", 13, 0)
-    upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-    upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
-    upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-    upBtn:SetScript("OnClick", function()
-      if idx > 1 then
+    -- Add up/down/delete buttons using template
+    local deleteBtn, downBtn, upBtn = OGRH.AddListItemButtons(
+      row,
+      idx,
+      table.getn(OGRH_SV.tradeItems),
+      function()
+        -- Move up
         local temp = OGRH_SV.tradeItems[idx - 1]
         OGRH_SV.tradeItems[idx - 1] = OGRH_SV.tradeItems[idx]
         OGRH_SV.tradeItems[idx] = temp
         OGRH.RefreshTradeSettings()
+      end,
+      function()
+        -- Move down
+        local temp = OGRH_SV.tradeItems[idx + 1]
+        OGRH_SV.tradeItems[idx + 1] = OGRH_SV.tradeItems[idx]
+        OGRH_SV.tradeItems[idx] = temp
+        OGRH.RefreshTradeSettings()
+      end,
+      function()
+        -- Delete
+        table.remove(OGRH_SV.tradeItems, idx)
+        OGRH.RefreshTradeSettings()
       end
-    end)
+    )
     
     -- Quantity (positioned 10px from up arrow)
     local qtyText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")

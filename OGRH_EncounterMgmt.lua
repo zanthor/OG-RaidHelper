@@ -3599,66 +3599,31 @@ function OGRH.ShowEncounterSetup()
           end
         end)
         
-        -- Delete button (X mark - raid target icon 7)
-        local deleteBtn = CreateFrame("Button", nil, raidBtn)
-        deleteBtn:SetWidth(16)
-        deleteBtn:SetHeight(16)
-        deleteBtn:SetPoint("RIGHT", raidBtn, "RIGHT", -2, 0)
-        
-        local deleteIcon = deleteBtn:CreateTexture(nil, "ARTWORK")
-        deleteIcon:SetWidth(16)
-        deleteIcon:SetHeight(16)
-        deleteIcon:SetAllPoints(deleteBtn)
-        deleteIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
-        deleteIcon:SetTexCoord(0.5, 0.75, 0.25, 0.5)  -- Cross/X icon (raid mark 7)
-        
-        local deleteHighlight = deleteBtn:CreateTexture(nil, "HIGHLIGHT")
-        deleteHighlight:SetWidth(16)
-        deleteHighlight:SetHeight(16)
-        deleteHighlight:SetAllPoints(deleteBtn)
-        deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
-        deleteHighlight:SetBlendMode("ADD")
-        
-        deleteBtn:SetScript("OnClick", function()
-          StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"].text_arg1 = capturedRaidName
-          StaticPopup_Show("OGRH_CONFIRM_DELETE_RAID", capturedRaidName)
-        end)
-        
-        -- Down button
-        local downBtn = CreateFrame("Button", nil, raidBtn)
-        downBtn:SetWidth(32)
-        downBtn:SetHeight(32)
-        downBtn:SetPoint("RIGHT", deleteBtn, "LEFT", 5, 0)
-        downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-        downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
-        downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
-        downBtn:SetScript("OnClick", function()
-          if capturedIndex < table.getn(OGRH_SV.encounterMgmt.raids) then
-            -- Swap with next
-            local temp = OGRH_SV.encounterMgmt.raids[capturedIndex + 1]
-            OGRH_SV.encounterMgmt.raids[capturedIndex + 1] = OGRH_SV.encounterMgmt.raids[capturedIndex]
-            OGRH_SV.encounterMgmt.raids[capturedIndex] = temp
-            RefreshRaidsList()
-          end
-        end)
-        
-        -- Up button
-        local upBtn = CreateFrame("Button", nil, raidBtn)
-        upBtn:SetWidth(32)
-        upBtn:SetHeight(32)
-        upBtn:SetPoint("RIGHT", downBtn, "LEFT", 13, 0)
-        upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-        upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
-        upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-        upBtn:SetScript("OnClick", function()
-          if capturedIndex > 1 then
-            -- Swap with previous
+        -- Add up/down/delete buttons using template
+        OGRH.AddListItemButtons(
+          raidBtn,
+          capturedIndex,
+          table.getn(OGRH_SV.encounterMgmt.raids),
+          function()
+            -- Move up
             local temp = OGRH_SV.encounterMgmt.raids[capturedIndex - 1]
             OGRH_SV.encounterMgmt.raids[capturedIndex - 1] = OGRH_SV.encounterMgmt.raids[capturedIndex]
             OGRH_SV.encounterMgmt.raids[capturedIndex] = temp
             RefreshRaidsList()
+          end,
+          function()
+            -- Move down
+            local temp = OGRH_SV.encounterMgmt.raids[capturedIndex + 1]
+            OGRH_SV.encounterMgmt.raids[capturedIndex + 1] = OGRH_SV.encounterMgmt.raids[capturedIndex]
+            OGRH_SV.encounterMgmt.raids[capturedIndex] = temp
+            RefreshRaidsList()
+          end,
+          function()
+            -- Delete
+            StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"].text_arg1 = capturedRaidName
+            StaticPopup_Show("OGRH_CONFIRM_DELETE_RAID", capturedRaidName)
           end
-        end)
+        )
         
         table.insert(frame.raidButtons, raidBtn)
         yOffset = yOffset - OGRH.LIST_ITEM_HEIGHT - OGRH.LIST_ITEM_SPACING
@@ -3798,65 +3763,32 @@ function OGRH.ShowEncounterSetup()
           end
         end)
         
-        -- Delete button (X mark)
-        local deleteBtn = CreateFrame("Button", nil, encounterBtn)
-        deleteBtn:SetWidth(16)
-        deleteBtn:SetHeight(16)
-        deleteBtn:SetPoint("RIGHT", encounterBtn, "RIGHT", -2, 0)
-        
-        local deleteIcon = deleteBtn:CreateTexture(nil, "ARTWORK")
-        deleteIcon:SetWidth(16)
-        deleteIcon:SetHeight(16)
-        deleteIcon:SetAllPoints(deleteBtn)
-        deleteIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
-        deleteIcon:SetTexCoord(0.5, 0.75, 0.25, 0.5)
-        
-        local deleteHighlight = deleteBtn:CreateTexture(nil, "HIGHLIGHT")
-        deleteHighlight:SetWidth(16)
-        deleteHighlight:SetHeight(16)
-        deleteHighlight:SetAllPoints(deleteBtn)
-        deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
-        deleteHighlight:SetBlendMode("ADD")
-        
-        deleteBtn:SetScript("OnClick", function()
-          StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1 = capturedEncounterName
-          StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg2 = capturedRaid
-          StaticPopup_Show("OGRH_CONFIRM_DELETE_ENCOUNTER", capturedEncounterName)
-        end)
-        
-        -- Down button
-        local downBtn = CreateFrame("Button", nil, encounterBtn)
-        downBtn:SetWidth(32)
-        downBtn:SetHeight(32)
-        downBtn:SetPoint("RIGHT", deleteBtn, "LEFT", 5, 0)
-        downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-        downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
-        downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
-        downBtn:SetScript("OnClick", function()
-          if capturedIndex < table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) then
-            local temp = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex + 1]
-            OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex + 1] = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex]
-            OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex] = temp
-            RefreshEncountersList()
-          end
-        end)
-        
-        -- Up button
-        local upBtn = CreateFrame("Button", nil, encounterBtn)
-        upBtn:SetWidth(32)
-        upBtn:SetHeight(32)
-        upBtn:SetPoint("RIGHT", downBtn, "LEFT", 13, 0)
-        upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-        upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
-        upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-        upBtn:SetScript("OnClick", function()
-          if capturedIndex > 1 then
+        -- Add up/down/delete buttons using template
+        OGRH.AddListItemButtons(
+          encounterBtn,
+          capturedIndex,
+          table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]),
+          function()
+            -- Move up
             local temp = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex - 1]
             OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex - 1] = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex]
             OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex] = temp
             RefreshEncountersList()
+          end,
+          function()
+            -- Move down
+            local temp = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex + 1]
+            OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex + 1] = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex]
+            OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex] = temp
+            RefreshEncountersList()
+          end,
+          function()
+            -- Delete
+            StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1 = capturedEncounterName
+            StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg2 = capturedRaid
+            StaticPopup_Show("OGRH_CONFIRM_DELETE_ENCOUNTER", capturedEncounterName)
           end
-        end)
+        )
         
         table.insert(frame.encounterButtons, encounterBtn)
         yOffset = yOffset - OGRH.LIST_ITEM_HEIGHT - OGRH.LIST_ITEM_SPACING
@@ -4220,97 +4152,13 @@ function OGRH.ShowEncounterSetup()
         local capturedRoles = columnRoles
         local capturedIdx = roleIndex
         
-        -- Delete button (rightmost)
-        local deleteBtn = CreateFrame("Button", nil, roleBtn)
-        deleteBtn:SetWidth(16)
-        deleteBtn:SetHeight(16)
-        deleteBtn:SetPoint("RIGHT", roleBtn, "RIGHT", -2, 0)
-        
-        local deleteIcon = deleteBtn:CreateTexture(nil, "ARTWORK")
-        deleteIcon:SetWidth(16)
-        deleteIcon:SetHeight(16)
-        deleteIcon:SetAllPoints(deleteBtn)
-        deleteIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
-        deleteIcon:SetTexCoord(0.5, 0.75, 0.25, 0.5)
-        
-        local deleteHighlight = deleteBtn:CreateTexture(nil, "HIGHLIGHT")
-        deleteHighlight:SetWidth(16)
-        deleteHighlight:SetHeight(16)
-        deleteHighlight:SetAllPoints(deleteBtn)
-        deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
-        deleteHighlight:SetBlendMode("ADD")
-        
-        deleteBtn:SetScript("OnClick", function()
-          local selectedRaid = frame.selectedRaid
-          local selectedEncounter = frame.selectedEncounter
-          local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
-          
-          -- Save old roles state before deletion (column1 then column2)
-          local oldRoles = {}
-          for _, role in ipairs(rolesData.column1) do table.insert(oldRoles, role) end
-          for _, role in ipairs(rolesData.column2) do table.insert(oldRoles, role) end
-          
-          -- Remove the role
-          table.remove(capturedRoles, capturedIdx)
-          
-          -- Build new roles state after deletion
-          local newRoles = {}
-          for _, role in ipairs(rolesData.column1) do table.insert(newRoles, role) end
-          for _, role in ipairs(rolesData.column2) do table.insert(newRoles, role) end
-          
-          -- Update announcement tags
-          UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
-          
-          RefreshRolesList()
-        end)
-        
-        -- Down button (middle)
-        local downBtn = CreateFrame("Button", nil, roleBtn)
-        downBtn:SetWidth(32)
-        downBtn:SetHeight(32)
-        downBtn:SetPoint("RIGHT", deleteBtn, "LEFT", 5, 0)
-        downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-        downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
-        downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
-        downBtn:SetScript("OnClick", function()
-          if capturedIdx < table.getn(capturedRoles) then
-            local selectedRaid = frame.selectedRaid
-            local selectedEncounter = frame.selectedEncounter
-            local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
-            
-            -- Save old roles state before reordering (column1 then column2)
-            local oldRoles = {}
-            for _, role in ipairs(rolesData.column1) do table.insert(oldRoles, role) end
-            for _, role in ipairs(rolesData.column2) do table.insert(oldRoles, role) end
-            
-            -- Swap roles
-            local temp = capturedRoles[capturedIdx + 1]
-            capturedRoles[capturedIdx + 1] = capturedRoles[capturedIdx]
-            capturedRoles[capturedIdx] = temp
-            
-            -- Build new roles state after reordering
-            local newRoles = {}
-            for _, role in ipairs(rolesData.column1) do table.insert(newRoles, role) end
-            for _, role in ipairs(rolesData.column2) do table.insert(newRoles, role) end
-            
-            -- Update announcement tags
-            UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
-            
-            RefreshRolesList()
-          end
-        end)
-        
-        -- Up button (leftmost of the three)
-        local upBtn = CreateFrame("Button", nil, roleBtn)
-        upBtn:SetWidth(32)
-        upBtn:SetHeight(32)
-        -- Position 2px left of down button: delete(16) + spacing(2) + down(32) + spacing(2) = 52 from right
-        upBtn:SetPoint("RIGHT", downBtn, "LEFT", 13, 0)
-        upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-        upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
-        upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-        upBtn:SetScript("OnClick", function()
-          if capturedIdx > 1 then
+        -- Add up/down/delete buttons using template
+        OGRH.AddListItemButtons(
+          roleBtn,
+          capturedIdx,
+          table.getn(capturedRoles),
+          function()
+            -- Move up
             local selectedRaid = frame.selectedRaid
             local selectedEncounter = frame.selectedEncounter
             local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
@@ -4334,8 +4182,58 @@ function OGRH.ShowEncounterSetup()
             UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
             
             RefreshRolesList()
+          end,
+          function()
+            -- Move down
+            local selectedRaid = frame.selectedRaid
+            local selectedEncounter = frame.selectedEncounter
+            local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
+            
+            -- Save old roles state before reordering (column1 then column2)
+            local oldRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(oldRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(oldRoles, role) end
+            
+            -- Swap roles
+            local temp = capturedRoles[capturedIdx + 1]
+            capturedRoles[capturedIdx + 1] = capturedRoles[capturedIdx]
+            capturedRoles[capturedIdx] = temp
+            
+            -- Build new roles state after reordering
+            local newRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(newRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(newRoles, role) end
+            
+            -- Update announcement tags
+            UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
+            
+            RefreshRolesList()
+          end,
+          function()
+            -- Delete
+            local selectedRaid = frame.selectedRaid
+            local selectedEncounter = frame.selectedEncounter
+            local rolesData = OGRH_SV.encounterMgmt.roles[selectedRaid][selectedEncounter]
+            
+            -- Save old roles state before deletion (column1 then column2)
+            local oldRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(oldRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(oldRoles, role) end
+            
+            -- Remove the role
+            table.remove(capturedRoles, capturedIdx)
+            
+            -- Build new roles state after deletion
+            local newRoles = {}
+            for _, role in ipairs(rolesData.column1) do table.insert(newRoles, role) end
+            for _, role in ipairs(rolesData.column2) do table.insert(newRoles, role) end
+            
+            -- Update announcement tags
+            UpdateAnnouncementTagsForRoleChanges(selectedRaid, selectedEncounter, oldRoles, newRoles)
+            
+            RefreshRolesList()
           end
-        end)
+        )
         
         table.insert(frame.roleButtons, roleBtn)
         

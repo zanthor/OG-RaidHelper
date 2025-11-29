@@ -1,5 +1,42 @@
 # OG-RaidHelper Changelog
 
+## Version 1.15.4 - UI Standardization
+**Release Date:** November 28, 2025
+
+### Code Improvements
+- **List Item Button Template**: Created standardized `OGRH.AddListItemButtons()` template function
+  - Consolidates duplicated up/down/delete button code across all list windows
+  - Reduces ~440 lines of duplicated code to ~110 lines (75% reduction)
+  - Provides consistent button behavior and positioning across addon
+  - Supports optional delete-only mode for lists that don't need reordering
+
+- **Applied Template To**:
+  - Encounter Setup: Raids list, Encounters list, both Roles columns
+  - Trade Settings: Item list
+  - Consume Settings: Item list
+  - Auto Promote: Player list (delete-only mode)
+
+### Technical Details
+- **Template Function**: `OGRH.AddListItemButtons(listItem, index, listLength, onMoveUp, onMoveDown, onDelete, hideUpDown)`
+- **Button Graphics**: Standard WoW scroll arrows (up/down) and minimize button (X)
+- **Auto-disable**: Up button disabled on first item, down button disabled on last item
+- **Return Values**: Returns button references for positioning adjacent text elements
+
+## Version 1.15.3 - Structure Checksum Enhancement
+**Release Date:** November 28, 2025
+
+### Bug Fixes
+- **Structure Checksum Validation**: Enhanced checksum to include all role dialog settings
+  - Now hashes all 20+ role properties from Edit Role dialog
+  - Includes: boolean flags, defaultRoles, classes, consume primary/secondary/allowAlternate
+  - Prevents false mismatches when role settings differ between raid members
+  - Uses unique multipliers for each property to ensure checksum sensitivity
+
+### Technical Details
+- **New Helper Function**: `HashRole()` comprehensively hashes all role properties
+- **Properties Included**: name, slots, isConsumeCheck, showRaidIcons, showAssignment, markPlayer, allowOtherRoles, defaultRoles (4 values), classes (10 values), consumes (3 values per item)
+- **Multiplier System**: Column1 uses 10x, Column2 uses 20x, unique multipliers per property
+
 ## Version 1.15.2 - Consume Tag Display Fix
 **Release Date:** November 28, 2025
 

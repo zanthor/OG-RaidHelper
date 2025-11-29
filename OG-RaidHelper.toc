@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.15.3
+## Version: 1.15.4
 ## Notes: Update disc priest default role
 ## SavedVariables: OGRH_SV
 

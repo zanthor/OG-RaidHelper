@@ -120,64 +120,31 @@ function OGRH.RefreshConsumesSettings()
       end
     end)
     
-    -- Delete button (X mark - raid target icon 7)
-    local deleteBtn = CreateFrame("Button", nil, row)
-    deleteBtn:SetWidth(16)
-    deleteBtn:SetHeight(16)
-    deleteBtn:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-    
-    local deleteIcon = deleteBtn:CreateTexture(nil, "ARTWORK")
-    deleteIcon:SetWidth(16)
-    deleteIcon:SetHeight(16)
-    deleteIcon:SetAllPoints(deleteBtn)
-    deleteIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
-    deleteIcon:SetTexCoord(0.5, 0.75, 0.25, 0.5)  -- Cross/X icon (raid mark 7)
-    
-    local deleteHighlight = deleteBtn:CreateTexture(nil, "HIGHLIGHT")
-    deleteHighlight:SetWidth(16)
-    deleteHighlight:SetHeight(16)
-    deleteHighlight:SetAllPoints(deleteBtn)
-    deleteHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
-    deleteHighlight:SetBlendMode("ADD")
-    
-    deleteBtn:SetScript("OnClick", function()
-      table.remove(OGRH_SV.consumes, idx)
-      OGRH.RefreshConsumesSettings()
-    end)
-    
-    -- Down button
-    local downBtn = CreateFrame("Button", nil, row)
-    downBtn:SetWidth(32)
-    downBtn:SetHeight(32)
-    downBtn:SetPoint("RIGHT", deleteBtn, "LEFT", 5, 0)
-    downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-    downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
-    downBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
-    downBtn:SetScript("OnClick", function()
-      if idx < table.getn(OGRH_SV.consumes) then
-        local temp = OGRH_SV.consumes[idx + 1]
-        OGRH_SV.consumes[idx + 1] = OGRH_SV.consumes[idx]
-        OGRH_SV.consumes[idx] = temp
-        OGRH.RefreshConsumesSettings()
-      end
-    end)
-    
-    -- Up button
-    local upBtn = CreateFrame("Button", nil, row)
-    upBtn:SetWidth(32)
-    upBtn:SetHeight(32)
-    upBtn:SetPoint("RIGHT", downBtn, "LEFT", 13, 0)
-    upBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-    upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
-    upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-    upBtn:SetScript("OnClick", function()
-      if idx > 1 then
+    -- Add up/down/delete buttons using template
+    local deleteBtn, downBtn, upBtn = OGRH.AddListItemButtons(
+      row,
+      idx,
+      table.getn(OGRH_SV.consumes),
+      function()
+        -- Move up
         local temp = OGRH_SV.consumes[idx - 1]
         OGRH_SV.consumes[idx - 1] = OGRH_SV.consumes[idx]
         OGRH_SV.consumes[idx] = temp
         OGRH.RefreshConsumesSettings()
+      end,
+      function()
+        -- Move down
+        local temp = OGRH_SV.consumes[idx + 1]
+        OGRH_SV.consumes[idx + 1] = OGRH_SV.consumes[idx]
+        OGRH_SV.consumes[idx] = temp
+        OGRH.RefreshConsumesSettings()
+      end,
+      function()
+        -- Delete
+        table.remove(OGRH_SV.consumes, idx)
+        OGRH.RefreshConsumesSettings()
       end
-    end)
+    )
     
     -- Item names display (Primary / Secondary)
     local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
