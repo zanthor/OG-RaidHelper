@@ -1993,6 +1993,10 @@ function OGRH.ShowEncounterWindow(encounterName)
               if slot.assignBtn then
                 slot.assignBtn:EnableMouse(enabled)
               end
+              -- Disable/enable edit buttons
+              if slot.editBtn then
+                slot.editBtn:EnableMouse(enabled)
+              end
             end
           end
         end
@@ -2882,6 +2886,19 @@ function OGRH.ShowEncounterWindow(encounterName)
             end)
           end
           
+          -- Edit button for class priority (create first so we can position other elements relative to it)
+          local editBtn = CreateFrame("Button", nil, slot)
+          editBtn:SetWidth(16)
+          editBtn:SetHeight(16)
+          editBtn:SetPoint("RIGHT", slot, "RIGHT", -3, 0)
+          editBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+          editBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+          editBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
+          editBtn.roleIndex = capturedRoleIndex
+          editBtn.slotIndex = i
+          editBtn:EnableMouse(false)
+          slot.editBtn = editBtn
+          
           -- Player name text
           local nameText = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
           
@@ -2901,12 +2918,11 @@ function OGRH.ShowEncounterWindow(encounterName)
           
           -- Assignment button - only if showAssignment is true
           if role.showAssignment then
-            nameText:SetPoint("RIGHT", slot, "RIGHT", -25, 0)
             
             local assignBtn = CreateFrame("Button", nil, slot)
             assignBtn:SetWidth(20)
             assignBtn:SetHeight(16)
-            assignBtn:SetPoint("RIGHT", slot, "RIGHT", -3, 0)
+            assignBtn:SetPoint("RIGHT", editBtn, "LEFT", -4, 0)
             
             -- Background for assignment button
             local assignBg = assignBtn:CreateTexture(nil, "BACKGROUND")
@@ -2931,10 +2947,13 @@ function OGRH.ShowEncounterWindow(encounterName)
             
             -- Tag marker for assignment (Ax) - positioned to the left of the button
             local assignTag = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            assignTag:SetPoint("RIGHT", assignBtn, "LEFT", -4, 0)
+            assignTag:SetPoint("RIGHT", assignBtn, "LEFT", -2, 0)
             assignTag:SetText("|cff888888A" .. i .. "|r")
             assignTag:SetTextColor(0.5, 0.5, 0.5)
             slot.assignTag = assignTag
+            
+            -- Position nameText to end before assignment tag
+            nameText:SetPoint("RIGHT", assignTag, "LEFT", -5, 0)
             
             -- Click to cycle through assignments
             local capturedSlotIndex = i
@@ -2985,8 +3004,32 @@ function OGRH.ShowEncounterWindow(encounterName)
               end
             end)
           else
-            nameText:SetPoint("RIGHT", slot, "RIGHT", -5, 0)
+            -- No assignment button, nameText ends before edit button
+            nameText:SetPoint("RIGHT", editBtn, "LEFT", -5, 0)
           end
+          
+          -- Click handler for edit button
+          local capturedSlotIndex = i
+          local capturedRoleData = role
+          editBtn:SetScript("OnClick", function()
+            if not OGRH.ShowClassPriorityDialog then
+              OGRH.Msg("Class Priority dialog not loaded. Please /reload")
+              return
+            end
+            OGRH.ShowClassPriorityDialog(
+              frame.selectedRaid,
+              frame.selectedEncounter,
+              capturedRoleIndex,
+              capturedSlotIndex,
+              capturedRoleData,
+              function()
+                -- Refresh callback
+                if frame.RefreshRoleContainers then
+                  frame.RefreshRoleContainers()
+                end
+              end
+            )
+          end)
           
           nameText:SetJustifyH("LEFT")
           slot.nameText = nameText
@@ -2998,11 +3041,11 @@ function OGRH.ShowEncounterWindow(encounterName)
           -- Create a BUTTON for drag/drop (overlays the name area, RolesUI pattern)
           local dragBtn = CreateFrame("Button", nil, slot)
           dragBtn:SetPoint("LEFT", nameText, "LEFT", -5, 0)
-          -- If assignment button exists, stop before it; otherwise cover full width
+          -- Stop before the assignment tag/button area (or edit button if no assignment)
           if role.showAssignment then
             dragBtn:SetPoint("RIGHT", slot.assignTag, "LEFT", -2, 0)
           else
-            dragBtn:SetPoint("RIGHT", slot, "RIGHT", -5, 0)
+            dragBtn:SetPoint("RIGHT", editBtn, "LEFT", -2, 0)
           end
           dragBtn:SetHeight(20)
           dragBtn:EnableMouse(true)
@@ -3034,6 +3077,9 @@ function OGRH.ShowEncounterWindow(encounterName)
           
           -- Drag start
           dragBtn:SetScript("OnDragStart", function()
+            -- Mark that a drag actually started
+            this.isDragging = true
+            
             -- Check permission
             if not OGRH.CanEdit or not OGRH.CanEdit() then
               return
@@ -3204,6 +3250,9 @@ function OGRH.ShowEncounterWindow(encounterName)
             frame.draggedFromSlot = nil
             frame.draggedPlayerName = nil
             
+            -- Keep isDragging flag set so OnClick knows to ignore it
+            -- It will be cleared in OnClick handler
+            
             -- Refresh display
             if frame.RefreshRoleContainers then
               frame.RefreshRoleContainers()
@@ -3212,6 +3261,12 @@ function OGRH.ShowEncounterWindow(encounterName)
           
           -- Click handler on button
           dragBtn:SetScript("OnClick", function()
+            -- If a drag occurred, ignore the click
+            if this.isDragging then
+              this.isDragging = false
+              return
+            end
+            
             local button = arg1 or "LeftButton"
             local slotRoleIndex = this.roleIndex
             local slotSlotIndex = this.slotIndex
@@ -3247,7 +3302,7 @@ function OGRH.ShowEncounterWindow(encounterName)
                 end
               end
             end
-            -- Left click: Do nothing (removed player selection dialog)
+            -- Left click: Do nothing (edit button handles class priority)
           end)
           
           table.insert(container.slots, slot)

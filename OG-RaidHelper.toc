@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.15.4
-## Notes: Update disc priest default role
+## Version: 1.17.0
+## Notes: Added Class Priority system for slot assignment preferences
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
@@ -11,6 +11,7 @@ OGRH_RaidLead.lua
 OGRH_MainUI.lua
 OGRH_RolesUI.lua
 OGRH_EncounterMgmt.lua
+OGRH_ClassPriority.lua
 OGRH_Poll.lua
 OGRH_Trade.lua
 OGRH_Invites.lua

@@ -1,5 +1,44 @@
 # OG-RaidHelper Changelog
 
+## Version 1.17.0 - Class Priority System
+**Release Date:** November 29, 2025
+
+### Features
+- **Class Priority Assignment**: Left-click any role slot in Encounter Planning to set class priority
+  - Define which classes should be preferred for each slot
+  - Drag classes up/down to set priority order
+  - Classes not in the priority list have no preference
+  - Role checkboxes for hybrid classes (Tanks, Healers, Melee, Ranged)
+  - Role naming matches RolesUI convention for consistency with auto-assignment
+  - Future feature: Auto-assignment based on priority (not yet implemented)
+
+- **Class Priority Dialog**:
+  - Two-column interface: Priority Order (left) and Available Classes (right)
+  - Priority Order list has up/down/delete buttons using standardized template
+  - Available Classes list has add button to move classes to priority list
+  - Class priority stored per slot, not per role (each slot can have different priorities)
+  - Role-specific checkboxes for hybrid classes:
+    - Druid/Shaman: Tanks, Healers, Melee, Ranged
+    - Warrior: Tanks, Melee
+    - Paladin: Tanks, Healers, Melee
+    - Hunter: Melee, Ranged
+    - Priest: Healers, Ranged
+    - Mage/Rogue/Warlock: No role checkboxes (single role)
+
+### Technical Details
+- **New File**: OGRH_ClassPriority.lua - Dialog for managing class priorities
+- **Data Structure**: 
+  - `role.classPriority[slotIndex] = {"Warrior", "Paladin", ...}`
+  - `role.classPriorityRoles[slotIndex][className] = {Tanks=true, Healers=true, ...}`
+- **Structure Checksum**: Updated to include both classPriority and classPriorityRoles data
+  - HashRole function moved to module level for reuse
+  - CalculateAllStructureChecksum now calls HashRole for complete property coverage
+- **Import/Export**: Class priority and role flags included in structure sync
+- **Multipliers**: 
+  - classPriority uses 3000x multiplier in checksum calculation
+  - classPriorityRoles uses 4000-4004x multipliers (one per role flag)
+- **Role Naming**: Uses RolesUI convention (Tanks, Healers, Melee, Ranged) for consistency
+
 ## Version 1.15.4 - UI Standardization
 **Release Date:** November 28, 2025
 

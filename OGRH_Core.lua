@@ -718,21 +718,8 @@ function OGRH.BroadcastEncounterSelection(raidName, encounterName)
   SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
 end
 
--- Calculate checksum of encounter assignments
--- Calculate structure checksum based on roles configuration
-function OGRH.CalculateStructureChecksum(raid, encounter)
-  OGRH.EnsureSV()
-  if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.roles or
-     not OGRH_SV.encounterMgmt.roles[raid] or
-     not OGRH_SV.encounterMgmt.roles[raid][encounter] then
-    return "0"
-  end
-  
-  local roles = OGRH_SV.encounterMgmt.roles[raid][encounter]
-  local checksum = 0
-  
-  -- Helper function to hash a role's complete settings
-  local function HashRole(role, columnMultiplier, roleIndex)
+-- Helper function to hash a role's complete settings (used by checksum calculations)
+function OGRH.HashRole(role, columnMultiplier, roleIndex)
     local hash = 0
     
     -- Hash role name
@@ -787,19 +774,69 @@ function OGRH.CalculateStructureChecksum(raid, encounter)
       end
     end
     
+    -- Hash class priority (per-slot class ordering)
+    if role.classPriority then
+      for slotIndex, classList in pairs(role.classPriority) do
+        if type(classList) == "table" then
+          local slotNum = tonumber(slotIndex) or 0
+          for classIndex, className in ipairs(classList) do
+            if type(className) == "string" then
+              for j = 1, string.len(className) do
+                hash = hash + string.byte(className, j) * roleIndex * columnMultiplier * slotNum * classIndex * 3000
+              end
+            end
+          end
+        end
+      end
+    end
+    
+    -- Hash class priority roles (role checkboxes per class per slot)
+    if role.classPriorityRoles then
+      for slotIndex, classRoles in pairs(role.classPriorityRoles) do
+        if type(classRoles) == "table" then
+          local slotNum = tonumber(slotIndex) or 0
+          for className, roles in pairs(classRoles) do
+            if type(className) == "string" and type(roles) == "table" then
+              -- Hash class name
+              for j = 1, string.len(className) do
+                hash = hash + string.byte(className, j) * roleIndex * columnMultiplier * slotNum * 4000
+              end
+              -- Hash role flags (Tanks, Healers, Melee, Ranged)
+              hash = hash + (roles.Tanks and 1 or 0) * roleIndex * columnMultiplier * slotNum * 4001
+              hash = hash + (roles.Healers and 1 or 0) * roleIndex * columnMultiplier * slotNum * 4002
+              hash = hash + (roles.Melee and 1 or 0) * roleIndex * columnMultiplier * slotNum * 4003
+              hash = hash + (roles.Ranged and 1 or 0) * roleIndex * columnMultiplier * slotNum * 4004
+            end
+          end
+        end
+      end
+    end
+    
     return hash
+end
+
+-- Calculate structure checksum based on roles configuration
+function OGRH.CalculateStructureChecksum(raid, encounter)
+  OGRH.EnsureSV()
+  if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.roles or
+     not OGRH_SV.encounterMgmt.roles[raid] or
+     not OGRH_SV.encounterMgmt.roles[raid][encounter] then
+    return "0"
   end
+  
+  local roles = OGRH_SV.encounterMgmt.roles[raid][encounter]
+  local checksum = 0
   
   -- Hash role names, slot counts, and all settings from both columns
   if roles.column1 then
     for i, role in ipairs(roles.column1) do
-      checksum = checksum + HashRole(role, 10, i)
+      checksum = checksum + OGRH.HashRole(role, 10, i)
     end
   end
   
   if roles.column2 then
     for i, role in ipairs(roles.column2) do
-      checksum = checksum + HashRole(role, 20, i)
+      checksum = checksum + OGRH.HashRole(role, 20, i)
     end
   end
   
@@ -890,27 +927,17 @@ function OGRH.CalculateAllStructureChecksum()
   if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles then
     for raidName, raids in pairs(OGRH_SV.encounterMgmt.roles) do
       for encounterName, encounter in pairs(raids) do
-        -- Add roles from column1
+        -- Hash roles from column1 using HashRole for complete property coverage
         if encounter.column1 then
           for i, role in ipairs(encounter.column1) do
-            local name = role.name or ""
-            local slots = role.slots or 1
-            for j = 1, string.len(name) do
-              checksum = checksum + string.byte(name, j) * i * 10
-            end
-            checksum = checksum + slots * i * 1000
+            checksum = checksum + OGRH.HashRole(role, 10, i)
           end
         end
         
-        -- Add roles from column2
+        -- Hash roles from column2 using HashRole for complete property coverage
         if encounter.column2 then
           for i, role in ipairs(encounter.column2) do
-            local name = role.name or ""
-            local slots = role.slots or 1
-            for j = 1, string.len(name) do
-              checksum = checksum + string.byte(name, j) * i * 20
-            end
-            checksum = checksum + slots * i * 2000
+            checksum = checksum + OGRH.HashRole(role, 20, i)
           end
         end
       end
