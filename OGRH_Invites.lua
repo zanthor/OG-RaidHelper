@@ -360,7 +360,6 @@ function OGRH.Invites.MapRollForRoleToOGRH(rollForRole)
     DruidRestoration = "HEALERS",
     PaladinHoly = "HEALERS",
     PriestHoly = "HEALERS",
-    PriestDiscipline = "HEALERS",
     ShamanRestoration = "HEALERS",
     
     -- Melee
@@ -380,6 +379,7 @@ function OGRH.Invites.MapRollForRoleToOGRH(rollForRole)
     MageArcane = "RANGED",
     MageFire = "RANGED",
     MageFrost = "RANGED",
+    PriestDiscipline = "RANGED",
     PriestShadow = "RANGED",
     WarlockAffliction = "RANGED",
     WarlockDemonology = "RANGED",
