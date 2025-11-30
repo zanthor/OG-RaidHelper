@@ -238,27 +238,29 @@ function OGRH.ShowLinkRoleDialog(raidName, encounterName, roleIndex, roleData, a
       table.insert(roleData.linkedRoles, linkedRoleIndex)
     end
     
-    -- Create bidirectional links: Add current role to linked roles' linkedRoles
+    -- Build complete set of all roles that should be linked together
+    local allLinkedRoles = {roleIndex} -- Start with current role
     for _, linkedRoleIndex in ipairs(frame.linkedRolesCopy) do
-      local linkedRole = allRoles[linkedRoleIndex]
-      if linkedRole then
+      table.insert(allLinkedRoles, linkedRoleIndex)
+    end
+    
+    -- Create fully bidirectional links: Every role in the group links to every other role
+    for _, sourceRoleIndex in ipairs(allLinkedRoles) do
+      local sourceRole = allRoles[sourceRoleIndex]
+      if sourceRole then
         -- Initialize linkedRoles if not exists
-        if not linkedRole.linkedRoles then
-          linkedRole.linkedRoles = {}
+        if not sourceRole.linkedRoles then
+          sourceRole.linkedRoles = {}
         end
         
-        -- Check if current role is already in the linked role's list
-        local alreadyLinked = false
-        for _, idx in ipairs(linkedRole.linkedRoles) do
-          if idx == roleIndex then
-            alreadyLinked = true
-            break
+        -- Clear existing links and rebuild with full group
+        sourceRole.linkedRoles = {}
+        
+        -- Add all other roles in the group
+        for _, targetRoleIndex in ipairs(allLinkedRoles) do
+          if targetRoleIndex ~= sourceRoleIndex then
+            table.insert(sourceRole.linkedRoles, targetRoleIndex)
           end
-        end
-        
-        -- Add bidirectional link if not already present
-        if not alreadyLinked then
-          table.insert(linkedRole.linkedRoles, roleIndex)
         end
       end
     end

@@ -1,5 +1,23 @@
 # OG-RaidHelper Changelog
 
+## Version 1.18.1 - RollFor Auto-Assign
+**Release Date:** November 30, 2025
+
+### Features
+- **RollFor Auto-Assign**: Right-click Auto-Assign button to assign from RollFor soft-reserve data
+  - Auto-assigns players who signed up via RollFor but aren't in the raid yet
+  - Respects class priority configuration
+  - Respects linked roles for alternating assignment
+  - Updates player class cache from guild roster
+  - Clears existing assignments before assigning
+  - Added tooltip to Auto-Assign button showing left/right click actions
+
+### Fixed
+- **Bidirectional Role Linking**: Linked roles now properly connect all roles to each other
+  - When linking R1 to R2, R3, R4: all four roles now link to each other
+  - Previously only created one-way links back to the initiating role
+  - Ensures proper alternating assignment across all linked roles
+
 ## Version 1.18.0 - Link Role Feature
 **Release Date:** November 29, 2025
 

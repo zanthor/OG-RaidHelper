@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.18.0
-## Notes: Added Link Role feature for alternating slot assignments
+## Version: 1.18.1
+## Notes: Added RollFor auto-assign and fixed linked role bidirectional linking
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua

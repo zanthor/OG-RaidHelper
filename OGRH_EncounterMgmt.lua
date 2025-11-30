@@ -11,6 +11,268 @@ OGRH.EncounterMgmt = OGRH.EncounterMgmt or {}
 -- Storage for encounter assignments
 local encounterData = {}
 
+-- Auto-assign players from RollFor data
+function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
+  if not frame or not rollForPlayers then return 0 end
+  
+  -- Get role configuration
+  local roles = OGRH_SV.encounterMgmt.roles
+  if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
+    return 0
+  end
+  
+  local encounterRoles = roles[frame.selectedRaid][frame.selectedEncounter]
+  local column1 = encounterRoles.column1 or {}
+  local column2 = encounterRoles.column2 or {}
+  
+  -- Build complete roles list
+  local allRoles = {}
+  for i = 1, table.getn(column1) do
+    table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+  end
+  for i = 1, table.getn(column2) do
+    table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+  end
+  
+  -- Map RollFor role to OGRH role bucket (same as Invites module)
+  local function MapRollForRole(rollForRole)
+    if not rollForRole or rollForRole == "" then return nil end
+    local roleMap = {
+      DruidBear = "TANKS", PaladinProtection = "TANKS", ShamanTank = "TANKS", WarriorProtection = "TANKS",
+      DruidRestoration = "HEALERS", PaladinHoly = "HEALERS", PriestHoly = "HEALERS", ShamanRestoration = "HEALERS",
+      DruidFeral = "MELEE", HunterSurvival = "MELEE", PaladinRetribution = "MELEE", RogueDaggers = "MELEE",
+      RogueSwords = "MELEE", ShamanEnhancement = "MELEE", WarriorArms = "MELEE", WarriorFury = "MELEE",
+      DruidBalance = "RANGED", HunterMarksmanship = "RANGED", HunterBeastMastery = "RANGED", MageArcane = "RANGED",
+      MageFire = "RANGED", MageFrost = "RANGED", PriestDiscipline = "RANGED", PriestShadow = "RANGED",
+      WarlockAffliction = "RANGED", WarlockDemonology = "RANGED", WarlockDestruction = "RANGED", ShamanElemental = "RANGED"
+    }
+    return roleMap[rollForRole]
+  end
+  
+  -- Track assignments
+  local assignedPlayers = {}
+  local assignmentCount = 0
+  local processedRoles = {}
+  
+  -- Initialize assignments storage
+  if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
+  if not OGRH_SV.encounterAssignments[frame.selectedRaid] then OGRH_SV.encounterAssignments[frame.selectedRaid] = {} end
+  
+  -- Clear existing assignments for this encounter
+  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = {}
+  
+  local assignments = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter]
+  
+  -- Process each role
+  for _, roleData in ipairs(allRoles) do
+    local role = roleData.role
+    local roleIndex = roleData.roleIndex
+    
+    -- Skip if already processed as part of a linked group
+    if processedRoles[roleIndex] then
+      -- Skip this role, already processed
+    else
+      -- Mark this role as processed
+      processedRoles[roleIndex] = true
+      
+      -- Check if this role has linked roles
+      local linkedRoleData = {}  -- Array of {roleIndex, role}
+      if role.linkedRoles and table.getn(role.linkedRoles) > 0 then
+        -- Build list of linked role data (including self)
+        table.insert(linkedRoleData, {roleIndex = roleIndex, role = role})
+        for _, linkedIdx in ipairs(role.linkedRoles) do
+          if not processedRoles[linkedIdx] then
+            -- Find the linked role in allRoles
+            for _, rd in ipairs(allRoles) do
+              if rd.roleIndex == linkedIdx then
+                table.insert(linkedRoleData, {roleIndex = linkedIdx, role = rd.role})
+                processedRoles[linkedIdx] = true
+                break
+              end
+            end
+          end
+        end
+      else
+        -- No linked roles, just process this role
+        table.insert(linkedRoleData, {roleIndex = roleIndex, role = role})
+      end
+      
+      -- Initialize role assignments for all roles in the group
+      for _, rd in ipairs(linkedRoleData) do
+        if not assignments[rd.roleIndex] then
+          assignments[rd.roleIndex] = {}
+        end
+      end
+      
+      -- Handle linked roles with alternating assignment
+      if table.getn(linkedRoleData) > 1 then
+        -- LINKED ROLES: Alternate between roles when filling slots
+        local slotAssignmentQueue = {}
+        
+        -- Find the maximum number of slots among all linked roles
+        local maxSlotsInGroup = 0
+        for _, rd in ipairs(linkedRoleData) do
+          local slots = rd.role.slots or 1
+          if slots > maxSlotsInGroup then
+            maxSlotsInGroup = slots
+          end
+        end
+        
+        -- Create alternating slot assignment order
+        for slotNum = 1, maxSlotsInGroup do
+          for _, rd in ipairs(linkedRoleData) do
+            local maxSlots = rd.role.slots or 1
+            if slotNum <= maxSlots then
+              table.insert(slotAssignmentQueue, {roleIndex = rd.roleIndex, role = rd.role, slotIdx = slotNum})
+            end
+          end
+        end
+        
+        -- Process slots in alternating order
+        for _, slotData in ipairs(slotAssignmentQueue) do
+          local currentRole = slotData.role
+          local currentRoleIndex = slotData.roleIndex
+          local slotIdx = slotData.slotIdx
+          
+          -- Skip if slot is already filled
+          if not assignments[currentRoleIndex][slotIdx] then
+            OGRH.AutoAssignRollForSlot(currentRole, currentRoleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole)
+            if assignments[currentRoleIndex][slotIdx] then
+              assignmentCount = assignmentCount + 1
+            end
+          end
+        end
+      else
+        -- SINGLE ROLE: Process each slot sequentially
+        local slots = role.slots or 1
+        for slotIdx = 1, slots do
+          if not assignments[roleIndex][slotIdx] then
+            OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole)
+            if assignments[roleIndex][slotIdx] then
+              assignmentCount = assignmentCount + 1
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- Broadcast sync
+  if OGRH.BroadcastFullSync then
+    OGRH.BroadcastFullSync(frame.selectedRaid, frame.selectedEncounter)
+  end
+  
+  -- Refresh display
+  if frame.RefreshRoleContainers then
+    frame.RefreshRoleContainers()
+  end
+  
+  return assignmentCount
+end
+
+-- Helper function to assign a single slot from RollFor data
+function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole)
+  local assigned = false
+  
+  -- PHASE 1: Try class priority first if configured
+  if role.classPriority and role.classPriority[slotIdx] and table.getn(role.classPriority[slotIdx]) > 0 then
+    local priorityList = role.classPriority[slotIdx]
+    
+    -- Try each class in priority order
+    for _, className in ipairs(priorityList) do
+      -- Build list of players with this class
+      local classPlayers = {}
+      for _, playerData in ipairs(rollForPlayers) do
+        if not assignedPlayers[playerData.name] and playerData.class then
+          local playerRoleBucket = MapRollForRole(playerData.role)
+          
+          if string.upper(playerData.class) == string.upper(className) and playerRoleBucket then
+            local roleMatches = false
+            
+            -- Check if this slot/class has specific classPriorityRoles configured
+            if role.classPriorityRoles and role.classPriorityRoles[slotIdx] and role.classPriorityRoles[slotIdx][className] then
+              local allowedRoles = role.classPriorityRoles[slotIdx][className]
+              
+              -- Check if ANY checkbox is enabled
+              local anyRoleEnabled = allowedRoles.Tanks or allowedRoles.Healers or allowedRoles.Melee or allowedRoles.Ranged
+              
+              if not anyRoleEnabled then
+                -- No checkboxes enabled = accept from any role
+                roleMatches = true
+              elseif (playerRoleBucket == "TANKS" and allowedRoles.Tanks) or
+                     (playerRoleBucket == "HEALERS" and allowedRoles.Healers) or
+                     (playerRoleBucket == "MELEE" and allowedRoles.Melee) or
+                     (playerRoleBucket == "RANGED" and allowedRoles.Ranged) then
+                roleMatches = true
+              end
+            else
+              -- No classPriorityRoles for this class, accept from any role in Phase 1
+              roleMatches = true
+            end
+            
+            if roleMatches then
+              table.insert(classPlayers, playerData.name)
+            end
+          end
+        end
+      end
+      
+      -- Sort alphabetically for consistent results
+      table.sort(classPlayers)
+      
+      -- Assign first available player
+      if table.getn(classPlayers) > 0 then
+        assignments[roleIndex][slotIdx] = classPlayers[1]
+        assignedPlayers[classPlayers[1]] = true
+        assigned = true
+        
+        -- Update class cache
+        for _, playerData in ipairs(rollForPlayers) do
+          if playerData.name == classPlayers[1] and playerData.class and OGRH.UpdatePlayerClass then
+            OGRH.UpdatePlayerClass(playerData.name, playerData.class)
+            break
+          end
+        end
+        
+        break -- Move to next slot
+      end
+    end
+  end
+  
+  -- PHASE 2: If no class priority or class priority didn't assign anyone, try defaultRoles
+  if not assigned and role.defaultRoles then
+    for _, playerData in ipairs(rollForPlayers) do
+      if not assignedPlayers[playerData.name] then
+        local playerRoleBucket = MapRollForRole(playerData.role)
+        
+        -- Check if player matches role's defaultRoles
+        local matches = false
+        if playerRoleBucket then
+          if (playerRoleBucket == "TANKS" and role.defaultRoles.tanks) or
+             (playerRoleBucket == "HEALERS" and role.defaultRoles.healers) or
+             (playerRoleBucket == "MELEE" and role.defaultRoles.melee) or
+             (playerRoleBucket == "RANGED" and role.defaultRoles.ranged) then
+            matches = true
+          end
+        end
+        
+        if matches then
+          -- Assign player
+          assignments[roleIndex][slotIdx] = playerData.name
+          assignedPlayers[playerData.name] = true
+          
+          -- Update class cache if we have class data
+          if playerData.class and OGRH.UpdatePlayerClass then
+            OGRH.UpdatePlayerClass(playerData.name, playerData.class)
+          end
+          
+          break
+        end
+      end
+    end
+  end
+end
+
 -- Get currently selected encounter for main UI (not planning window)
 function OGRH.GetCurrentEncounter()
   -- Always use saved variables for main UI selection
@@ -745,6 +1007,18 @@ function OGRH.ShowEncounterWindow(encounterName)
     -- Enable right-click
     autoAssignBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     
+    -- Tooltip
+    autoAssignBtn:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(autoAssignBtn, "ANCHOR_TOP")
+      GameTooltip:SetText("Auto Assign", 1, 1, 1)
+      GameTooltip:AddLine("Left-click: Auto-assign from current raid members", 0.8, 0.8, 0.8, 1)
+      GameTooltip:AddLine("Right-click: Auto-assign from RollFor soft-reserve data", 0.8, 0.8, 0.8, 1)
+      GameTooltip:Show()
+    end)
+    autoAssignBtn:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+    end)
+    
     -- Auto Assign functionality
     autoAssignBtn:SetScript("OnClick", function()
       -- Check permission
@@ -755,51 +1029,75 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       local button = arg1 or "LeftButton"
       
-      -- Right-click: Clear all encounter data
+      -- Right-click: Auto-assign from RollFor data
       if button == "RightButton" then
         if not frame.selectedRaid or not frame.selectedEncounter then
           DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
           return
         end
         
-        -- Create confirmation dialog
-        StaticPopupDialogs["OGRH_CLEAR_ENCOUNTER"] = {
-          text = "Clear all assignments, marks, and announcement text for this encounter?",
-          button1 = "OK",
-          button2 = "Cancel",
-          OnAccept = function()
-            -- Clear assignments
-            if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[frame.selectedRaid] then
-              OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = {}
+        -- Check if RollFor is available
+        if not RollFor or not RollForCharDb or not RollForCharDb.softres then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r RollFor addon not found or no soft-res data loaded.")
+          return
+        end
+        
+        -- Get RollFor players
+        local rollForPlayers = {}
+        local encodedData = RollForCharDb.softres.data
+        if encodedData and type(encodedData) == "string" and RollFor.SoftRes and RollFor.SoftRes.decode then
+          local decodedData = RollFor.SoftRes.decode(encodedData)
+          if decodedData and RollFor.SoftResDataTransformer and RollFor.SoftResDataTransformer.transform then
+            local softresData = RollFor.SoftResDataTransformer.transform(decodedData)
+            if softresData and type(softresData) == "table" then
+              local playerMap = {}
+              for itemId, itemData in pairs(softresData) do
+                if type(itemData) == "table" and itemData.rollers then
+                  for _, roller in ipairs(itemData.rollers) do
+                    if roller and roller.name then
+                      if not playerMap[roller.name] then
+                        playerMap[roller.name] = {
+                          name = roller.name,
+                          role = roller.role or "Unknown",
+                          class = nil
+                        }
+                      end
+                    end
+                  end
+                end
+              end
+              for _, playerData in pairs(playerMap) do
+                table.insert(rollForPlayers, playerData)
+              end
             end
-            
-            -- Clear raid marks
-            if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[frame.selectedRaid] then
-              OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter] = {}
+          end
+        end
+        
+        if table.getn(rollForPlayers) == 0 then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No players found in RollFor data.")
+          return
+        end
+        
+        -- Update player classes from cache or guild roster
+        for _, playerData in ipairs(rollForPlayers) do
+          local class = OGRH.GetPlayerClass(playerData.name)
+          if not class then
+            local numGuild = GetNumGuildMembers(true)
+            for i = 1, numGuild do
+              local guildName, _, _, _, _, _, _, _, _, _, guildClass = GetGuildRosterInfo(i)
+              if guildName == playerData.name and guildClass then
+                class = string.upper(guildClass)
+                break
+              end
             end
-            
-            -- Clear assignment numbers
-            if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid] then
-              OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter] = {}
-            end
-            
-            -- Broadcast full sync to update other clients
-            if OGRH.BroadcastFullSync then
-              OGRH.BroadcastFullSync(frame.selectedRaid, frame.selectedEncounter)
-            end
-            
-            -- Refresh display
-            if frame.RefreshRoleContainers then
-              frame.RefreshRoleContainers()
-            end
-            
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter data cleared.")
-          end,
-          timeout = 0,
-          whileDead = true,
-          hideOnEscape = true,
-        }
-        StaticPopup_Show("OGRH_CLEAR_ENCOUNTER")
+          end
+          playerData.class = class
+        end
+        
+        -- Perform auto-assignment
+        local assignmentCount = OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-assigned " .. assignmentCount .. " players from RollFor data.")
         return
       end
       
