@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.19.2
+## Version: 1.19.3
 ## Notes: Plugin Architecture
 ## SavedVariables: OGRH_SV
 

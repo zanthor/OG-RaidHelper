@@ -63,93 +63,104 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   
   local assignments = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter]
   
-  -- Process each role
-  for _, roleData in ipairs(allRoles) do
-    local role = roleData.role
-    local roleIndex = roleData.roleIndex
+  -- TWO-PASS ASSIGNMENT:
+  -- Pass 1: Assign all class priority slots across all roles (leave slots empty if no class match)
+  -- Pass 2: Fill remaining empty slots with defaultRoles assignments
+  
+  for passNum = 1, 2 do
+    local classPriorityOnly = (passNum == 1)
+    processedRoles = {}  -- Reset for each pass
     
-    -- Skip if already processed as part of a linked group
-    if processedRoles[roleIndex] then
-      -- Skip this role, already processed
-    else
-      -- Mark this role as processed
-      processedRoles[roleIndex] = true
+    -- Process each role
+    for _, roleData in ipairs(allRoles) do
+      local role = roleData.role
+      local roleIndex = roleData.roleIndex
       
-      -- Check if this role has linked roles
-      local linkedRoleData = {}  -- Array of {roleIndex, role}
-      if role.linkedRoles and table.getn(role.linkedRoles) > 0 then
-        -- Build list of linked role data (including self)
-        table.insert(linkedRoleData, {roleIndex = roleIndex, role = role})
-        for _, linkedIdx in ipairs(role.linkedRoles) do
-          if not processedRoles[linkedIdx] then
-            -- Find the linked role in allRoles
-            for _, rd in ipairs(allRoles) do
-              if rd.roleIndex == linkedIdx then
-                table.insert(linkedRoleData, {roleIndex = linkedIdx, role = rd.role})
-                processedRoles[linkedIdx] = true
-                break
+      -- Skip if already processed as part of a linked group in this pass
+      if processedRoles[roleIndex] then
+        -- Skip this role, already processed
+      else
+        -- Mark this role as processed
+        processedRoles[roleIndex] = true
+        
+        -- Check if this role has linked roles
+        local linkedRoleData = {}  -- Array of {roleIndex, role}
+        if role.linkedRoles and table.getn(role.linkedRoles) > 0 then
+          -- Build list of linked role data (including self)
+          table.insert(linkedRoleData, {roleIndex = roleIndex, role = role})
+          for _, linkedIdx in ipairs(role.linkedRoles) do
+            if not processedRoles[linkedIdx] then
+              -- Find the linked role in allRoles
+              for _, rd in ipairs(allRoles) do
+                if rd.roleIndex == linkedIdx then
+                  table.insert(linkedRoleData, {roleIndex = linkedIdx, role = rd.role})
+                  processedRoles[linkedIdx] = true
+                  break
+                end
               end
             end
           end
-        end
-      else
-        -- No linked roles, just process this role
-        table.insert(linkedRoleData, {roleIndex = roleIndex, role = role})
-      end
-      
-      -- Initialize role assignments for all roles in the group
-      for _, rd in ipairs(linkedRoleData) do
-        if not assignments[rd.roleIndex] then
-          assignments[rd.roleIndex] = {}
-        end
-      end
-      
-      -- Handle linked roles with alternating assignment
-      if table.getn(linkedRoleData) > 1 then
-        -- LINKED ROLES: Alternate between roles when filling slots
-        local slotAssignmentQueue = {}
-        
-        -- Find the maximum number of slots among all linked roles
-        local maxSlotsInGroup = 0
-        for _, rd in ipairs(linkedRoleData) do
-          local slots = rd.role.slots or 1
-          if slots > maxSlotsInGroup then
-            maxSlotsInGroup = slots
-          end
+        else
+          -- No linked roles, just process this role
+          table.insert(linkedRoleData, {roleIndex = roleIndex, role = role})
         end
         
-        -- Create alternating slot assignment order
-        for slotNum = 1, maxSlotsInGroup do
+        -- Initialize role assignments for all roles in the group (only in pass 1)
+        if passNum == 1 then
           for _, rd in ipairs(linkedRoleData) do
-            local maxSlots = rd.role.slots or 1
-            if slotNum <= maxSlots then
-              table.insert(slotAssignmentQueue, {roleIndex = rd.roleIndex, role = rd.role, slotIdx = slotNum})
+            if not assignments[rd.roleIndex] then
+              assignments[rd.roleIndex] = {}
             end
           end
         end
         
-        -- Process slots in alternating order
-        for _, slotData in ipairs(slotAssignmentQueue) do
-          local currentRole = slotData.role
-          local currentRoleIndex = slotData.roleIndex
-          local slotIdx = slotData.slotIdx
+        -- Handle linked roles with alternating assignment
+        if table.getn(linkedRoleData) > 1 then
+          -- LINKED ROLES: Alternate between roles when filling slots
+          local slotAssignmentQueue = {}
           
-          -- Skip if slot is already filled
-          if not assignments[currentRoleIndex][slotIdx] then
-            OGRH.AutoAssignRollForSlot(currentRole, currentRoleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole)
-            if assignments[currentRoleIndex][slotIdx] then
-              assignmentCount = assignmentCount + 1
+          -- Find the maximum number of slots among all linked roles
+          local maxSlotsInGroup = 0
+          for _, rd in ipairs(linkedRoleData) do
+            local slots = rd.role.slots or 1
+            if slots > maxSlotsInGroup then
+              maxSlotsInGroup = slots
             end
           end
-        end
-      else
-        -- SINGLE ROLE: Process each slot sequentially
-        local slots = role.slots or 1
-        for slotIdx = 1, slots do
-          if not assignments[roleIndex][slotIdx] then
-            OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole)
-            if assignments[roleIndex][slotIdx] then
-              assignmentCount = assignmentCount + 1
+          
+          -- Create alternating slot assignment order
+          for slotNum = 1, maxSlotsInGroup do
+            for _, rd in ipairs(linkedRoleData) do
+              local maxSlots = rd.role.slots or 1
+              if slotNum <= maxSlots then
+                table.insert(slotAssignmentQueue, {roleIndex = rd.roleIndex, role = rd.role, slotIdx = slotNum})
+              end
+            end
+          end
+          
+          -- Process slots in alternating order
+          for _, slotData in ipairs(slotAssignmentQueue) do
+            local currentRole = slotData.role
+            local currentRoleIndex = slotData.roleIndex
+            local slotIdx = slotData.slotIdx
+            
+            -- Skip if slot is already filled
+            if not assignments[currentRoleIndex][slotIdx] then
+              OGRH.AutoAssignRollForSlot(currentRole, currentRoleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly)
+              if assignments[currentRoleIndex][slotIdx] then
+                assignmentCount = assignmentCount + 1
+              end
+            end
+          end
+        else
+          -- SINGLE ROLE: Process each slot sequentially
+          local slots = role.slots or 1
+          for slotIdx = 1, slots do
+            if not assignments[roleIndex][slotIdx] then
+              OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly)
+              if assignments[roleIndex][slotIdx] then
+                assignmentCount = assignmentCount + 1
+              end
             end
           end
         end
@@ -171,7 +182,7 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
 end
 
 -- Helper function to assign a single slot from RollFor data
-function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole)
+function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly)
   local assigned = false
   
   -- PHASE 1: Try class priority first if configured
@@ -240,7 +251,8 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
   end
   
   -- PHASE 2: If no class priority or class priority didn't assign anyone, try defaultRoles
-  if not assigned and role.defaultRoles then
+  -- (only in pass 2 when classPriorityOnly is false)
+  if not assigned and not classPriorityOnly and role.defaultRoles then
     for _, playerData in ipairs(rollForPlayers) do
       if not assignedPlayers[playerData.name] then
         local playerRoleBucket = MapRollForRole(playerData.role)
@@ -1102,76 +1114,28 @@ function OGRH.ShowEncounterWindow(encounterName)
         return
       end
       
-      -- Left-click: Auto Assign functionality
+      -- Left-click: Auto Assign from current raid members
+      -- Now uses same two-pass logic as RollFor path
       if not frame.selectedRaid or not frame.selectedEncounter then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
         return
       end
       
-      -- Get role configuration
-      local roles = OGRH_SV.encounterMgmt.roles
-      if not roles or not roles[frame.selectedRaid] or not roles[frame.selectedRaid][frame.selectedEncounter] then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
+      if GetNumRaidMembers() == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to auto-assign.")
         return
       end
       
-      local encounterRoles = roles[frame.selectedRaid][frame.selectedEncounter]
-      local column1 = encounterRoles.column1 or {}
-      local column2 = encounterRoles.column2 or {}
+      -- Build player data in same format as RollFor
+      local raidPlayers = {}
       
-      -- Build ordered list of all roles
-      local allRoles = {}
-      
-      -- Add all roles from column1 first (top to bottom)
-      for i = 1, table.getn(column1) do
-        if not column1[i].isCustomModule then
-          table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
-        end
-      end
-      
-      -- Then add all roles from column2 (top to bottom)
-      for i = 1, table.getn(column2) do
-        if not column2[i].isCustomModule then
-          table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
-        end
-      end
-      
-      -- Track assigned players
-      local assignedPlayers = {}  -- playerName -> true (already assigned)
-      local roleAssignments = {}  -- roleIndex -> {slotIndex -> playerName}
-      local assignmentCount = 0
-      
-      -- Helper function to get player's class
-      local function GetPlayerClassInRaid(playerName)
-        -- First try the global class cache/lookup function
-        if OGRH.GetPlayerClass then
-          local cachedClass = OGRH.GetPlayerClass(playerName)
-          if cachedClass then
-            return cachedClass
-          end
-        end
-        
-        -- Fallback: check raid roster directly
-        local numRaidMembers = GetNumRaidMembers()
-        if numRaidMembers > 0 then
-          for i = 1, numRaidMembers do
-            local name, _, _, _, class = GetRaidRosterInfo(i)
-            if name == playerName and class then
-              return string.upper(class)
-            end
-          end
-        end
-        return nil
-      end
-      
-      -- Helper function to get player's role from RolesUI ROLE_COLUMNS
+      -- Helper to get player's role from RolesUI
       local function GetPlayerRole(playerName)
         if not OGRH.rolesFrame or not OGRH.rolesFrame.ROLE_COLUMNS then
           return nil
         end
         
         local roleColumns = OGRH.rolesFrame.ROLE_COLUMNS
-        -- roleColumns: 1=Tanks, 2=Healers, 3=Melee, 4=Ranged
         local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
         
         for colIndex = 1, table.getn(roleColumns) do
@@ -1184,396 +1148,38 @@ function OGRH.ShowEncounterWindow(encounterName)
             end
           end
         end
-        
         return nil
       end
       
-      -- Track which roles have been processed (for linked role groups)
-      local processedRoles = {}
-      
-      -- Process each role in order
-      for _, roleData in ipairs(allRoles) do
-        local role = roleData.role
-        local roleIndex = roleData.roleIndex
-        
-        -- Skip if already processed as part of a linked group
-        if processedRoles[roleIndex] then
-          -- Skip this role, already processed
-        else
-          -- Mark this role as processed
-          processedRoles[roleIndex] = true
-          
-          -- Check if this role has linked roles
-          local linkedRoleData = {}  -- Array of {roleIndex, role}
-          if role.linkedRoles and table.getn(role.linkedRoles) > 0 then
-            -- Build list of linked role data (including self)
-            table.insert(linkedRoleData, {roleIndex = roleIndex, role = role})
-            for _, linkedIdx in ipairs(role.linkedRoles) do
-              if not processedRoles[linkedIdx] then
-                -- Find the linked role in allRoles
-                for _, rd in ipairs(allRoles) do
-                  if rd.roleIndex == linkedIdx then
-                    table.insert(linkedRoleData, {roleIndex = linkedIdx, role = rd.role})
-                    processedRoles[linkedIdx] = true
-                    break
-                  end
-                end
-              end
-            end
-          else
-            -- No linked roles, just process this role
-            table.insert(linkedRoleData, {roleIndex = roleIndex, role = role})
-          end
-          
-          -- Initialize role assignments for all roles in the group
-          for _, rd in ipairs(linkedRoleData) do
-            if not roleAssignments[rd.roleIndex] then
-              roleAssignments[rd.roleIndex] = {}
-            end
-          end
-          
-          -- Build list of current raid members (includes offline)
-          local raidMembers = {}
-          local numRaidMembers = GetNumRaidMembers()
-          if numRaidMembers > 0 then
-            for i = 1, numRaidMembers do
-              local name, rank, subgroup, level, class, fileName, zone, online, isDead = GetRaidRosterInfo(i)
-              if name then
-                raidMembers[name] = true
-              end
-            end
-          end
-        
-          -- PHASE 1: Try to fill slots using class priority
-          -- Handle linked roles with alternating assignment
-          if table.getn(linkedRoleData) > 1 then
-            -- LINKED ROLES: Alternate between roles when filling slots
-            -- Build a combined slot list with role cycling
-            local slotAssignmentQueue = {}
-            
-            -- Find the maximum number of slots among all linked roles
-            local maxSlotsInGroup = 0
-            for _, rd in ipairs(linkedRoleData) do
-              local slots = rd.role.slots or 1
-              if slots > maxSlotsInGroup then
-                maxSlotsInGroup = slots
-              end
-            end
-            
-            -- Create alternating slot assignment order
-            for slotNum = 1, maxSlotsInGroup do
-              for _, rd in ipairs(linkedRoleData) do
-                local maxSlots = rd.role.slots or 1
-                if slotNum <= maxSlots then
-                  table.insert(slotAssignmentQueue, {roleIndex = rd.roleIndex, role = rd.role, slotIdx = slotNum})
-                end
-              end
-            end
-            
-            -- Process slots in alternating order
-            for _, slotData in ipairs(slotAssignmentQueue) do
-              local currentRole = slotData.role
-              local currentRoleIndex = slotData.roleIndex
-              local slotIdx = slotData.slotIdx
-              
-              -- Skip if slot is already filled
-              if not roleAssignments[currentRoleIndex][slotIdx] then
-                -- Try class priority first if configured
-                local assignedViaClassPriority = false
-                if currentRole.classPriority and currentRole.classPriority[slotIdx] and table.getn(currentRole.classPriority[slotIdx]) > 0 then
-                  local priorityList = currentRole.classPriority[slotIdx]
-                
-                  -- Try each class in priority order
-                  for _, className in ipairs(priorityList) do
-                    local assigned = false
-                  
-                  -- Build sorted list of players with this class
-                  local classPlayers = {}
-                  -- Iterate through raid members and check their class/role
-                  for playerName, _ in pairs(raidMembers) do
-                    if not assignedPlayers[playerName] then
-                      local playerClass = GetPlayerClassInRaid(playerName)
-                      local playerRole = GetPlayerRole(playerName)
-                      
-                      if playerClass and playerRole and string.upper(playerClass) == string.upper(className) then
-                        
-                        local roleMatches = false
-                        
-                        -- Check if this slot/class has specific classPriorityRoles configured
-                        if currentRole.classPriorityRoles and currentRole.classPriorityRoles[slotIdx] and currentRole.classPriorityRoles[slotIdx][className] then
-                          -- Use classPriorityRoles (specific role checkboxes for this class)
-                          local allowedRoles = currentRole.classPriorityRoles[slotIdx][className]
-                          
-                          -- Check if ANY checkbox is enabled
-                          local anyRoleEnabled = allowedRoles.Tanks or allowedRoles.Healers or allowedRoles.Melee or allowedRoles.Ranged
-                          
-                          if not anyRoleEnabled then
-                            -- No checkboxes enabled = accept from any role
-                            roleMatches = true
-                          elseif playerRole == "TANKS" and allowedRoles.Tanks then
-                            roleMatches = true
-                          elseif playerRole == "HEALERS" and allowedRoles.Healers then
-                            roleMatches = true
-                          elseif playerRole == "MELEE" and allowedRoles.Melee then
-                            roleMatches = true
-                          elseif playerRole == "RANGED" and allowedRoles.Ranged then
-                            roleMatches = true
-                          end
-                        else
-                          -- No classPriorityRoles for this class
-                          -- In Phase 1 (class priority), if class is in priority list, accept from any role
-                          roleMatches = true
-                        end
-                        
-                        if roleMatches then
-                          table.insert(classPlayers, playerName)
-                        end
-                      end
-                    end
-                  end
-                  
-                  -- Sort alphabetically for consistent results
-                  table.sort(classPlayers)
-                  
-                    -- Assign first available player
-                    if table.getn(classPlayers) > 0 then
-                      local playerName = classPlayers[1]
-                      roleAssignments[currentRoleIndex][slotIdx] = playerName
-                      assignedPlayers[playerName] = true
-                      assignmentCount = assignmentCount + 1
-                      assigned = true
-                      assignedViaClassPriority = true
-                      break  -- Move to next slot
-                    end
-                  end
-                end
-                
-                -- If no class priority or class priority didn't assign anyone, try defaultRoles fallback
-                if not assignedViaClassPriority and currentRole.defaultRoles then
-                  -- Build list of available players matching defaultRoles
-                  local availablePlayers = {}
-                  for playerName, _ in pairs(raidMembers) do
-                    if not assignedPlayers[playerName] or currentRole.allowOtherRoles then
-                      local playerRole = GetPlayerRole(playerName)
-                      
-                      if playerRole then
-                        local matches = false
-                        if playerRole == "TANKS" and currentRole.defaultRoles.tanks then
-                          matches = true
-                        elseif playerRole == "HEALERS" and currentRole.defaultRoles.healers then
-                          matches = true
-                        elseif playerRole == "MELEE" and currentRole.defaultRoles.melee then
-                          matches = true
-                        elseif playerRole == "RANGED" and currentRole.defaultRoles.ranged then
-                          matches = true
-                        end
-                        
-                        if matches then
-                          table.insert(availablePlayers, playerName)
-                        end
-                      end
-                    end
-                  end
-                  
-                  -- Sort and assign first available
-                  table.sort(availablePlayers)
-                  if table.getn(availablePlayers) > 0 then
-                    local playerName = availablePlayers[1]
-                    local canAssign = true
-                    if assignedPlayers[playerName] and not currentRole.allowOtherRoles then
-                      canAssign = false
-                    end
-                    
-                    if canAssign then
-                      roleAssignments[currentRoleIndex][slotIdx] = playerName
-                      assignedPlayers[playerName] = true
-                      assignmentCount = assignmentCount + 1
-                    end
-                  end
-                end
-              end
-            end
-          else
-            -- SINGLE ROLE (no linked roles): Process normally
-            local maxSlots = role.slots or 1
-            local startSlot, endSlot, step
-            if role.invertFillOrder then
-              -- Bottom-up: start from last slot and go to first
-              startSlot = maxSlots
-              endSlot = 1
-              step = -1
-            else
-              -- Top-down: start from first slot and go to last
-              startSlot = 1
-              endSlot = maxSlots
-              step = 1
-            end
-            
-            if role.classPriority then
-              -- Process slots in configured order
-              for slotIdx = startSlot, endSlot, step do
-                if role.classPriority[slotIdx] and table.getn(role.classPriority[slotIdx]) > 0 then
-                  local priorityList = role.classPriority[slotIdx]
-                  
-                  -- Try each class in priority order
-                  for _, className in ipairs(priorityList) do
-                    local assigned = false
-                    
-                    -- Build sorted list of players with this class
-                    local classPlayers = {}
-                    -- Iterate through raid members and check their class/role
-                    for playerName, _ in pairs(raidMembers) do
-                      if not assignedPlayers[playerName] then
-                        local playerClass = GetPlayerClassInRaid(playerName)
-                        local playerRole = GetPlayerRole(playerName)
-                        
-                        if playerClass and playerRole and string.upper(playerClass) == string.upper(className) then
-                          
-                          local roleMatches = false
-                          
-                          -- Check if this slot/class has specific classPriorityRoles configured
-                          if role.classPriorityRoles and role.classPriorityRoles[slotIdx] and role.classPriorityRoles[slotIdx][className] then
-                            -- Use classPriorityRoles (specific role checkboxes for this class)
-                            local allowedRoles = role.classPriorityRoles[slotIdx][className]
-                            
-                            -- Check if ANY checkbox is enabled
-                            local anyRoleEnabled = allowedRoles.Tanks or allowedRoles.Healers or allowedRoles.Melee or allowedRoles.Ranged
-                            
-                            if not anyRoleEnabled then
-                              -- No checkboxes enabled = accept from any role
-                              roleMatches = true
-                            elseif playerRole == "TANKS" and allowedRoles.Tanks then
-                              roleMatches = true
-                            elseif playerRole == "HEALERS" and allowedRoles.Healers then
-                              roleMatches = true
-                            elseif playerRole == "MELEE" and allowedRoles.Melee then
-                              roleMatches = true
-                            elseif playerRole == "RANGED" and allowedRoles.Ranged then
-                              roleMatches = true
-                            end
-                          else
-                            -- No classPriorityRoles for this class
-                            -- In Phase 1 (class priority), if class is in priority list, accept from any role
-                            roleMatches = true
-                          end
-                          
-                          if roleMatches then
-                            table.insert(classPlayers, playerName)
-                          end
-                        end
-                      end
-                    end
-                    
-                    -- Sort alphabetically for consistent results
-                    table.sort(classPlayers)
-                    
-                    -- Assign first available player
-                    if table.getn(classPlayers) > 0 then
-                      local playerName = classPlayers[1]
-                      roleAssignments[roleIndex][slotIdx] = playerName
-                      assignedPlayers[playerName] = true
-                      assignmentCount = assignmentCount + 1
-                      assigned = true
-                      break  -- Move to next slot
-                    end
-                  end
-                  
-                  -- If we assigned someone, break the slot loop to move to next slot
-                  if assigned then
-                    -- Continue to next slot (loop handles this)
-                  end
-                end
-              end
-            end
-          end
-          
-          -- PHASE 2: Fill remaining empty slots using defaultRoles (fallback)
-          -- Process each role in the linked group
-          for _, rd in ipairs(linkedRoleData) do
-            local currentRole = rd.role
-            local currentRoleIndex = rd.roleIndex
-            
-            if currentRole.defaultRoles then
-              local availablePlayers = {}
-              
-              -- Iterate through raid members and check their roles
-              for playerName, _ in pairs(raidMembers) do
-                -- Check if player is not already assigned (or allowOtherRoles is true)
-                if not assignedPlayers[playerName] or currentRole.allowOtherRoles then
-                  local playerRole = GetPlayerRole(playerName)
-                  
-                  if playerRole then
-                    -- Check if player's role matches any enabled defaultRole
-                    local matches = false
-                    
-                    if playerRole == "TANKS" and currentRole.defaultRoles.tanks then
-                      matches = true
-                    elseif playerRole == "HEALERS" and currentRole.defaultRoles.healers then
-                      matches = true
-                    elseif playerRole == "MELEE" and currentRole.defaultRoles.melee then
-                      matches = true
-                    elseif playerRole == "RANGED" and currentRole.defaultRoles.ranged then
-                      matches = true
-                    end
-                    
-                    if matches then
-                      table.insert(availablePlayers, playerName)
-                    end
-                  end
-                end
-              end
-              
-              -- Sort alphabetically for consistent results
-              table.sort(availablePlayers)
-              
-              -- Fill remaining empty slots
-              local maxSlots = currentRole.slots or 1
-              local playerIdx = 1
-              for slotIdx = 1, maxSlots do
-                if not roleAssignments[currentRoleIndex][slotIdx] and playerIdx <= table.getn(availablePlayers) then
-                  local playerName = availablePlayers[playerIdx]
-                  
-                  -- Check if we can assign this player
-                  local canAssign = true
-                  if assignedPlayers[playerName] and not currentRole.allowOtherRoles then
-                    canAssign = false
-                  end
-                  
-                  if canAssign then
-                    roleAssignments[currentRoleIndex][slotIdx] = playerName
-                    assignedPlayers[playerName] = true
-                    assignmentCount = assignmentCount + 1
-                  end
-                  
-                  playerIdx = playerIdx + 1
-                end
-              end
-            end
+      -- Build player list from current raid
+      for i = 1, GetNumRaidMembers() do
+        local name, _, _, _, class = GetRaidRosterInfo(i)
+        if name and class then
+          local playerRole = GetPlayerRole(name)
+          if playerRole then
+            table.insert(raidPlayers, {
+              name = name,
+              role = playerRole,  -- Already in TANKS/HEALERS/MELEE/RANGED format
+              class = string.upper(class)
+            })
           end
         end
       end
       
-      -- Store assignments
-      if not OGRH_SV.encounterAssignments then
-        OGRH_SV.encounterAssignments = {}
-      end
-      if not OGRH_SV.encounterAssignments[frame.selectedRaid] then
-        OGRH_SV.encounterAssignments[frame.selectedRaid] = {}
+      if table.getn(raidPlayers) == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No raid members found with assigned roles.")
+        return
       end
       
-      OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = roleAssignments
-      
-      -- Broadcast full sync
-      if OGRH.BroadcastFullSync then
-        OGRH.BroadcastFullSync(frame.selectedRaid, frame.selectedEncounter)
+      -- Map function that just returns the role as-is (already in correct format)
+      local function MapRaidRole(roleBucket)
+        return roleBucket
       end
       
-      -- Refresh the display
-      if frame.RefreshRoleContainers then
-        frame.RefreshRoleContainers()
-      end
+      -- Use same auto-assign logic as RollFor
+      local assignmentCount = OGRH.AutoAssignRollForPlayers(frame, raidPlayers)
       
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-assigned " .. assignmentCount .. " players.")
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-assigned " .. assignmentCount .. " players from raid.")
     end)
     
     -- Announce button (below Auto Assign, reduced height)
