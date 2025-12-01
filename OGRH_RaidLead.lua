@@ -134,6 +134,7 @@ function OGRH.PollAddonUsers()
   
   -- Reset poll state
   OGRH.RaidLead.pollResponses = {}
+  OGRH.RaidLead.readHelperResponses = {}
   OGRH.RaidLead.pollInProgress = true
   OGRH.RaidLead.lastPollTime = GetTime()
   
@@ -216,6 +217,32 @@ function OGRH.HandleAddonPollResponse(sender, version, checksum)
     rank = senderRank,
     version = version,
     checksum = checksum
+  })
+  
+  -- Refresh the UI if it's visible
+  if OGRH_RaidLeadSelectionFrame and OGRH_RaidLeadSelectionFrame:IsVisible() and OGRH_RaidLeadSelectionFrame.Rebuild then
+    OGRH_RaidLeadSelectionFrame.Rebuild()
+  end
+end
+
+-- Handle ReadHelper poll response
+function OGRH.HandleReadHelperPollResponse(sender, version)
+  if not OGRH.RaidLead.pollInProgress then
+    return
+  end
+  
+  version = version or "Unknown"
+  
+  -- Check if already in list
+  for i = 1, table.getn(OGRH.RaidLead.readHelperResponses) do
+    if OGRH.RaidLead.readHelperResponses[i].name == sender then
+      return -- Already recorded
+    end
+  end
+  
+  table.insert(OGRH.RaidLead.readHelperResponses, {
+    name = sender,
+    version = version
   })
   
   -- Refresh the UI if it's visible
@@ -415,12 +442,22 @@ function OGRH.ShowRaidLeadSelectionUI()
       return a.name < b.name
     end)
     
-    -- Create/update buttons
+    -- Initialize player buttons table and labels
+    if not frame.playerButtons then
+      frame.playerButtons = {}
+    end
+    if not frame.readHelperLabels then
+      frame.readHelperLabels = {}
+    end
+    
+    -- Create/update buttons for RaidHelper users
     local yOffset = 0
+    local buttonIndex = 1
+    
     for i = 1, table.getn(sorted) do
       local response = sorted[i]
       
-      if not frame.playerButtons[i] then
+      if not frame.playerButtons[buttonIndex] then
         local btn = CreateFrame("Button", nil, scrollChild)
         btn:SetWidth(330)  -- Increased width
         btn:SetHeight(18)
@@ -448,10 +485,10 @@ function OGRH.ShowRaidLeadSelectionUI()
         checksumText:SetJustifyH("LEFT")
         btn.checksumText = checksumText
         
-        frame.playerButtons[i] = btn
+        frame.playerButtons[buttonIndex] = btn
       end
       
-      local btn = frame.playerButtons[i]
+      local btn = frame.playerButtons[buttonIndex]
       
       -- Background texture setup
       if not btn.bg then
@@ -479,34 +516,39 @@ function OGRH.ShowRaidLeadSelectionUI()
       -- Apply class color to text
       btn.text:SetTextColor(classColor.r, classColor.g, classColor.b)
       
-      -- Hover effect
-      btn:SetScript("OnEnter", function()
-        if not btn.hoverBg then
-          btn.hoverBg = btn:CreateTexture(nil, "BACKGROUND")
-          btn.hoverBg:SetAllPoints(btn)
-          btn.hoverBg:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
-        end
-        if isCurrentLead then
-          btn.hoverBg:SetVertexColor(0, 0.5, 0, 0.6)
+      -- Hover effect and click handler (only for Button frames - RaidHelper users)
+      if btn.RegisterForClicks then
+        -- This is a Button, set up hover and click
+        btn:SetScript("OnEnter", function()
+          if not btn.hoverBg then
+            btn.hoverBg = btn:CreateTexture(nil, "BACKGROUND")
+            btn.hoverBg:SetAllPoints(btn)
+            btn.hoverBg:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+          end
+          if isCurrentLead then
+            btn.hoverBg:SetVertexColor(0, 0.5, 0, 0.6)
+          else
+            btn.hoverBg:SetVertexColor(0.35, 0.45, 0.45, 0.9)
+          end
+          btn.hoverBg:Show()
+        end)
+        
+        btn:SetScript("OnLeave", function()
+          if btn.hoverBg then
+            btn.hoverBg:Hide()
+          end
+        end)
+      end
+      
+      -- Color code rank (only if rankText exists - RaidHelper users have this)
+      if btn.rankText then
+        if response.rank == "Leader" then
+          btn.rankText:SetText("|cffff0000L|r")
+        elseif response.rank == "Assistant" then
+          btn.rankText:SetText("|cffffff00A|r")
         else
-          btn.hoverBg:SetVertexColor(0.35, 0.45, 0.45, 0.9)
+          btn.rankText:SetText("")
         end
-        btn.hoverBg:Show()
-      end)
-      
-      btn:SetScript("OnLeave", function()
-        if btn.hoverBg then
-          btn.hoverBg:Hide()
-        end
-      end)
-      
-      -- Color code rank
-      if response.rank == "Leader" then
-        btn.rankText:SetText("|cffff0000L|r")
-      elseif response.rank == "Assistant" then
-        btn.rankText:SetText("|cffffff00A|r")
-      else
-        btn.rankText:SetText("")
       end
       
       -- Display version (color red if different from local)
@@ -518,28 +560,112 @@ function OGRH.ShowRaidLeadSelectionUI()
         btn.versionText:SetText("|cff00ff00" .. displayVersion .. "|r")
       end
       
-      -- Display checksum (color red if different from local)
-      local localChecksum = "0"
-      if OGRH.CalculateAllStructureChecksum then
-        localChecksum = OGRH.CalculateAllStructureChecksum()
+      -- Display checksum (color red if different from local) - only for RaidHelper users
+      if btn.checksumText then
+        local localChecksum = "0"
+        if OGRH.CalculateAllStructureChecksum then
+          localChecksum = OGRH.CalculateAllStructureChecksum()
+        end
+        
+        local displayChecksum = response.checksum or "0"
+        if displayChecksum ~= localChecksum then
+          btn.checksumText:SetText("|cffff0000" .. displayChecksum .. "|r")
+        else
+          btn.checksumText:SetText("|cff00ff00" .. displayChecksum .. "|r")
+        end
+        
+        -- Click handler (only for Button types with checksum - RaidHelper users)
+        btn:SetScript("OnClick", function()
+          OGRH.SetRaidLead(response.name)
+          frame:Hide()
+        end)
       end
-      
-      local displayChecksum = response.checksum or "0"
-      if displayChecksum ~= localChecksum then
-        btn.checksumText:SetText("|cffff0000" .. displayChecksum .. "|r")
-      else
-        btn.checksumText:SetText("|cff00ff00" .. displayChecksum .. "|r")
-      end
-      
-      -- Click handler
-      btn:SetScript("OnClick", function()
-        OGRH.SetRaidLead(response.name)
-        frame:Hide()
-      end)
       
       btn:SetPoint("TOPLEFT", 0, yOffset)
       btn:Show()
       yOffset = yOffset - 20
+      buttonIndex = buttonIndex + 1
+    end
+    
+    -- Add ReadHelper users section if any exist
+    if OGRH.RaidLead.readHelperResponses and table.getn(OGRH.RaidLead.readHelperResponses) > 0 then
+      -- Add spacing and header
+      yOffset = yOffset - 10
+      
+      -- Create header label if needed
+      if not frame.readHelperLabels.header then
+        frame.readHelperLabels.header = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        frame.readHelperLabels.header:SetTextColor(1, 0.82, 0)
+      end
+      frame.readHelperLabels.header:SetPoint("TOPLEFT", 5, yOffset)
+      frame.readHelperLabels.header:SetText("OG-ReadHelper Users:")
+      frame.readHelperLabels.header:Show()
+      yOffset = yOffset - 20
+      
+      -- Sort ReadHelper responses by name
+      local sortedReadHelper = {}
+      for i = 1, table.getn(OGRH.RaidLead.readHelperResponses) do
+        table.insert(sortedReadHelper, OGRH.RaidLead.readHelperResponses[i])
+      end
+      table.sort(sortedReadHelper, function(a, b) return a.name < b.name end)
+      
+      -- Display ReadHelper users (non-clickable, just informational)
+      for i = 1, table.getn(sortedReadHelper) do
+        local response = sortedReadHelper[i]
+        
+        if not frame.playerButtons[buttonIndex] then
+          local btn = CreateFrame("Frame", nil, scrollChild)  -- Frame, not Button (non-clickable)
+          btn:SetWidth(330)
+          btn:SetHeight(18)
+          
+          local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          text:SetPoint("LEFT", 5, 0)
+          text:SetJustifyH("LEFT")
+          text:SetWidth(130)
+          btn.text = text
+          
+          local versionText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          versionText:SetPoint("LEFT", 145, 0)
+          versionText:SetJustifyH("LEFT")
+          versionText:SetWidth(70)
+          btn.versionText = versionText
+          
+          frame.playerButtons[buttonIndex] = btn
+        end
+        
+        local btn = frame.playerButtons[buttonIndex]
+        
+        -- Get player class for color
+        local playerClass = OGRH.GetPlayerClass and OGRH.GetPlayerClass(response.name)
+        local classColor = playerClass and RAID_CLASS_COLORS[playerClass] or {r=1, g=1, b=1}
+        
+        btn.text:SetText(response.name)
+        btn.text:SetTextColor(classColor.r, classColor.g, classColor.b)
+        
+        -- Display version
+        btn.versionText:SetText(response.version or "Unknown")
+        btn.versionText:SetTextColor(0.7, 0.7, 0.7)
+        
+        -- Hide rank/checksum fields if they exist (ReadHelper users don't have these)
+        if btn.rankText then btn.rankText:SetText("") end
+        if btn.checksumText then btn.checksumText:SetText("") end
+        if btn.bg then btn.bg:Hide() end
+        
+        btn:SetPoint("TOPLEFT", 0, yOffset)
+        btn:Show()
+        yOffset = yOffset - 20
+        buttonIndex = buttonIndex + 1
+      end
+    else
+      -- Hide header if no ReadHelper users
+      if frame.readHelperLabels.header then
+        frame.readHelperLabels.header:Hide()
+      end
+    end
+    
+    -- Hide unused buttons
+    for i = buttonIndex, table.getn(frame.playerButtons) do
+      frame.playerButtons[i]:Hide()
     end
     
     scrollChild:SetHeight(math.max(1, math.abs(yOffset)))

@@ -1351,8 +1351,9 @@ function OGRH.SendReadHelperSyncData(requester)
     end
   end -- end if OGRH_SV.encounterAnnouncements
   
-  -- Get consume requirements for this encounter only
+  -- Get consume requirements and custom modules for this encounter
   local consumeList = {}
+  local customModules = nil
   if roles and roles[currentRaid] and roles[currentRaid][currentEncounter] then
     local encounterRoles = roles[currentRaid][currentEncounter]
     local column1 = encounterRoles.column1 or {}
@@ -1372,6 +1373,31 @@ function OGRH.SendReadHelperSyncData(requester)
           consumeRole = column2[i]
           break
         end
+      end
+    end
+    
+    -- Find custom module role
+    local customRole = nil
+    for i = 1, table.getn(column1) do
+      if column1[i].isCustomModule then
+        customRole = column1[i]
+        break
+      end
+    end
+    if not customRole then
+      for i = 1, table.getn(column2) do
+        if column2[i].isCustomModule then
+          customRole = column2[i]
+          break
+        end
+      end
+    end
+    
+    -- Get module list from custom role
+    if customRole and customRole.modules then
+      customModules = {}
+      for i, moduleId in ipairs(customRole.modules) do
+        table.insert(customModules, moduleId)
       end
     end
     
@@ -1417,7 +1443,8 @@ function OGRH.SendReadHelperSyncData(requester)
   local syncData = {
     encounter = currentEncounter,
     announcement = announcementLines,
-    consumes = consumeList
+    consumes = consumeList,
+    modules = customModules
   }
   
   -- Serialize and send
@@ -1547,6 +1574,18 @@ addonFrame:SetScript("OnEvent", function()
           end
           
           OGRH.HandleAddonPollResponse(sender, version, checksum)
+        end
+      -- Handle ReadHelper poll response
+      elseif string.sub(message, 1, 25) == "READHELPER_POLL_RESPONSE;" then
+        if OGRH.HandleReadHelperPollResponse then
+          -- Parse: READHELPER_POLL_RESPONSE;version
+          local version = "Unknown"
+          
+          if string.len(message) > 26 then
+            version = string.sub(message, 26)
+          end
+          
+          OGRH.HandleReadHelperPollResponse(sender, version)
         end
       -- Handle role change broadcast
       elseif string.sub(message, 1, 12) == "ROLE_CHANGE;" then
