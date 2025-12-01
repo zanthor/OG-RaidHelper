@@ -389,6 +389,11 @@ announceBtn:SetScript("OnClick", function()
       SendChatMessage(line, "RAID_WARNING")
     end
     
+    -- Broadcast sync to ReadHelper users
+    if OGRH.SendReadHelperSyncData then
+      OGRH.SendReadHelperSyncData(nil)
+    end
+    
     OGRH.Msg("Consumes announced to raid warning.")
     return
   end

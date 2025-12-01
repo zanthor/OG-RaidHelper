@@ -1280,6 +1280,151 @@ function OGRH.Deserialize(str)
   return nil
 end
 
+-- Send sync data to OG-ReadHelper addon user
+function OGRH.SendReadHelperSyncData(requester)
+  OGRH.EnsureSV()
+  
+  -- Get current encounter
+  if not OGRH.GetCurrentEncounter then
+    return
+  end
+  
+  local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+  if not currentRaid or not currentEncounter then
+    return
+  end
+  
+  -- Get role data (needed for both announcements and consumes)
+  local roles = nil
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles then
+    roles = OGRH_SV.encounterMgmt.roles
+  end
+  
+  -- Get announcement text with tags replaced
+  local announcementLines = {}
+  if OGRH_SV.encounterAnnouncements and 
+     OGRH_SV.encounterAnnouncements[currentRaid] and
+     OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter] and
+     OGRH_EncounterFrame and OGRH_EncounterFrame.ReplaceTags then
+    
+    -- Get role data for announcement processing
+    local orderedRoles = {}
+    if roles and roles[currentRaid] and roles[currentRaid][currentEncounter] then
+      local encounterRoles = roles[currentRaid][currentEncounter]
+      local column1 = encounterRoles.column1 or {}
+      local column2 = encounterRoles.column2 or {}
+      for i = 1, table.getn(column1) do
+        table.insert(orderedRoles, column1[i])
+      end
+      for i = 1, table.getn(column2) do
+        table.insert(orderedRoles, column2[i])
+      end
+    end
+    
+    local assignments = {}
+    if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[currentRaid] and 
+       OGRH_SV.encounterAssignments[currentRaid][currentEncounter] then
+      assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
+    end
+    
+    local raidMarks = {}
+    if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[currentRaid] and 
+       OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter] then
+      raidMarks = OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter]
+    end
+    
+    local assignmentNumbers = {}
+    if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[currentRaid] and 
+       OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter] then
+      assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter]
+    end
+    
+    local announcementData = OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter]
+    for i = 1, 20 do
+      local lineText = announcementData[i]
+      if lineText and lineText ~= "" then
+        local processedText = OGRH_EncounterFrame.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
+        if processedText and processedText ~= "" then
+          table.insert(announcementLines, processedText)
+        end
+      end
+    end
+  end -- end if OGRH_SV.encounterAnnouncements
+  
+  -- Get consume requirements for this encounter only
+  local consumeList = {}
+  if roles and roles[currentRaid] and roles[currentRaid][currentEncounter] then
+    local encounterRoles = roles[currentRaid][currentEncounter]
+    local column1 = encounterRoles.column1 or {}
+    local column2 = encounterRoles.column2 or {}
+    
+    -- Find consume check role
+    local consumeRole = nil
+    for i = 1, table.getn(column1) do
+      if column1[i].isConsumeCheck then
+        consumeRole = column1[i]
+        break
+      end
+    end
+    if not consumeRole then
+      for i = 1, table.getn(column2) do
+        if column2[i].isConsumeCheck then
+          consumeRole = column2[i]
+          break
+        end
+      end
+    end
+    
+    -- Get consumes from the consume role
+    if consumeRole and consumeRole.consumes then
+      -- Helper function to get spell ID from item ID
+      local function GetSpellIdFromItem(itemId)
+        local itemToSpell = {
+          [13457] = 17543, -- Greater Fire Protection Potion
+          [13456] = 17544, -- Greater Frost Protection Potion  
+          [13458] = 17546, -- Greater Nature Protection Potion
+          [13459] = 17548, -- Greater Shadow Protection Potion
+          [13461] = 17549, -- Greater Arcane Protection Potion
+          [6049] = 7233,   -- Fire Protection Potion
+          [6050] = 7239,   -- Frost Protection Potion
+          [6052] = 7254,   -- Nature Protection Potion
+          [6048] = 10278,  -- Shadow Protection Potion
+        }
+        return itemToSpell[itemId]
+      end
+      
+      for i = 1, (consumeRole.slots or 1) do
+        if consumeRole.consumes[i] then
+          local consumeData = consumeRole.consumes[i]
+          local primarySpellId = GetSpellIdFromItem(consumeData.primaryId)
+          local secondarySpellId = consumeData.allowAlternate and consumeData.secondaryId and GetSpellIdFromItem(consumeData.secondaryId)
+          
+          table.insert(consumeList, {
+            primaryId = consumeData.primaryId,
+            primaryName = consumeData.primaryName,
+            primarySpellId = primarySpellId,
+            secondaryId = consumeData.secondaryId,
+            secondaryName = consumeData.secondaryName,
+            secondarySpellId = secondarySpellId,
+            allowAlternate = consumeData.allowAlternate
+          })
+        end
+      end
+    end
+  end
+  
+  -- Build sync data package
+  local syncData = {
+    encounter = currentEncounter,
+    announcement = announcementLines,
+    consumes = consumeList
+  }
+  
+  -- Serialize and send
+  local serialized = OGRH.Serialize(syncData)
+  SendAddonMessage(OGRH.ADDON_PREFIX, "READHELPER_SYNC_RESPONSE;" .. serialized, "RAID")
+end
+
 -- Re-announce stored announcement
 function OGRH.ReAnnounce()
   if not OGRH.storedAnnouncement then
@@ -1508,6 +1653,14 @@ addonFrame:SetScript("OnEvent", function()
             if currentRaid and currentEncounter and OGRH.BroadcastFullEncounterSync then
               OGRH.BroadcastFullEncounterSync()
             end
+          end
+        end
+      -- Handle ReadHelper sync request (from OG-ReadHelper addon)
+      elseif message == "READHELPER_SYNC_REQUEST" then
+        -- Only respond if we're the raid lead
+        if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+          if OGRH.SendReadHelperSyncData then
+            OGRH.SendReadHelperSyncData(sender)
           end
         end
       -- Handle announcement broadcast

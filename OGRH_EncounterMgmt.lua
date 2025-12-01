@@ -1124,12 +1124,16 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       -- Add all roles from column1 first (top to bottom)
       for i = 1, table.getn(column1) do
-        table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+        if not column1[i].isCustomModule then
+          table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+        end
       end
       
       -- Then add all roles from column2 (top to bottom)
       for i = 1, table.getn(column2) do
-        table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+        if not column2[i].isCustomModule then
+          table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+        end
       end
       
       -- Track assigned players
@@ -4205,26 +4209,30 @@ function OGRH.ShowEncounterWindow(encounterName)
       -- Create each column independently to avoid unwanted whitespace
       local roleIndex = 1
       
-      -- Left column
+      -- Left column (skip Custom Module roles - they don't render in planning UI)
       for i = 1, table.getn(column1) do
-        local container = CreateRoleContainer(scrollChild, column1[i], roleIndex, 5, yOffsetLeft, columnWidth)
-        table.insert(frame.roleContainers, container)
+        if not column1[i].isCustomModule then
+          local container = CreateRoleContainer(scrollChild, column1[i], roleIndex, 5, yOffsetLeft, columnWidth)
+          table.insert(frame.roleContainers, container)
+          
+          -- Calculate offset for next role in left column
+          local containerHeight = 40 + ((column1[i].slots or 1) * 22)
+          yOffsetLeft = yOffsetLeft - containerHeight - 10
+        end
         roleIndex = roleIndex + 1
-        
-        -- Calculate offset for next role in left column
-        local containerHeight = 40 + ((column1[i].slots or 1) * 22)
-        yOffsetLeft = yOffsetLeft - containerHeight - 10
       end
       
-      -- Right column
+      -- Right column (skip Custom Module roles - they don't render in planning UI)
       for i = 1, table.getn(column2) do
-        local container = CreateRoleContainer(scrollChild, column2[i], roleIndex, 287, yOffsetRight, columnWidth)
-        table.insert(frame.roleContainers, container)
+        if not column2[i].isCustomModule then
+          local container = CreateRoleContainer(scrollChild, column2[i], roleIndex, 287, yOffsetRight, columnWidth)
+          table.insert(frame.roleContainers, container)
+          
+          -- Calculate offset for next role in right column
+          local containerHeight = 40 + ((column2[i].slots or 1) * 22)
+          yOffsetRight = yOffsetRight - containerHeight - 10
+        end
         roleIndex = roleIndex + 1
-        
-        -- Calculate offset for next role in right column
-        local containerHeight = 40 + ((column2[i].slots or 1) * 22)
-        yOffsetRight = yOffsetRight - containerHeight - 10
       end
       
       -- Update scroll child height (based on the taller column)
@@ -4873,6 +4881,8 @@ function OGRH.ShowEncounterSetup()
       
       local rolesData = OGRH_SV.encounterMgmt.roles[frame.selectedRaid][frame.selectedEncounter]
       
+      DEFAULT_CHAT_FRAME:AddMessage("RefreshRolesList called, col1=" .. table.getn(rolesData.column1 or {}) .. " col2=" .. table.getn(rolesData.column2 or {}))
+      
       -- Handle legacy format (flat array) - migrate to column structure
       if rolesData[1] and not rolesData.column1 then
         local legacyRoles = {}
@@ -5096,18 +5106,14 @@ function OGRH.ShowEncounterSetup()
         end
       end  -- End of CreateRoleButton function
       
-      -- Add roles from column 1 (skip Custom Module roles - they don't show in planning)
+      -- Add roles from column 1
       for i, role in ipairs(rolesData.column1) do
-        if role.roleType ~= "custom" then
-          CreateRoleButton(i, role, rolesData.column1, scrollChild1, false)
-        end
+        CreateRoleButton(i, role, rolesData.column1, scrollChild1, false)
       end
       
-      -- Add roles from column 2 (skip Custom Module roles - they don't show in planning)
+      -- Add roles from column 2
       for i, role in ipairs(rolesData.column2) do
-        if role.roleType ~= "custom" then
-          CreateRoleButton(i, role, rolesData.column2, scrollChild2, true)
-        end
+        CreateRoleButton(i, role, rolesData.column2, scrollChild2, true)
       end
       
       -- Add "Add Role" button to both columns at the bottom
@@ -6033,7 +6039,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
             if role.isConsumeCheck then
               hasConsumeCheck = true
             end
-            if role.roleType == "custom" then
+            if role.isCustomModule then
               hasCustomModule = true
             end
           end
@@ -6970,7 +6976,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     
     if isCustomModule then
       for i, role in ipairs(currentColumnRoles) do
-        if i ~= currentRoleIndex and role.roleType == "custom" then
+        if i ~= currentRoleIndex and role.isCustomModule then
           DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Only one Custom Module role allowed per encounter.")
           return
         end
@@ -6980,6 +6986,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     -- Update role data
     roleData.name = frame.nameEditBox:GetText()
     roleData.isConsumeCheck = isConsumeCheck
+    roleData.isCustomModule = isCustomModule
     roleData.roleType = isCustomModule and "custom" or nil
     roleData.invertFillOrder = frame.invertFillOrderCheckbox:GetChecked()
     roleData.linkRole = frame.linkRoleCheckbox:GetChecked()
@@ -7393,7 +7400,7 @@ function OGRH.UpdateEncounterNavButton()
       local allModules = {}
       if rolesData.column1 then
         for _, role in ipairs(rolesData.column1) do
-          if role.roleType == "custom" and role.modules then
+          if role.isCustomModule and role.modules then
             for _, moduleId in ipairs(role.modules) do
               table.insert(allModules, moduleId)
             end
@@ -7402,7 +7409,7 @@ function OGRH.UpdateEncounterNavButton()
       end
       if rolesData.column2 then
         for _, role in ipairs(rolesData.column2) do
-          if role.roleType == "custom" and role.modules then
+          if role.isCustomModule and role.modules then
             for _, moduleId in ipairs(role.modules) do
               table.insert(allModules, moduleId)
             end
@@ -7691,6 +7698,11 @@ function OGRH.PrepareEncounterAnnouncement()
   if GetNumRaidMembers() == 0 then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to announce.")
     return
+  end
+  
+  -- Broadcast sync to ReadHelper users
+  if OGRH.SendReadHelperSyncData then
+    OGRH.SendReadHelperSyncData(nil)
   end
   
   -- Get announcement text from saved variables
