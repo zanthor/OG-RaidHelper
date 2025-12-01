@@ -4881,8 +4881,6 @@ function OGRH.ShowEncounterSetup()
       
       local rolesData = OGRH_SV.encounterMgmt.roles[frame.selectedRaid][frame.selectedEncounter]
       
-      DEFAULT_CHAT_FRAME:AddMessage("RefreshRolesList called, col1=" .. table.getn(rolesData.column1 or {}) .. " col2=" .. table.getn(rolesData.column2 or {}))
-      
       -- Handle legacy format (flat array) - migrate to column structure
       if rolesData[1] and not rolesData.column1 then
         local legacyRoles = {}
