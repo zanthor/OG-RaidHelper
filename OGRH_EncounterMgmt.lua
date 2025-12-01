@@ -855,7 +855,8 @@ function OGRH.ShowEncounterWindow(encounterName)
         {text = "Tanks", value = "tanks", label = "Tanks"},
         {text = "Healers", value = "healers", label = "Healers"},
         {text = "Melee", value = "melee", label = "Melee"},
-        {text = "Ranged", value = "ranged", label = "Ranged"}
+        {text = "Ranged", value = "ranged", label = "Ranged"},
+        {text = "Signed Up", value = "signedup", label = "Signed Up"}
       }
       
       -- Show menu
@@ -2836,14 +2837,79 @@ function OGRH.ShowEncounterWindow(encounterName)
         ranged = {MAGE = true, Mage = true, WARLOCK = true, Warlock = true, HUNTER = true, Hunter = true, DRUID = true, Druid = true, PRIEST = true, Priest = true}
       }
       
-      -- Build player list: raid members, online 60s, offline 60s
+      -- Build player list: raid members, online 60s, offline 60s, or signed up players
       local raidPlayers = {}  -- {name=..., class=..., section="raid"}
       local onlinePlayers = {}  -- {name=..., class=..., section="online"}
       local offlinePlayers = {}  -- {name=..., class=..., section="offline"}
+      local signedUpPlayers = {}  -- {name=..., class=..., section="tanks"|"healers"|"melee"|"ranged"}
       
-      -- Get raid members first (from RolesUI data)
-      local numRaid = GetNumRaidMembers()
-      if numRaid > 0 then
+      -- Check if we're showing Signed Up filter
+      if frame.selectedPlayerRole == "signedup" then
+        -- Get RollFor sign-up data
+        if RollForCharDb and RollForCharDb.softres and RollForCharDb.softres.data then
+          local encodedData = RollForCharDb.softres.data
+          if encodedData and type(encodedData) == "string" and RollFor and RollFor.SoftRes and RollFor.SoftRes.decode then
+            local decodedData = RollFor.SoftRes.decode(encodedData)
+            if decodedData and RollFor.SoftResDataTransformer and RollFor.SoftResDataTransformer.transform then
+              local softresData = RollFor.SoftResDataTransformer.transform(decodedData)
+              if softresData and type(softresData) == "table" then
+                -- Map RollFor role to OGRH role bucket
+                local roleMap = {
+                  DruidBear = "TANKS", PaladinProtection = "TANKS", ShamanTank = "TANKS", WarriorProtection = "TANKS",
+                  DruidRestoration = "HEALERS", PaladinHoly = "HEALERS", PriestHoly = "HEALERS", ShamanRestoration = "HEALERS",
+                  DruidFeral = "MELEE", HunterSurvival = "MELEE", PaladinRetribution = "MELEE", RogueDaggers = "MELEE",
+                  RogueSwords = "MELEE", ShamanEnhancement = "MELEE", WarriorArms = "MELEE", WarriorFury = "MELEE",
+                  DruidBalance = "RANGED", HunterMarksmanship = "RANGED", HunterBeastMastery = "RANGED", MageArcane = "RANGED",
+                  MageFire = "RANGED", MageFrost = "RANGED", PriestDiscipline = "RANGED", PriestShadow = "RANGED",
+                  ShamanElemental = "RANGED", WarlockAffliction = "RANGED", WarlockDemonology = "RANGED", WarlockDestruction = "RANGED"
+                }
+                
+                local playerMap = {}
+                for itemId, itemData in pairs(softresData) do
+                  if type(itemData) == "table" and itemData.rollers then
+                    for _, roller in ipairs(itemData.rollers) do
+                      if roller and roller.name then
+                        if not playerMap[roller.name] then
+                          local roleBucket = roleMap[roller.role] or "RANGED"
+                          local class = OGRH.GetPlayerClass(roller.name)
+                          if not class then
+                            -- Try to get from guild roster
+                            local numGuild = GetNumGuildMembers(true)
+                            for i = 1, numGuild do
+                              local guildName, _, _, _, guildClass = GetGuildRosterInfo(i)
+                              if guildName == roller.name and guildClass then
+                                class = string.upper(guildClass)
+                                OGRH.classCache[roller.name] = class
+                                break
+                              end
+                            end
+                          end
+                          
+                          playerMap[roller.name] = {
+                            name = roller.name,
+                            class = class or "UNKNOWN",
+                            section = string.lower(roleBucket)  -- tanks, healers, melee, ranged
+                          }
+                        end
+                      end
+                    end
+                  end
+                end
+                
+                -- Convert to array and apply search filter
+                for _, playerData in pairs(playerMap) do
+                  if searchText == "" or string.find(string.lower(playerData.name), searchText, 1, true) then
+                    table.insert(signedUpPlayers, playerData)
+                  end
+                end
+              end
+            end
+          end
+        end
+      else
+        -- Get raid members first (from RolesUI data)
+        local numRaid = GetNumRaidMembers()
+        if numRaid > 0 then
         -- Build role assignments from RolesUI
         local roleAssignments = {}  -- playerName -> {tanks=true, healers=true, etc}
         
@@ -2934,22 +3000,38 @@ function OGRH.ShowEncounterWindow(encounterName)
           end
         end
       end
+      end  -- end of signedup filter check
       
       -- Sort each section alphabetically
       table.sort(raidPlayers, function(a, b) return a.name < b.name end)
       table.sort(onlinePlayers, function(a, b) return a.name < b.name end)
       table.sort(offlinePlayers, function(a, b) return a.name < b.name end)
+      table.sort(signedUpPlayers, function(a, b)
+        if a.section ~= b.section then
+          local order = {tanks = 1, healers = 2, melee = 3, ranged = 4}
+          return (order[a.section] or 5) < (order[b.section] or 5)
+        end
+        return a.name < b.name
+      end)
       
       -- Combine all sections
       local players = {}
-      for _, p in ipairs(raidPlayers) do
-        table.insert(players, p)
-      end
-      for _, p in ipairs(onlinePlayers) do
-        table.insert(players, p)
-      end
-      for _, p in ipairs(offlinePlayers) do
-        table.insert(players, p)
+      if frame.selectedPlayerRole == "signedup" then
+        -- Only show signed up players
+        for _, p in ipairs(signedUpPlayers) do
+          table.insert(players, p)
+        end
+      else
+        -- Show raid/guild roster
+        for _, p in ipairs(raidPlayers) do
+          table.insert(players, p)
+        end
+        for _, p in ipairs(onlinePlayers) do
+          table.insert(players, p)
+        end
+        for _, p in ipairs(offlinePlayers) do
+          table.insert(players, p)
+        end
       end
       
       -- Create section headers and draggable buttons for each player
@@ -2966,6 +3048,14 @@ function OGRH.ShowEncounterWindow(encounterName)
             sectionLabel = "Online"
           elseif playerData.section == "offline" then
             sectionLabel = "Offline"
+          elseif playerData.section == "tanks" then
+            sectionLabel = "Tanks"
+          elseif playerData.section == "healers" then
+            sectionLabel = "Healers"
+          elseif playerData.section == "melee" then
+            sectionLabel = "Melee"
+          elseif playerData.section == "ranged" then
+            sectionLabel = "Ranged"
           end
           
           if sectionLabel ~= "" then
