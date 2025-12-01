@@ -5096,14 +5096,18 @@ function OGRH.ShowEncounterSetup()
         end
       end  -- End of CreateRoleButton function
       
-      -- Add roles from column 1
+      -- Add roles from column 1 (skip Custom Module roles - they don't show in planning)
       for i, role in ipairs(rolesData.column1) do
-        CreateRoleButton(i, role, rolesData.column1, scrollChild1, false)
+        if role.roleType ~= "custom" then
+          CreateRoleButton(i, role, rolesData.column1, scrollChild1, false)
+        end
       end
       
-      -- Add roles from column 2
+      -- Add roles from column 2 (skip Custom Module roles - they don't show in planning)
       for i, role in ipairs(rolesData.column2) do
-        CreateRoleButton(i, role, rolesData.column2, scrollChild2, true)
+        if role.roleType ~= "custom" then
+          CreateRoleButton(i, role, rolesData.column2, scrollChild2, true)
+        end
       end
       
       -- Add "Add Role" button to both columns at the bottom
@@ -6000,21 +6004,131 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     title:SetPoint("TOP", frame, "TOP", 0, -10)
     title:SetText("Edit Role")
     
-    -- Consume Check Checkbox
-    local consumeCheckLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    consumeCheckLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -40)
-    consumeCheckLabel:SetText("Consume Check:")
-    frame.consumeCheckLabel = consumeCheckLabel
+    -- Role Type Dropdown
+    local roleTypeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    roleTypeLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -40)
+    roleTypeLabel:SetText("Role Type:")
+    frame.roleTypeLabel = roleTypeLabel
     
-    local consumeCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    consumeCheckbox:SetPoint("LEFT", consumeCheckLabel, "RIGHT", 5, 0)
-    consumeCheckbox:SetWidth(24)
-    consumeCheckbox:SetHeight(24)
-    frame.consumeCheckbox = consumeCheckbox
+    local roleTypeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    roleTypeBtn:SetWidth(150)
+    roleTypeBtn:SetHeight(24)
+    roleTypeBtn:SetPoint("LEFT", roleTypeLabel, "RIGHT", 10, 0)
+    roleTypeBtn:SetText("Raider Roles")
+    OGRH.StyleButton(roleTypeBtn)
+    frame.roleTypeBtn = roleTypeBtn
+    frame.selectedRoleType = "raider"  -- Default value
+    
+    -- Role Type dropdown click handler
+    roleTypeBtn:SetScript("OnClick", function()
+      -- Recalculate which role types already exist in this encounter
+      local hasConsumeCheck = false
+      local hasCustomModule = false
+      local currentColumnRoles = frame.currentColumnRoles
+      local currentRoleIndex = frame.currentRoleIndex
+      
+      if currentColumnRoles then
+        for i, role in ipairs(currentColumnRoles) do
+          if i ~= currentRoleIndex then
+            if role.isConsumeCheck then
+              hasConsumeCheck = true
+            end
+            if role.roleType == "custom" then
+              hasCustomModule = true
+            end
+          end
+        end
+      end
+      
+      -- Create menu items (filter based on existing roles)
+      local menuItems = {
+        {text = "Raider Roles", value = "raider", label = "Raider Roles"}
+      }
+      
+      -- Only show Consume Check if one doesn't already exist (or this is the consume check)
+      if not hasConsumeCheck or frame.selectedRoleType == "consume" then
+        table.insert(menuItems, {text = "Consume Check", value = "consume", label = "Consume Check"})
+      end
+      
+      -- Only show Custom Module if one doesn't already exist (or this is the custom module)
+      if not hasCustomModule or frame.selectedRoleType == "custom" then
+        table.insert(menuItems, {text = "Custom Module", value = "custom", label = "Custom Module"})
+      end
+      
+      -- Show menu
+      local menuFrame = CreateFrame("Frame", nil, UIParent)
+      menuFrame:SetWidth(150)
+      menuFrame:SetHeight(table.getn(menuItems) * 20 + 10)
+      menuFrame:SetPoint("TOPLEFT", roleTypeBtn, "BOTTOMLEFT", 0, 0)
+      menuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+      menuFrame:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 12,
+        insets = {left = 3, right = 3, top = 3, bottom = 3}
+      })
+      menuFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+      menuFrame:EnableMouse(true)
+      
+      -- Close menu when clicking outside
+      menuFrame:SetScript("OnHide", function()
+        this:SetParent(nil)
+      end)
+      
+      -- Create menu item buttons
+      for i, item in ipairs(menuItems) do
+        local btn = CreateFrame("Button", nil, menuFrame)
+        btn:SetWidth(144)
+        btn:SetHeight(18)
+        btn:SetPoint("TOPLEFT", menuFrame, "TOPLEFT", 3, -3 - ((i-1) * 20))
+        
+        local bg = btn:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+        bg:Hide()
+        
+        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        text:SetPoint("LEFT", btn, "LEFT", 5, 0)
+        text:SetText(item.text)
+        
+        -- Capture variables for closure
+        local capturedValue = item.value
+        local capturedLabel = item.label
+        
+        btn:SetScript("OnEnter", function()
+          bg:Show()
+        end)
+        
+        btn:SetScript("OnLeave", function()
+          bg:Hide()
+        end)
+        
+        btn:SetScript("OnClick", function()
+          frame.selectedRoleType = capturedValue
+          roleTypeBtn:SetText(capturedLabel)
+          if frame.UpdateRoleTypeVisibility then
+            frame.UpdateRoleTypeVisibility()
+          end
+          menuFrame:Hide()
+        end)
+      end
+      
+      -- Auto-hide after short delay when mouse leaves
+      menuFrame:SetScript("OnUpdate", function()
+        if not MouseIsOver(menuFrame) and not MouseIsOver(roleTypeBtn) then
+          menuFrame:Hide()
+        end
+      end)
+      
+      frame.currentRoleTypeMenu = menuFrame
+    end)
     
     -- Role Name Label
     local nameLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    nameLabel:SetPoint("TOPLEFT", consumeCheckLabel, "BOTTOMLEFT", 0, -10)
+    nameLabel:SetPoint("TOPLEFT", roleTypeLabel, "BOTTOMLEFT", 0, -10)
     nameLabel:SetText("Role Name:")
     frame.nameLabel = nameLabel
     
@@ -6375,6 +6489,190 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       end)
     end
     
+    -- Custom Module UI - Two list boxes side by side
+    local customModuleContainer = CreateFrame("Frame", nil, frame)
+    customModuleContainer:SetPoint("TOPLEFT", roleTypeLabel, "BOTTOMLEFT", 0, -10)
+    customModuleContainer:SetWidth(320)
+    customModuleContainer:SetHeight(220)
+    frame.customModuleContainer = customModuleContainer
+    
+    -- Left list box (Selected Items)
+    local leftListLabel = customModuleContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    leftListLabel:SetPoint("TOPLEFT", customModuleContainer, "TOPLEFT", 0, 0)
+    leftListLabel:SetText("Selected:")
+    frame.leftListLabel = leftListLabel
+    
+    local leftListOuter, leftListScroll, leftListChild, leftListBar, leftListWidth = OGRH.CreateStyledScrollList(customModuleContainer, 155, 190)
+    leftListOuter:SetPoint("TOPLEFT", leftListLabel, "BOTTOMLEFT", 0, -5)
+    frame.leftListOuter = leftListOuter
+    frame.leftListScroll = leftListScroll
+    frame.leftListChild = leftListChild
+    frame.leftListBar = leftListBar
+    
+    -- Right list box (Available Items)
+    local rightListLabel = customModuleContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rightListLabel:SetPoint("TOPLEFT", customModuleContainer, "TOPLEFT", 165, 0)
+    rightListLabel:SetText("Available:")
+    frame.rightListLabel = rightListLabel
+    
+    local rightListOuter, rightListScroll, rightListChild, rightListBar, rightListWidth = OGRH.CreateStyledScrollList(customModuleContainer, 155, 190)
+    rightListOuter:SetPoint("TOPLEFT", rightListLabel, "BOTTOMLEFT", 0, -5)
+    frame.rightListOuter = rightListOuter
+    frame.rightListScroll = rightListScroll
+    frame.rightListChild = rightListChild
+    frame.rightListBar = rightListBar
+    
+    -- Store selected modules list
+    frame.selectedModules = {}
+    
+    -- Function to populate the module lists
+    local function PopulateModuleLists()
+      -- Clear existing items
+      local child = frame.leftListChild
+      local children = { child:GetChildren() }
+      for _, c in ipairs(children) do
+        c:Hide()
+        c:SetParent(nil)
+      end
+      
+      child = frame.rightListChild
+      children = { child:GetChildren() }
+      for _, c in ipairs(children) do
+        c:Hide()
+        c:SetParent(nil)
+      end
+      
+      -- Get all available modules
+      local allModules = OGRH.GetAvailableModules and OGRH.GetAvailableModules() or {}
+      
+      -- Build available list (modules not in selected)
+      local availableModules = {}
+      for _, module in ipairs(allModules) do
+        local isSelected = false
+        for _, selectedId in ipairs(frame.selectedModules) do
+          if selectedId == module.id then
+            isSelected = true
+            break
+          end
+        end
+        if not isSelected then
+          table.insert(availableModules, module)
+        end
+      end
+      
+      -- Populate Selected list (left) - use Button type with standard action buttons
+      local yOffset = 0
+      local leftContentWidth = 135
+      for i, moduleId in ipairs(frame.selectedModules) do
+        -- Find module info
+        local moduleInfo = nil
+        for _, m in ipairs(allModules) do
+          if m.id == moduleId then
+            moduleInfo = m
+            break
+          end
+        end
+        
+        if moduleInfo then
+          local itemBtn = OGRH.CreateStyledListItem(frame.leftListChild, leftContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
+          itemBtn:SetPoint("TOPLEFT", frame.leftListChild, "TOPLEFT", 0, -yOffset)
+          
+          local text = itemBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          text:SetPoint("LEFT", itemBtn, "LEFT", 5, 0)
+          text:SetText(moduleInfo.name)
+          text:SetJustifyH("LEFT")
+          text:SetWidth(30)
+          
+          -- Capture variables for closures
+          local capturedIdx = i
+          local capturedModuleId = moduleId
+          
+          -- Add standard action buttons (delete, down, up)
+          OGRH.AddListItemButtons(
+            itemBtn,
+            capturedIdx,
+            table.getn(frame.selectedModules),
+            function()
+              -- Move up
+              local temp = frame.selectedModules[capturedIdx - 1]
+              frame.selectedModules[capturedIdx - 1] = frame.selectedModules[capturedIdx]
+              frame.selectedModules[capturedIdx] = temp
+              PopulateModuleLists()
+            end,
+            function()
+              -- Move down
+              local temp = frame.selectedModules[capturedIdx + 1]
+              frame.selectedModules[capturedIdx + 1] = frame.selectedModules[capturedIdx]
+              frame.selectedModules[capturedIdx] = temp
+              PopulateModuleLists()
+            end,
+            function()
+              -- Delete
+              for j, id in ipairs(frame.selectedModules) do
+                if id == capturedModuleId then
+                  table.remove(frame.selectedModules, j)
+                  break
+                end
+              end
+              PopulateModuleLists()
+            end
+          )
+          
+          yOffset = yOffset + (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
+        end
+      end
+      
+      -- Update left scroll child height
+      frame.leftListChild:SetHeight(math.max(yOffset, 190))
+      
+      -- Populate Available list (right) - use Button type for clickability
+      yOffset = 0
+      local rightContentWidth = 145
+      for _, module in ipairs(availableModules) do
+        local itemBtn = OGRH.CreateStyledListItem(frame.rightListChild, rightContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
+        itemBtn:SetPoint("TOPLEFT", frame.rightListChild, "TOPLEFT", 0, -yOffset)
+        
+        local text = itemBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        text:SetPoint("CENTER", itemBtn, "CENTER", 0, 0)
+        text:SetText(module.name)
+        
+        -- Click to add to selected
+        local capturedId = module.id
+        local capturedModule = module
+        itemBtn:SetScript("OnClick", function()
+          table.insert(frame.selectedModules, capturedId)
+          PopulateModuleLists()
+        end)
+        
+        -- Show tooltip with description on hover
+        local originalOnEnter = itemBtn:GetScript("OnEnter")
+        itemBtn:SetScript("OnEnter", function()
+          if originalOnEnter then originalOnEnter() end
+          if capturedModule.description and capturedModule.description ~= "" then
+            GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+            GameTooltip:SetText(capturedModule.description)
+            GameTooltip:Show()
+          end
+        end)
+        
+        local originalOnLeave = itemBtn:GetScript("OnLeave")
+        itemBtn:SetScript("OnLeave", function()
+          if originalOnLeave then originalOnLeave() end
+          GameTooltip:Hide()
+        end)
+        
+        yOffset = yOffset + (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
+      end
+      
+      -- Update right scroll child height
+      frame.rightListChild:SetHeight(math.max(yOffset, 190))
+    end
+    
+    frame.PopulateModuleLists = PopulateModuleLists
+    
+    -- Initially hide custom module UI
+    customModuleContainer:Hide()
+    
     -- Save Button
     local saveBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     saveBtn:SetWidth(80)
@@ -6398,9 +6696,11 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   
   local frame = OGRH_EditRoleFrame
   
-  -- Function to update visibility based on consume check
-  local function UpdateConsumeCheckVisibility()
-    local isConsumeCheck = frame.consumeCheckbox:GetChecked()
+  -- Function to update visibility based on role type
+  local function UpdateRoleTypeVisibility()
+    local roleType = frame.selectedRoleType or "raider"
+    local isConsumeCheck = (roleType == "consume")
+    local isCustomModule = (roleType == "custom")
     
     -- Hide/show elements based on consume check
     if isConsumeCheck then
@@ -6423,9 +6723,9 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       frame.allowOtherRolesLabel:Hide()
       frame.allowOtherRolesCheckbox:Hide()
       
-      -- Reanchor count label to consume checkbox (since other labels are hidden)
+      -- Reanchor count label to role type label (since other labels are hidden)
       frame.countLabel:ClearAllPoints()
-      frame.countLabel:SetPoint("TOPLEFT", frame.consumeCheckLabel, "BOTTOMLEFT", 0, -15)
+      frame.countLabel:SetPoint("TOPLEFT", frame.roleTypeLabel, "BOTTOMLEFT", 0, -40)
       frame.countLabel:SetText("Consume Count:")
       
       -- Hide role label and show class checkboxes
@@ -6454,9 +6754,65 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
         end
       end
       
+      -- Hide custom module UI
+      frame.customModuleContainer:Hide()
+      
       -- Resize dialog to fit (smaller height)
       frame:SetHeight(280)
+    elseif isCustomModule then
+      -- Custom Module mode
+      -- Set fixed name and hide name controls
+      frame.nameEditBox:SetText("Custom Module")
+      frame.nameLabel:Hide()
+      frame.nameEditBox:Hide()
+      
+      -- Hide standard role options
+      frame.invertFillOrderLabel:Hide()
+      frame.invertFillOrderCheckbox:Hide()
+      frame.linkRoleLabel:Hide()
+      frame.linkRoleCheckbox:Hide()
+      frame.raidIconsLabel:Hide()
+      frame.raidIconsCheckbox:Hide()
+      frame.showAssignmentLabel:Hide()
+      frame.showAssignmentCheckbox:Hide()
+      frame.markPlayerLabel:Hide()
+      frame.markPlayerCheckbox:Hide()
+      frame.allowOtherRolesLabel:Hide()
+      frame.allowOtherRolesCheckbox:Hide()
+      frame.countLabel:Hide()
+      frame.countEditBox:Hide()
+      frame.rolesLabel:Hide()
+      
+      -- Hide default role checkboxes
+      for _, check in ipairs(frame.defaultRoleChecks) do
+        check:Hide()
+      end
+      for _, label in ipairs(frame.defaultRoleLabels) do
+        label:Hide()
+      end
+      
+      -- Hide class checkboxes
+      frame.allCheck:Hide()
+      frame.allLabel:Hide()
+      for _, check in ipairs(frame.classChecks) do
+        check:Hide()
+      end
+      for _, label in ipairs(frame.classLabels) do
+        label:Hide()
+      end
+      
+      -- Show custom module UI
+      frame.customModuleContainer:Show()
+      
+      -- Populate module lists
+      if frame.PopulateModuleLists then
+        frame.PopulateModuleLists()
+      end
+      
+      -- Resize dialog for custom module
+      frame:SetHeight(330)
     else
+      -- Raider Roles mode (default)
       -- Show name controls
       frame.nameLabel:Show()
       frame.nameEditBox:Show()
@@ -6479,6 +6835,8 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       frame.countLabel:ClearAllPoints()
       frame.countLabel:SetPoint("TOPLEFT", frame.showAssignmentLabel, "BOTTOMLEFT", 0, -15)
       frame.countLabel:SetText("Player Count:")
+      frame.countLabel:Show()
+      frame.countEditBox:Show()
       
       -- Show role label and default role checkboxes
       frame.rolesLabel:SetText("Default Role:")
@@ -6507,36 +6865,31 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
         end
       end
       
+      -- Hide custom module UI
+      frame.customModuleContainer:Hide()
+      
       -- Resize dialog back to full height
       frame:SetHeight(380)
     end
   end
   
-  -- Set consume checkbox click handler
-  frame.consumeCheckbox:SetScript("OnClick", function()
-    UpdateConsumeCheckVisibility()
-  end)
+  -- Store function for external access
+  frame.UpdateRoleTypeVisibility = UpdateRoleTypeVisibility
   
-  -- Check if another role is already a consume check (only allow one)
-  local hasConsumeCheck = false
-  for i, role in ipairs(columnRoles) do
-    if i ~= roleIndex and role.isConsumeCheck then
-      hasConsumeCheck = true
-      break
-    end
-  end
+  -- Store current context for validation
+  frame.currentColumnRoles = columnRoles
+  frame.currentRoleIndex = roleIndex
   
-  -- Populate fields with current role data
-  frame.consumeCheckbox:SetChecked(roleData.isConsumeCheck or false)
-  
-  -- Hide consume check option entirely if another consume check already exists
-  if hasConsumeCheck and not roleData.isConsumeCheck then
-    frame.consumeCheckLabel:Hide()
-    frame.consumeCheckbox:Hide()
+  -- Set role type based on role data
+  if roleData.isConsumeCheck then
+    frame.selectedRoleType = "consume"
+    frame.roleTypeBtn:SetText("Consume Check")
+  elseif roleData.roleType == "custom" then
+    frame.selectedRoleType = "custom"
+    frame.roleTypeBtn:SetText("Custom Module")
   else
-    frame.consumeCheckLabel:Show()
-    frame.consumeCheckbox:Show()
-    frame.consumeCheckbox:Enable()
+    frame.selectedRoleType = "raider"
+    frame.roleTypeBtn:SetText("Raider Roles")
   end
   
   frame.nameEditBox:SetText(roleData.name or "")
@@ -6568,8 +6921,16 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   frame.mageCheck:SetChecked(classes.mage or false)
   frame.warlockCheck:SetChecked(classes.warlock or false)
   
-  -- Trigger initial visibility update (this will show/hide appropriate checkboxes)
-  UpdateConsumeCheckVisibility()
+  -- Load selected modules (for custom module type)
+  frame.selectedModules = {}
+  if roleData.modules then
+    for i, moduleId in ipairs(roleData.modules) do
+      table.insert(frame.selectedModules, moduleId)
+    end
+  end
+  
+  -- Trigger initial visibility update (this will show/hide appropriate checkboxes and populate module lists)
+  UpdateRoleTypeVisibility()
   
   -- If "All" is checked, disable other class checkboxes
   if classes.all and roleData.isConsumeCheck then
@@ -6590,11 +6951,27 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   -- Save button handler
   frame.saveBtn:SetScript("OnClick", function()
     -- Validate consume check limit
-    local isConsumeCheck = frame.consumeCheckbox:GetChecked()
+    local roleType = frame.selectedRoleType or "raider"
+    local isConsumeCheck = (roleType == "consume")
+    local isCustomModule = (roleType == "custom")
+    
+    -- Use the stored current values, not the closure values
+    local currentColumnRoles = frame.currentColumnRoles
+    local currentRoleIndex = frame.currentRoleIndex
+    
     if isConsumeCheck then
-      for i, role in ipairs(columnRoles) do
-        if i ~= roleIndex and role.isConsumeCheck then
+      for i, role in ipairs(currentColumnRoles) do
+        if i ~= currentRoleIndex and role.isConsumeCheck then
           DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Only one Consume Check role allowed per encounter.")
+          return
+        end
+      end
+    end
+    
+    if isCustomModule then
+      for i, role in ipairs(currentColumnRoles) do
+        if i ~= currentRoleIndex and role.roleType == "custom" then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Only one Custom Module role allowed per encounter.")
           return
         end
       end
@@ -6603,6 +6980,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     -- Update role data
     roleData.name = frame.nameEditBox:GetText()
     roleData.isConsumeCheck = isConsumeCheck
+    roleData.roleType = isCustomModule and "custom" or nil
     roleData.invertFillOrder = frame.invertFillOrderCheckbox:GetChecked()
     roleData.linkRole = frame.linkRoleCheckbox:GetChecked()
     roleData.showRaidIcons = frame.raidIconsCheckbox:GetChecked()
@@ -6643,6 +7021,18 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       
       -- Clear defaultRoles for consume checks
       roleData.defaultRoles = nil
+    end
+    
+    -- Update modules (for custom module type)
+    if isCustomModule then
+      roleData.modules = {}
+      for i, moduleId in ipairs(frame.selectedModules) do
+        table.insert(roleData.modules, moduleId)
+      end
+      
+      -- Clear defaultRoles and classes for custom modules
+      roleData.defaultRoles = nil
+      roleData.classes = nil
     end
     
     -- Refresh the roles list
@@ -6989,6 +7379,46 @@ function OGRH.UpdateEncounterNavButton()
   if OGRH_SV and OGRH_SV.ui then
     raidName = OGRH_SV.ui.selectedRaid
     encounterName = OGRH_SV.ui.selectedEncounter
+  end
+  
+  -- Load modules for the selected encounter (main UI only)
+  if OGRH.LoadModulesForRole and OGRH.UnloadAllModules and raidName and encounterName then
+    -- Get roles for this encounter
+    if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and 
+       OGRH_SV.encounterMgmt.roles[raidName] and 
+       OGRH_SV.encounterMgmt.roles[raidName][encounterName] then
+      local rolesData = OGRH_SV.encounterMgmt.roles[raidName][encounterName]
+      
+      -- Collect all modules from custom module roles
+      local allModules = {}
+      if rolesData.column1 then
+        for _, role in ipairs(rolesData.column1) do
+          if role.roleType == "custom" and role.modules then
+            for _, moduleId in ipairs(role.modules) do
+              table.insert(allModules, moduleId)
+            end
+          end
+        end
+      end
+      if rolesData.column2 then
+        for _, role in ipairs(rolesData.column2) do
+          if role.roleType == "custom" and role.modules then
+            for _, moduleId in ipairs(role.modules) do
+              table.insert(allModules, moduleId)
+            end
+          end
+        end
+      end
+      
+      -- Load the modules
+      if table.getn(allModules) > 0 then
+        OGRH.LoadModulesForRole(allModules)
+      else
+        OGRH.UnloadAllModules()
+      end
+    else
+      OGRH.UnloadAllModules()
+    end
   end
   
   if not raidName then

@@ -83,6 +83,77 @@ _svf:SetScript("OnEvent", function()
 end)
 OGRH.EnsureSV()
 
+-- ========================================
+-- MODULE SYSTEM
+-- ========================================
+OGRH.Modules = OGRH.Modules or {}
+OGRH.LoadedModules = OGRH.LoadedModules or {}
+
+-- Register a module (called by module files on load)
+function OGRH.RegisterModule(module)
+  if not module or not module.id or not module.name then
+    return
+  end
+  
+  OGRH.Modules[module.id] = module
+end
+
+-- Get list of all available modules
+function OGRH.GetAvailableModules()
+  local modules = {}
+  for id, module in pairs(OGRH.Modules) do
+    table.insert(modules, {
+      id = id,
+      name = module.name,
+      description = module.description or ""
+    })
+  end
+  
+  -- Sort by name
+  table.sort(modules, function(a, b) return a.name < b.name end)
+  
+  return modules
+end
+
+-- Load modules for a specific role (from saved module list)
+function OGRH.LoadModulesForRole(moduleIds)
+  -- Unload all currently loaded modules first
+  OGRH.UnloadAllModules()
+  
+  if not moduleIds or table.getn(moduleIds) == 0 then
+    return
+  end
+  
+  -- Load each module in order
+  for i, moduleId in ipairs(moduleIds) do
+    local module = OGRH.Modules[moduleId]
+    if module and module.OnLoad then
+      module:OnLoad()
+      table.insert(OGRH.LoadedModules, module)
+    end
+  end
+end
+
+-- Unload all currently loaded modules
+function OGRH.UnloadAllModules()
+  for i, module in ipairs(OGRH.LoadedModules) do
+    if module.OnUnload then
+      module:OnUnload()
+    end
+  end
+  OGRH.LoadedModules = {}
+end
+
+-- Clean up all modules (called on addon unload)
+function OGRH.CleanupModules()
+  OGRH.UnloadAllModules()
+  for id, module in pairs(OGRH.Modules) do
+    if module.OnCleanup then
+      module:OnCleanup()
+    end
+  end
+end
+
 function OGRH.Msg(s) if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[OGRH]|r "..tostring(s)) end end
 function OGRH.Trim(s) return string.gsub(s or "", "^%s*(.-)%s*$", "%1") end
 function OGRH.Mod1(n,t) return math.mod(n-1, t)+1 end
@@ -1237,8 +1308,14 @@ addonFrame:RegisterEvent("CHAT_MSG_ADDON")
 addonFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 addonFrame:RegisterEvent("READY_CHECK")
 addonFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+addonFrame:RegisterEvent("PLAYER_LOGOUT")
 addonFrame:SetScript("OnEvent", function()
-  if event == "READY_CHECK" then
+  if event == "PLAYER_LOGOUT" then
+    -- Clean up modules on logout
+    if OGRH.CleanupModules then
+      OGRH.CleanupModules()
+    end
+  elseif event == "READY_CHECK" then
     -- Show timer for all players when ready check starts
     OGRH.ShowReadyCheckTimer()
   elseif event == "CHAT_MSG_ADDON" then
@@ -1801,7 +1878,7 @@ addonFrame:SetScript("OnEvent", function()
               -- Do NOT update planning window frame
               -- Planning window maintains its own independent selection
               
-              -- Always update the main UI encounter button
+              -- Always update the main UI encounter button (this loads modules)
               if OGRH.UpdateEncounterNavButton then
                 OGRH.UpdateEncounterNavButton()
               end

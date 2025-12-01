@@ -1,5 +1,28 @@
 # OG-RaidHelper Changelog
 
+## Version 1.19.0 - Plugin Architecture
+**Release Date:** December 1, 2025
+
+### Features
+- **Plugin Architecture**: New modular system for encounter-specific functionality
+  - Custom Module role type added to Edit Role dialog (alongside Raider Roles and Consume Check)
+  - Modules can be selected and ordered via dual list boxes (Selected/Available)
+  - Modules automatically load/unload when navigating encounters on main UI
+  - Module loading respects encounter sync from raid leader
+  - Modules only visible on main UI, hidden from Encounter Planning window
+
+- **C'Thun Plugin**: First official encounter plugin
+  - Automatically loads BigWigs C'Thun positioning map
+  - Overrides map texture with custom numbered version for zone assignments
+  - Map shows/hides automatically when navigating to/from C'Thun encounter
+  - Requires BigWigs addon and synced encounter structure
+
+### Technical
+- Module registration system in OGRH_Core.lua
+- Modules folder structure for organization
+- Standard module lifecycle: OnLoad, OnUnload, OnCleanup
+- Modules stored per Custom Module role in encounter configuration
+
 ## Version 1.18.1 - RollFor Auto-Assign
 **Release Date:** November 30, 2025
 

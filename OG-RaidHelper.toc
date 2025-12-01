@@ -1,8 +1,8 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.18.3
-## Notes: UI Bugfix
+## Version: 1.19.0
+## Notes: Plugin Architecture
 ## SavedVariables: OGRH_SV
 
 OGRH_Core.lua
@@ -20,3 +20,5 @@ OGRH_SRValidation.lua
 OGRH_AddonAudit.lua
 OGRH_Consumes.lua
 OGRH_Promotes.lua
+
+Modules\cthun.lua
