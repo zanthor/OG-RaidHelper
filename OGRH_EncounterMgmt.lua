@@ -6038,21 +6038,9 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     nameEditBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
     frame.nameEditBox = nameEditBox
     
-    -- Invert Fill Order Checkbox
-    local invertFillOrderLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    invertFillOrderLabel:SetPoint("TOPLEFT", nameEditBox, "BOTTOMLEFT", -5, -15)
-    invertFillOrderLabel:SetText("Invert Fill Order:")
-    frame.invertFillOrderLabel = invertFillOrderLabel
-    
-    local invertFillOrderCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    invertFillOrderCheckbox:SetPoint("LEFT", invertFillOrderLabel, "RIGHT", 5, 0)
-    invertFillOrderCheckbox:SetWidth(24)
-    invertFillOrderCheckbox:SetHeight(24)
-    frame.invertFillOrderCheckbox = invertFillOrderCheckbox
-    
     -- Link Role Checkbox
     local linkRoleLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    linkRoleLabel:SetPoint("TOPLEFT", invertFillOrderLabel, "BOTTOMLEFT", 0, -10)
+    linkRoleLabel:SetPoint("TOPLEFT", nameEditBox, "BOTTOMLEFT", -5, -15)
     linkRoleLabel:SetText("Link Role:")
     frame.linkRoleLabel = linkRoleLabel
     
@@ -6061,6 +6049,18 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     linkRoleCheckbox:SetWidth(24)
     linkRoleCheckbox:SetHeight(24)
     frame.linkRoleCheckbox = linkRoleCheckbox
+    
+    -- Invert Fill Order Checkbox (next to Link Role)
+    local invertFillOrderLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    invertFillOrderLabel:SetPoint("LEFT", linkRoleCheckbox, "RIGHT", 10, 0)
+    invertFillOrderLabel:SetText("Invert Fill Order:")
+    frame.invertFillOrderLabel = invertFillOrderLabel
+    
+    local invertFillOrderCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    invertFillOrderCheckbox:SetPoint("LEFT", invertFillOrderLabel, "RIGHT", 5, 0)
+    invertFillOrderCheckbox:SetWidth(24)
+    invertFillOrderCheckbox:SetHeight(24)
+    frame.invertFillOrderCheckbox = invertFillOrderCheckbox
     
     -- Raid Icons Checkbox
     local raidIconsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -6152,6 +6152,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     tanksLabel:SetPoint("LEFT", tanksCheck, "RIGHT", 5, 0)
     tanksLabel:SetText("Tanks")
     frame.tanksCheck = tanksCheck
+    frame.tanksLabel = tanksLabel
     
     local healersCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     healersCheck:SetPoint("TOPLEFT", tanksCheck, "BOTTOMLEFT", 0, -5)
@@ -6161,6 +6162,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     healersLabel:SetPoint("LEFT", healersCheck, "RIGHT", 5, 0)
     healersLabel:SetText("Healers")
     frame.healersCheck = healersCheck
+    frame.healersLabel = healersLabel
     
     local meleeCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     meleeCheck:SetPoint("TOPLEFT", healersCheck, "BOTTOMLEFT", 0, -5)
@@ -6170,6 +6172,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     meleeLabel:SetPoint("LEFT", meleeCheck, "RIGHT", 5, 0)
     meleeLabel:SetText("Melee")
     frame.meleeCheck = meleeCheck
+    frame.meleeLabel = meleeLabel
     
     local rangedCheck = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     rangedCheck:SetPoint("TOPLEFT", meleeCheck, "BOTTOMLEFT", 0, -5)
@@ -6179,8 +6182,10 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     rangedLabel:SetPoint("LEFT", rangedCheck, "RIGHT", 5, 0)
     rangedLabel:SetText("Ranged")
     frame.rangedCheck = rangedCheck
+    frame.rangedLabel = rangedLabel
     
     frame.defaultRoleChecks = {tanksCheck, healersCheck, meleeCheck, rangedCheck}
+    frame.defaultRoleLabels = {tanksLabel, healersLabel, meleeLabel, rangedLabel}
     
     -- Make default role checkboxes behave like radio buttons (only one can be selected)
     local function SetupRoleRadioButton(checkButton, otherChecks)
@@ -6423,13 +6428,21 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       frame.countLabel:SetPoint("TOPLEFT", frame.consumeCheckLabel, "BOTTOMLEFT", 0, -15)
       frame.countLabel:SetText("Consume Count:")
       
-      -- Change label to Classes and show class checkboxes
-      frame.rolesLabel:SetText("Classes:")
+      -- Hide role label and show class checkboxes
+      frame.rolesLabel:Hide()
       for _, check in ipairs(frame.defaultRoleChecks) do
         check:Hide()
       end
+      for _, label in ipairs(frame.defaultRoleLabels) do
+        label:Hide()
+      end
+      
+      -- Reanchor All checkbox to count label instead of rolesLabel
+      frame.allCheck:ClearAllPoints()
+      frame.allCheck:SetPoint("TOPLEFT", frame.countLabel, "BOTTOMLEFT", 10, -15)
       frame.allCheck:Show()
       frame.allLabel:Show()
+      
       for _, check in ipairs(frame.classChecks) do
         if check ~= frame.allCheck then
           check:Show()
@@ -6467,13 +6480,22 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       frame.countLabel:SetPoint("TOPLEFT", frame.showAssignmentLabel, "BOTTOMLEFT", 0, -15)
       frame.countLabel:SetText("Player Count:")
       
-      -- Change label to Default Role and show default role checkboxes
+      -- Show role label and default role checkboxes
       frame.rolesLabel:SetText("Default Role:")
+      frame.rolesLabel:Show()
+      
+      -- Hide All checkbox (restore anchor for consistency but keep hidden)
+      frame.allCheck:ClearAllPoints()
+      frame.allCheck:SetPoint("TOPLEFT", frame.rolesLabel, "BOTTOMLEFT", 10, -5)
+      frame.allCheck:Hide()
+      frame.allLabel:Hide()
+      
       for _, check in ipairs(frame.defaultRoleChecks) do
         check:Show()
       end
-      frame.allCheck:Hide()
-      frame.allLabel:Hide()
+      for _, label in ipairs(frame.defaultRoleLabels) do
+        label:Show()
+      end
       for _, check in ipairs(frame.classChecks) do
         if check ~= frame.allCheck then
           check:Hide()

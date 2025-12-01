@@ -233,25 +233,46 @@ encounterNav:SetPoint("TOPRIGHT", Main, "TOPRIGHT", -6, -26)
 encounterNav:SetHeight(24)
 encounterNav:Show()
 
--- Previous Encounter button
-local prevEncBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
-prevEncBtn:SetWidth(20)
-prevEncBtn:SetHeight(20)
-prevEncBtn:SetPoint("LEFT", encounterNav, "LEFT", 0, 0)
-prevEncBtn:SetText("<")
-OGRH.StyleButton(prevEncBtn)
-prevEncBtn:SetScript("OnClick", function()
-  if OGRH.NavigateToPreviousEncounter then
-    OGRH.NavigateToPreviousEncounter()
+-- Mark button
+local markBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
+markBtn:SetWidth(20)
+markBtn:SetHeight(20)
+markBtn:SetPoint("LEFT", encounterNav, "LEFT", 0, 0)
+markBtn:SetText("M")
+OGRH.StyleButton(markBtn)
+markBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+markBtn:SetScript("OnClick", function()
+  local btn = arg1 or "LeftButton"
+  
+  if btn == "RightButton" then
+    -- Right-click: Clear all raid marks
+    local numRaidMembers = GetNumRaidMembers()
+    if numRaidMembers > 0 then
+      for i = 1, numRaidMembers do
+        SetRaidTarget("raid"..i, 0)
+      end
+      if OGRH and OGRH.Msg then
+        OGRH.Msg("Cleared all raid marks.")
+      end
+    else
+      if OGRH and OGRH.Msg then
+        OGRH.Msg("Not in a raid group.")
+      end
+    end
+  else
+    -- Left-click: Mark players from encounter
+    if OGRH.MarkPlayersFromMainUI then
+      OGRH.MarkPlayersFromMainUI()
+    end
   end
 end)
-encounterNav.prevEncBtn = prevEncBtn
+encounterNav.markBtn = markBtn
 
 -- Announce button
 local announceBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
 announceBtn:SetWidth(20)
 announceBtn:SetHeight(20)
-announceBtn:SetPoint("LEFT", prevEncBtn, "RIGHT", 2, 0)
+announceBtn:SetPoint("LEFT", markBtn, "RIGHT", 2, 0)
 announceBtn:SetText("A")
 OGRH.StyleButton(announceBtn)
 announceBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -387,40 +408,19 @@ announceBtn:SetScript("OnLeave", function()
 end)
 encounterNav.announceBtn = announceBtn
 
--- Mark button
-local markBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
-markBtn:SetWidth(20)
-markBtn:SetHeight(20)
-markBtn:SetPoint("LEFT", announceBtn, "RIGHT", 2, 0)
-markBtn:SetText("M")
-OGRH.StyleButton(markBtn)
-markBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-markBtn:SetScript("OnClick", function()
-  local btn = arg1 or "LeftButton"
-  
-  if btn == "RightButton" then
-    -- Right-click: Clear all raid marks
-    local numRaidMembers = GetNumRaidMembers()
-    if numRaidMembers > 0 then
-      for i = 1, numRaidMembers do
-        SetRaidTarget("raid"..i, 0)
-      end
-      if OGRH and OGRH.Msg then
-        OGRH.Msg("Cleared all raid marks.")
-      end
-    else
-      if OGRH and OGRH.Msg then
-        OGRH.Msg("Not in a raid group.")
-      end
-    end
-  else
-    -- Left-click: Mark players from encounter
-    if OGRH.MarkPlayersFromMainUI then
-      OGRH.MarkPlayersFromMainUI()
-    end
+-- Previous Encounter button
+local prevEncBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
+prevEncBtn:SetWidth(20)
+prevEncBtn:SetHeight(20)
+prevEncBtn:SetPoint("LEFT", announceBtn, "RIGHT", 2, 0)
+prevEncBtn:SetText("<")
+OGRH.StyleButton(prevEncBtn)
+prevEncBtn:SetScript("OnClick", function()
+  if OGRH.NavigateToPreviousEncounter then
+    OGRH.NavigateToPreviousEncounter()
   end
 end)
-encounterNav.markBtn = markBtn
+encounterNav.prevEncBtn = prevEncBtn
 
 -- Next Encounter button
 local nextEncBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
@@ -439,7 +439,7 @@ encounterNav.nextEncBtn = nextEncBtn
 -- Encounter button (middle, fills remaining space)
 local encounterBtn = CreateFrame("Button", nil, encounterNav, "UIPanelButtonTemplate")
 encounterBtn:SetHeight(20)
-encounterBtn:SetPoint("LEFT", markBtn, "RIGHT", 2, 0)
+encounterBtn:SetPoint("LEFT", prevEncBtn, "RIGHT", 2, 0)
 encounterBtn:SetPoint("RIGHT", nextEncBtn, "LEFT", -2, 0)
 encounterBtn:SetText("Select Raid")
 OGRH.StyleButton(encounterBtn)

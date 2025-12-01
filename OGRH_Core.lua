@@ -1,9 +1,9 @@
--- OGRH_Core.lua  (Turtle-WoW 1.12)  v1.18.1
+-- OGRH_Core.lua  (Turtle-WoW 1.12)
 OGRH = OGRH or {}
 OGRH.ADDON = "OG-RaidHelper"
 OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
-OGRH.VERSION = "1.18.1"
+OGRH.VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 
 -- Player class cache (persists across sessions)
 OGRH.classCache = OGRH.classCache or {}
