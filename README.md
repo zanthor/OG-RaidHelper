@@ -7,7 +7,7 @@
 
 A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 
-![Main UI](Images/mainui.jpg)
+<img width="1351" height="613" alt="image" src="https://github.com/user-attachments/assets/7ea5c4a7-d61a-4aee-ad98-abba03bf1f1c" />
 
 ---
 
@@ -18,11 +18,6 @@ A comprehensive raid management addon for organizing encounters, assigning roles
 - **[Puppeteer](https://github.com/OldManAlpha/Puppeteer)** - Raid Frames with Support for Tank and Healer roles.  OG-RaidHelper automatically sets roles on players.
 - **[pfUI](https://github.com/shagu/pfUI)** - Raid Frames with support for Tank roles.  OG-RaidHelper automatically sets roles on players.
 
-**Installation:**
-1. Install RollFor addon first
-2. Configure your soft-reserve data in RollFor
-3. OG-RaidHelper will automatically detect and use RollFor data
-
 ---
 ## Disclaimer
 
@@ -32,9 +27,7 @@ The documentation that follows was entirely created by Claude, and I can tell yo
 
 ---
 ## First Run
-In the addon folder you will find defaults.txt, when you first run the addon it's all empty.  If you open the share dialog you'll find a place you can paste the contents of defaults.txt which will give you a head start using the addon.
-
-Alternatively you can get in a raid with a player that's already set this up and sync the data from them.
+The first run your addon will import default settings.  When you get an update if you haven't modified your raid structure, marks or comments you can safely load defaults from the Import / Export menu.
 
 Documentation is a work in progress... this addon  has changed a lot since it's inception so I apologize for any errors in the documentation... that said this is written for raiders, not readers, so I'll get an updated youtube video posted soon.
 
@@ -64,23 +57,20 @@ Documentation is a work in progress... this addon  has changed a lot since it's 
 2. Restart World of Warcraft or type `/reload` if you are just updating in-game
 3. You should see the OG-RaidHelper main window on your screen or the mini map button RH.
 4. Seriously, skip all this and use the GIT Addon manager.
+5. Skip GIT Addon manager and install from the TWOW Launcher.
 
 ---
 
 ## Quick Start
 
 1. **Access Main UI**: The small main window appears on login or type `/ogrh` or click the mini map button.
-2. **Install RollFor**: Required for Raid Invites and SR+ Validation features
-3. **Open Roles Window**: Click the **Roles** button to manage your raid composition
-4. **Poll for Roles**: Use the **Poll** button to request players sign up via raid chat
-5. **Setup Encounters**: Click **Encounters** → **Manage** to access encounter planning
-6. **Raid Invites**: Click minimap → **Raid Invites** to invite players from soft-reserve list
-7. **SR+ Validation**: Click minimap → **SR Validation** to track SR+ changes over time
-8. **Trade Items**: Use the **Trade** button to set up and distribute items to raid members
-9. **Share Configs**: Click **Share** to export/import your encounter and trade configurations
-
-10. A short video overview of the addon since I know you're raiders not readers.
-    https://youtu.be/eKVEandwlpM
+2. **Install RollFor**: Required for Raid Invites and SR+ Validation features, import your raid signups.
+3. **Raid Invites**: Click minimap → **Raid Invites** to invite players from soft-reserve list
+4. **SR+ Validation**: Click minimap → **SR Validation** to track SR+ changes over time
+5. **Assign Players**: Left click the encounter button between the < and > buttons to open the encounter management, pick a raid/encounter and right click Auto-Assign to fill roles from the RollFor Data or Left Click Auto-Assign to fill rolls from the current raid.
+6. **Trade Items**: Use the **Trade** button to set up and distribute items to raid member
+7. A short video overview of the addon since I know you're raiders not readers.
+    [https://youtu.be/eKVEandwlpM](https://youtu.be/XgRjtc3P6hc)
    
 ---
 
@@ -88,35 +78,21 @@ Documentation is a work in progress... this addon  has changed a lot since it's 
 
 The compact main window provides quick access to all major features.
 
+![Main UI](Images/mainui.jpg)
+
 ### Window Controls
 
 Located in the title bar:
-- **RC** - Performs a Ready Check (left-click), or toggle remote ready checks on/off (right-click)
-- **S** - Syncronize Data to other raiders.  Left click to send the selected encounter, right click to lock so you don't accept data from other raiders.
-- **-** - Minimize/expand window
+- **RH** - Addon's main menu - same as MiniMap Menu
+- **Rdy** - Performs a Ready Check (left-click), or toggle remote ready checks on/off (right-click)
+- **Sync** - Syncronize Data to other raiders.  Left click to send the selected encounter, right click to lock so you don't accept data from other raiders.
+- **Roles** - Open the Roles interface where you can quickly and easily organize players by their jobs.
 - **L** - Lock/unlock window position (drag to move when unlocked)
-
-### Minimized Window Controls
-
-When the main window is minimized, encounter navigation controls appear:
-- **<** (Previous) - Navigate to the previous encounter in the list
-- **A** (Announce) - Prepare the current encounter's announcement (opens in chat box)
-- **M** (Mark) - Mark players according to encounter configuration
-  - If any roles have "Mark Player" enabled: Applies configured raid marks
-  - If no roles are configured to mark: Attempts to call AutoMarker addon with `/am mark`
-- **Encounter** (Center button) - Shows selected raid/encounter name
-  - Left-click: Opens Encounter Planning window
-  - Right-click: Opens raid selection dropdown menu
-- **>** (Next) - Navigate to the next encounter in the list
-
-### Main Buttons
-
-- **Roles** - Opens the [Roles Window](#roles-window) for managing raid composition
-- **Encounters** - Opens a dropdown menu with encounter options:
-  - **Manage** - Opens [Encounter Planning](#encounter-planning-window)
-  - **Setup Raids** - Opens [Encounter Setup](#encounter-setup-window)
-- **Trade** - Opens dropdown menu with trade item options (see [Trade System](#trade-system))
-- **Share** - Opens [Share Window](#share-system) to export/import configurations
+- **<** - Previous Encounter
+- **>** - You'll never guess what this one does.
+- **Select Raid** - Encounter Management - Right click to select the raid, left click to manage the raid.
+- **A** - Left Click to Announce the template from the selected encounter, right click to announce any Consumes required.
+- **M** - Mark players if configured, mark target + others in it's pack using AutoMarker.
 
 **Window Position:** Drag the window by its title bar when unlocked. Position is automatically saved.
 
@@ -139,6 +115,7 @@ The Roles Window displays your raid composition organized into four columns: **T
 
 - **Poll Button** (top-left) - Starts a sequential poll through all four roles
   - Click once to start: prompts Tanks → Healers → Melee → Ranged (10 seconds each)
+- **Import from RollFor** - Assigns players based off their SR+ data in RollFor.
   
 - **Role Column Headers** (Tanks, Healers, Melee, Ranged) - Clickable headers for single-role polls
   - Click a header (e.g., "Tanks") to poll only that role
