@@ -37,6 +37,12 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   -- Map RollFor role to OGRH role bucket (same as Invites module)
   local function MapRollForRole(rollForRole)
     if not rollForRole or rollForRole == "" then return nil end
+    
+    -- If already in correct format (TANKS/HEALERS/MELEE/RANGED), return as-is
+    if rollForRole == "TANKS" or rollForRole == "HEALERS" or rollForRole == "MELEE" or rollForRole == "RANGED" then
+      return rollForRole
+    end
+    
     local roleMap = {
       DruidBear = "TANKS", PaladinProtection = "TANKS", ShamanTank = "TANKS", WarriorProtection = "TANKS",
       DruidRestoration = "HEALERS", PaladinHoly = "HEALERS", PriestHoly = "HEALERS", ShamanRestoration = "HEALERS",

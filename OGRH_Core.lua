@@ -2406,6 +2406,22 @@ addonFrame:SetScript("OnEvent", function()
           senderData.chunks[chunkIndex] = chunkData
           senderData.received = senderData.received + 1
           
+          -- Reset timeout timer since we're actively receiving chunks
+          if OGRH.structureSyncTimer then
+            OGRH.structureSyncTimer:SetScript("OnUpdate", nil)
+            local elapsed = 0
+            OGRH.structureSyncTimer:SetScript("OnUpdate", function()
+              elapsed = elapsed + arg1
+              if elapsed >= 90 then
+                OGRH.structureSyncTimer:SetScript("OnUpdate", nil)
+                if OGRH.waitingForStructureSync then
+                  OGRH.waitingForStructureSync = false
+                  OGRH.Msg("Structure sync timed out.")
+                end
+              end
+            end)
+          end
+          
           -- Progress notification every 10 chunks (reduce spam)
           if math.mod(senderData.received, 10) == 0 and senderData.received < senderData.total then
             OGRH.Msg("Receiving structure sync: " .. senderData.received .. "/" .. senderData.total .. " chunks...")
@@ -2437,6 +2453,9 @@ addonFrame:SetScript("OnEvent", function()
             -- Clean up
             OGRH.waitingForStructureSync = false
             OGRH.structureSyncChunks = {}
+            if OGRH.structureSyncTimer then
+              OGRH.structureSyncTimer:SetScript("OnUpdate", nil)
+            end
           end
         end
       -- Handle encounter structure sync chunk (single encounter)
