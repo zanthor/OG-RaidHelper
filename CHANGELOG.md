@@ -1,5 +1,42 @@
 # OG-RaidHelper Changelog
 
+## Version 1.21.0 - Data Management Refactoring
+**Release Date:** December 4, 2025
+
+### Features
+- **Data Management Window**: New unified interface for structure and configuration management
+  - Replaces old "Import / Export" window from main menu
+  - Centralized location for Load Defaults, Push Structure, and Import/Export operations
+  - Action-based interface with detail panel for each operation
+  - All data management operations now in OGRH_Sync.lua module
+
+- **Improved Import/Export Interface**: Complete rebuild with proper scrolling support
+  - Native WoW 1.12 scrollframe implementation (no external templates)
+  - Properly sized editbox that fills available space
+  - Auto-focus on Import/Export action selection
+  - Manual scrollbar with mouse wheel support
+  - Export/Import/Clear buttons for workflow clarity
+
+- **Push Structure Enhancements**: Visual improvements to sync interface
+  - User list with class-colored names
+  - Version and checksum columns for mismatch detection
+  - Refresh button for manual raid polling
+  - Auto-refresh after sync completion
+
+### Technical
+- Removed OGRH.ShowShareWindow() and OGRH_ShareFrame from OGRH_Core.lua
+- All data management operations consolidated in OGRH_Sync.lua
+- Import/Export editbox properly calculated width (312px) accounting for scrollbar
+- ESC key handler fixed by removing keyboard capture conflicts
+- Data Management window properly registered in UISpecialFrames for ESC closing
+- Duplicate prevention in MakeFrameCloseOnEscape to avoid UISpecialFrames pollution
+
+### Fixed
+- Fixed editbox not filling available width in Import/Export interface
+- Fixed CTRL+V requiring double-press (now auto-focuses editbox)
+- Fixed ESC key not closing Data Management window
+- Fixed "UIPanelScrollFrameTemplate" error (WoW 1.12 doesn't have this template)
+
 ## Version 1.20.0 - Announcement System Refactoring
 **Release Date:** December 4, 2025
 

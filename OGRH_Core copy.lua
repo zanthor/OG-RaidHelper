@@ -229,6 +229,7 @@ function OGRH.CloseAllWindows(exceptFrame)
   local windows = {
     "OGRH_EncounterFrame",
     "OGRH_RolesFrame",
+    "OGRH_ShareFrame",
     "OGRH_EncounterSetupFrame",
     "OGRH_InvitesFrame",
     "OGRH_SRValidationFrame",
@@ -2966,6 +2967,195 @@ function OGRH.ClearAllAssignments()
   OGRH_SV.playerAssignments = {}
 end
 
+-- === Share Window for Import/Export ===
+function OGRH.ShowShareWindow()
+  -- Create window if it doesn't exist
+  if not OGRH_ShareFrame then
+    local frame = CreateFrame("Frame", "OGRH_ShareFrame", UIParent)
+    frame:SetWidth(600)
+    frame:SetHeight(400)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+    frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+    
+    -- Backdrop
+    frame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      edgeSize = 12,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    frame:SetBackdropColor(0, 0, 0, 0.85)
+    
+    -- Register ESC key handler
+    OGRH.MakeFrameCloseOnEscape(frame, "OGRH_ShareFrame")
+    
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -15)
+    title:SetText("Import / Export Data")
+    
+    -- Instructions
+    local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    instructions:SetPoint("TOPLEFT", 20, -45)
+    instructions:SetText("Export: Click 'Export' to generate data. Copy from box below.")
+    
+    local instructions2 = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    instructions2:SetPoint("TOPLEFT", 20, -60)
+    instructions2:SetText("Import: Paste data in box below and click 'Import'.")
+    
+    -- Scroll frame backdrop
+    local scrollBackdrop = CreateFrame("Frame", nil, frame)
+    scrollBackdrop:SetPoint("TOPLEFT", 17, -80)
+    scrollBackdrop:SetPoint("BOTTOMRIGHT", -17, 50)
+    scrollBackdrop:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    scrollBackdrop:SetBackdropColor(0, 0, 0, 1)
+    scrollBackdrop:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    
+    -- Scroll frame
+    local scrollFrame = CreateFrame("ScrollFrame", "OGRH_ShareScrollFrame", scrollBackdrop, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 5, -6)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -28, 6)
+    
+    -- Scroll child
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollFrame:SetScrollChild(scrollChild)
+    scrollChild:SetWidth(scrollFrame:GetWidth())
+    scrollChild:SetHeight(400)
+    
+    -- Edit box
+    local editBox = CreateFrame("EditBox", nil, scrollChild)
+    editBox:SetPoint("TOPLEFT", 0, 0)
+    editBox:SetWidth(scrollChild:GetWidth())
+    editBox:SetHeight(400)
+    editBox:SetMultiLine(true)
+    editBox:SetAutoFocus(false)
+    editBox:SetFontObject(ChatFontNormal)
+    editBox:SetTextInsets(5, 5, 3, 3)
+    editBox:SetScript("OnEscapePressed", function() editBox:ClearFocus() end)
+    frame.editBox = editBox
+    
+    -- Update scroll child size when scroll frame resizes
+    scrollFrame:SetScript("OnSizeChanged", function()
+      scrollChild:SetWidth(scrollFrame:GetWidth())
+      editBox:SetWidth(scrollFrame:GetWidth())
+    end)
+    
+    -- Update scroll range when text changes
+    editBox:SetScript("OnTextChanged", function()
+      scrollFrame:UpdateScrollChildRect()
+    end)
+    
+    -- Button sizing: 6 buttons centered in frame
+    -- Frame width = 600px
+    -- 6 buttons at 80px each = 480px
+    -- 5 gaps at 8px each = 40px
+    -- Total button row = 520px
+    -- Left margin = (600 - 520) / 2 = 40px for centered layout
+    local btnWidth = 80
+    local btnHeight = 25
+    local btnGap = 8
+    local totalBtnWidth = (btnWidth * 6) + (btnGap * 5)  -- 520px
+    local sideMargin = (frame:GetWidth() - totalBtnWidth) / 2  -- Dynamically center based on frame width
+    
+    -- Export button
+    local exportBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    exportBtn:SetWidth(btnWidth)
+    exportBtn:SetHeight(btnHeight)
+    exportBtn:SetPoint("BOTTOMLEFT", sideMargin, 15)
+    exportBtn:SetText("Export")
+    OGRH.StyleButton(exportBtn)
+    exportBtn:SetScript("OnClick", function()
+      if OGRH.ExportShareData then
+        local data = OGRH.ExportShareData()
+        editBox:SetText(data)
+        editBox:HighlightText()
+        editBox:SetFocus()
+      end
+    end)
+    
+    -- Import button
+    local importBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    importBtn:SetWidth(btnWidth)
+    importBtn:SetHeight(btnHeight)
+    importBtn:SetPoint("LEFT", exportBtn, "RIGHT", btnGap, 0)
+    importBtn:SetText("Import")
+    OGRH.StyleButton(importBtn)
+    importBtn:SetScript("OnClick", function()
+      local text = editBox:GetText()
+      if text and text ~= "" then
+        if OGRH.ImportShareData then
+          OGRH.ImportShareData(text)
+        end
+      else
+        OGRH.Msg("No data to import.")
+      end
+    end)
+    
+    -- Load Defaults button
+    local defaultsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    defaultsBtn:SetWidth(btnWidth)
+    defaultsBtn:SetHeight(btnHeight)
+    defaultsBtn:SetPoint("LEFT", importBtn, "RIGHT", btnGap, 0)
+    defaultsBtn:SetText("Defaults")
+    OGRH.StyleButton(defaultsBtn)
+    defaultsBtn:SetScript("OnClick", function()
+      if OGRH.LoadFactoryDefaults then
+        OGRH.LoadFactoryDefaults()
+      end
+    end)
+    
+    -- Pull from Raid button
+    local pullBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    pullBtn:SetWidth(btnWidth)
+    pullBtn:SetHeight(btnHeight)
+    pullBtn:SetPoint("LEFT", defaultsBtn, "RIGHT", btnGap, 0)
+    pullBtn:SetText("Sync")
+    OGRH.StyleButton(pullBtn)
+    pullBtn:SetScript("OnClick", function()
+      if OGRH.RequestStructureSync then
+        OGRH.RequestStructureSync()
+      end
+    end)
+    
+    -- Clear button
+    local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    clearBtn:SetWidth(btnWidth)
+    clearBtn:SetHeight(btnHeight)
+    clearBtn:SetPoint("LEFT", pullBtn, "RIGHT", btnGap, 0)
+    clearBtn:SetText("Clear")
+    OGRH.StyleButton(clearBtn)
+    clearBtn:SetScript("OnClick", function()
+      editBox:SetText("")
+      editBox:SetFocus()
+    end)
+    
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    closeBtn:SetWidth(btnWidth)
+    closeBtn:SetHeight(btnHeight)
+    closeBtn:SetPoint("LEFT", clearBtn, "RIGHT", btnGap, 0)
+    closeBtn:SetText("Close")
+    OGRH.StyleButton(closeBtn)
+    closeBtn:SetScript("OnClick", function() frame:Hide() end)
+    
+    OGRH_ShareFrame = frame
+  end
+  
+  OGRH_ShareFrame:Show()
+end
+
 -- Request raid data from raid members
 function OGRH.RequestRaidData()
   if GetNumRaidMembers() == 0 then
@@ -4307,7 +4497,18 @@ local function CreateMinimapButton()
           OGRH.ShowEncounterSetup()
         end
       end, menu, yOffset)
-         
+      
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Share item
+      local shareItem = CreateMenuItem("Import / Export", function()
+        OGRH.CloseAllWindows("OGRH_ShareFrame")
+        
+        if OGRH.ShowShareWindow then
+          OGRH.ShowShareWindow()
+        end
+      end, menu, yOffset)
+      
       yOffset = yOffset - itemHeight - itemSpacing
       
       -- Data Management item

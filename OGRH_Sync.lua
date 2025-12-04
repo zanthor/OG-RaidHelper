@@ -28,6 +28,10 @@ OGRH.Sync.MessageType = {
 -- Active receiving state for chunked messages
 OGRH.Sync.ReceivingChunks = {}
 
+-- Sync state tracking
+OGRH.Sync.syncTransmitting = false
+OGRH.Sync.syncReceiving = false
+
 -------------------------------------------------------------------------------
 -- Encoding Functions
 -------------------------------------------------------------------------------
@@ -324,6 +328,40 @@ syncFrame:SetScript("OnEvent", function()
     local prefix, message, channel, sender = arg1, arg2, arg3, arg4
     
     if prefix == OGRH.Sync.ADDON_PREFIX then
+      -- Handle special sync protocol messages
+      if string.find(message, "SYNC_REQUEST:") == 1 then
+        local checksum = string.sub(message, 14)
+        OGRH.Sync.HandleSyncRequest(sender, checksum)
+        return
+      elseif string.find(message, "SYNC_RESPONSE:") == 1 then
+        local data = string.sub(message, 15)
+        local colonPos = string.find(data, ":")
+        if colonPos then
+          local response = string.sub(data, 1, colonPos - 1)
+          local target = string.sub(data, colonPos + 1)
+          -- Only process if we're the intended recipient
+          if target == UnitName("player") then
+            OGRH.Sync.HandleSyncResponse(sender, response)
+          end
+        end
+        return
+      elseif message == "SYNC_CANCEL" then
+        OGRH.Sync.HandleSyncCancel(sender)
+        return
+      elseif string.find(message, "SYNC_DATA_START:") == 1 then
+        local data = string.sub(message, 17)
+        OGRH.Sync.HandleSyncDataStart(sender, data)
+        return
+      elseif string.find(message, "SYNC_DATA_CHUNK:") == 1 then
+        local data = string.sub(message, 17)
+        OGRH.Sync.HandleSyncDataChunk(sender, data)
+        return
+      elseif string.find(message, "SYNC_DATA_END:") == 1 then
+        local data = string.sub(message, 15)
+        OGRH.Sync.HandleSyncDataEnd(sender, data)
+        return
+      end
+      
       -- Parse message type and data
       local colonPos = string.find(message, ":")
       if colonPos then
@@ -352,8 +390,13 @@ end)
 -------------------------------------------------------------------------------
 
 -- Show Data Management window with action list and detail panel
-function OGRH.Sync.ShowDataManagementWindow()
-  -- Create window if it doesn't exist
+function OGRH.Sync.ShowDataManagementWindow(forceRecreate)
+  -- Create window if it doesn't exist (or force recreation)
+  if forceRecreate and OGRH_DataManagementFrame then
+    OGRH_DataManagementFrame:Hide()
+    OGRH_DataManagementFrame = nil
+  end
+  
   if not OGRH_DataManagementFrame then
     local frame = CreateFrame("Frame", "OGRH_DataManagementFrame", UIParent)
     frame:SetWidth(600)
@@ -375,10 +418,11 @@ function OGRH.Sync.ShowDataManagementWindow()
     })
     frame:SetBackdropColor(0, 0, 0, 0.85)
     
+    -- Store frame globally before registering ESC handler
+    OGRH_DataManagementFrame = frame
+    
     -- Register ESC key handler
-    if OGRH.MakeFrameCloseOnEscape then
-      OGRH.MakeFrameCloseOnEscape(frame, "OGRH_DataManagementFrame")
-    end
+    table.insert(UISpecialFrames, "OGRH_DataManagementFrame")
     
     -- Title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -485,6 +529,208 @@ function OGRH.Sync.ShowDataManagementWindow()
     warningText:Hide()
     frame.warningText = warningText
     
+    -- Push Structure button (hidden by default)
+    local pushStructureBtn = CreateFrame("Button", nil, detailPanel, "UIPanelButtonTemplate")
+    pushStructureBtn:SetWidth(140)
+    pushStructureBtn:SetHeight(24)
+    pushStructureBtn:SetPoint("TOPLEFT", detailPanel, "TOPLEFT", 15, -35)
+    pushStructureBtn:SetText("Push Structure")
+    if OGRH.StyleButton then
+      OGRH.StyleButton(pushStructureBtn)
+    end
+    pushStructureBtn:SetScript("OnClick", function()
+      OGRH.Sync.InitiatePushStructure()
+    end)
+    pushStructureBtn:Hide()
+    frame.pushStructureBtn = pushStructureBtn
+    
+    -- Refresh button (hidden by default)
+    local refreshBtn = CreateFrame("Button", nil, detailPanel, "UIPanelButtonTemplate")
+    refreshBtn:SetWidth(70)
+    refreshBtn:SetHeight(24)
+    refreshBtn:SetPoint("LEFT", pushStructureBtn, "RIGHT", 5, 0)
+    refreshBtn:SetText("Refresh")
+    if OGRH.StyleButton then
+      OGRH.StyleButton(refreshBtn)
+    end
+    refreshBtn:SetScript("OnClick", function()
+      OGRH.Sync.StartPushStructurePoll()
+    end)
+    refreshBtn:Hide()
+    frame.refreshBtn = refreshBtn
+    
+    -- Push Structure user list (hidden by default)
+    local pushListWidth = 350
+    local pushListHeight = 290
+    local pushOuterFrame, pushScrollFrame, pushScrollChild, pushScrollBar, pushContentWidth = OGRH.CreateStyledScrollList(detailPanel, pushListWidth, pushListHeight)
+    pushOuterFrame:SetPoint("TOPLEFT", pushStructureBtn, "BOTTOMLEFT", 0, -10)
+    pushOuterFrame:Hide()
+    frame.pushOuterFrame = pushOuterFrame
+    frame.pushScrollChild = pushScrollChild
+    frame.pushScrollFrame = pushScrollFrame
+    frame.pushScrollBar = pushScrollBar
+    
+    -- Import/Export scroll frame backdrop (hidden by default)
+    local importExportBackdrop = CreateFrame("Frame", nil, detailPanel)
+    importExportBackdrop:SetWidth(350)
+    importExportBackdrop:SetHeight(240)
+    importExportBackdrop:SetPoint("TOPLEFT", detailPanel, "TOPLEFT", 15, -35)
+    importExportBackdrop:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    importExportBackdrop:SetBackdropColor(0, 0, 0, 1)
+    importExportBackdrop:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    importExportBackdrop:Hide()
+    frame.importExportBackdrop = importExportBackdrop
+    
+    -- Scroll frame
+    local importExportScrollFrame = CreateFrame("ScrollFrame", nil, importExportBackdrop)
+    importExportScrollFrame:SetPoint("TOPLEFT", 5, -6)
+    importExportScrollFrame:SetPoint("BOTTOMRIGHT", -28, 6)
+    frame.importExportScrollFrame = importExportScrollFrame
+    
+    -- Calculate actual content width: backdrop width - margins - scrollbar
+    local contentWidth = 350 - 5 - 28 - 5  -- 312 pixels
+    
+    -- Scroll child
+    local importExportScrollChild = CreateFrame("Frame", nil, importExportScrollFrame)
+    importExportScrollFrame:SetScrollChild(importExportScrollChild)
+    importExportScrollChild:SetWidth(contentWidth)
+    importExportScrollChild:SetHeight(400)
+    
+    -- Edit box
+    local importExportEditBox = CreateFrame("EditBox", nil, importExportScrollChild)
+    importExportEditBox:SetPoint("TOPLEFT", 0, 0)
+    importExportEditBox:SetWidth(contentWidth)
+    importExportEditBox:SetHeight(400)
+    importExportEditBox:SetMultiLine(true)
+    importExportEditBox:SetAutoFocus(false)
+    importExportEditBox:SetFontObject(ChatFontNormal)
+    importExportEditBox:SetTextInsets(5, 5, 3, 3)
+    importExportEditBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    frame.importExportEditBox = importExportEditBox
+    
+    -- Scrollbar
+    local importExportScrollBar = CreateFrame("Slider", nil, importExportBackdrop)
+    importExportScrollBar:SetPoint("TOPRIGHT", importExportBackdrop, "TOPRIGHT", -5, -16)
+    importExportScrollBar:SetPoint("BOTTOMRIGHT", importExportBackdrop, "BOTTOMRIGHT", -5, 16)
+    importExportScrollBar:SetWidth(16)
+    importExportScrollBar:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    importExportScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    importExportScrollBar:SetOrientation("VERTICAL")
+    importExportScrollBar:SetMinMaxValues(0, 1)
+    importExportScrollBar:SetValue(0)
+    importExportScrollBar:SetValueStep(22)
+    importExportScrollBar:SetScript("OnValueChanged", function()
+      importExportScrollFrame:SetVerticalScroll(this:GetValue())
+    end)
+    frame.importExportScrollBar = importExportScrollBar
+    
+    -- Update scroll range when text changes
+    importExportEditBox:SetScript("OnTextChanged", function()
+      local maxScroll = importExportScrollChild:GetHeight() - importExportScrollFrame:GetHeight()
+      if maxScroll > 0 then
+        importExportScrollBar:SetMinMaxValues(0, maxScroll)
+        importExportScrollBar:Show()
+      else
+        importExportScrollBar:Hide()
+      end
+    end)
+    
+    -- Mouse wheel scrolling
+    importExportScrollFrame:EnableMouseWheel(true)
+    importExportScrollFrame:SetScript("OnMouseWheel", function()
+      local current = importExportScrollBar:GetValue()
+      local maxScroll = importExportScrollChild:GetHeight() - importExportScrollFrame:GetHeight()
+      if maxScroll > 0 then
+        if arg1 > 0 then
+          importExportScrollBar:SetValue(math.max(0, current - 22))
+        else
+          importExportScrollBar:SetValue(math.min(maxScroll, current + 22))
+        end
+      end
+    end)
+    
+    -- Make the backdrop clickable to focus the editbox
+    importExportBackdrop:EnableMouse(true)
+    importExportBackdrop:SetScript("OnMouseDown", function()
+      frame.importExportEditBox:SetFocus()
+    end)
+    
+    -- Set up keyboard capture on the detail panel
+    detailPanel:EnableKeyboard(true)
+    detailPanel:SetScript("OnKeyDown", function()
+      if arg1 == "ESCAPE" then
+        -- Pass ESC through to close the window
+        frame:Hide()
+      end
+    end)
+    
+    -- Set focus to editbox when Import/Export is shown
+    local originalUpdateDetailPanel = OGRH.Sync.UpdateDetailPanel
+    OGRH.Sync.UpdateDetailPanel = function()
+      originalUpdateDetailPanel()
+      if frame.selectedActionName == "Import / Export" and frame.importExportBackdrop and frame.importExportBackdrop:IsVisible() then
+        frame.importExportEditBox:SetFocus()
+      end
+    end
+    
+    -- Import/Export buttons (hidden by default)
+    local ieExportBtn = CreateFrame("Button", nil, detailPanel, "UIPanelButtonTemplate")
+    ieExportBtn:SetWidth(80)
+    ieExportBtn:SetHeight(24)
+    ieExportBtn:SetPoint("TOPLEFT", importExportBackdrop, "BOTTOMLEFT", 0, -10)
+    ieExportBtn:SetText("Export")
+    if OGRH.StyleButton then
+      OGRH.StyleButton(ieExportBtn)
+    end
+    ieExportBtn:SetScript("OnClick", function()
+      OGRH.Sync.ExportData()
+    end)
+    ieExportBtn:Hide()
+    frame.ieExportBtn = ieExportBtn
+    
+    local ieImportBtn = CreateFrame("Button", nil, detailPanel, "UIPanelButtonTemplate")
+    ieImportBtn:SetWidth(80)
+    ieImportBtn:SetHeight(24)
+    ieImportBtn:SetPoint("LEFT", ieExportBtn, "RIGHT", 5, 0)
+    ieImportBtn:SetText("Import")
+    if OGRH.StyleButton then
+      OGRH.StyleButton(ieImportBtn)
+    end
+    ieImportBtn:SetScript("OnClick", function()
+      OGRH.Sync.ImportData()
+    end)
+    ieImportBtn:Hide()
+    frame.ieImportBtn = ieImportBtn
+    
+    local ieClearBtn = CreateFrame("Button", nil, detailPanel, "UIPanelButtonTemplate")
+    ieClearBtn:SetWidth(80)
+    ieClearBtn:SetHeight(24)
+    ieClearBtn:SetPoint("LEFT", ieImportBtn, "RIGHT", 5, 0)
+    ieClearBtn:SetText("Clear")
+    if OGRH.StyleButton then
+      OGRH.StyleButton(ieClearBtn)
+    end
+    ieClearBtn:SetScript("OnClick", function()
+      frame.importExportEditBox:SetText("")
+      frame.importExportEditBox:SetFocus()
+    end)
+    ieClearBtn:Hide()
+    frame.ieClearBtn = ieClearBtn
+    
     -- Detail text area
     local detailText = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     detailText:SetPoint("TOPLEFT", detailPanel, "TOPLEFT", 15, -35)
@@ -517,10 +763,46 @@ function OGRH.Sync.UpdateDetailPanel()
   if frame.defaultsChecksumLabel then frame.defaultsChecksumLabel:Hide() end
   if frame.loadDefaultsBtn then frame.loadDefaultsBtn:Hide() end
   if frame.warningText then frame.warningText:Hide() end
+  if frame.pushStructureBtn then frame.pushStructureBtn:Hide() end
+  if frame.refreshBtn then frame.refreshBtn:Hide() end
+  if frame.pushOuterFrame then frame.pushOuterFrame:Hide() end
+  if frame.importExportBackdrop then frame.importExportBackdrop:Hide() end
+  if frame.ieExportBtn then frame.ieExportBtn:Hide() end
+  if frame.ieImportBtn then frame.ieImportBtn:Hide() end
+  if frame.ieClearBtn then frame.ieClearBtn:Hide() end
   if frame.detailText then frame.detailText:Show() end
   
+  -- If Push Structure is selected, show special UI
+  if selectedAction == "Push Structure" then
+    if frame.detailText then frame.detailText:Hide() end
+    
+    -- Show push button, refresh button, and list
+    if frame.pushStructureBtn then
+      frame.pushStructureBtn:Show()
+      frame.pushStructureBtn:Disable()
+    end
+    if frame.refreshBtn then
+      frame.refreshBtn:Show()
+    end
+    if frame.pushOuterFrame then
+      frame.pushOuterFrame:Show()
+    end
+    
+    -- Start polling for raid members
+    OGRH.Sync.StartPushStructurePoll()
+    
+  -- If Import / Export is selected, show special UI
+  elseif selectedAction == "Import / Export" then
+    if frame.detailText then frame.detailText:Hide() end
+    
+    -- Show import/export controls
+    if frame.importExportBackdrop then frame.importExportBackdrop:Show() end
+    if frame.ieExportBtn then frame.ieExportBtn:Show() end
+    if frame.ieImportBtn then frame.ieImportBtn:Show() end
+    if frame.ieClearBtn then frame.ieClearBtn:Show() end
+    
   -- If Load Defaults is selected, show special UI
-  if selectedAction == "Load Defaults" then
+  elseif selectedAction == "Load Defaults" then
     if frame.detailText then frame.detailText:Hide() end
     
     local currentChecksum = OGRH.Sync.GetCurrentChecksum()
@@ -575,13 +857,6 @@ function OGRH.Sync.RefreshDataManagementList()
   -- Define available actions
   local actions = {
     {
-      name = "Push Structure",
-      description = "Broadcast the current encounter structure to all raid members.\n\nThis will send:\n- Roles and assignments\n- Raid marks\n- Assignment numbers\n- Announcement templates\n\nAll raid members will receive and apply this data.",
-      action = function()
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Push Structure - Coming Soon!")
-      end
-    },
-    {
       name = "Load Defaults",
       description = "Load factory default data from OGRH_Defaults.lua.\n\nThis will replace all current data with:\n- Default encounter structures\n- Default role configurations\n- Default announcements\n- Default trade settings\n- Default consumes\n\nWarning: This will overwrite your current configuration!",
       action = function()
@@ -589,6 +864,16 @@ function OGRH.Sync.RefreshDataManagementList()
           OGRH.Sync.LoadDefaults()
         end
       end
+    },
+    {
+      name = "Push Structure",
+      description = "Broadcast the current encounter structure to raid members.\n\nThis will poll raid members and send your current structure to anyone with a different checksum.",
+      action = nil
+    },
+    {
+      name = "Import / Export",
+      description = "Import or export encounter data as text.\n\nExport: Generate a text string containing all your encounter structures, marks, numbers, announcements, trade items, and consumes.\n\nImport: Paste exported data to load it into your addon.",
+      action = nil
     }
   }
   
@@ -898,6 +1183,1069 @@ function OGRH.Sync.LoadDefaults()
   -- Refresh data management window if open
   if OGRH_DataManagementFrame and OGRH_DataManagementFrame:IsShown() then
     OGRH.Sync.UpdateDetailPanel()
+  end
+end
+
+-------------------------------------------------------------------------------
+-- Import / Export Functions
+-------------------------------------------------------------------------------
+
+-- Export data to text
+function OGRH.Sync.ExportData()
+  if not OGRH_DataManagementFrame or not OGRH_DataManagementFrame.importExportEditBox then
+    return
+  end
+  
+  if OGRH.EnsureSV then
+    OGRH.EnsureSV()
+  end
+  
+  -- Collect all encounter management data (same as OGRH.ExportShareData)
+  local encounterMgmt = {}
+  if OGRH_SV.encounterMgmt then
+    encounterMgmt.raids = OGRH_SV.encounterMgmt.raids
+    encounterMgmt.encounters = OGRH_SV.encounterMgmt.encounters
+    encounterMgmt.roles = OGRH_SV.encounterMgmt.roles
+  end
+  
+  local exportData = {
+    version = "1.0",
+    encounterMgmt = encounterMgmt,
+    encounterRaidMarks = OGRH_SV.encounterRaidMarks or {},
+    encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
+    encounterAnnouncements = OGRH_SV.encounterAnnouncements or {},
+    tradeItems = OGRH_SV.tradeItems or {},
+    consumes = OGRH_SV.consumes or {}
+  }
+  
+  -- Serialize to string
+  local serialized = OGRH.Sync.Serialize(exportData)
+  
+  local editBox = OGRH_DataManagementFrame.importExportEditBox
+  editBox:SetText(serialized)
+  editBox:HighlightText()
+  editBox:SetFocus()
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Data exported to textbox.")
+end
+
+-- Import data from text
+function OGRH.Sync.ImportData()
+  if not OGRH_DataManagementFrame or not OGRH_DataManagementFrame.importExportEditBox then
+    return
+  end
+  
+  local editBox = OGRH_DataManagementFrame.importExportEditBox
+  local dataString = editBox:GetText()
+  
+  if not dataString or dataString == "" then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r No data to import.")
+    return
+  end
+  
+  -- Deserialize (same as OGRH.ImportShareData)
+  local success, importData = pcall(OGRH.Sync.Deserialize, dataString)
+  
+  if not success or not importData then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r Failed to parse import data.")
+    return
+  end
+  
+  -- Validate version
+  if not importData.version then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r Invalid data format.")
+    return
+  end
+  
+  if OGRH.EnsureSV then
+    OGRH.EnsureSV()
+  end
+  
+  -- Full import - overwrite everything
+  if importData.encounterMgmt then
+    OGRH_SV.encounterMgmt = importData.encounterMgmt
+  end
+  if importData.encounterRaidMarks then
+    OGRH_SV.encounterRaidMarks = importData.encounterRaidMarks
+  end
+  if importData.encounterAssignmentNumbers then
+    OGRH_SV.encounterAssignmentNumbers = importData.encounterAssignmentNumbers
+  end
+  if importData.encounterAnnouncements then
+    OGRH_SV.encounterAnnouncements = importData.encounterAnnouncements
+  end
+  if importData.tradeItems then
+    OGRH_SV.tradeItems = importData.tradeItems
+  end
+  if importData.consumes then
+    OGRH_SV.consumes = importData.consumes
+  end
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Encounter data imported successfully.")
+  
+  -- Refresh any open windows
+  if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshAll then
+    OGRH_EncounterSetupFrame.RefreshAll()
+  end
+  if OGRH_TradeSettingsFrame and OGRH_TradeSettingsFrame.RefreshList then
+    OGRH_TradeSettingsFrame.RefreshList()
+  end
+  if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRaidsList then
+    OGRH_EncounterFrame.RefreshRaidsList()
+  end
+  if OGRH_ConsumesFrame and OGRH_ConsumesFrame.RefreshConsumesList then
+    OGRH_ConsumesFrame.RefreshConsumesList()
+  end
+end
+
+-------------------------------------------------------------------------------
+-- Push Structure Functions
+-------------------------------------------------------------------------------
+
+-- Start poll for push structure
+function OGRH.Sync.StartPushStructurePoll()
+  -- Must be in a raid
+  if GetNumRaidMembers() == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r You must be in a raid to push structure.")
+    return
+  end
+  
+  -- Must be raid leader or assistant
+  local playerName = UnitName("player")
+  local hasPermission = false
+  for i = 1, GetNumRaidMembers() do
+    local name, rank = GetRaidRosterInfo(i)
+    if name == playerName and (rank == 2 or rank == 1) then
+      hasPermission = true
+      break
+    end
+  end
+  
+  if not hasPermission then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r Only raid leaders or assistants can push structure.")
+    return
+  end
+  
+  -- Reset poll state
+  OGRH.Sync.pushPollResponses = {}
+  OGRH.Sync.pushPollInProgress = true
+  
+  -- Send poll request
+  SendAddonMessage(OGRH.Sync.ADDON_PREFIX, "ADDON_POLL", "RAID")
+  
+  -- Add self to responses
+  local selfName = UnitName("player")
+  local checksum = OGRH.Sync.GetCurrentChecksum()
+  
+  table.insert(OGRH.Sync.pushPollResponses, {
+    name = selfName,
+    version = OGRH.VERSION or "Unknown",
+    checksum = checksum
+  })
+  
+  -- Refresh list
+  OGRH.Sync.RefreshPushStructureList()
+  
+  -- Keep poll open for 3 seconds
+  OGRH.ScheduleFunc(function()
+    OGRH.Sync.pushPollInProgress = false
+    OGRH.Sync.RefreshPushStructureList()
+  end, 3)
+end
+
+-- Handle poll response for push structure
+function OGRH.Sync.HandlePushPollResponse(sender, version, checksum)
+  if not OGRH.Sync.pushPollInProgress then
+    return
+  end
+  
+  -- Check if already in list
+  if OGRH.Sync.pushPollResponses then
+    for i = 1, table.getn(OGRH.Sync.pushPollResponses) do
+      if OGRH.Sync.pushPollResponses[i].name == sender then
+        return -- Already recorded
+      end
+    end
+  end
+  
+  -- Add to list
+  table.insert(OGRH.Sync.pushPollResponses, {
+    name = sender,
+    version = version or "Unknown",
+    checksum = checksum or "0"
+  })
+  
+  -- Refresh list
+  OGRH.Sync.RefreshPushStructureList()
+end
+
+-- Refresh push structure user list
+function OGRH.Sync.RefreshPushStructureList()
+  if not OGRH_DataManagementFrame then return end
+  
+  local scrollChild = OGRH_DataManagementFrame.pushScrollChild
+  local frame = OGRH_DataManagementFrame
+  
+  -- Clear existing rows
+  if scrollChild.rows then
+    for i = 1, table.getn(scrollChild.rows) do
+      local row = scrollChild.rows[i]
+      row:Hide()
+      row:SetParent(nil)
+    end
+  end
+  scrollChild.rows = {}
+  
+  if not OGRH.Sync.pushPollResponses then
+    OGRH.Sync.pushPollResponses = {}
+  end
+  
+  local myChecksum = OGRH.Sync.GetCurrentChecksum()
+  local hasChecksumMismatch = false
+  
+  local yOffset = -5
+  local contentWidth = scrollChild:GetWidth()
+  
+  for i = 1, table.getn(OGRH.Sync.pushPollResponses) do
+    local userData = OGRH.Sync.pushPollResponses[i]
+    
+    -- Create list item using Button type for proper styling
+    local row = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
+    row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
+    
+    -- Get class color from cache
+    local classColor = {r = 1, g = 1, b = 1}
+    local playerClass = OGRH.GetPlayerClass and OGRH.GetPlayerClass(userData.name)
+    if playerClass and OGRH.CLASS_RGB and OGRH.CLASS_RGB[playerClass] then
+      local rgb = OGRH.CLASS_RGB[playerClass]
+      classColor = {r = rgb[1], g = rgb[2], b = rgb[3]}
+    end
+    
+    -- Name (left aligned, class colored)
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    nameText:SetPoint("LEFT", row, "LEFT", 5, 0)
+    nameText:SetText(userData.name)
+    nameText:SetTextColor(classColor.r, classColor.g, classColor.b)
+    nameText:SetWidth(120)
+    nameText:SetJustifyH("LEFT")
+    
+    -- Version
+    local versionText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    versionText:SetPoint("LEFT", row, "LEFT", 130, 0)
+    versionText:SetText(userData.version)
+    versionText:SetWidth(50)
+    versionText:SetJustifyH("LEFT")
+    
+    -- Checksum (colored based on match)
+    local checksumText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    checksumText:SetPoint("LEFT", row, "LEFT", 185, 0)
+    checksumText:SetText(userData.checksum)
+    checksumText:SetWidth(165)
+    checksumText:SetJustifyH("LEFT")
+    
+    -- Color checksum based on match
+    if userData.checksum ~= myChecksum then
+      checksumText:SetTextColor(1, 0, 0) -- Red for mismatch
+      hasChecksumMismatch = true
+    else
+      checksumText:SetTextColor(0, 1, 0) -- Green for match
+    end
+    
+    table.insert(scrollChild.rows, row)
+    yOffset = yOffset - OGRH.LIST_ITEM_HEIGHT - OGRH.LIST_ITEM_SPACING
+  end
+  
+  -- Update scroll child height
+  local contentHeight = math.abs(yOffset) + 5
+  scrollChild:SetHeight(math.max(contentHeight, 1))
+  
+  -- Update scrollbar
+  if frame.pushScrollBar and frame.pushScrollFrame then
+    local scrollBar = frame.pushScrollBar
+    local scrollFrame = frame.pushScrollFrame
+    local maxScroll = scrollChild:GetHeight() - scrollFrame:GetHeight()
+    if maxScroll > 0 then
+      scrollBar:SetMinMaxValues(0, maxScroll)
+      scrollBar:Show()
+    else
+      scrollBar:Hide()
+    end
+  end
+  
+  -- Enable/disable push button based on checksum mismatch
+  if frame.pushStructureBtn then
+    if hasChecksumMismatch then
+      frame.pushStructureBtn:Enable()
+    else
+      frame.pushStructureBtn:Disable()
+    end
+  end
+end
+
+-------------------------------------------------------------------------------
+-- Sync Panel (appears for sender and receivers)
+-------------------------------------------------------------------------------
+
+-- Create or show sync panel
+function OGRH.Sync.ShowSyncPanel(isSender)
+  if OGRH_SyncPanelFrame then
+    OGRH_SyncPanelFrame:Show()
+    OGRH.Sync.UpdateSyncPanel(isSender)
+    if OGRH_SyncPanelFrame.PositionFrame then
+      OGRH_SyncPanelFrame:PositionFrame()
+    end
+    return
+  end
+  
+  local frame = CreateFrame("Frame", "OGRH_SyncPanelFrame", UIParent)
+  frame:SetWidth(180)
+  frame:SetHeight(100) -- Increased base height
+  frame:SetFrameStrata("DIALOG")
+  frame:EnableMouse(true)
+  
+  frame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  frame:SetBackdropColor(0, 0, 0, 0.85)
+  
+  -- Position relative to main UI (like consume monitor)
+  frame.PositionFrame = function()
+    if not OGRH_Main or not OGRH_Main:IsVisible() then
+      frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+      return
+    end
+    
+    local screenHeight = UIParent:GetHeight()
+    local mainBottom = OGRH_Main:GetBottom()
+    local mainTop = OGRH_Main:GetTop()
+    local frameHeight = frame:GetHeight()
+    
+    frame:ClearAllPoints()
+    
+    -- Check if ConsumeMonitor is visible and positioned
+    local consumeOffset = 0
+    if OGRH_ConsumeMonitorFrame and OGRH_ConsumeMonitorFrame:IsVisible() then
+      consumeOffset = OGRH_ConsumeMonitorFrame:GetHeight() + 5
+    end
+    
+    -- Try to dock below main UI (with consume monitor offset)
+    if mainBottom and (mainBottom - frameHeight - consumeOffset) > 0 then
+      if consumeOffset > 0 then
+        frame:SetPoint("TOP", OGRH_ConsumeMonitorFrame, "BOTTOM", 0, 0)
+      else
+        frame:SetPoint("TOP", OGRH_Main, "BOTTOM", 0, 0)
+      end
+    -- Otherwise dock above main UI
+    elseif mainTop and (mainTop + frameHeight) < screenHeight then
+      frame:SetPoint("BOTTOM", OGRH_Main, "TOP", 0, 0)
+    else
+      -- Fallback to center if neither position works
+      frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+    end
+  end
+  
+  frame:PositionFrame()
+  
+  -- Register for main UI movement to reposition
+  frame:SetScript("OnUpdate", function()
+    if not this:IsVisible() then
+      return
+    end
+    
+    if this.lastMainPos then
+      local currentPos = OGRH_Main and OGRH_Main:GetLeft()
+      if currentPos and currentPos ~= this.lastMainPos then
+        this:PositionFrame()
+        this.lastMainPos = currentPos
+      end
+    else
+      this.lastMainPos = OGRH_Main and OGRH_Main:GetLeft()
+    end
+  end)
+  
+  -- Title
+  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOP", 0, -10)
+  title:SetText("Structure Sync")
+  frame.title = title
+  
+  -- Status text
+  local statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  statusText:SetPoint("TOP", title, "BOTTOM", 0, -8)
+  statusText:SetWidth(160)
+  statusText:SetJustifyH("CENTER")
+  frame.statusText = statusText
+  
+  -- Accept button (for receivers)
+  local acceptBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  acceptBtn:SetWidth(70)
+  acceptBtn:SetHeight(24)
+  acceptBtn:SetPoint("BOTTOM", frame, "BOTTOM", -38, 10)
+  acceptBtn:SetText("Accept")
+  if OGRH.StyleButton then
+    OGRH.StyleButton(acceptBtn)
+  end
+  acceptBtn:SetScript("OnClick", function()
+    OGRH.Sync.RespondToSyncRequest(true)
+  end)
+  acceptBtn:Hide()
+  frame.acceptBtn = acceptBtn
+  
+  -- Decline button (for receivers)
+  local declineBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  declineBtn:SetWidth(70)
+  declineBtn:SetHeight(24)
+  declineBtn:SetPoint("BOTTOM", frame, "BOTTOM", 38, 10)
+  declineBtn:SetText("Decline")
+  if OGRH.StyleButton then
+    OGRH.StyleButton(declineBtn)
+  end
+  declineBtn:SetScript("OnClick", function()
+    OGRH.Sync.RespondToSyncRequest(false)
+  end)
+  declineBtn:Hide()
+  frame.declineBtn = declineBtn
+  
+  -- Cancel button (for sender)
+  local cancelBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  cancelBtn:SetWidth(80)
+  cancelBtn:SetHeight(24)
+  cancelBtn:SetPoint("BOTTOM", frame, "BOTTOM", 0, 10)
+  cancelBtn:SetText("Cancel")
+  if OGRH.StyleButton then
+    OGRH.StyleButton(cancelBtn)
+  end
+  cancelBtn:SetScript("OnClick", function()
+    OGRH.Sync.CancelSyncRequest()
+  end)
+  cancelBtn:Hide()
+  frame.cancelBtn = cancelBtn
+  
+  OGRH_SyncPanelFrame = frame
+  
+  -- Hide progress bar from previous sync
+  if frame.progressBar then
+    frame.progressBar:Hide()
+  end
+  
+  OGRH.Sync.UpdateSyncPanel(isSender)
+  frame:Show()
+end
+
+-- Update sync panel content
+function OGRH.Sync.UpdateSyncPanel(isSender)
+  if not OGRH_SyncPanelFrame then return end
+  
+  local frame = OGRH_SyncPanelFrame
+  
+  if isSender then
+    -- Sender view
+    frame:SetHeight(110) -- Taller for timer text
+    frame.statusText:SetText("Waiting for responses...")
+    frame.acceptBtn:Hide()
+    frame.declineBtn:Hide()
+    frame.cancelBtn:Show()
+    
+    -- Show timer
+    if not frame.timerText then
+      frame.timerText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      frame.timerText:SetPoint("TOP", frame.statusText, "BOTTOM", 0, -5)
+    end
+    frame.timerText:Show()
+    
+  else
+    -- Receiver view
+    frame:SetHeight(90) -- Standard height for buttons
+    local senderName = OGRH.Sync.syncRequestSender or "Unknown"
+    
+    -- Get class color for sender
+    local coloredName = senderName
+    local playerClass = OGRH.GetPlayerClass(senderName)
+    if playerClass then
+      coloredName = OGRH.ClassColorHex(playerClass) .. senderName .. "|r"
+    end
+    
+    frame.statusText:SetText("Accept data sync from " .. coloredName .. "?")
+    frame.acceptBtn:Show()
+    frame.declineBtn:Show()
+    frame.cancelBtn:Hide()
+    
+    if frame.timerText then
+      frame.timerText:Hide()
+    end
+  end
+  
+  -- Reposition after size change
+  if frame.PositionFrame then
+    frame:PositionFrame()
+  end
+end
+
+-- Show transmission progress
+function OGRH.Sync.ShowTransmissionProgress(isSender, progress, complete)
+  if not OGRH_SyncPanelFrame then
+    OGRH.Sync.ShowSyncPanel(isSender)
+  end
+  
+  local frame = OGRH_SyncPanelFrame
+  
+  -- Hide accept/decline/cancel buttons
+  if frame.acceptBtn then frame.acceptBtn:Hide() end
+  if frame.declineBtn then frame.declineBtn:Hide() end
+  if frame.cancelBtn then frame.cancelBtn:Hide() end
+  if frame.timerText then frame.timerText:Hide() end
+  
+  -- Create or update progress bar
+  if not frame.progressBar then
+    local bar = CreateFrame("StatusBar", nil, frame)
+    bar:SetWidth(160)
+    bar:SetHeight(16)
+    bar:SetPoint("TOP", frame.statusText, "BOTTOM", 0, -10)
+    bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bar:SetStatusBarColor(0.2, 0.8, 0.2)
+    bar:SetMinMaxValues(0, 100)
+    
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(bar)
+    bg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+    
+    local text = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    text:SetPoint("CENTER", bar, "CENTER")
+    bar.text = text
+    
+    frame.progressBar = bar
+  end
+  
+  local bar = frame.progressBar
+  bar:SetValue(progress)
+  bar.text:SetText(string.format("%d%%", progress))
+  
+  if complete then
+    frame.statusText:SetText(isSender and "Sync Complete!" or "Data Received!")
+    bar:SetStatusBarColor(0.2, 1, 0.2)
+  else
+    frame.statusText:SetText(isSender and "Sending data..." or "Receiving data...")
+    bar:SetStatusBarColor(0.2, 0.8, 0.2)
+  end
+  
+  bar:Show()
+  frame:SetHeight(100)
+  
+  if frame.PositionFrame then
+    frame:PositionFrame()
+  end
+end
+
+-- Hide sync panel
+function OGRH.Sync.HideSyncPanel()
+  if OGRH_SyncPanelFrame then
+    -- Hide progress bar if it exists
+    if OGRH_SyncPanelFrame.progressBar then
+      OGRH_SyncPanelFrame.progressBar:Hide()
+    end
+    OGRH_SyncPanelFrame:Hide()
+  end
+end
+
+-------------------------------------------------------------------------------
+-- Push Structure Workflow
+-------------------------------------------------------------------------------
+
+-- Initiate push structure (sender)
+function OGRH.Sync.InitiatePushStructure()
+  -- Check if sync already in progress
+  if OGRH.Sync.syncInProgress or OGRH.Sync.syncTransmitting then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r A sync is already in progress.")
+    return
+  end
+  
+  -- Must be in raid
+  if GetNumRaidMembers() == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r You must be in a raid to push structure.")
+    return
+  end
+  
+  -- Must be raid leader or assistant
+  local playerName = UnitName("player")
+  local hasPermission = false
+  for i = 1, GetNumRaidMembers() do
+    local name, rank = GetRaidRosterInfo(i)
+    if name == playerName and (rank == 2 or rank == 1) then
+      hasPermission = true
+      break
+    end
+  end
+  
+  if not hasPermission then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r Only raid leaders or assistants can push structure.")
+    return
+  end
+  
+  -- Initialize sync state
+  OGRH.Sync.syncInProgress = true
+  OGRH.Sync.syncResponses = {}
+  OGRH.Sync.syncStartTime = GetTime()
+  OGRH.Sync.syncTimeout = 30
+  
+  -- Get current checksum
+  local checksum = OGRH.Sync.GetCurrentChecksum()
+  
+  -- Broadcast sync request
+  local message = "SYNC_REQUEST:" .. checksum
+  SendAddonMessage(OGRH.Sync.ADDON_PREFIX, message, "RAID")
+  
+  -- Show sender panel
+  OGRH.Sync.ShowSyncPanel(true)
+  
+  -- Start timer update
+  OGRH.Sync.UpdateSyncTimer()
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Requesting structure sync from raid members...")
+end
+
+-- Update sync timer for sender
+function OGRH.Sync.UpdateSyncTimer()
+  if not OGRH.Sync.syncInProgress or not OGRH_SyncPanelFrame then
+    return
+  end
+  
+  local elapsed = GetTime() - OGRH.Sync.syncStartTime
+  local remaining = math.max(0, OGRH.Sync.syncTimeout - elapsed)
+  
+  if OGRH_SyncPanelFrame.timerText then
+    OGRH_SyncPanelFrame.timerText:SetText(string.format("Time remaining: %d seconds", remaining))
+  end
+  
+  -- Check if timeout reached
+  if remaining <= 0 then
+    OGRH.Sync.CompleteSyncRequest()
+    return
+  end
+  
+  -- Check if all responses received
+  if OGRH.Sync.AllResponsesReceived() then
+    OGRH.Sync.CompleteSyncRequest()
+    return
+  end
+  
+  -- Schedule next update
+  OGRH.ScheduleFunc(OGRH.Sync.UpdateSyncTimer, 1)
+end
+
+-- Check if all expected responses received
+function OGRH.Sync.AllResponsesReceived()
+  if not OGRH.Sync.pushPollResponses then
+    return false
+  end
+  
+  local expected = table.getn(OGRH.Sync.pushPollResponses) - 1 -- Exclude self
+  local received = 0
+  
+  for name, response in pairs(OGRH.Sync.syncResponses) do
+    received = received + 1
+  end
+  
+  return received >= expected
+end
+
+-- Complete sync request (timeout or all responses received)
+function OGRH.Sync.CompleteSyncRequest()
+  OGRH.Sync.syncInProgress = false
+  
+  -- Build list of acceptors
+  local acceptors = {}
+  for name, response in pairs(OGRH.Sync.syncResponses) do
+    if response == true then
+      table.insert(acceptors, name)
+    end
+  end
+  
+  if table.getn(acceptors) == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RaidHelper]|r No players accepted the sync.")
+    OGRH.Sync.HideSyncPanel()
+    return
+  end
+  
+  -- Start transmission
+  OGRH.Sync.StartTransmission(acceptors)
+end
+
+-- Start data transmission to acceptors
+function OGRH.Sync.StartTransmission(acceptors)
+  OGRH.Sync.syncTransmitting = true
+  
+  -- Build structure data payload
+  local structureData = {
+    encounterMgmt = OGRH_SV.encounterMgmt,
+    encounterRaidMarks = OGRH_SV.encounterRaidMarks,
+    encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers,
+    encounterAnnouncements = OGRH_SV.encounterAnnouncements,
+    tradeItems = OGRH_SV.tradeItems,
+    consumes = OGRH_SV.consumes,
+    checksum = OGRH.Sync.GetCurrentChecksum()
+  }
+  
+  -- Encode the data
+  local encoded = OGRH.Sync.EncodeData(structureData)
+  if not encoded then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r Failed to encode structure data.")
+    OGRH.Sync.syncTransmitting = false
+    OGRH.Sync.HideSyncPanel()
+    return
+  end
+  
+  local dataSize = string.len(encoded)
+  
+  -- Split into chunks
+  local chunks = {}
+  local pos = 1
+  while pos <= dataSize do
+    local chunk = string.sub(encoded, pos, pos + OGRH.Sync.MAX_CHUNK_SIZE - 1)
+    table.insert(chunks, chunk)
+    pos = pos + OGRH.Sync.MAX_CHUNK_SIZE
+  end
+  
+  local totalChunks = table.getn(chunks)
+  local chunkId = OGRH.Sync.GenerateChunkId()
+  
+  -- Store transmission state
+  OGRH.Sync.transmissionState = {
+    acceptors = acceptors,
+    chunks = chunks,
+    totalChunks = totalChunks,
+    currentChunk = 0,
+    chunkId = chunkId
+  }
+  
+  -- Update panel to show progress
+  OGRH.Sync.ShowTransmissionProgress(true, 0)
+  
+  -- Broadcast start message
+  local startData = {
+    id = chunkId,
+    type = OGRH.Sync.MessageType.ENCOUNTER_STRUCTURE,
+    total = totalChunks,
+    size = dataSize
+  }
+  SendAddonMessage(OGRH.Sync.ADDON_PREFIX, "SYNC_DATA_START:" .. OGRH.Sync.Serialize(startData), "RAID")
+  
+  -- Start sending chunks
+  OGRH.Sync.SendNextChunk()
+end
+
+-- Send next chunk in transmission
+function OGRH.Sync.SendNextChunk()
+  if not OGRH.Sync.syncTransmitting or not OGRH.Sync.transmissionState then
+    return
+  end
+  
+  local state = OGRH.Sync.transmissionState
+  state.currentChunk = state.currentChunk + 1
+  
+  if state.currentChunk > state.totalChunks then
+    -- Transmission complete
+    OGRH.Sync.CompleteTransmission()
+    return
+  end
+  
+  -- Send current chunk
+  local chunkData = {
+    id = state.chunkId,
+    index = state.currentChunk,
+    data = state.chunks[state.currentChunk]
+  }
+  SendAddonMessage(OGRH.Sync.ADDON_PREFIX, "SYNC_DATA_CHUNK:" .. OGRH.Sync.Serialize(chunkData), "RAID")
+  
+  -- Update progress
+  local progress = (state.currentChunk / state.totalChunks) * 100
+  OGRH.Sync.ShowTransmissionProgress(true, progress)
+  
+  -- Schedule next chunk (throttle to avoid flooding)
+  OGRH.ScheduleFunc(OGRH.Sync.SendNextChunk, 0.1)
+end
+
+-- Complete transmission
+function OGRH.Sync.CompleteTransmission()
+  if not OGRH.Sync.transmissionState then
+    return
+  end
+  
+  -- Send end message
+  local endData = {
+    id = OGRH.Sync.transmissionState.chunkId,
+    total = OGRH.Sync.transmissionState.totalChunks
+  }
+  SendAddonMessage(OGRH.Sync.ADDON_PREFIX, "SYNC_DATA_END:" .. OGRH.Sync.Serialize(endData), "RAID")
+  
+  -- Show completion
+  OGRH.Sync.ShowTransmissionProgress(true, 100, true)
+  
+  -- Refresh push structure list if Data Management window is open
+  if OGRH_DataManagementFrame and OGRH_DataManagementFrame:IsVisible() and 
+     OGRH_DataManagementFrame.selectedActionName == "Push Structure" then
+    OGRH.Sync.StartPushStructurePoll()
+  end
+  
+  -- Clean up
+  OGRH.Sync.syncTransmitting = false
+  OGRH.Sync.transmissionState = nil
+  
+  -- Auto-close after 10 seconds
+  OGRH.ScheduleFunc(function()
+    OGRH.Sync.HideSyncPanel()
+  end, 10)
+end
+
+-- Cancel sync request (sender cancels)
+function OGRH.Sync.CancelSyncRequest()
+  if not OGRH.Sync.syncInProgress then
+    return
+  end
+  
+  OGRH.Sync.syncInProgress = false
+  
+  -- Broadcast cancellation
+  SendAddonMessage(OGRH.Sync.ADDON_PREFIX, "SYNC_CANCEL", "RAID")
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Structure sync cancelled.")
+  
+  OGRH.Sync.HideSyncPanel()
+end
+
+-- Handle incoming sync request (receiver)
+function OGRH.Sync.HandleSyncRequest(sender, checksum)
+  -- Ignore if we're the sender
+  if sender == UnitName("player") then
+    return
+  end
+  
+  -- Check if our checksum matches
+  local myChecksum = OGRH.Sync.GetCurrentChecksum()
+  
+  if myChecksum == checksum then
+    -- Already have same data, auto-accept
+    local message = "SYNC_RESPONSE:accept:" .. sender
+    SendAddonMessage(OGRH.Sync.ADDON_PREFIX, message, "RAID")
+    return
+  end
+  
+  -- Show panel to accept/decline
+  OGRH.Sync.syncRequestSender = sender
+  OGRH.Sync.syncRequestTime = GetTime()
+  OGRH.Sync.ShowSyncPanel(false)
+end
+
+-- Respond to sync request (receiver)
+function OGRH.Sync.RespondToSyncRequest(accept)
+  if not OGRH.Sync.syncRequestSender then
+    return
+  end
+  
+  local response = accept and "accept" or "decline"
+  local message = "SYNC_RESPONSE:" .. response .. ":" .. OGRH.Sync.syncRequestSender
+  SendAddonMessage(OGRH.Sync.ADDON_PREFIX, message, "RAID")
+  
+  if accept then
+    -- Prepare to receive data
+    OGRH.Sync.syncReceiving = true
+    OGRH.Sync.receivingFrom = OGRH.Sync.syncRequestSender
+    OGRH.Sync.syncRequestSender = nil
+    
+    -- Show waiting panel
+    OGRH.Sync.ShowTransmissionProgress(false, 0)
+    
+    -- Set timeout for receiving (60 seconds from accept)
+    OGRH.Sync.receiveTimeout = GetTime() + 60
+    OGRH.Sync.CheckReceiveTimeout()
+  else
+    OGRH.Sync.syncRequestSender = nil
+    OGRH.Sync.HideSyncPanel()
+  end
+end
+
+-- Handle sync response (sender receives)
+function OGRH.Sync.HandleSyncResponse(sender, response)
+  if not OGRH.Sync.syncInProgress then
+    return
+  end
+  
+  local accepted = response == "accept"
+  OGRH.Sync.syncResponses[sender] = accepted
+  
+  -- Update status
+  if OGRH_SyncPanelFrame and OGRH_SyncPanelFrame.statusText then
+    local count = 0
+    for _ in pairs(OGRH.Sync.syncResponses) do
+      count = count + 1
+    end
+    OGRH_SyncPanelFrame.statusText:SetText(string.format("Responses: %d", count))
+  end
+end
+
+-- Check receive timeout
+function OGRH.Sync.CheckReceiveTimeout()
+  if not OGRH.Sync.syncReceiving then
+    return
+  end
+  
+  if GetTime() > OGRH.Sync.receiveTimeout then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r Sync receive timeout. No data received.")
+    OGRH.Sync.syncReceiving = false
+    OGRH.Sync.receivingFrom = nil
+    OGRH.Sync.receivingData = nil
+    OGRH.Sync.HideSyncPanel()
+    return
+  end
+  
+  OGRH.ScheduleFunc(OGRH.Sync.CheckReceiveTimeout, 1)
+end
+
+-- Handle sync data start (receiver)
+function OGRH.Sync.HandleSyncDataStart(sender, data)
+  if not OGRH.Sync.syncReceiving or OGRH.Sync.receivingFrom ~= sender then
+    return
+  end
+  
+  local startInfo = OGRH.Sync.Deserialize(data)
+  if not startInfo then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r Failed to parse sync data start.")
+    OGRH.Sync.syncReceiving = false
+    OGRH.Sync.HideSyncPanel()
+    return
+  end
+  
+  -- Initialize receiving state
+  OGRH.Sync.receivingData = {
+    id = startInfo.id,
+    total = startInfo.total,
+    size = startInfo.size,
+    chunks = {},
+    received = 0
+  }
+  
+  OGRH.Sync.ShowTransmissionProgress(false, 0)
+end
+
+-- Handle sync data chunk (receiver)
+function OGRH.Sync.HandleSyncDataChunk(sender, data)
+  if not OGRH.Sync.syncReceiving or OGRH.Sync.receivingFrom ~= sender or not OGRH.Sync.receivingData then
+    return
+  end
+  
+  local chunkInfo = OGRH.Sync.Deserialize(data)
+  if not chunkInfo or chunkInfo.id ~= OGRH.Sync.receivingData.id then
+    return
+  end
+  
+  -- Store chunk
+  OGRH.Sync.receivingData.chunks[chunkInfo.index] = chunkInfo.data
+  OGRH.Sync.receivingData.received = OGRH.Sync.receivingData.received + 1
+  
+  -- Update progress
+  local progress = (OGRH.Sync.receivingData.received / OGRH.Sync.receivingData.total) * 100
+  OGRH.Sync.ShowTransmissionProgress(false, progress)
+end
+
+-- Handle sync data end (receiver)
+function OGRH.Sync.HandleSyncDataEnd(sender, data)
+  if not OGRH.Sync.syncReceiving or OGRH.Sync.receivingFrom ~= sender or not OGRH.Sync.receivingData then
+    return
+  end
+  
+  local endInfo = OGRH.Sync.Deserialize(data)
+  if not endInfo or endInfo.id ~= OGRH.Sync.receivingData.id then
+    return
+  end
+  
+  -- Verify all chunks received
+  if OGRH.Sync.receivingData.received ~= OGRH.Sync.receivingData.total then
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RaidHelper]|r Sync failed: received %d/%d chunks.", OGRH.Sync.receivingData.received, OGRH.Sync.receivingData.total))
+    OGRH.Sync.syncReceiving = false
+    OGRH.Sync.receivingData = nil
+    OGRH.Sync.HideSyncPanel()
+    return
+  end
+  
+  -- Reassemble data
+  local fullData = ""
+  for i = 1, OGRH.Sync.receivingData.total do
+    fullData = fullData .. OGRH.Sync.receivingData.chunks[i]
+  end
+  
+  -- Decode and apply
+  local structureData = OGRH.Sync.DecodeData(fullData)
+  if not structureData then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper]|r Failed to decode structure data.")
+    OGRH.Sync.syncReceiving = false
+    OGRH.Sync.receivingData = nil
+    OGRH.Sync.HideSyncPanel()
+    return
+  end
+  
+  -- Apply structure data
+  if structureData.encounterMgmt then
+    OGRH_SV.encounterMgmt = structureData.encounterMgmt
+  end
+  if structureData.encounterRaidMarks then
+    OGRH_SV.encounterRaidMarks = structureData.encounterRaidMarks
+  end
+  if structureData.encounterAssignmentNumbers then
+    OGRH_SV.encounterAssignmentNumbers = structureData.encounterAssignmentNumbers
+  end
+  if structureData.encounterAnnouncements then
+    OGRH_SV.encounterAnnouncements = structureData.encounterAnnouncements
+  end
+  if structureData.tradeItems then
+    OGRH_SV.tradeItems = structureData.tradeItems
+  end
+  if structureData.consumes then
+    OGRH_SV.consumes = structureData.consumes
+  end
+  
+  -- Verify checksum
+  local newChecksum = OGRH.Sync.GetCurrentChecksum()
+  if structureData.checksum and newChecksum ~= structureData.checksum then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RaidHelper]|r Warning: Checksum mismatch after sync.")
+  end
+  
+  -- Refresh open windows
+  if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshAll then
+    OGRH_EncounterSetupFrame.RefreshAll()
+  end
+  if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRaidsList then
+    OGRH_EncounterFrame.RefreshRaidsList()
+  end
+  
+  -- Show success
+  OGRH.Sync.ShowTransmissionProgress(false, 100, true)
+  
+  -- Refresh push structure list if Data Management window is open
+  if OGRH_DataManagementFrame and OGRH_DataManagementFrame:IsVisible() and 
+     OGRH_DataManagementFrame.selectedActionName == "Push Structure" then
+    OGRH.Sync.StartPushStructurePoll()
+  end
+  
+  -- Clean up
+  OGRH.Sync.syncReceiving = false
+  OGRH.Sync.receivingFrom = nil
+  OGRH.Sync.receivingData = nil
+  
+  -- Auto-close after 10 seconds
+  OGRH.ScheduleFunc(function()
+    OGRH.Sync.HideSyncPanel()
+  end, 10)
+end
+
+-- Handle sync cancel (receiver)
+function OGRH.Sync.HandleSyncCancel(sender)
+  if OGRH.Sync.syncRequestSender == sender then
+    OGRH.Sync.syncRequestSender = nil
+    OGRH.Sync.HideSyncPanel()
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Structure sync cancelled by sender.")
   end
 end
 

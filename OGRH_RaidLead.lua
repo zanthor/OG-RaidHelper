@@ -184,44 +184,52 @@ end
 
 -- Handle poll response
 function OGRH.HandleAddonPollResponse(sender, version, checksum)
-  if not OGRH.RaidLead.pollInProgress then
-    return
-  end
-  
   version = version or "Unknown"
   checksum = checksum or "0"
   
-  -- Check if already in list
-  for i = 1, table.getn(OGRH.RaidLead.pollResponses) do
-    if OGRH.RaidLead.pollResponses[i].name == sender then
-      return -- Already recorded
-    end
-  end
-  
-  -- Get sender's rank
-  local senderRank = "None"
-  for i = 1, GetNumRaidMembers() do
-    local name, rank = GetRaidRosterInfo(i)
-    if name == sender then
-      if rank == 2 then
-        senderRank = "Leader"
-      elseif rank == 1 then
-        senderRank = "Assistant"
+  -- Route to raid lead selection poll if active
+  if OGRH.RaidLead.pollInProgress then
+    -- Check if already in list
+    local alreadyRecorded = false
+    for i = 1, table.getn(OGRH.RaidLead.pollResponses) do
+      if OGRH.RaidLead.pollResponses[i].name == sender then
+        alreadyRecorded = true
+        break
       end
-      break
+    end
+    
+    if not alreadyRecorded then
+      -- Get sender's rank
+      local senderRank = "None"
+      for i = 1, GetNumRaidMembers() do
+        local name, rank = GetRaidRosterInfo(i)
+        if name == sender then
+          if rank == 2 then
+            senderRank = "Leader"
+          elseif rank == 1 then
+            senderRank = "Assistant"
+          end
+          break
+        end
+      end
+      
+      table.insert(OGRH.RaidLead.pollResponses, {
+        name = sender,
+        rank = senderRank,
+        version = version,
+        checksum = checksum
+      })
+      
+      -- Refresh the UI if it's visible
+      if OGRH_RaidLeadSelectionFrame and OGRH_RaidLeadSelectionFrame:IsVisible() and OGRH_RaidLeadSelectionFrame.Rebuild then
+        OGRH_RaidLeadSelectionFrame.Rebuild()
+      end
     end
   end
   
-  table.insert(OGRH.RaidLead.pollResponses, {
-    name = sender,
-    rank = senderRank,
-    version = version,
-    checksum = checksum
-  })
-  
-  -- Refresh the UI if it's visible
-  if OGRH_RaidLeadSelectionFrame and OGRH_RaidLeadSelectionFrame:IsVisible() and OGRH_RaidLeadSelectionFrame.Rebuild then
-    OGRH_RaidLeadSelectionFrame.Rebuild()
+  -- Route to push structure poll if active
+  if OGRH.Sync and OGRH.Sync.HandlePushPollResponse then
+    OGRH.Sync.HandlePushPollResponse(sender, version, checksum)
   end
 end
 
