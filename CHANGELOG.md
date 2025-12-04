@@ -1,5 +1,34 @@
 # OG-RaidHelper Changelog
 
+## Version 1.20.0 - Announcement System Refactoring
+**Release Date:** December 4, 2025
+
+### Features
+- **Unified Announcement System**: Complete refactoring of announcement functionality
+  - Created OGRH_Announce.lua module for all announcement-related code
+  - New `OGRH.Announcements.SendEncounterAnnouncement()` unified function
+  - Both Main UI "A" button and Encounter Planning "Announce" button now use identical code paths
+  - New `OGRH.Announcements.BuildConsumeAnnouncement()` helper for consume announcements
+  - Removed ~250 lines of duplicate announcement code from OGRH_EncounterMgmt.lua
+  - ReadHelper sync functionality preserved in unified announcement system
+
+- **Lua 5.0 Compatibility Layer**: Added OGRH_Backport.lua for WoW 1.12 compatibility
+  - Implements `string.match()` as wrapper around `string.find()` (Lua 5.1 feature)
+  - Implements `string.gmatch()` as alias for `string.gfind()`
+  - Removes dependency on RollFor's backport library
+  - Announcement system now works independently of external addons
+
+### Technical
+- OGRH_Backport.lua loads first in TOC to provide Lua 5.1 features
+- Tag replacement system (`ReplaceTags`) fully self-contained in OGRH_Announce.lua
+- Supports all tag types: [Rx.T], [Rx.P], [Rx.PA], [Rx.Py], [Rx.My], [Rx.Ay], [Rx.A=y], [Rx.Cy]
+- Conditional block processing with AND (&) and OR logic preserved
+- ShowAnnouncementTooltip cleaned up to remove duplicate variable initialization
+
+### Fixed
+- Fixed "attempt to call field 'match' (a nil value)" error when RollFor disabled
+- Announcement system no longer requires RollFor addon to function
+
 ## Version 1.19.0 - Plugin Architecture
 **Release Date:** December 1, 2025
 
