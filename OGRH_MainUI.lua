@@ -399,8 +399,9 @@ announceBtn:SetScript("OnClick", function()
   end
   
   -- Left-click: Normal announcement
-  if OGRH.PrepareEncounterAnnouncement then
-    OGRH.PrepareEncounterAnnouncement()
+  if OGRH.Announcements and OGRH.Announcements.SendEncounterAnnouncement then
+    local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounter()
+    OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEncounter)
   end
 end)
 announceBtn:SetScript("OnEnter", function()
