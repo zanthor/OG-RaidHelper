@@ -4497,6 +4497,17 @@ local function CreateMinimapButton()
         end
       end, menu, yOffset)
       
+      yOffset = yOffset - itemHeight - itemSpacing
+      
+      -- Data Management item
+      local dataManagementItem = CreateMenuItem("Data Management", function()
+        OGRH.CloseAllWindows("OGRH_DataManagementFrame")
+        
+        if OGRH.Sync and OGRH.Sync.ShowDataManagementWindow then
+          OGRH.Sync.ShowDataManagementWindow()
+        end
+      end, menu, yOffset)
+      
       menu.toggleItem = toggleItem
       
       -- Update toggle item text based on window state

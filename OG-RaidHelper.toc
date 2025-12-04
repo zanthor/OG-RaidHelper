@@ -6,10 +6,15 @@
 ## SavedVariables: OGRH_SV
 
 OGRH_Backport.lua
+
+Libs\LibStub\LibStub.lua
+Libs\Libs.xml
+
 OGRH_Core.lua
 OGRH_Defaults.lua
 OGRH_RaidLead.lua
 OGRH_Announce.lua
+OGRH_Sync.lua
 OGRH_MainUI.lua
 OGRH_RolesUI.lua
 OGRH_EncounterMgmt.lua
