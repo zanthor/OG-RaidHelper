@@ -540,4 +540,4 @@ if TradeFrame then
     tradeFrameHooked = true
 end
 
-print("|cFFFFFF00OGRH:|r Trade module loaded")
+-- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Trade module loaded")

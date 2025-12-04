@@ -343,4 +343,4 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
   frame:Show()
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Class Priority loaded")
+-- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Class Priority loaded")

@@ -372,6 +372,12 @@ local function CreateRolesFrame()
     OGRH.StyleButton(syncBtn)
     frame.syncBtn = syncBtn  -- Store reference for later setup
     
+    -- Disable button if RollFor not available
+    if not OGRH.ROLLFOR_AVAILABLE then
+        syncBtn:Disable()
+        syncBtn:SetAlpha(0.5)
+    end
+    
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     closeBtn:SetWidth(80)
     closeBtn:SetHeight(24)
@@ -663,6 +669,12 @@ local function CreateRolesFrame()
     -- Setup Sync RollFor button click handler (now that functions are defined)
     if frame.syncBtn then
         frame.syncBtn:SetScript("OnClick", function()
+            -- Check if RollFor is available
+            if not OGRH.ROLLFOR_AVAILABLE then
+                OGRH.Msg("Sync RollFor requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+                return
+            end
+            
             -- Check permissions
             if not OGRH.CanManageRoles or not OGRH.CanManageRoles() then
                 OGRH.Msg("Only raid leader, assistants, or raid admin can sync RollFor data.")

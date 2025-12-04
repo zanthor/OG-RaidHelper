@@ -608,5 +608,18 @@ end
 _G["SLASH_"..string.upper(OGRH.CMD).."1"] = "/"..OGRH.CMD
 
 if OGRH and OGRH.Msg then
-  OGRH.Msg(OGRH.ADDON.." v1.14.0 loaded. Use /"..OGRH.CMD.." roles or the OGRH window.")
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r v" .. OGRH.VERSION .. " loaded")
+  
+  -- Notify about RollFor status
+  if OGRH.ROLLFOR_AVAILABLE then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " detected")
+  else
+    local rollForVersion = GetAddOnMetadata("RollFor", "Version")
+    if rollForVersion then
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r |cffff8800Warning:|r RollFor v" .. rollForVersion .. " found, but v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " required")
+    else
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r |cffff8800Warning:|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " not found")
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Some features disabled: Invites, SR Validation, RollFor sync")
+  end
 end

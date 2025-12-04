@@ -5,6 +5,24 @@ OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 OGRH.VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 
+-- RollFor version detection
+OGRH.ROLLFOR_REQUIRED_VERSION = "4.8.1"
+OGRH.ROLLFOR_AVAILABLE = false
+
+-- Check if RollFor is installed and has the required version
+function OGRH.CheckRollForVersion()
+  local rollForVersion = GetAddOnMetadata("RollFor", "Version")
+  if rollForVersion and rollForVersion == OGRH.ROLLFOR_REQUIRED_VERSION then
+    OGRH.ROLLFOR_AVAILABLE = true
+    return true
+  end
+  OGRH.ROLLFOR_AVAILABLE = false
+  return false
+end
+
+-- Initialize RollFor check on load
+OGRH.CheckRollForVersion()
+
 -- Player class cache (persists across sessions)
 OGRH.classCache = OGRH.classCache or {}
 
@@ -4332,8 +4350,13 @@ local function CreateMinimapButton()
       
       yOffset = yOffset - itemHeight - itemSpacing
       
-      -- Invites item
+      -- Invites item (requires RollFor 4.8.1)
       local invitesItem = CreateMenuItem("Invites", function()
+        if not OGRH.ROLLFOR_AVAILABLE then
+          OGRH.Msg("Invites requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+          return
+        end
+        
         OGRH.CloseAllWindows("OGRH_InvitesFrame")
         
         if OGRH.Invites and OGRH.Invites.ShowWindow then
@@ -4343,10 +4366,20 @@ local function CreateMinimapButton()
         end
       end, menu, yOffset)
       
+      -- Gray out if RollFor not available
+      if not OGRH.ROLLFOR_AVAILABLE then
+        invitesItem.fs:SetTextColor(0.5, 0.5, 0.5)
+      end
+      
       yOffset = yOffset - itemHeight - itemSpacing
       
-      -- SR Validation item
+      -- SR Validation item (requires RollFor 4.8.1)
       local srValidationItem = CreateMenuItem("SR Validation", function()
+        if not OGRH.ROLLFOR_AVAILABLE then
+          OGRH.Msg("SR Validation requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+          return
+        end
+        
         OGRH.CloseAllWindows("OGRH_SRValidationFrame")
         
         if OGRH.SRValidation and OGRH.SRValidation.ShowWindow then
@@ -4355,6 +4388,11 @@ local function CreateMinimapButton()
           OGRH.Msg("SR Validation module not loaded.")
         end
       end, menu, yOffset)
+      
+      -- Gray out if RollFor not available
+      if not OGRH.ROLLFOR_AVAILABLE then
+        srValidationItem.fs:SetTextColor(0.5, 0.5, 0.5)
+      end
       
       yOffset = yOffset - itemHeight - itemSpacing
       

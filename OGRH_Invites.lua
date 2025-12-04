@@ -36,6 +36,11 @@ end
 function OGRH.Invites.GetSoftResPlayers()
   local players = {}
   
+  -- Check if RollFor is available
+  if not OGRH.ROLLFOR_AVAILABLE then
+    return players
+  end
+  
   -- Check if RollFor addon is loaded
   if not RollFor or not RollForCharDb then
     return players
@@ -421,6 +426,12 @@ end
 
 -- Show Invites Window
 function OGRH.Invites.ShowWindow()
+  -- Check if RollFor is available
+  if not OGRH.ROLLFOR_AVAILABLE then
+    OGRH.Msg("Invites requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+    return
+  end
+  
   -- Close other windows
   OGRH.CloseAllWindows("OGRH_InvitesFrame")
   
@@ -1009,4 +1020,4 @@ end)
 -- Initialize
 OGRH.Invites.EnsureSV()
 
-OGRH.Msg("Invites module loaded. Use the minimap menu to access.")
+-- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Invites loaded")

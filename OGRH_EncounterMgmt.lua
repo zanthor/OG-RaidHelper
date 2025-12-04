@@ -1031,7 +1031,11 @@ function OGRH.ShowEncounterWindow(encounterName)
       GameTooltip:SetOwner(autoAssignBtn, "ANCHOR_TOP")
       GameTooltip:SetText("Auto Assign", 1, 1, 1)
       GameTooltip:AddLine("Left-click: Auto-assign from current raid members", 0.8, 0.8, 0.8, 1)
-      GameTooltip:AddLine("Right-click: Auto-assign from RollFor soft-reserve data", 0.8, 0.8, 0.8, 1)
+      if OGRH.ROLLFOR_AVAILABLE then
+        GameTooltip:AddLine("Right-click: Auto-assign from RollFor soft-reserve data", 0.8, 0.8, 0.8, 1)
+      else
+        GameTooltip:AddLine("Right-click: Auto-assign from RollFor (requires RollFor " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ")", 0.5, 0.5, 0.5, 1)
+      end
       GameTooltip:Show()
     end)
     autoAssignBtn:SetScript("OnLeave", function()
@@ -1050,12 +1054,18 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       -- Right-click: Auto-assign from RollFor data
       if button == "RightButton" then
+        -- Check if RollFor is available
+        if not OGRH.ROLLFOR_AVAILABLE then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Auto-assign from RollFor requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+          return
+        end
+        
         if not frame.selectedRaid or not frame.selectedEncounter then
           DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
           return
         end
         
-        -- Check if RollFor is available
+        -- Check if RollFor data is loaded
         if not RollFor or not RollForCharDb or not RollForCharDb.softres then
           DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r RollFor addon not found or no soft-res data loaded.")
           return
@@ -7727,4 +7737,4 @@ initFrame:SetScript("OnEvent", function()
   end
 end)
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter Management loaded")
+-- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Encounter Management loaded")

@@ -602,4 +602,4 @@ OGRH.Promotes = {
   CheckAndPromotePlayers = CheckAndPromotePlayers
 }
 
-OGRH.Msg("Auto Promote module loaded.")
+-- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Auto Promote loaded")

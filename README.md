@@ -14,7 +14,7 @@ A comprehensive raid management addon for organizing encounters, assigning roles
 ## Dependencies
 
 **Recommended:**
-- **[RollFor](https://github.com/jasonp1992/RollFor)** - Soft-reserve addon that provides the underlying data for the Raid Invites and SR+ Validation features. OG-RaidHelper reads RollFor's encoded soft-reserve data to display players, roles and SR+ values for items.
+- **[RollFor 4.8.1](https://github.com/sica42/RollFor)** - Soft-reserve addon that provides the underlying data for the Raid Invites and SR+ Validation features. OG-RaidHelper reads RollFor's encoded soft-reserve data to display players, roles and SR+ values for items.
 - **[Puppeteer](https://github.com/OldManAlpha/Puppeteer)** - Raid Frames with Support for Tank and Healer roles.  OG-RaidHelper automatically sets roles on players.
 - **[pfUI](https://github.com/shagu/pfUI)** - Raid Frames with support for Tank roles.  OG-RaidHelper automatically sets roles on players.
 

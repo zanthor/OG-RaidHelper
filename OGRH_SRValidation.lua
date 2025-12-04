@@ -128,6 +128,10 @@ SLASH_OGRHSRDEBUG1 = "/ogrhsr"
 
 -- Get SR+ data from RollFor using existing Invites function
 function OGRH.SRValidation.GetSRPlusData()
+  if not OGRH.ROLLFOR_AVAILABLE then
+    return nil
+  end
+  
   if not OGRH.Invites or not OGRH.Invites.GetSoftResPlayers then
     return nil
   end
@@ -156,6 +160,10 @@ end
 
 -- Get cached or fresh softres data
 function OGRH.SRValidation.GetCachedSoftresData()
+  if not OGRH.ROLLFOR_AVAILABLE then
+    return nil
+  end
+  
   local now = GetTime()
   
   -- Return cached data if still valid
@@ -1225,6 +1233,12 @@ end
 -- Show the SR Validation window
 function OGRH.SRValidation.ShowWindow()
   -- Check if RollFor is available
+  if not OGRH.ROLLFOR_AVAILABLE then
+    OGRH.Msg("SR Validation requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+    return
+  end
+  
+  -- Check if RollFor data is loaded
   if not RollFor or not RollFor.SoftRes or not RollForCharDb or not RollForCharDb.softres then
     OGRH.Msg("RollFor addon not found or no soft-res data available.")
     return
