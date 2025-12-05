@@ -1,5 +1,17 @@
 # OG-RaidHelper Changelog
 
+## Version 1.22.0 - Code Modularity Improvements
+**Release Date:** December 4, 2025
+
+### Technical
+- **Encounter Setup Module Extraction**: Improved code organization and maintainability
+  - Created OGRH_EncounterSetup.lua module for Encounter Setup window and role editor
+  - Extracted ~2,338 lines (36%) from OGRH_EncounterMgmt.lua into dedicated file
+  - Includes ShowEncounterSetup() function, all setup-related StaticPopupDialogs, and ShowEditRoleDialog() function
+  - Added RefreshAll() wrapper function for external integration with Import/Load Defaults operations
+  - Reduced OGRH_EncounterMgmt.lua complexity while maintaining all functionality
+  - No user-facing changes - purely internal code organization improvement
+
 ## Version 1.21.0 - Data Management Refactoring
 **Release Date:** December 4, 2025
 
