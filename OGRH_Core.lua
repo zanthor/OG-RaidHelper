@@ -3596,6 +3596,9 @@ function OGRH.ShowTradeSettings()
   closeBtn:SetHeight(24)
   closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
   closeBtn:SetText("Close")
+  if OGRH.StyleButton then
+    OGRH.StyleButton(closeBtn)
+  end
   closeBtn:SetScript("OnClick", function() frame:Hide() end)
   
   -- Instructions
