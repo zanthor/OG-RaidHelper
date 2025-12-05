@@ -25,13 +25,13 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   local column1 = encounterRoles.column1 or {}
   local column2 = encounterRoles.column2 or {}
   
-  -- Build complete roles list
+  -- Build complete roles list using stable roleId
   local allRoles = {}
   for i = 1, table.getn(column1) do
-    table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+    table.insert(allRoles, {role = column1[i], roleIndex = column1[i].roleId or (table.getn(allRoles) + 1)})
   end
   for i = 1, table.getn(column2) do
-    table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+    table.insert(allRoles, {role = column2[i], roleIndex = column2[i].roleId or (table.getn(allRoles) + 1)})
   end
   
   -- Map RollFor role to OGRH role bucket (same as Invites module)
@@ -312,10 +312,78 @@ local function MigrateRoleDefaultsToPoolDefaults()
   end
 end
 
+-- Migrate roles to stable IDs (one-time migration)
+function OGRH.MigrateRolesToStableIDs()
+  if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.roles then
+    return
+  end
+  
+  local needsMigration = false
+  
+  -- Check if any roles lack IDs
+  for raidName, raidRoles in pairs(OGRH_SV.encounterMgmt.roles) do
+    for encounterName, encounterRoles in pairs(raidRoles) do
+      local column1 = encounterRoles.column1 or {}
+      local column2 = encounterRoles.column2 or {}
+      
+      for _, role in ipairs(column1) do
+        if not role.roleId then
+          needsMigration = true
+          break
+        end
+      end
+      for _, role in ipairs(column2) do
+        if not role.roleId then
+          needsMigration = true
+          break
+        end
+      end
+      
+      if needsMigration then break end
+    end
+    if needsMigration then break end
+  end
+  
+  if not needsMigration then return end
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Migrating roles to stable IDs...")
+  
+  -- Assign stable IDs based on current position
+  for raidName, raidRoles in pairs(OGRH_SV.encounterMgmt.roles) do
+    for encounterName, encounterRoles in pairs(raidRoles) do
+      local column1 = encounterRoles.column1 or {}
+      local column2 = encounterRoles.column2 or {}
+      
+      local roleIdCounter = 1
+      
+      -- Assign IDs to column1 roles
+      for _, role in ipairs(column1) do
+        if not role.roleId then
+          role.roleId = roleIdCounter
+          role.fillOrder = roleIdCounter
+        end
+        roleIdCounter = roleIdCounter + 1
+      end
+      
+      -- Assign IDs to column2 roles
+      for _, role in ipairs(column2) do
+        if not role.roleId then
+          role.roleId = roleIdCounter
+          role.fillOrder = roleIdCounter
+        end
+        roleIdCounter = roleIdCounter + 1
+      end
+    end
+  end
+  
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Role ID migration complete!")
+end
+
 -- Initialize SavedVariables structure
 local function InitializeSavedVars()
-  -- Run migration first
+  -- Run migrations
   MigrateRoleDefaultsToPoolDefaults()
+  OGRH.MigrateRolesToStableIDs()
   
   if not OGRH_SV.encounterMgmt then
     OGRH_SV.encounterMgmt = {
@@ -1312,14 +1380,14 @@ function OGRH.ShowEncounterWindow(encounterName)
       local column1 = encounterRoles.column1 or {}
       local column2 = encounterRoles.column2 or {}
       
-      -- Build ordered list of all roles (column1 first, then column2)
+      -- Build ordered list of all roles using stable roleId
       local allRoles = {}
       
       for i = 1, table.getn(column1) do
-        table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+        table.insert(allRoles, {role = column1[i], roleIndex = column1[i].roleId or (table.getn(allRoles) + 1)})
       end
       for i = 1, table.getn(column2) do
-        table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+        table.insert(allRoles, {role = column2[i], roleIndex = column2[i].roleId or (table.getn(allRoles) + 1)})
       end
       
       -- Get assignments
@@ -3012,12 +3080,11 @@ function OGRH.ShowEncounterWindow(encounterName)
       local yOffsetRight = -5
       local columnWidth = 272
       
-      -- Create each column independently to avoid unwanted whitespace
-      local roleIndex = 1
-      
       -- Left column (skip Custom Module roles - they don't render in planning UI)
       for i = 1, table.getn(column1) do
         if not column1[i].isCustomModule then
+          -- Use stable roleId for labeling and data storage
+          local roleIndex = column1[i].roleId or i
           local container = CreateRoleContainer(scrollChild, column1[i], roleIndex, 5, yOffsetLeft, columnWidth)
           table.insert(frame.roleContainers, container)
           
@@ -3025,12 +3092,13 @@ function OGRH.ShowEncounterWindow(encounterName)
           local containerHeight = 40 + ((column1[i].slots or 1) * 22)
           yOffsetLeft = yOffsetLeft - containerHeight - 10
         end
-        roleIndex = roleIndex + 1
       end
       
       -- Right column (skip Custom Module roles - they don't render in planning UI)
       for i = 1, table.getn(column2) do
         if not column2[i].isCustomModule then
+          -- Use stable roleId for labeling and data storage
+          local roleIndex = column2[i].roleId or (table.getn(column1) + i)
           local container = CreateRoleContainer(scrollChild, column2[i], roleIndex, 287, yOffsetRight, columnWidth)
           table.insert(frame.roleContainers, container)
           
@@ -3038,7 +3106,6 @@ function OGRH.ShowEncounterWindow(encounterName)
           local containerHeight = 40 + ((column2[i].slots or 1) * 22)
           yOffsetRight = yOffsetRight - containerHeight - 10
         end
-        roleIndex = roleIndex + 1
       end
       
       -- Update scroll child height (based on the taller column)
@@ -3951,14 +4018,14 @@ function OGRH.MarkPlayersFromMainUI()
   local column1 = encounterRoles.column1 or {}
   local column2 = encounterRoles.column2 or {}
   
-  -- Build ordered list of all roles (column1 first, then column2)
+  -- Build ordered list of all roles using stable roleId
   local allRoles = {}
   
   for i = 1, table.getn(column1) do
-    table.insert(allRoles, {role = column1[i], roleIndex = table.getn(allRoles) + 1})
+    table.insert(allRoles, {role = column1[i], roleIndex = column1[i].roleId or (table.getn(allRoles) + 1)})
   end
   for i = 1, table.getn(column2) do
-    table.insert(allRoles, {role = column2[i], roleIndex = table.getn(allRoles) + 1})
+    table.insert(allRoles, {role = column2[i], roleIndex = column2[i].roleId or (table.getn(allRoles) + 1)})
   end
   
   -- Check if any role has markPlayer enabled

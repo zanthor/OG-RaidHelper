@@ -3,6 +3,14 @@
 ## Version 1.22.0 - Code Modularity Improvements
 **Release Date:** December 4, 2025
 
+### Features
+- **Stable Role IDs**: Roles now maintain stable identifiers that persist across reordering
+  - Role announcement tags (e.g., `[R1.T]`, `[R2.P3]`) no longer break when roles are reordered
+  - One-time migration automatically assigns IDs to existing roles based on current position
+  - Deleted roles will still break announcements (expected behavior)
+  - Users may see non-sequential role numbers (e.g., R5, R2, R1) after reordering, but announcements remain functional
+  - Added `fillOrder` field to roles for future fill priority enhancements
+
 ### Technical
 - **Encounter Setup Module Extraction**: Improved code organization and maintainability
   - Created OGRH_EncounterSetup.lua module for Encounter Setup window and role editor
@@ -10,7 +18,13 @@
   - Includes ShowEncounterSetup() function, all setup-related StaticPopupDialogs, and ShowEditRoleDialog() function
   - Added RefreshAll() wrapper function for external integration with Import/Load Defaults operations
   - Reduced OGRH_EncounterMgmt.lua complexity while maintaining all functionality
-  - No user-facing changes - purely internal code organization improvement
+- **Role ID Migration**: Added MigrateRolesToStableIDs() migration function
+  - Automatically runs on first load after update
+  - Assigns stable IDs based on current column1 → column2 order
+  - All role index calculations now use roleId instead of array position
+- **Removed Ineffective Code**: Removed UpdateAnnouncementTagsForRoleChanges() function (~100 lines)
+  - Previous attempt to auto-update announcement tags was unreliable
+  - Stable role IDs provide better solution
 
 ## Version 1.21.0 - Data Management Refactoring
 **Release Date:** December 4, 2025

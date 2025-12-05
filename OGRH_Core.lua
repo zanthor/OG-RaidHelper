@@ -822,6 +822,14 @@ end
 function OGRH.HashRole(role, columnMultiplier, roleIndex)
     local hash = 0
     
+    -- Hash stable roleId and fillOrder
+    if role.roleId then
+      hash = hash + role.roleId * columnMultiplier * 50
+    end
+    if role.fillOrder then
+      hash = hash + role.fillOrder * columnMultiplier * 60
+    end
+    
     -- Hash role name
     local name = role.name or ""
     for j = 1, string.len(name) do

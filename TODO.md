@@ -13,15 +13,11 @@
 
 ## Discovered Issues
 
-### [Issue] 
+### [Issue] Roles list doesn't clear when selecting different raid
 **Description:** 
 In the Encounter Setup interface the roles lists do not clear when you select a different raid.
 
-### [Issue] 
-**Description:** 
-When you change the role order the roles are re-numbered, if you delete one they are re-numbered.  The announcements are supposed to update their mapping but this doesn't work properly.  Change to static numbers that never change so the announcements never change.
-
-Add fill order to each role so we can control which order they fill without changing which order they display.
+**Status:** Open
 
 
 
@@ -32,5 +28,11 @@ Add fill order to each role so we can control which order they fill without chan
 - ✅ Fixed ESC key handler for Data Management window
 - ✅ Fixed CTRL+V single-press operation
 - ✅ Removed old Share window from Main Menu
-- ✅ Updated CHANGELOG.md Version 1.21.0
+- ✅ Updated CHANGELOG.md Version 1.21.0 and 1.22.0
 - ✅ Created migration plan document
+- ✅ Implemented stable role IDs (roleId field)
+- ✅ Added fillOrder field to roles for future use
+- ✅ Created MigrateRolesToStableIDs() migration function
+- ✅ Updated all role index calculations to use roleId
+- ✅ Removed UpdateAnnouncementTagsForRoleChanges() function
+- ✅ New roles automatically assigned unique roleId and fillOrder
