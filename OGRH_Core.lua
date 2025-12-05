@@ -1889,8 +1889,6 @@ addonFrame:SetScript("OnEvent", function()
             OGRH_SV.encounterAssignments[syncData.raid][syncData.encounter] = syncData.assignments
           end
           
-          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received encounter sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
-          
           -- Refresh raid/encounter lists in open windows
           if OGRH_EncounterFrame then
             if OGRH_EncounterFrame.RefreshRaidsList then
@@ -2016,8 +2014,6 @@ addonFrame:SetScript("OnEvent", function()
               if syncData.assignments then
                 OGRH_SV.encounterAssignments[syncData.raid][syncData.encounter] = syncData.assignments
               end
-              
-              DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Received encounter sync from " .. sender .. ": " .. syncData.raid .. " - " .. syncData.encounter)
               
               -- Refresh raid/encounter lists
               if OGRH_EncounterFrame then
