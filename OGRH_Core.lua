@@ -4088,7 +4088,7 @@ local function CreateMinimapButton()
       menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
       menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
       menu:SetWidth(160)
-      menu:SetHeight(228)
+      menu:SetHeight(138)
       menu:Hide()
       
       -- Register ESC key handler
@@ -4164,20 +4164,139 @@ local function CreateMinimapButton()
         return item
       end
       
-      -- Show/Hide item
-      local toggleItem = CreateMenuItem("Show", function()
-        if OGRH_Main then
-          if OGRH_Main:IsVisible() then
-            OGRH_Main:Hide()
-            OGRH_SV.ui.hidden = true
-          else
-            OGRH_Main:Show()
-            OGRH_SV.ui.hidden = false
+      -- Create Settings submenu
+      local settingsSubmenu
+      local function CreateSettingsSubmenu()
+        if settingsSubmenu then return settingsSubmenu end
+        
+        local submenu = CreateFrame("Frame", "OGRH_SettingsSubmenu", UIParent)
+        submenu:SetFrameStrata("FULLSCREEN_DIALOG")
+        submenu:SetFrameLevel(menu:GetFrameLevel() + 1)
+        submenu:SetBackdrop({
+          bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+          edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+          tile = true,
+          tileSize = 16,
+          edgeSize = 16,
+          insets = {left = 4, right = 4, top = 4, bottom = 4}
+        })
+        submenu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+        submenu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+        submenu:SetWidth(160)
+        submenu:SetHeight(98)
+        submenu:Hide()
+        submenu:EnableMouse(true)
+        
+        -- Close submenu when clicking outside
+        submenu:SetScript("OnShow", function()
+          if not submenu.backdrop then
+            local backdrop = CreateFrame("Frame", nil, UIParent)
+            backdrop:SetFrameStrata("FULLSCREEN")
+            backdrop:SetAllPoints()
+            backdrop:EnableMouse(true)
+            backdrop:SetScript("OnMouseDown", function()
+              submenu:Hide()
+              menu:Hide()
+            end)
+            submenu.backdrop = backdrop
           end
+          submenu.backdrop:Show()
+        end)
+        
+        submenu:SetScript("OnHide", function()
+          if submenu.backdrop then
+            submenu.backdrop:Hide()
+          end
+        end)
+        
+        local subYOffset = -8
+        
+        -- Helper to create submenu items
+        local function CreateSubMenuItem(text, onClick, yPos)
+          local item = CreateFrame("Button", nil, submenu)
+          item:SetWidth(150)
+          item:SetHeight(itemHeight)
+          item:SetPoint("TOP", submenu, "TOP", 0, yPos)
+          
+          local bg = item:CreateTexture(nil, "BACKGROUND")
+          bg:SetAllPoints()
+          bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+          bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+          item.bg = bg
+          
+          local fs = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+          fs:SetPoint("LEFT", item, "LEFT", 8, 0)
+          fs:SetText(text)
+          fs:SetTextColor(1, 1, 1)
+          item.fs = fs
+          
+          item:SetScript("OnEnter", function()
+            bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+          end)
+          
+          item:SetScript("OnLeave", function()
+            bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+          end)
+          
+          item:SetScript("OnClick", function()
+            onClick()
+            submenu:Hide()
+            menu:Hide()
+          end)
+          
+          return item
         end
-      end, menu, yOffset)
-      
-      yOffset = yOffset - itemHeight - itemSpacing
+        
+        -- Encounters (was Setup Encounters)
+        CreateSubMenuItem("Encounters", function()
+          OGRH.CloseAllWindows("OGRH_EncounterSetupFrame")
+          if OGRH.ShowEncounterSetup then
+            OGRH.ShowEncounterSetup()
+          end
+        end, subYOffset)
+        subYOffset = subYOffset - itemHeight - itemSpacing
+        
+        -- Trade (was Setup Trade)
+        CreateSubMenuItem("Trade", function()
+          if OGRH.ShowTradeSettings then
+            OGRH.ShowTradeSettings()
+          else
+            OGRH.Msg("Trade Settings module not loaded.")
+          end
+        end, subYOffset)
+        subYOffset = subYOffset - itemHeight - itemSpacing
+        
+        -- Consumes (was Setup Consumes)
+        CreateSubMenuItem("Consumes", function()
+          if OGRH.ShowConsumesSettings then
+            OGRH.ShowConsumesSettings()
+          else
+            OGRH.Msg("Consumes module not loaded.")
+          end
+        end, subYOffset)
+        subYOffset = subYOffset - itemHeight - itemSpacing
+        
+        -- Auto Promote
+        CreateSubMenuItem("Auto Promote", function()
+          if OGRH.ShowAutoPromote then
+            OGRH.ShowAutoPromote()
+          else
+            OGRH.Msg("Auto Promote module not loaded.")
+          end
+        end, subYOffset)
+        subYOffset = subYOffset - itemHeight - itemSpacing
+        
+        -- Data Management
+        CreateSubMenuItem("Data Management", function()
+          OGRH.CloseAllWindows("OGRH_DataManagementFrame")
+          if OGRH.Sync and OGRH.Sync.ShowDataManagementWindow then
+            OGRH.Sync.ShowDataManagementWindow()
+          end
+        end, subYOffset)
+        
+        settingsSubmenu = submenu
+        return submenu
+      end
       
       -- Invites item (requires RollFor 4.8.1)
       local invitesItem = CreateMenuItem("Invites", function()
@@ -4225,45 +4344,12 @@ local function CreateMinimapButton()
       
       yOffset = yOffset - itemHeight - itemSpacing
       
-      -- Addon Audit item
+      -- Audit Addons item
       local addonAuditItem = CreateMenuItem("Audit Addons", function()
         if OGRH.ShowAddonAudit then
           OGRH.ShowAddonAudit()
         else
           OGRH.Msg("Addon Audit module not loaded.")
-        end
-      end, menu, yOffset)
-      
-      yOffset = yOffset - itemHeight - itemSpacing
-      
-      -- Trade Settings item
-      local tradeSettingsItem = CreateMenuItem("Setup Trade", function()
-        if OGRH.ShowTradeSettings then
-          OGRH.ShowTradeSettings()
-        else
-          OGRH.Msg("Trade Settings module not loaded.")
-        end
-      end, menu, yOffset)
-      
-      yOffset = yOffset - itemHeight - itemSpacing
-      
-      -- Auto Promote item
-      local autoPromoteItem = CreateMenuItem("Auto Promote", function()
-        if OGRH.ShowAutoPromote then
-          OGRH.ShowAutoPromote()
-        else
-          OGRH.Msg("Auto Promote module not loaded.")
-        end
-      end, menu, yOffset)
-      
-      yOffset = yOffset - itemHeight - itemSpacing
-      
-      -- Consumes item
-      local consumesItem = CreateMenuItem("Setup Consumes", function()
-        if OGRH.ShowConsumesSettings then
-          OGRH.ShowConsumesSettings()
-        else
-          OGRH.Msg("Consumes module not loaded.")
         end
       end, menu, yOffset)
       
@@ -4306,23 +4392,61 @@ local function CreateMinimapButton()
       
       yOffset = yOffset - itemHeight - itemSpacing
       
-      -- Setup item
-      local setupItem = CreateMenuItem("Setup Encounters", function()
-        OGRH.CloseAllWindows("OGRH_EncounterSetupFrame")
-        
-        if OGRH.ShowEncounterSetup then
-          OGRH.ShowEncounterSetup()
-        end
+      -- Settings item (opens submenu)
+      local settingsItem = CreateMenuItem("Settings >", function()
+        -- Click handler - do nothing, mouseover handles submenu
       end, menu, yOffset)
-         
+      
+      -- Track if we should keep submenu open
+      local submenuCheckFrame
+      local function StartSubmenuCheck()
+        if not submenuCheckFrame then
+          submenuCheckFrame = CreateFrame("Frame")
+        end
+        submenuCheckFrame:SetScript("OnUpdate", function()
+          local submenu = CreateSettingsSubmenu()
+          -- Hide submenu if mouse is over neither the Settings item nor the submenu
+          if not MouseIsOver(settingsItem) and not MouseIsOver(submenu) then
+            submenu:Hide()
+            submenuCheckFrame:SetScript("OnUpdate", nil)
+          end
+        end)
+      end
+      
+      -- Show submenu on mouseover
+      settingsItem:SetScript("OnEnter", function()
+        settingsItem.bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+        local submenu = CreateSettingsSubmenu()
+        
+        -- Position submenu to the right of the Settings item
+        submenu:ClearAllPoints()
+        submenu:SetPoint("TOPLEFT", settingsItem, "TOPRIGHT", 0, 0)
+        submenu:Show()
+        
+        -- Start checking for mouse position
+        StartSubmenuCheck()
+      end)
+      
+      -- Keep background normal when leaving, but let OnUpdate handle hiding
+      settingsItem:SetScript("OnLeave", function()
+        settingsItem.bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+      end)
+      
+      -- Store reference for submenu management
+      menu.settingsItem = settingsItem
+      
       yOffset = yOffset - itemHeight - itemSpacing
       
-      -- Data Management item
-      local dataManagementItem = CreateMenuItem("Data Management", function()
-        OGRH.CloseAllWindows("OGRH_DataManagementFrame")
-        
-        if OGRH.Sync and OGRH.Sync.ShowDataManagementWindow then
-          OGRH.Sync.ShowDataManagementWindow()
+      -- Hide item
+      local toggleItem = CreateMenuItem("Hide", function()
+        if OGRH_Main then
+          if OGRH_Main:IsVisible() then
+            OGRH_Main:Hide()
+            OGRH_SV.ui.hidden = true
+          else
+            OGRH_Main:Show()
+            OGRH_SV.ui.hidden = false
+          end
         end
       end, menu, yOffset)
       
