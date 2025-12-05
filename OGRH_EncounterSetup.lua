@@ -6,7 +6,7 @@
 if not OGRH then OGRH = {} end
 
 -- Function to show Encounter Setup Window
-function OGRH.ShowEncounterSetup()
+function OGRH.ShowEncounterSetup(raidName, encounterName)
   -- Check if encounter data exists, if not show Share window
   OGRH.EnsureSV()
   if not OGRH_SV.encounterMgmt or 
@@ -57,6 +57,43 @@ function OGRH.ShowEncounterSetup()
     closeBtn:SetText("Close")
     OGRH.StyleButton(closeBtn)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
+    
+    -- Planning button (to the left of Close button)
+    local planningBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    planningBtn:SetWidth(70)
+    planningBtn:SetHeight(24)
+    planningBtn:SetPoint("RIGHT", closeBtn, "LEFT", -5, 0)
+    planningBtn:SetText("Planning")
+    OGRH.StyleButton(planningBtn)
+    frame.planningBtn = planningBtn
+    
+    planningBtn:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(this, "ANCHOR_TOP")
+      GameTooltip:SetText("Planning", 1, 1, 1)
+      GameTooltip:AddLine("Open Encounter Planning to assign players to roles for the selected encounter.", 0.8, 0.8, 0.8, 1)
+      GameTooltip:Show()
+    end)
+    planningBtn:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+    end)
+    
+    planningBtn:SetScript("OnClick", function()
+      local selectedRaid = frame.selectedRaid
+      local selectedEncounter = frame.selectedEncounter
+      
+      if not selectedRaid or not selectedEncounter then
+        OGRH.Msg("Select a raid and encounter first.")
+        return
+      end
+      
+      -- Close Encounter Setup window
+      frame:Hide()
+      
+      -- Open Encounter Planning with the selected raid and encounter
+      if OGRH.ShowEncounterPlanning then
+        OGRH.ShowEncounterPlanning(selectedRaid, selectedEncounter)
+      end
+    end)
     
     -- Content area
     local contentFrame = CreateFrame("Frame", nil, frame)
@@ -771,8 +808,20 @@ function OGRH.ShowEncounterSetup()
   end
   
   local frame = OGRH_EncounterSetupFrame
+  
+  -- Set specific raid and encounter if provided
+  if raidName and encounterName then
+    frame.selectedRaid = raidName
+    frame.selectedEncounter = encounterName
+    frame.RefreshRaidsList()
+    frame.RefreshEncountersList()
+    frame.RefreshRolesList()
+  else
+    frame:Show()
+    frame.RefreshRaidsList()
+  end
+  
   frame:Show()
-  frame.RefreshRaidsList()
 end
 
 -- StaticPopup dialogs for raid management

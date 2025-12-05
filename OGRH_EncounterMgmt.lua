@@ -440,6 +440,40 @@ function OGRH.ShowEncounterWindow(encounterName)
     title:SetText("Encounter Planning")
     frame.title = title
     
+    -- Status label (anchored to top left corner, hidden by default)
+    local statusLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    statusLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -12)
+    statusLabel:SetTextColor(0, 1, 0)  -- Green color
+    statusLabel:SetText("")
+    statusLabel:Hide()
+    frame.statusLabel = statusLabel
+    
+    -- Function to show status message temporarily
+    frame.ShowStatus = function(message, duration)
+      duration = duration or 10
+      statusLabel:SetText(message)
+      statusLabel:Show()
+      
+      -- Cancel any existing timer
+      if frame.statusTimer then
+        frame.statusTimer = nil
+      end
+      
+      -- Set up timer to hide after duration
+      frame.statusTimer = duration
+      frame:SetScript("OnUpdate", function()
+        if frame.statusTimer then
+          frame.statusTimer = frame.statusTimer - arg1
+          if frame.statusTimer <= 0 then
+            statusLabel:Hide()
+            statusLabel:SetText("")
+            frame.statusTimer = nil
+            frame:SetScript("OnUpdate", nil)
+          end
+        end
+      end)
+    end
+    
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     closeBtn:SetWidth(60)
@@ -465,7 +499,7 @@ function OGRH.ShowEncounterWindow(encounterName)
       if OGRH.IsRaidLead and OGRH.IsRaidLead() then
         GameTooltip:AddLine("Broadcast player assignments for the selected encounter to all raid members.", 0.8, 0.8, 0.8, 1)
       else
-        GameTooltip:AddLine("Request player assignments for the selected encounter from the raid lead.", 0.8, 0.8, 0.8, 1)
+        GameTooltip:AddLine("Only the raid lead can broadcast player assignments.", 0.8, 0.8, 0.8, 1)
       end
       
       GameTooltip:Show()
@@ -485,14 +519,55 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       if OGRH.IsRaidLead and OGRH.IsRaidLead() then
         -- Broadcast encounter assignments
-        OGRH.Msg("Broadcasting player assignments for " .. selectedEncounter .. "...")
+        if frame.ShowStatus then
+          frame.ShowStatus("Broadcasting player assignments for " .. selectedEncounter .. "...", 10)
+        end
         OGRH.BroadcastFullSync(selectedRaid, selectedEncounter)
       else
         -- Request encounter assignments
-        OGRH.Msg("Requesting encounter sync from raid lead...")
+        if frame.ShowStatus then
+          frame.ShowStatus("Requesting encounter sync from raid lead...", 10)
+        end
         if OGRH.RequestCurrentEncounterSync then
           OGRH.RequestCurrentEncounterSync()
         end
+      end
+    end)
+    
+    -- Edit Structure button (to the left of Structure Sync button)
+    local editStructureBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    editStructureBtn:SetWidth(95)
+    editStructureBtn:SetHeight(24)
+    editStructureBtn:SetPoint("RIGHT", encounterSyncBtn, "LEFT", -110, 0)
+    editStructureBtn:SetText("Edit Structure")
+    OGRH.StyleButton(editStructureBtn)
+    frame.editStructureBtn = editStructureBtn
+    
+    editStructureBtn:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(this, "ANCHOR_TOP")
+      GameTooltip:SetText("Edit Structure", 1, 1, 1)
+      GameTooltip:AddLine("Open Encounter Setup to edit roles, marks, and announcements for the selected encounter.", 0.8, 0.8, 0.8, 1)
+      GameTooltip:Show()
+    end)
+    editStructureBtn:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+    end)
+    
+    editStructureBtn:SetScript("OnClick", function()
+      local selectedRaid = frame.selectedRaid
+      local selectedEncounter = frame.selectedEncounter
+      
+      if not selectedRaid or not selectedEncounter then
+        OGRH.Msg("Select an encounter first.")
+        return
+      end
+      
+      -- Close Encounter Planning window
+      frame:Hide()
+      
+      -- Open Encounter Setup with the selected raid and encounter
+      if OGRH.ShowEncounterSetup then
+        OGRH.ShowEncounterSetup(selectedRaid, selectedEncounter)
       end
     end)
     
@@ -514,7 +589,7 @@ function OGRH.ShowEncounterWindow(encounterName)
         GameTooltip:AddLine(" ", 1, 1, 1)
         GameTooltip:AddLine("This does NOT include player assignments.", 0.6, 0.6, 0.6, 1)
       else
-        GameTooltip:AddLine("Request structure sync from the raid lead.", 0.8, 0.8, 0.8, 1)
+        GameTooltip:AddLine("Only the raid lead can broadcast structure sync.", 0.8, 0.8, 0.8, 1)
       end
       
       GameTooltip:Show()
@@ -534,11 +609,12 @@ function OGRH.ShowEncounterWindow(encounterName)
       
       if OGRH.IsRaidLead and OGRH.IsRaidLead() then
         -- Broadcast structure for selected encounter only
-        OGRH.Msg("Broadcasting structure sync for " .. selectedEncounter .. "...")
         if OGRH.BroadcastEncounterStructureSync then
           OGRH.BroadcastEncounterStructureSync(selectedRaid, selectedEncounter)
         else
-          OGRH.Msg("Structure sync function not available yet.")
+          if frame.ShowStatus then
+            frame.ShowStatus("Structure sync function not available yet.", 10)
+          end
         end
       else
         -- Non-raid-lead requests structure sync
@@ -1177,7 +1253,10 @@ function OGRH.ShowEncounterWindow(encounterName)
         -- Perform auto-assignment
         local assignmentCount = OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
         
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-assigned " .. assignmentCount .. " players from RollFor data.")
+        -- Show status in label instead of chat
+        if frame.ShowStatus then
+          frame.ShowStatus("Auto-assigned " .. assignmentCount .. " players from RollFor data.", 10)
+        end
         return
       end
       
@@ -1246,7 +1325,10 @@ function OGRH.ShowEncounterWindow(encounterName)
       -- Use same auto-assign logic as RollFor
       local assignmentCount = OGRH.AutoAssignRollForPlayers(frame, raidPlayers)
       
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-assigned " .. assignmentCount .. " players from raid.")
+      -- Show status in label instead of chat
+      if frame.ShowStatus then
+        frame.ShowStatus("Auto-assigned " .. assignmentCount .. " players from raid.", 10)
+      end
     end)
     
     -- Announce button (below Auto Assign, reduced height)
@@ -1512,7 +1594,9 @@ function OGRH.ShowEncounterWindow(encounterName)
     editToggleBtn:SetScript("OnClick", function()
       -- Check permission
       if not frame.editMode and (not OGRH.CanEdit or not OGRH.CanEdit()) then
-        OGRH.Msg("Only the raid lead can unlock editing.")
+        if frame.ShowStatus then
+          frame.ShowStatus("Only the raid lead can unlock editing.", 10)
+        end
         return
       end
       
@@ -3169,6 +3253,11 @@ function OGRH.ShowEncounterWindow(encounterName)
   -- Show the frame
   OGRH_EncounterFrame:Show()
   
+  -- Update button states based on raid lead status
+  if OGRH.UpdateRaidLeadUI then
+    OGRH.UpdateRaidLeadUI()
+  end
+  
   -- Refresh the raids list (this will validate and clear selectedRaid/selectedEncounter if needed)
   OGRH_EncounterFrame.RefreshRaidsList()
   
@@ -3846,6 +3935,46 @@ function OGRH.OpenEncounterPlanning()
   end
   
   OGRH_EncounterFrame:Show()
+end
+
+-- Function to show Encounter Planning with specific raid/encounter
+function OGRH.ShowEncounterPlanning(raidName, encounterName)
+  -- Close other windows
+  if OGRH_SRValidationFrame and OGRH_SRValidationFrame:IsVisible() then
+    OGRH_SRValidationFrame:Hide()
+  end
+  if OGRH_ShareFrame and OGRH_ShareFrame:IsVisible() then
+    OGRH_ShareFrame:Hide()
+  end
+  
+  -- Get current selection if not provided
+  if not raidName or not encounterName then
+    raidName, encounterName = OGRH.GetCurrentEncounter()
+  end
+  
+  if not OGRH_EncounterFrame then
+    OGRH.ShowEncounterWindow()
+  end
+  
+  -- Set the raid and encounter selection
+  if OGRH_EncounterFrame and raidName and encounterName then
+    OGRH_EncounterFrame.selectedRaid = raidName
+    OGRH_EncounterFrame.selectedEncounter = encounterName
+    -- Refresh to show the correct selection
+    if OGRH_EncounterFrame.RefreshRaidsList then
+      OGRH_EncounterFrame.RefreshRaidsList()
+    end
+    if OGRH_EncounterFrame.RefreshEncountersList then
+      OGRH_EncounterFrame.RefreshEncountersList()
+    end
+    if OGRH_EncounterFrame.RefreshRoleContainers then
+      OGRH_EncounterFrame.RefreshRoleContainers()
+    end
+  end
+  
+  if OGRH_EncounterFrame then
+    OGRH_EncounterFrame:Show()
+  end
 end
 
 function OGRH.ShowEncounterRaidMenu(anchorBtn)

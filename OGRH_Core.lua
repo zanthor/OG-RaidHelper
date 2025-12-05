@@ -238,7 +238,8 @@ function OGRH.CloseAllWindows(exceptFrame)
     "OGRH_TradeMenu",
     "OGRH_EncountersMenu",
     "OGRH_ConsumesFrame",
-    "OGRH_DataManagementFrame"
+    "OGRH_DataManagementFrame",
+    "OGRH_RaidLeadSelectionFrame"
   }
   
   for _, frameName in ipairs(windows) do
@@ -249,6 +250,168 @@ function OGRH.CloseAllWindows(exceptFrame)
       end
     end
   end
+end
+
+-- Show Structure Sync Panel (similar to OGRH_Sync panel)
+function OGRH.ShowStructureSyncPanel(isSender, encounterName)
+  if OGRH_StructureSyncPanel then
+    OGRH_StructureSyncPanel:Show()
+    OGRH.UpdateStructureSyncPanel(isSender, encounterName)
+    return
+  end
+  
+  local frame = CreateFrame("Frame", "OGRH_StructureSyncPanel", UIParent)
+  frame:SetWidth(200)
+  frame:SetHeight(90)
+  frame:SetFrameStrata("DIALOG")
+  frame:EnableMouse(false)
+  
+  frame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 12,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  frame:SetBackdropColor(0, 0, 0, 0.85)
+  
+  -- Position relative to main UI
+  frame.PositionFrame = function()
+    if not OGRH_Main or not OGRH_Main:IsVisible() then
+      frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+      return
+    end
+    
+    local screenHeight = UIParent:GetHeight()
+    local mainBottom = OGRH_Main:GetBottom()
+    local mainTop = OGRH_Main:GetTop()
+    local frameHeight = frame:GetHeight()
+    
+    frame:ClearAllPoints()
+    
+    -- Check if ConsumeMonitor is visible and positioned
+    local consumeOffset = 0
+    if OGRH_ConsumeMonitorFrame and OGRH_ConsumeMonitorFrame:IsVisible() then
+      consumeOffset = OGRH_ConsumeMonitorFrame:GetHeight() + 5
+    end
+    
+    -- Try to dock below main UI (with consume monitor offset)
+    if mainBottom and (mainBottom - frameHeight - consumeOffset) > 0 then
+      if consumeOffset > 0 then
+        frame:SetPoint("TOP", OGRH_ConsumeMonitorFrame, "BOTTOM", 0, 0)
+      else
+        frame:SetPoint("TOP", OGRH_Main, "BOTTOM", 0, 0)
+      end
+    -- Otherwise dock above main UI
+    elseif mainTop and (mainTop + frameHeight) < screenHeight then
+      frame:SetPoint("BOTTOM", OGRH_Main, "TOP", 0, 0)
+    else
+      frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+    end
+  end
+  
+  frame:PositionFrame()
+  
+  -- Register for main UI movement to reposition
+  frame:SetScript("OnUpdate", function()
+    if not this:IsVisible() then
+      return
+    end
+    
+    if this.lastMainPos then
+      local currentPos = OGRH_Main and OGRH_Main:GetLeft()
+      if currentPos and currentPos ~= this.lastMainPos then
+        this:PositionFrame()
+        this.lastMainPos = currentPos
+      end
+    else
+      this.lastMainPos = OGRH_Main and OGRH_Main:GetLeft()
+    end
+  end)
+  
+  -- Title
+  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOP", 0, -10)
+  title:SetText("Structure Sync")
+  frame.title = title
+  
+  -- Status text
+  local statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  statusText:SetPoint("TOP", title, "BOTTOM", 0, -8)
+  statusText:SetWidth(180)
+  statusText:SetJustifyH("CENTER")
+  frame.statusText = statusText
+  
+  OGRH.UpdateStructureSyncPanel(isSender, encounterName)
+  frame:Show()
+end
+
+-- Update Structure Sync Panel content
+function OGRH.UpdateStructureSyncPanel(isSender, encounterName)
+  if not OGRH_StructureSyncPanel then return end
+  
+  local frame = OGRH_StructureSyncPanel
+  local encounterText = encounterName and (" for " .. encounterName) or ""
+  
+  if isSender then
+    frame.statusText:SetText("Sending data" .. encounterText .. "...")
+  else
+    frame.statusText:SetText("Receiving data" .. encounterText .. "...")
+  end
+end
+
+-- Show Structure Sync progress
+function OGRH.ShowStructureSyncProgress(isSender, progress, complete, encounterName)
+  if not OGRH_StructureSyncPanel then
+    OGRH.ShowStructureSyncPanel(isSender, encounterName)
+  end
+  
+  local frame = OGRH_StructureSyncPanel
+  
+  -- Create or update progress bar
+  if not frame.progressBar then
+    local bar = CreateFrame("StatusBar", nil, frame)
+    bar:SetWidth(160)
+    bar:SetHeight(16)
+    bar:SetPoint("TOP", frame.statusText, "BOTTOM", 0, -10)
+    bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bar:SetStatusBarColor(0.2, 0.8, 0.2)
+    bar:SetMinMaxValues(0, 100)
+    
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(bar)
+    bg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+    
+    local text = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    text:SetPoint("CENTER", bar, "CENTER")
+    bar.text = text
+    
+    frame.progressBar = bar
+  end
+  
+  local bar = frame.progressBar
+  bar:SetValue(progress)
+  bar.text:SetText(string.format("%d%%", progress))
+  
+  if complete then
+    bar:SetStatusBarColor(0.2, 1, 0.2)
+    local encounterText = encounterName and (" for " .. encounterName) or ""
+    frame.statusText:SetText((isSender and "Sync Complete!" or "Data Received!") .. encounterText)
+    
+    -- Hide panel after 3 seconds
+    OGRH.ScheduleFunc(function()
+      if OGRH_StructureSyncPanel then
+        OGRH_StructureSyncPanel:Hide()
+      end
+    end, 3)
+  else
+    bar:SetStatusBarColor(0.2, 0.8, 0.2)
+  end
+  
+  bar:Show()
+  frame:Show()
 end
 
 -- Custom button styling with backdrop and rounded corners
@@ -2449,16 +2612,17 @@ addonFrame:SetScript("OnEvent", function()
                 OGRH.structureSyncTimer:SetScript("OnUpdate", nil)
                 if OGRH.waitingForStructureSync then
                   OGRH.waitingForStructureSync = false
-                  OGRH.Msg("Structure sync timed out.")
+                  if OGRH_StructureSyncPanel then
+                    OGRH_StructureSyncPanel:Hide()
+                  end
                 end
               end
             end)
           end
           
-          -- Progress notification every 10 chunks (reduce spam)
-          if math.mod(senderData.received, 10) == 0 and senderData.received < senderData.total then
-            OGRH.Msg("Receiving structure sync: " .. senderData.received .. "/" .. senderData.total .. " chunks...")
-          end
+          -- Update progress bar
+          local progress = math.floor((senderData.received / senderData.total) * 100)
+          OGRH.ShowStructureSyncProgress(false, progress, false, nil)
           
           -- Check if complete
           if senderData.received == senderData.total then
@@ -2475,7 +2639,7 @@ addonFrame:SetScript("OnEvent", function()
             -- Import the data
             if OGRH.ImportShareData then
               OGRH.ImportShareData(fullData)
-              OGRH.Msg("Structure sync complete from " .. sender .. ".")
+              OGRH.ShowStructureSyncProgress(false, 100, true, nil)
             end
             
             -- Refresh role containers if Encounter Planning window is open
@@ -2546,10 +2710,28 @@ addonFrame:SetScript("OnEvent", function()
           senderData.chunks[chunkIndex] = chunkData
           senderData.received = senderData.received + 1
           
-          -- Progress notification every 10 chunks (reduce spam)
-          if math.mod(senderData.received, 10) == 0 and senderData.received < senderData.total then
-            OGRH.Msg("Receiving structure sync: " .. senderData.received .. "/" .. senderData.total .. " chunks...")
+          -- Extract encounter name from first chunk if available
+          local encounterName = nil
+          if chunkIndex == 1 then
+            -- Try to parse encounter name from data structure
+            local raidStart = string.find(chunkData, '"raids"')
+            if raidStart then
+              local encounterStart = string.find(chunkData, '"encounter":', raidStart)
+              if encounterStart then
+                local nameStart = string.find(chunkData, '"', encounterStart + 12)
+                if nameStart then
+                  local nameEnd = string.find(chunkData, '"', nameStart + 1)
+                  if nameEnd then
+                    encounterName = string.sub(chunkData, nameStart + 1, nameEnd - 1)
+                  end
+                end
+              end
+            end
           end
+          
+          -- Update progress bar
+          local progress = math.floor((senderData.received / senderData.total) * 100)
+          OGRH.ShowStructureSyncProgress(false, progress, false, encounterName)
           
           -- Check if complete
           if senderData.received == senderData.total then
@@ -2566,7 +2748,7 @@ addonFrame:SetScript("OnEvent", function()
             -- Import the data (single encounter mode)
             if OGRH.ImportShareData then
               OGRH.ImportShareData(fullData, true)
-              OGRH.Msg("Structure sync complete from " .. sender .. ".")
+              OGRH.ShowStructureSyncProgress(false, 100, true, encounterName)
             end
             
             -- Refresh role containers if Encounter Planning window is open
@@ -3116,7 +3298,8 @@ function OGRH.BroadcastStructureSync()
   local chunkSize = 200
   local totalChunks = math.ceil(string.len(data) / chunkSize)
   
-  OGRH.Msg("Broadcasting structure sync to raid...")
+  -- Show sync panel
+  OGRH.ShowStructureSyncPanel(true, nil)
   
   -- Send chunks with delay between them
   local chunkIndex = 0
@@ -3137,13 +3320,12 @@ function OGRH.BroadcastStructureSync()
         local msg = "STRUCTURE_SYNC_CHUNK;" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
         SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
         
-        -- Progress notification every 10 chunks
-        if math.mod(chunkIndex, 10) == 0 then
-          OGRH.Msg("Sending structure sync: " .. chunkIndex .. "/" .. totalChunks .. " chunks...")
-        end
+        -- Update progress bar
+        local progress = math.floor((chunkIndex / totalChunks) * 100)
+        OGRH.ShowStructureSyncProgress(true, progress, false, nil)
       else
         chunkTimer:SetScript("OnUpdate", nil)
-        OGRH.Msg("Structure sync complete (" .. totalChunks .. " chunks sent).")
+        OGRH.ShowStructureSyncProgress(true, 100, true, nil)
       end
     end
   end)
@@ -3171,7 +3353,8 @@ function OGRH.BroadcastEncounterStructureSync(raidName, encounterName, requester
   local chunkSize = 200
   local totalChunks = math.ceil(string.len(data) / chunkSize)
   
-  OGRH.Msg("Broadcasting structure sync for " .. encounterName .. " to raid...")
+  -- Show sync panel
+  OGRH.ShowStructureSyncPanel(true, encounterName)
   
   -- Send chunks with delay between them
   local chunkIndex = 0
@@ -3194,13 +3377,12 @@ function OGRH.BroadcastEncounterStructureSync(raidName, encounterName, requester
         local msg = "ENCOUNTER_STRUCTURE_SYNC_CHUNK;" .. requesterName .. ";" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
         SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
         
-        -- Progress notification every 10 chunks
-        if math.mod(chunkIndex, 10) == 0 then
-          OGRH.Msg("Sending structure sync: " .. chunkIndex .. "/" .. totalChunks .. " chunks...")
-        end
+        -- Update progress bar
+        local progress = math.floor((chunkIndex / totalChunks) * 100)
+        OGRH.ShowStructureSyncProgress(true, progress, false, encounterName)
       else
         chunkTimer:SetScript("OnUpdate", nil)
-        OGRH.Msg("Structure sync complete (" .. totalChunks .. " chunks sent).")
+        OGRH.ShowStructureSyncProgress(true, 100, true, encounterName)
       end
     end
   end)

@@ -102,9 +102,7 @@ function OGRH.SetRaidLead(playerName)
   OGRH.UpdateRaidLeadUI()
   
   local selfName = UnitName("player")
-  if playerName == selfName then
-    OGRH.Msg("|cff00ff00You are now the Raid Lead for encounter planning.|r")
-  else
+  if playerName ~= selfName then
     OGRH.Msg("Raid Lead set to: " .. playerName)
   end
 end
@@ -175,11 +173,7 @@ function OGRH.PollAddonUsers()
   -- Keep poll open for 5 seconds to accept responses
   OGRH.ScheduleFunc(function()
     OGRH.RaidLead.pollInProgress = false
-    local count = table.getn(OGRH.RaidLead.pollResponses)
-    OGRH.Msg("Poll complete: " .. count .. " player(s) with addon detected.")
   end, 5)
-  
-  OGRH.Msg("Polling raid for addon users...")
 end
 
 -- Handle poll response
@@ -261,6 +255,8 @@ end
 
 -- Show raid lead selection UI
 function OGRH.ShowRaidLeadSelectionUI()
+  OGRH.CloseAllWindows("OGRH_RaidLeadSelectionFrame")
+  
   if OGRH_RaidLeadSelectionFrame then
     OGRH_RaidLeadSelectionFrame:Show()
     OGRH_RaidLeadSelectionFrame.Rebuild()
@@ -686,13 +682,37 @@ end
 -- Update UI elements based on raid lead status
 function OGRH.UpdateRaidLeadUI()
   local canEdit = OGRH.CanEdit()
+  local isRaidLead = OGRH.IsRaidLead()
   
   -- Update sync button text
   if OGRH.syncButton then
-    if OGRH.IsRaidLead() then
+    if isRaidLead then
       OGRH.syncButton:SetText("|cff00ff00Sync|r")
     else
       OGRH.syncButton:SetText("|cffffff00Sync|r")
+    end
+  end
+  
+  -- Enable/disable Structure Sync and Encounter Sync buttons
+  if OGRH_EncounterFrame then
+    if OGRH_EncounterFrame.structureSyncBtn then
+      if isRaidLead then
+        OGRH_EncounterFrame.structureSyncBtn:Enable()
+        OGRH_EncounterFrame.structureSyncBtn:SetAlpha(1.0)
+      else
+        OGRH_EncounterFrame.structureSyncBtn:Disable()
+        OGRH_EncounterFrame.structureSyncBtn:SetAlpha(0.5)
+      end
+    end
+    
+    if OGRH_EncounterFrame.encounterSyncBtn then
+      if isRaidLead then
+        OGRH_EncounterFrame.encounterSyncBtn:Enable()
+        OGRH_EncounterFrame.encounterSyncBtn:SetAlpha(1.0)
+      else
+        OGRH_EncounterFrame.encounterSyncBtn:Disable()
+        OGRH_EncounterFrame.encounterSyncBtn:SetAlpha(0.5)
+      end
     end
   end
   

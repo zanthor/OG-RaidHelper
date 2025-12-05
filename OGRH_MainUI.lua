@@ -161,7 +161,6 @@ syncBtn:SetScript("OnClick", function()
     -- Set self as raid lead and broadcast
     if OGRH.SetRaidLead then
       OGRH.SetRaidLead(playerName)
-      OGRH.Msg("You are now the raid lead.")
     end
     return
   end
