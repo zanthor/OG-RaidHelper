@@ -448,7 +448,7 @@ function OGRH.Sync.ShowDataManagementWindow(forceRecreate)
     -- Create left list panel using standard template
     local listWidth = 175
     local listHeight = frame:GetHeight() - 85
-    local outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGRH.CreateStyledScrollList(frame, listWidth, listHeight)
+    local outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGRH.CreateStyledScrollList(frame, listWidth, listHeight, true)
     outerFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 17, -75)
     
     frame.scrollChild = scrollChild
@@ -947,18 +947,8 @@ function OGRH.Sync.RefreshDataManagementList()
   local contentHeight = math.abs(yOffset) + 5
   scrollChild:SetHeight(math.max(contentHeight, 1))
   
-  -- Update scrollbar
-  if OGRH_DataManagementFrame.scrollBar and OGRH_DataManagementFrame.scrollFrame then
-    local scrollBar = OGRH_DataManagementFrame.scrollBar
-    local scrollFrame = OGRH_DataManagementFrame.scrollFrame
-    local maxScroll = scrollChild:GetHeight() - scrollFrame:GetHeight()
-    if maxScroll > 0 then
-      scrollBar:SetMinMaxValues(0, maxScroll)
-      scrollBar:Show()
-    else
-      scrollBar:Hide()
-    end
-  end
+  -- Scrollbar is always hidden for this list (passed hideScrollBar=true to template)
+  -- No need to show/hide dynamically
 end
 
 -- Calculate checksum for a data table
