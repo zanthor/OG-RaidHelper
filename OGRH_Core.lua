@@ -979,6 +979,20 @@ function OGRH.BroadcastEncounterSelection(raidName, encounterName)
   
   local message = "ENCOUNTER_SELECT;" .. raidName .. ";" .. encounterName
   SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
+  
+  -- After broadcasting the encounter selection, sync the assignments for the new encounter
+  -- Only the designated raid admin should push assignments
+  -- Leaders/Assistants who are not raid admin should request a sync instead
+  if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+    -- This player is the designated raid admin - broadcast full sync
+    if OGRH.BroadcastFullEncounterSync then
+      OGRH.BroadcastFullEncounterSync()
+    end
+  else
+    -- This player is a leader/assistant but not raid admin - request sync from raid admin
+    local requestMsg = "REQUEST_ENCOUNTER_SYNC;" .. raidName .. ";" .. encounterName
+    SendAddonMessage(OGRH.ADDON_PREFIX, requestMsg, "RAID")
+  end
 end
 
 -- Helper function to hash a role's complete settings (used by checksum calculations)
@@ -1375,46 +1389,15 @@ function OGRH.BroadcastFullEncounterSync()
     syncData.assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
   end
   
-  -- Serialize
-  local serialized = OGRH.Serialize(syncData)
-  local dataLen = string.len(serialized)
-  
-  -- Check if we need to chunk (message limit is ~240 bytes including prefix)
-  if dataLen > 220 then
-    -- Send as chunks
-    local chunkSize = 200
-    local totalChunks = math.ceil(dataLen / chunkSize)
-    
-    -- Send chunks with delay
-    local chunkIndex = 0
-    local chunkTimer = CreateFrame("Frame")
-    local chunkElapsed = 0
-    
-    chunkTimer:SetScript("OnUpdate", function()
-      chunkElapsed = chunkElapsed + arg1
-      if chunkElapsed >= 0.3 then
-        chunkElapsed = 0
-        chunkIndex = chunkIndex + 1
-        
-        if chunkIndex <= totalChunks then
-          local startPos = (chunkIndex - 1) * chunkSize + 1
-          local endPos = math.min(chunkIndex * chunkSize, dataLen)
-          local chunk = string.sub(serialized, startPos, endPos)
-          
-          local msg = "ENCOUNTER_SYNC_CHUNK;" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
-          SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
-          
-          -- Progress notification every 10 chunks
-          if math.mod(chunkIndex, 10) == 0 then
-            OGRH.Msg("Sending encounter sync: " .. chunkIndex .. "/" .. totalChunks .. " chunks...")
-          end
-        else
-          chunkTimer:SetScript("OnUpdate", nil)
-        end
-      end
-    end)
+  -- Use OGRH.Sync.SendChunked to handle automatic chunking
+  if OGRH.Sync and OGRH.Sync.SendChunked then
+    local success = OGRH.Sync.SendChunked(syncData, OGRH.Sync.MessageType.ENCOUNTER_ASSIGNMENTS, "RAID")
+    if not success then
+      OGRH.Msg("Failed to send encounter sync.")
+    end
   else
-    -- Send in single message
+    -- Fallback to old method if Sync module not loaded
+    local serialized = OGRH.Serialize(syncData)
     SendAddonMessage(OGRH.ADDON_PREFIX, "ENCOUNTER_SYNC;" .. serialized, "RAID")
   end
 end
@@ -1429,6 +1412,266 @@ function OGRH.BroadcastFullSync(raid, encounter)
   
   -- Call the new sync function
   OGRH.BroadcastFullEncounterSync()
+end
+
+-- Handler for receiving encounter assignment syncs (used by OGRH.Sync.RouteMessage)
+function OGRH.HandleAssignmentSync(sender, syncData)
+  -- Block sync from self
+  local playerName = UnitName("player")
+  if sender == playerName then
+    return
+  end
+  
+  -- Check if sync is locked (send only mode) - but allow from designated raid lead
+  OGRH.EnsureSV()
+  local isFromRaidLead = (OGRH.RaidLead and OGRH.RaidLead.currentLead and sender == OGRH.RaidLead.currentLead)
+  
+  if OGRH_SV.syncLocked and not isFromRaidLead then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r Ignored encounter sync from " .. sender .. " (sync is locked)")
+    return
+  end
+  
+  -- Check if sender is raid leader or assistant (or designated raid lead)
+  local isAuthorized = isFromRaidLead
+  local numRaidMembers = GetNumRaidMembers()
+  
+  if numRaidMembers > 0 then
+    for i = 1, numRaidMembers do
+      local name, rank = GetRaidRosterInfo(i)
+      if name == sender and (rank == 2 or rank == 1) then
+        -- rank 2 = leader, rank 1 = assistant
+        isAuthorized = true
+        break
+      end
+    end
+  end
+  
+  if not isAuthorized then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Ignored encounter sync from " .. sender .. " (not raid leader or assistant)")
+    return
+  end
+  
+  if not syncData or not syncData.raid or not syncData.encounter then
+    return
+  end
+  
+  -- Initialize structures
+  OGRH.EnsureSV()
+  if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, encounters = {}} end
+  if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
+  if not OGRH_SV.encounterMgmt.encounters then OGRH_SV.encounterMgmt.encounters = {} end
+  if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
+  
+  -- Add raid to raids list if it doesn't exist
+  local raidExists = false
+  for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+    if OGRH_SV.encounterMgmt.raids[i] == syncData.raid then
+      raidExists = true
+      break
+    end
+  end
+  if not raidExists then
+    table.insert(OGRH_SV.encounterMgmt.raids, syncData.raid)
+  end
+  
+  -- Initialize encounter list for this raid if needed
+  if not OGRH_SV.encounterMgmt.encounters[syncData.raid] then
+    OGRH_SV.encounterMgmt.encounters[syncData.raid] = {}
+  end
+  
+  -- Add encounter to raid's encounter list if it doesn't exist
+  local encounterExists = false
+  for i = 1, table.getn(OGRH_SV.encounterMgmt.encounters[syncData.raid]) do
+    if OGRH_SV.encounterMgmt.encounters[syncData.raid][i] == syncData.encounter then
+      encounterExists = true
+      break
+    end
+  end
+  if not encounterExists then
+    table.insert(OGRH_SV.encounterMgmt.encounters[syncData.raid], syncData.encounter)
+  end
+  
+  -- Initialize assignment storage
+  if not OGRH_SV.encounterAssignments[syncData.raid] then
+    OGRH_SV.encounterAssignments[syncData.raid] = {}
+  end
+  
+  -- Validate structure checksum (required - assignments only)
+  if not syncData.structureChecksum then
+    -- No structure checksum - reject (old format no longer supported)
+    OGRH.Msg("Received sync without structure validation - ignored.")
+    OGRH.Msg("Raid lead needs to update their addon.")
+    return
+  end
+  
+  local localChecksum = OGRH.CalculateStructureChecksum(syncData.raid, syncData.encounter)
+  
+  if localChecksum ~= syncData.structureChecksum then
+    OGRH.Msg("Assignment sync error: Structure mismatch!")
+    OGRH.Msg("Local checksum: " .. tostring(localChecksum) .. " | Leader checksum: " .. tostring(syncData.structureChecksum))
+    OGRH.Msg("Your encounter structure is out of date.")
+    OGRH.Msg("Use Import/Export > Sync to update from raid lead.")
+    
+    -- Mark sync button as error (set red)
+    OGRH.syncError = true
+    if OGRH.syncButton then
+      OGRH.syncButton:SetText("|cffff0000Sync|r")
+    end
+    return
+  end
+  
+  -- Clear any previous error
+  OGRH.syncError = false
+  if OGRH.syncButton then
+    OGRH.syncButton:SetText("Sync")
+  end
+  
+  -- Apply assignments only (NO ROLES, NO MARKS, NO NUMBERS - use Import/Export > Sync for structure)
+  if syncData.assignments then
+    OGRH_SV.encounterAssignments[syncData.raid][syncData.encounter] = syncData.assignments
+  end
+  
+  -- Refresh raid/encounter lists in open windows
+  if OGRH_EncounterFrame then
+    if OGRH_EncounterFrame.RefreshRaidsList then
+      OGRH_EncounterFrame.RefreshRaidsList()
+    end
+    if OGRH_EncounterFrame.RefreshEncountersList then
+      OGRH_EncounterFrame.RefreshEncountersList()
+    end
+  end
+  if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
+    OGRH_EncounterSetupFrame.RefreshRaidsList()
+  end
+  
+  -- Refresh UI if it's open and showing this encounter
+  if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+    if OGRH_EncounterFrame.selectedRaid == syncData.raid and
+       OGRH_EncounterFrame.selectedEncounter == syncData.encounter then
+      if OGRH_EncounterFrame.RefreshRoleContainers then
+        OGRH_EncounterFrame.RefreshRoleContainers()
+      end
+    end
+  end
+end
+
+-- Handler for receiving encounter structure syncs (used by OGRH.Sync.RouteMessage)
+function OGRH.HandleEncounterSync(sender, syncData)
+  -- Block sync from self
+  local playerName = UnitName("player")
+  if sender == playerName then
+    return
+  end
+  
+  if not syncData then
+    return
+  end
+  
+  -- Handle structure sync
+  if syncData.type == "STRUCTURE_SYNC" and syncData.data then
+    if OGRH.ImportShareData then
+      OGRH.ImportShareData(syncData.data, sender)
+    end
+  elseif syncData.type == "ENCOUNTER_STRUCTURE_SYNC" and syncData.data then
+    -- Handle encounter-specific structure sync
+    if OGRH.ImportShareData then
+      -- Check if we're the requester (if specified)
+      if syncData.requester == "" or syncData.requester == playerName then
+        OGRH.ImportShareData(syncData.data, sender)
+      end
+    end
+  end
+end
+
+-------------------------------------------------------------------------------
+-- RolesUI Auto-Sync System
+-------------------------------------------------------------------------------
+
+-- Calculate checksum for RolesUI data
+function OGRH.CalculateRolesUIChecksum()
+  OGRH.EnsureSV()
+  
+  if not OGRH_SV.roles then
+    return "0"
+  end
+  
+  -- Create a sorted list of role assignments for consistent checksum
+  local sortedRoles = {}
+  for playerName, role in pairs(OGRH_SV.roles) do
+    table.insert(sortedRoles, playerName .. "=" .. role)
+  end
+  table.sort(sortedRoles)
+  
+  local roleString = table.concat(sortedRoles, "|")
+  
+  -- Simple checksum calculation
+  local checksum = 0
+  for i = 1, string.len(roleString) do
+    checksum = checksum + string.byte(roleString, i)
+  end
+  
+  return tostring(checksum)
+end
+
+-- Request RolesUI sync check from raid admin (called when player opens RolesUI)
+function OGRH.RequestRolesUISync()
+  if GetNumRaidMembers() == 0 then
+    return  -- Not in raid, no sync needed
+  end
+  
+  -- Don't send check if we're the raid admin (we're the source of truth)
+  if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+    return
+  end
+  
+  local myChecksum = OGRH.CalculateRolesUIChecksum()
+  
+  -- Send checksum to raid admin
+  SendAddonMessage(OGRH.ADDON_PREFIX, "ROLESUI_CHECK;" .. myChecksum, "RAID")
+end
+
+-- Broadcast full RolesUI data to raid (called by admin if checksum mismatch)
+function OGRH.BroadcastRolesUISync()
+  if GetNumRaidMembers() == 0 then
+    return
+  end
+  
+  OGRH.EnsureSV()
+  
+  -- Build sync data package
+  local syncData = {
+    roles = OGRH_SV.roles or {}
+  }
+  
+  -- Use OGRH.Sync.SendChunked to handle automatic chunking
+  local success = OGRH.Sync.SendChunked(syncData, "ROLESUI_SYNC", "RAID")
+  if not success then
+    OGRH.Msg("Failed to send RolesUI sync.")
+  end
+end
+
+-- Handler for receiving RolesUI sync (used by OGRH.Sync.RouteMessage and direct messages)
+function OGRH.HandleRolesUISync(sender, syncData)
+  -- Block sync from self
+  local playerName = UnitName("player")
+  if sender == playerName then
+    return
+  end
+  
+  if not syncData or not syncData.roles then
+    return
+  end
+  
+  -- Apply roles data
+  OGRH.EnsureSV()
+  OGRH_SV.roles = syncData.roles
+  
+  -- Refresh RolesUI if it exists (regardless of visibility check, as it may be inaccurate)
+  if OGRH.rolesFrame and OGRH.rolesFrame.UpdatePlayerLists then
+    OGRH.rolesFrame.UpdatePlayerLists(false)
+  elseif OGRH.RenderRoles then
+    OGRH.RenderRoles()
+  end
 end
 
 -- Simple table serialization for addon messages
@@ -1894,6 +2137,41 @@ addonFrame:SetScript("OnEvent", function()
             end
           end
         end
+      -- Handle RolesUI checksum check
+      elseif string.sub(message, 1, 14) == "ROLESUI_CHECK;" then
+        -- Block check from self (raid admin shouldn't respond to their own check)
+        local playerName = UnitName("player")
+        if sender == playerName then
+          return
+        end
+        
+        -- Only respond if we're the raid lead or assistant
+        local isAuthorized = false
+        if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+          isAuthorized = true
+        else
+          -- Check if we're an assistant
+          local numRaid = GetNumRaidMembers()
+          if numRaid > 0 then
+            for i = 1, numRaid do
+              local name, rank = GetRaidRosterInfo(i)
+              if name == UnitName("player") and rank == 1 then
+                isAuthorized = true
+                break
+              end
+            end
+          end
+        end
+        
+        if isAuthorized then
+          local theirChecksum = string.sub(message, 15)
+          local myChecksum = OGRH.CalculateRolesUIChecksum()
+          
+          -- If checksums don't match, broadcast full sync
+          if tostring(theirChecksum) ~= tostring(myChecksum) then
+            OGRH.BroadcastRolesUISync()
+          end
+        end
       -- Handle ReadHelper sync request (from OG-ReadHelper addon)
       elseif message == "READHELPER_SYNC_REQUEST" then
         -- Only respond if we're the raid lead
@@ -2222,11 +2500,17 @@ addonFrame:SetScript("OnEvent", function()
           local raidName = string.sub(content, 1, semicolonPos - 1)
           local encounterName = string.sub(content, semicolonPos + 1)
           
-          -- Check if sender is raid leader or assistant
+          -- Check if sender is raid leader, assistant, or designated raid admin
           local isAuthorized = false
           local numRaidMembers = GetNumRaidMembers()
           
-          if numRaidMembers > 0 then
+          -- Check if sender is the designated raid admin
+          if OGRH.RaidLead and OGRH.RaidLead.currentLead == sender then
+            isAuthorized = true
+          end
+          
+          -- Check if sender is raid leader or assistant
+          if not isAuthorized and numRaidMembers > 0 then
             for i = 1, numRaidMembers do
               local name, rank = GetRaidRosterInfo(i)
               if name == sender and (rank == 2 or rank == 1) then
@@ -2238,7 +2522,7 @@ addonFrame:SetScript("OnEvent", function()
           end
           
           if not isAuthorized then
-            -- Silently ignore - not from leader/assistant
+            -- Silently ignore - not from leader/assistant/raid admin
             return
           end
           
@@ -2276,6 +2560,46 @@ addonFrame:SetScript("OnEvent", function()
                 OGRH.ShowConsumeMonitor()
               end
             end
+          end
+        end
+      -- Handle request for encounter sync (from leaders/assistants who aren't raid admin)
+      elseif string.sub(message, 1, 23) == "REQUEST_ENCOUNTER_SYNC;" then
+        -- Only the raid admin should respond to sync requests
+        if not OGRH.IsRaidLead or not OGRH.IsRaidLead() then
+          return
+        end
+        
+        -- Parse raid and encounter names from request
+        local content = string.sub(message, 24)
+        local semicolonPos = string.find(content, ";", 1, true)
+        
+        if semicolonPos then
+          local requestedRaid = string.sub(content, 1, semicolonPos - 1)
+          local requestedEncounter = string.sub(content, semicolonPos + 1)
+          
+          -- Get current selection to see if we need to update
+          local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+          
+          -- Update to the requested encounter if different
+          if currentRaid ~= requestedRaid or currentEncounter ~= requestedEncounter then
+            OGRH.EnsureSV()
+            if not OGRH_SV.ui then OGRH_SV.ui = {} end
+            OGRH_SV.ui.selectedRaid = requestedRaid
+            OGRH_SV.ui.selectedEncounter = requestedEncounter
+            
+            -- Update UI
+            if OGRH.UpdateEncounterNavButton then
+              OGRH.UpdateEncounterNavButton()
+            end
+            
+            if OGRH.ShowConsumeMonitor then
+              OGRH.ShowConsumeMonitor()
+            end
+          end
+          
+          -- Broadcast the full encounter sync for this encounter
+          if OGRH.BroadcastFullEncounterSync then
+            OGRH.BroadcastFullEncounterSync()
           end
         end
       -- Handle assignment update
@@ -3294,41 +3618,58 @@ function OGRH.BroadcastStructureSync()
     return
   end
   
-  local data = OGRH.ExportShareData()
-  local chunkSize = 200
-  local totalChunks = math.ceil(string.len(data) / chunkSize)
+  local exportedData = OGRH.ExportShareData()
   
   -- Show sync panel
   OGRH.ShowStructureSyncPanel(true, nil)
   
-  -- Send chunks with delay between them
-  local chunkIndex = 0
-  local chunkTimer = CreateFrame("Frame")
-  local chunkElapsed = 0
-  
-  chunkTimer:SetScript("OnUpdate", function()
-    chunkElapsed = chunkElapsed + arg1
-    if chunkElapsed >= 0.5 then
-      chunkElapsed = 0
-      chunkIndex = chunkIndex + 1
-      
-      if chunkIndex <= totalChunks then
-        local startPos = (chunkIndex - 1) * chunkSize + 1
-        local endPos = math.min(chunkIndex * chunkSize, string.len(data))
-        local chunk = string.sub(data, startPos, endPos)
-        
-        local msg = "STRUCTURE_SYNC_CHUNK;" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
-        SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
-        
-        -- Update progress bar
-        local progress = math.floor((chunkIndex / totalChunks) * 100)
-        OGRH.ShowStructureSyncProgress(true, progress, false, nil)
-      else
-        chunkTimer:SetScript("OnUpdate", nil)
-        OGRH.ShowStructureSyncProgress(true, 100, true, nil)
-      end
+  -- Use OGRH.Sync.SendChunked to handle automatic chunking
+  if OGRH.Sync and OGRH.Sync.SendChunked then
+    -- For structure sync, we need to send the raw string data, so we wrap it
+    local syncData = {
+      type = "STRUCTURE_SYNC",
+      data = exportedData
+    }
+    local success = OGRH.Sync.SendChunked(syncData, OGRH.Sync.MessageType.ENCOUNTER_STRUCTURE, "RAID")
+    if success then
+      OGRH.ShowStructureSyncProgress(true, 100, true, nil)
+    else
+      OGRH.Msg("Failed to send structure sync.")
     end
-  end)
+  else
+    -- Fallback to old method if Sync module not loaded
+    local chunkSize = 200
+    local totalChunks = math.ceil(string.len(exportedData) / chunkSize)
+    
+    -- Send chunks with delay between them
+    local chunkIndex = 0
+    local chunkTimer = CreateFrame("Frame")
+    local chunkElapsed = 0
+    
+    chunkTimer:SetScript("OnUpdate", function()
+      chunkElapsed = chunkElapsed + arg1
+      if chunkElapsed >= 0.5 then
+        chunkElapsed = 0
+        chunkIndex = chunkIndex + 1
+        
+        if chunkIndex <= totalChunks then
+          local startPos = (chunkIndex - 1) * chunkSize + 1
+          local endPos = math.min(chunkIndex * chunkSize, string.len(exportedData))
+          local chunk = string.sub(exportedData, startPos, endPos)
+          
+          local msg = "STRUCTURE_SYNC_CHUNK;" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
+          SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
+          
+          -- Update progress bar
+          local progress = math.floor((chunkIndex / totalChunks) * 100)
+          OGRH.ShowStructureSyncProgress(true, progress, false, nil)
+        else
+          chunkTimer:SetScript("OnUpdate", nil)
+          OGRH.ShowStructureSyncProgress(true, 100, true, nil)
+        end
+      end
+    end)
+  end
 end
 
 -- Broadcast structure sync for a single encounter (raid lead only)
@@ -3349,43 +3690,61 @@ function OGRH.BroadcastEncounterStructureSync(raidName, encounterName, requester
     return
   end
   
-  local data = OGRH.ExportEncounterShareData(raidName, encounterName)
-  local chunkSize = 200
-  local totalChunks = math.ceil(string.len(data) / chunkSize)
+  local exportedData = OGRH.ExportEncounterShareData(raidName, encounterName)
+  local requesterName = requester or ""  -- Track who requested this
   
   -- Show sync panel
   OGRH.ShowStructureSyncPanel(true, encounterName)
   
-  -- Send chunks with delay between them
-  local chunkIndex = 0
-  local chunkTimer = CreateFrame("Frame")
-  local chunkElapsed = 0
-  local requesterName = requester or ""  -- Track who requested this
-  
-  chunkTimer:SetScript("OnUpdate", function()
-    chunkElapsed = chunkElapsed + arg1
-    if chunkElapsed >= 0.5 then
-      chunkElapsed = 0
-      chunkIndex = chunkIndex + 1
-      
-      if chunkIndex <= totalChunks then
-        local startPos = (chunkIndex - 1) * chunkSize + 1
-        local endPos = math.min(chunkIndex * chunkSize, string.len(data))
-        local chunk = string.sub(data, startPos, endPos)
-        
-        -- Include requester name so others can filter
-        local msg = "ENCOUNTER_STRUCTURE_SYNC_CHUNK;" .. requesterName .. ";" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
-        SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
-        
-        -- Update progress bar
-        local progress = math.floor((chunkIndex / totalChunks) * 100)
-        OGRH.ShowStructureSyncProgress(true, progress, false, encounterName)
-      else
-        chunkTimer:SetScript("OnUpdate", nil)
-        OGRH.ShowStructureSyncProgress(true, 100, true, encounterName)
-      end
+  -- Use OGRH.Sync.SendChunked to handle automatic chunking
+  if OGRH.Sync and OGRH.Sync.SendChunked then
+    -- For encounter structure sync, we need to send the raw string data
+    local syncData = {
+      type = "ENCOUNTER_STRUCTURE_SYNC",
+      requester = requesterName,
+      data = exportedData
+    }
+    local success = OGRH.Sync.SendChunked(syncData, OGRH.Sync.MessageType.ENCOUNTER_STRUCTURE, "RAID")
+    if success then
+      OGRH.ShowStructureSyncProgress(true, 100, true, encounterName)
+    else
+      OGRH.Msg("Failed to send encounter structure sync.")
     end
-  end)
+  else
+    -- Fallback to old method if Sync module not loaded
+    local chunkSize = 200
+    local totalChunks = math.ceil(string.len(exportedData) / chunkSize)
+    
+    -- Send chunks with delay between them
+    local chunkIndex = 0
+    local chunkTimer = CreateFrame("Frame")
+    local chunkElapsed = 0
+    
+    chunkTimer:SetScript("OnUpdate", function()
+      chunkElapsed = chunkElapsed + arg1
+      if chunkElapsed >= 0.5 then
+        chunkElapsed = 0
+        chunkIndex = chunkIndex + 1
+        
+        if chunkIndex <= totalChunks then
+          local startPos = (chunkIndex - 1) * chunkSize + 1
+          local endPos = math.min(chunkIndex * chunkSize, string.len(exportedData))
+          local chunk = string.sub(exportedData, startPos, endPos)
+          
+          -- Include requester name so others can filter
+          local msg = "ENCOUNTER_STRUCTURE_SYNC_CHUNK;" .. requesterName .. ";" .. chunkIndex .. ";" .. totalChunks .. ";" .. chunk
+          SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
+          
+          -- Update progress bar
+          local progress = math.floor((chunkIndex / totalChunks) * 100)
+          OGRH.ShowStructureSyncProgress(true, progress, false, encounterName)
+        else
+          chunkTimer:SetScript("OnUpdate", nil)
+          OGRH.ShowStructureSyncProgress(true, 100, true, encounterName)
+        end
+      end
+    end)
+  end
 end
 
 -- Export data to string

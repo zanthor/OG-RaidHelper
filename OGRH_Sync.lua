@@ -301,6 +301,12 @@ function OGRH.Sync.RouteMessage(sender, messageType, data)
     if OGRH.HandleReadHelperSync then
       OGRH.HandleReadHelperSync(sender, data)
     end
+    
+  elseif messageType == "ROLESUI_SYNC" then
+    -- Route to RolesUI sync handler
+    if OGRH.HandleRolesUISync then
+      OGRH.HandleRolesUISync(sender, data)
+    end
   end
 end
 

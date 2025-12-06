@@ -184,6 +184,22 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
     frame.RefreshRoleContainers()
   end
   
+  -- Debug: Report unassigned players
+  local unassignedPlayers = {}
+  for _, playerData in ipairs(rollForPlayers) do
+    if not assignedPlayers[playerData.name] then
+      table.insert(unassignedPlayers, playerData.name)
+    end
+  end
+  
+  if table.getn(unassignedPlayers) > 0 then
+    table.sort(unassignedPlayers)
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff9900OG-RaidHelper:|r Unassigned players (" .. table.getn(unassignedPlayers) .. "):")
+    for _, playerName in ipairs(unassignedPlayers) do
+      DEFAULT_CHAT_FRAME:AddMessage("  - " .. playerName)
+    end
+  end
+  
   return assignmentCount
 end
 
@@ -2275,6 +2291,81 @@ function OGRH.ShowEncounterWindow(encounterName)
       local column1 = encounterRoles.column1 or {}
       local column2 = encounterRoles.column2 or {}
       
+      -- DATA CLEANUP: Remove obsolete stored data that doesn't match current role configuration
+      -- This prevents issues like raid marks on slots that no longer have showRaidIcons enabled
+      local function CleanupObsoleteData()
+        -- Build a map of valid roleIndexes and their configuration
+        local validRoles = {}
+        for _, role in ipairs(column1) do
+          if role.roleId then
+            validRoles[role.roleId] = role
+          end
+        end
+        for _, role in ipairs(column2) do
+          if role.roleId then
+            validRoles[role.roleId] = role
+          end
+        end
+        
+        -- Cleanup encounterRaidMarks
+        if OGRH_SV.encounterRaidMarks and 
+           OGRH_SV.encounterRaidMarks[frame.selectedRaid] and 
+           OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter] then
+          local raidMarks = OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter]
+          
+          -- Check each roleIndex in stored data
+          for roleIndex, roleMarks in pairs(raidMarks) do
+            local role = validRoles[roleIndex]
+            
+            if not role then
+              -- Role no longer exists, remove all its data
+              raidMarks[roleIndex] = nil
+            elseif not role.showRaidIcons then
+              -- Role exists but showRaidIcons is false/nil, remove all marks
+              raidMarks[roleIndex] = nil
+            else
+              -- Role exists and has showRaidIcons, check slot counts
+              local maxSlots = role.slots or 1
+              for slotIdx, _ in pairs(roleMarks) do
+                if slotIdx > maxSlots then
+                  -- Slot index exceeds current slot count, remove it
+                  roleMarks[slotIdx] = nil
+                end
+              end
+            end
+          end
+        end
+        
+        -- Cleanup encounterAssignments
+        if OGRH_SV.encounterAssignments and 
+           OGRH_SV.encounterAssignments[frame.selectedRaid] and 
+           OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] then
+          local assignments = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter]
+          
+          -- Check each roleIndex in stored data
+          for roleIndex, roleAssignments in pairs(assignments) do
+            local role = validRoles[roleIndex]
+            
+            if not role then
+              -- Role no longer exists, remove all its data
+              assignments[roleIndex] = nil
+            else
+              -- Role exists, check slot counts
+              local maxSlots = role.slots or 1
+              for slotIdx, _ in pairs(roleAssignments) do
+                if slotIdx > maxSlots then
+                  -- Slot index exceeds current slot count, remove it
+                  roleAssignments[slotIdx] = nil
+                end
+              end
+            end
+          end
+        end
+      end
+      
+      -- Run cleanup before rendering
+      CleanupObsoleteData()
+      
       -- Helper function to create role container
       local function CreateRoleContainer(parent, role, roleIndex, xPos, yPos, width)
         -- Consume Check role UI
@@ -3800,8 +3891,10 @@ function OGRH.NavigateToNextEncounter()
 end
 
 function OGRH.ShowAnnouncementTooltip(anchorFrame)
-  if not OGRH_EncounterFrame or not OGRH_EncounterFrame.selectedRaid or 
-     not OGRH_EncounterFrame.selectedEncounter then
+  -- Get the current encounter from main UI (not from Encounter Planning window)
+  local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounter()
+  
+  if not selectedRaid or not selectedEncounter then
     return
   end
   
@@ -3812,17 +3905,17 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
   
   -- Get announcement text lines
   if not OGRH_SV.encounterAnnouncements or 
-     not OGRH_SV.encounterAnnouncements[OGRH_EncounterFrame.selectedRaid] or
-     not OGRH_SV.encounterAnnouncements[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
+     not OGRH_SV.encounterAnnouncements[selectedRaid] or
+     not OGRH_SV.encounterAnnouncements[selectedRaid][selectedEncounter] then
     return
   end
   
   -- Get role data for tag processing
   local orderedRoles = {}
   local roles = OGRH_SV.encounterMgmt.roles
-  if roles and roles[OGRH_EncounterFrame.selectedRaid] and 
-     roles[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
-    local encounterRoles = roles[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
+  if roles and roles[selectedRaid] and 
+     roles[selectedRaid][selectedEncounter] then
+    local encounterRoles = roles[selectedRaid][selectedEncounter]
     local column1 = encounterRoles.column1 or {}
     local column2 = encounterRoles.column2 or {}
     
@@ -3837,26 +3930,26 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
   
   local assignments = {}
   if OGRH_SV.encounterAssignments and
-     OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid] and
-     OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
-    assignments = OGRH_SV.encounterAssignments[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
+     OGRH_SV.encounterAssignments[selectedRaid] and
+     OGRH_SV.encounterAssignments[selectedRaid][selectedEncounter] then
+    assignments = OGRH_SV.encounterAssignments[selectedRaid][selectedEncounter]
   end
   
   local raidMarks = {}
   if OGRH_SV.encounterRaidMarks and
-     OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid] and
-     OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
-    raidMarks = OGRH_SV.encounterRaidMarks[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
+     OGRH_SV.encounterRaidMarks[selectedRaid] and
+     OGRH_SV.encounterRaidMarks[selectedRaid][selectedEncounter] then
+    raidMarks = OGRH_SV.encounterRaidMarks[selectedRaid][selectedEncounter]
   end
   
   local assignmentNumbers = {}
   if OGRH_SV.encounterAssignmentNumbers and
-     OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid] and
-     OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter] then
-    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
+     OGRH_SV.encounterAssignmentNumbers[selectedRaid] and
+     OGRH_SV.encounterAssignmentNumbers[selectedRaid][selectedEncounter] then
+    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[selectedRaid][selectedEncounter]
   end
   
-  local announcementData = OGRH_SV.encounterAnnouncements[OGRH_EncounterFrame.selectedRaid][OGRH_EncounterFrame.selectedEncounter]
+  local announcementData = OGRH_SV.encounterAnnouncements[selectedRaid][selectedEncounter]
   
   -- Process announcement lines exactly as they would be sent to chat
   GameTooltip:SetOwner(anchorFrame, "ANCHOR_RIGHT")

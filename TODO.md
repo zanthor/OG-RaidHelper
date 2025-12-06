@@ -24,6 +24,9 @@ In the Encounter Setup interface the roles lists do not clear when you select a 
 ---
 
 ## Completed
+- ✅ Add sync button to Roles UI
+- ✅ Fix encounter Sync
+- ✅ Need to fix Mark button in Encounter Planning.
 - ✅ Fixed Import/Export editbox sizing and positioning
 - ✅ Fixed ESC key handler for Data Management window
 - ✅ Fixed CTRL+V single-press operation

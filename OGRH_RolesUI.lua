@@ -761,6 +761,11 @@ local function CreateRolesFrame()
     
     OGRH.ShowRolesUI = function()
         frame:Show()
+        
+        -- Request RolesUI sync check when opening
+        if OGRH.RequestRolesUISync then
+            OGRH.RequestRolesUISync()
+        end
     end
     OGRH.HideRolesUI = function()
         frame:Hide()
