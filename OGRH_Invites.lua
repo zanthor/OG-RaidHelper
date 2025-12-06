@@ -21,6 +21,13 @@ local STATUS = {
   IN_OTHER_GROUP = "in_other_group"
 }
 
+-- Helper function to normalize player names to title case (First letter uppercase, rest lowercase)
+local function NormalizeName(name)
+  if not name or name == "" then return name end
+  local lower = string.lower(name)
+  return string.upper(string.sub(lower, 1, 1)) .. string.sub(lower, 2)
+end
+
 -- Initialize saved variables for invite tracking
 function OGRH.Invites.EnsureSV()
   OGRH.EnsureSV()
@@ -96,16 +103,17 @@ function OGRH.Invites.GetSoftResPlayers()
     if type(itemData) == "table" and itemData.rollers then
       for _, roller in ipairs(itemData.rollers) do
         if roller and roller.name then
-          if not playerMap[roller.name] then
-            playerMap[roller.name] = {
-              name = roller.name,
+          local normalizedName = NormalizeName(roller.name)
+          if not playerMap[normalizedName] then
+            playerMap[normalizedName] = {
+              name = normalizedName,
               role = roller.role or "Unknown",
               srPlus = roller.sr_plus or 0,
               itemCount = 0
             }
           end
           -- Increment item count
-          playerMap[roller.name].itemCount = playerMap[roller.name].itemCount + (roller.rolls or 1)
+          playerMap[normalizedName].itemCount = playerMap[normalizedName].itemCount + (roller.rolls or 1)
         end
       end
     end
@@ -127,11 +135,12 @@ end
 -- Check if player is in current raid
 function OGRH.Invites.IsPlayerInRaid(playerName)
   if not playerName then return false end
+  playerName = NormalizeName(playerName)
   
   local numRaid = GetNumRaidMembers() or 0
   for i = 1, numRaid do
     local name = GetRaidRosterInfo(i)
-    if name == playerName then
+    if name and NormalizeName(name) == playerName then
       return true
     end
   end
@@ -162,7 +171,7 @@ function OGRH.Invites.GetPlayerStatus(playerName)
   local numGuild = GetNumGuildMembers(true)
   for i = 1, numGuild do
     local name, _, _, _, _, _, _, _, online, _, class = GetGuildRosterInfo(i)
-    if name == playerName then
+    if name and NormalizeName(name) == NormalizeName(playerName) then
       if not online then
         return STATUS.OFFLINE, false, class
       end
@@ -178,6 +187,7 @@ end
 -- Send invite to player
 function OGRH.Invites.InvitePlayer(playerName)
   if not playerName or playerName == "" then return end
+  playerName = NormalizeName(playerName)
   
   local numRaid = GetNumRaidMembers()
   local numParty = GetNumPartyMembers()
@@ -265,7 +275,7 @@ function OGRH.Invites.UpdatePlayerClass(playerData)
   local numRaid = GetNumRaidMembers() or 0
   for i = 1, numRaid do
     local name, _, _, _, raidClass = GetRaidRosterInfo(i)
-    if name == playerData.name and raidClass then
+    if name and NormalizeName(name) == NormalizeName(playerData.name) and raidClass then
       playerData.class = string.upper(raidClass)
       return playerData
     end
@@ -275,7 +285,7 @@ function OGRH.Invites.UpdatePlayerClass(playerData)
   local numGuild = GetNumGuildMembers(true)
   for i = 1, numGuild do
     local name, _, _, _, _, _, _, _, _, _, guildClass = GetGuildRosterInfo(i)
-    if name == playerData.name and guildClass then
+    if name and NormalizeName(name) == NormalizeName(playerData.name) and guildClass then
       playerData.class = string.upper(guildClass)
       return playerData
     end
@@ -619,6 +629,7 @@ function OGRH.Invites.ShowWindow()
   frame:SetScript("OnEvent", function()
     if event == "CHAT_MSG_WHISPER" then
       local msg, sender = arg1, arg2
+      sender = NormalizeName(sender)
       -- Check if sender is already in the raid
       if OGRH.Invites.IsPlayerInRaid(sender) then
         return
@@ -626,7 +637,7 @@ function OGRH.Invites.ShowWindow()
       -- Check if sender is in our soft-res list
       local players = OGRH.Invites.GetSoftResPlayers()
       for _, playerData in ipairs(players) do
-        if playerData.name == sender then
+        if NormalizeName(playerData.name) == sender then
           -- Auto-invite them
           OGRH.Invites.InvitePlayer(sender)
           OGRH.Msg("Auto-inviting " .. sender .. " (whispered for invite)")

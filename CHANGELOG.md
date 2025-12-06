@@ -1,5 +1,15 @@
 # OG-RaidHelper Changelog
 
+## Version 1.22.1 - Invites Module Fixes
+**Release Date:** December 6, 2025
+
+### Bug Fixes
+- **Invites Module**: Fixed case-sensitivity issues with player name matching
+  - Added proper title case normalization (e.g., "jOhNdOe" → "Johndoe")
+  - Player names from soft-res data now match guild roster and raid roster regardless of capitalization
+  - Fixes class color lookups that require proper name formatting
+  - Ensures case-insensitive matching while maintaining display compatibility
+
 ## Version 1.22.0 - Code Modularity Improvements
 **Release Date:** December 4, 2025
 
