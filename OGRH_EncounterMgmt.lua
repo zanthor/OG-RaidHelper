@@ -184,22 +184,6 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
     frame.RefreshRoleContainers()
   end
   
-  -- Debug: Report unassigned players
-  local unassignedPlayers = {}
-  for _, playerData in ipairs(rollForPlayers) do
-    if not assignedPlayers[playerData.name] then
-      table.insert(unassignedPlayers, playerData.name)
-    end
-  end
-  
-  if table.getn(unassignedPlayers) > 0 then
-    table.sort(unassignedPlayers)
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff9900OG-RaidHelper:|r Unassigned players (" .. table.getn(unassignedPlayers) .. "):")
-    for _, playerName in ipairs(unassignedPlayers) do
-      DEFAULT_CHAT_FRAME:AddMessage("  - " .. playerName)
-    end
-  end
-  
   return assignmentCount
 end
 
