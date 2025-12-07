@@ -19,6 +19,18 @@ In the Encounter Setup interface the roles lists do not clear when you select a 
 
 **Status:** Open
 
+## Feature Requests
+
+### Raid Invites System Improvements
+**Description:**
+Enhancements to the Raid Invites system for better automation and visibility:
+- Add Toggle for "Active Invite" mode - periodically scans the guild roster for signed up players not in raid and invites them
+- Add status panel below main UI showing X/Total in raid
+- Periodically announce to guild "Whisper *player* for raid invites"
+- Automatically toggle off when all players invited
+
+**Status:** Planned
+
 
 
 ---

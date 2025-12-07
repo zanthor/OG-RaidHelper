@@ -1,7 +1,38 @@
 # OG-RaidHelper Changelog
 
+## Version 1.22.8 - Menu System Improvements
+**Release Date:** December 7, 2025
+
+### Features
+- **Generic Menu System**: Created reusable menu/submenu builder function
+  - `OGRH.CreateStandardMenu()` provides consistent menu creation across addon
+  - Supports nested submenus with automatic positioning and arrow indicators
+  - Configurable title and item colors (titleColor, itemColor)
+  - All menus now use standardized system (minimap button, encounter select)
+  - Reduced code duplication by ~300 lines
+
+### UI Improvements
+- **Encounter Select Menu**: Enhanced right-click menu on encounter button
+  - Menu items now left-aligned for consistency
+  - Raids show submenu with encounters on hover
+  - Direct encounter selection from submenu
+  - Visual arrow indicator (>) for items with submenus
+  - White text matching minimap menu style
+
+### Bug Fixes
+- Fixed Settings menu item showing duplicate arrow ("Settings > >")
+- Fixed inconsistent text colors between menus (both now use white for items)
+
 ## Version 1.22.1 - Invites Module Fixes
 **Release Date:** December 6, 2025
+
+### Features
+- **Generic Menu System**: Created reusable menu/submenu builder function
+  - `OGRH.CreateStandardMenu()` provides consistent menu creation across addon
+  - Supports nested submenus with automatic positioning
+  - Configurable text colors for easy identification
+  - All menus now use standardized system (minimap button, encounter select)
+  - Reduced code duplication by ~300 lines
 
 ### Bug Fixes
 - **Invites Module**: Fixed case-sensitivity issues with player name matching
@@ -9,6 +40,13 @@
   - Player names from soft-res data now match guild roster and raid roster regardless of capitalization
   - Fixes class color lookups that require proper name formatting
   - Ensures case-insensitive matching while maintaining display compatibility
+
+### UI Improvements
+- **Encounter Select Menu**: Enhanced right-click menu on encounter button
+  - Menu items now left-aligned for consistency
+  - Raids show submenu with encounters on hover
+  - Direct encounter selection from submenu
+  - Visual arrow indicator (>) for items with submenus
 
 ## Version 1.22.0 - Code Modularity Improvements
 **Release Date:** December 4, 2025

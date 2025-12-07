@@ -4056,132 +4056,83 @@ end
 
 function OGRH.ShowEncounterRaidMenu(anchorBtn)
   if not OGRH_EncounterRaidMenu then
-    local menu = CreateFrame("Frame", "OGRH_EncounterRaidMenu", UIParent)
-    menu:SetWidth(140)
-    menu:SetHeight(100)
-    menu:SetFrameStrata("FULLSCREEN_DIALOG")
-    menu:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 16,
-      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    -- Create menu using the standard menu builder
+    local menu = OGRH.CreateStandardMenu({
+      name = "OGRH_EncounterRaidMenu",
+      width = 160,
+      itemColor = {1, 1, 1} -- White menu items to match main menu
     })
-    menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-    menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    menu:Hide()
     
-    -- Close menu when clicking outside
-    menu:SetScript("OnShow", function()
-      if not menu.backdrop then
-        local backdrop = CreateFrame("Frame", nil, UIParent)
-        backdrop:SetFrameStrata("FULLSCREEN")
-        backdrop:SetAllPoints()
-        backdrop:EnableMouse(true)
-        backdrop:SetScript("OnMouseDown", function()
-          menu:Hide()
-        end)
-        menu.backdrop = backdrop
-      end
-      menu.backdrop:Show()
-    end)
-    
-    menu:SetScript("OnHide", function()
-      if menu.backdrop then
-        menu.backdrop:Hide()
-      end
-    end)
-    
-    menu.buttons = {}
+    OGRH_EncounterRaidMenu = menu
     
     menu.Rebuild = function()
-      -- Clear existing buttons
-      for _, btn in ipairs(menu.buttons) do
-        btn:Hide()
-        btn:SetParent(nil)
+      -- Clear existing items
+      for _, item in ipairs(menu.items) do
+        item:Hide()
+        item:SetParent(nil)
       end
-      menu.buttons = {}
+      menu.items = {}
+      
+      -- Reset yOffset for rebuilding
+      menu.yOffset = -5
       
       if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then
+        menu:Finalize()
         return
       end
       
       local raids = OGRH_SV.encounterMgmt.raids
-      local yOffset = -5
-      local itemHeight = 18
-      local itemSpacing = 2
       
       for i = 1, table.getn(raids) do
         local raidName = raids[i]
-        local btn = CreateFrame("Button", nil, menu)
-        btn:SetWidth(130)
-        btn:SetHeight(itemHeight)
-        btn:SetPoint("TOPLEFT", menu, "TOPLEFT", 5, yOffset)
         
-        -- Background highlight
-        local bg = btn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        bg:SetVertexColor(0.2, 0.2, 0.2, 0)
-        btn.bg = bg
+        -- Get encounters for this raid
+        local encounters = {}
+        if OGRH_SV.encounterMgmt.encounters and OGRH_SV.encounterMgmt.encounters[raidName] then
+          encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+        end
         
-        -- Text
-        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        fs:SetPoint("CENTER", btn, "CENTER", 0, 0)
-        fs:SetText(raidName)
-        fs:SetTextColor(1, 1, 1)
-        btn.fs = fs
-        
-        -- Highlight on hover
-        btn:SetScript("OnEnter", function()
-          bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
-        end)
-        
-        btn:SetScript("OnLeave", function()
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0)
-        end)
-        
-        local capturedRaid = raidName
-        btn:SetScript("OnClick", function()
-          menu:Hide()
+        -- Build submenu items for encounters
+        local submenuItems = {}
+        for j = 1, table.getn(encounters) do
+          local encounterName = encounters[j]
+          local capturedRaid = raidName
+          local capturedEncounter = encounterName
           
-          -- Check authorization - must be raid lead, assistant, or designated raid admin
-          if not OGRH.CanNavigateEncounter or not OGRH.CanNavigateEncounter() then
-            OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can change the selected encounter.")
-            return
-          end
-          
-          -- Select first encounter if available
-          local firstEncounter = nil
-          if OGRH_SV.encounterMgmt.encounters and 
-             OGRH_SV.encounterMgmt.encounters[capturedRaid] and
-             table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]) > 0 then
-            firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaid][1]
-          end
-          
-          -- Update Main UI state
-          OGRH.EnsureSV()
-          OGRH_SV.ui.selectedRaid = capturedRaid
-          OGRH_SV.ui.selectedEncounter = firstEncounter
-          
-          -- Broadcast encounter change to raid
-          if firstEncounter then
-            OGRH.BroadcastEncounterSelection(capturedRaid, firstEncounter)
-          end
-          
-          -- Update navigation button and consume monitor
-          OGRH.UpdateEncounterNavButton()
-          if OGRH.ShowConsumeMonitor then
-            OGRH.ShowConsumeMonitor()
-          end
-        end)
+          table.insert(submenuItems, {
+            text = encounterName,
+            onClick = function()
+              -- Check authorization
+              if not OGRH.CanNavigateEncounter or not OGRH.CanNavigateEncounter() then
+                OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can change the selected encounter.")
+                return
+              end
+              
+              -- Update Main UI state
+              OGRH.EnsureSV()
+              OGRH_SV.ui.selectedRaid = capturedRaid
+              OGRH_SV.ui.selectedEncounter = capturedEncounter
+              
+              -- Broadcast encounter change to raid
+              OGRH.BroadcastEncounterSelection(capturedRaid, capturedEncounter)
+              
+              -- Update navigation button and consume monitor
+              OGRH.UpdateEncounterNavButton()
+              if OGRH.ShowConsumeMonitor then
+                OGRH.ShowConsumeMonitor()
+              end
+            end
+          })
+        end
         
-        table.insert(menu.buttons, btn)
-        yOffset = yOffset - (itemHeight + itemSpacing)
+        -- Add raid item with encounter submenu
+        menu:AddItem({
+          text = raidName,
+          submenu = submenuItems
+        })
       end
       
-      menu:SetHeight(math.max(50, math.abs(yOffset) + 10))
+      menu:Finalize()
     end
   end
   

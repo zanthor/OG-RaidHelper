@@ -463,6 +463,235 @@ function OGRH.StyleButton(button)
   end)
 end
 
+-- ========================================
+-- GENERIC MENU BUILDER
+-- ========================================
+-- Creates a standardized menu/submenu system
+-- Returns a menu object with methods: Show(), Hide(), AddItem(), AddSubmenuItem()
+function OGRH.CreateStandardMenu(config)
+  config = config or {}
+  local menuName = config.name or "OGRH_GenericMenu"
+  local menuWidth = config.width or 160
+  local menuTitle = config.title
+  local titleColor = config.titleColor or config.textColor or {1, 1, 1} -- Title color (gold for minimap, white default)
+  local itemColor = config.itemColor or {1, 1, 1} -- Menu item color (always white)
+  
+  local menu = CreateFrame("Frame", menuName, UIParent)
+  menu:SetFrameStrata("FULLSCREEN_DIALOG")
+  menu:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+  menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  menu:SetWidth(menuWidth)
+  menu:SetHeight(100)
+  menu:Hide()
+  menu:EnableMouse(true)
+  
+  -- Register ESC key handler if name provided
+  if menuName then
+    OGRH.MakeFrameCloseOnEscape(menu, menuName)
+  end
+  
+  -- Close menu when clicking outside
+  menu:SetScript("OnShow", function()
+    if not menu.backdrop then
+      local backdrop = CreateFrame("Frame", nil, UIParent)
+      backdrop:SetFrameStrata("FULLSCREEN")
+      backdrop:SetAllPoints()
+      backdrop:EnableMouse(true)
+      backdrop:SetScript("OnMouseDown", function()
+        menu:Hide()
+      end)
+      menu.backdrop = backdrop
+    end
+    menu.backdrop:Show()
+  end)
+  
+  menu:SetScript("OnHide", function()
+    if menu.backdrop then
+      menu.backdrop:Hide()
+    end
+    -- Hide any open submenus
+    if menu.activeSubmenu then
+      menu.activeSubmenu:Hide()
+      menu.activeSubmenu = nil
+    end
+  end)
+  
+  -- Title text (optional)
+  local yOffset = -8
+  if menuTitle then
+    local titleText = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    titleText:SetPoint("TOP", menu, "TOP", 0, yOffset)
+    titleText:SetText(menuTitle)
+    titleText:SetTextColor(titleColor[1], titleColor[2], titleColor[3])
+    menu.titleText = titleText
+    yOffset = yOffset - 20
+  end
+  
+  menu.items = {}
+  menu.yOffset = yOffset
+  menu.itemHeight = 16
+  menu.itemSpacing = 2
+  menu.itemColor = itemColor
+  
+  -- Helper to create menu item
+  function menu:AddItem(itemConfig)
+    local text = itemConfig.text or "Menu Item"
+    local onClick = itemConfig.onClick
+    local hasSubmenu = itemConfig.submenu ~= nil
+    local submenuItems = itemConfig.submenu
+    
+    local item = CreateFrame("Button", nil, menu)
+    item:SetWidth(menuWidth - 10)
+    item:SetHeight(self.itemHeight)
+    item:SetPoint("TOP", menu, "TOP", 0, self.yOffset)
+    
+    -- Background highlight
+    local bg = item:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+    item.bg = bg
+    
+    -- Text (left-aligned)
+    local fs = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("LEFT", item, "LEFT", 8, 0)
+    fs:SetText(text)
+    fs:SetTextColor(self.itemColor[1], self.itemColor[2], self.itemColor[3])
+    item.fs = fs
+    
+    -- Add arrow if has submenu
+    if hasSubmenu then
+      local arrow = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      arrow:SetPoint("RIGHT", item, "RIGHT", -5, 0)
+      arrow:SetText(">")
+      arrow:SetTextColor(self.itemColor[1] * 0.7, self.itemColor[2] * 0.7, self.itemColor[3] * 0.7)
+      item.arrow = arrow
+    end
+    
+    -- Highlight on hover
+    item:SetScript("OnEnter", function()
+      bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+      
+      if hasSubmenu then
+        -- Create and show submenu
+        if not item.submenu then
+          item.submenu = menu:CreateSubmenu(submenuItems, item)
+        end
+        
+        -- Hide any previously open submenu
+        if menu.activeSubmenu and menu.activeSubmenu ~= item.submenu then
+          menu.activeSubmenu:Hide()
+        end
+        
+        item.submenu:ClearAllPoints()
+        item.submenu:SetPoint("TOPLEFT", item, "TOPRIGHT", 2, 0)
+        item.submenu:Show()
+        menu.activeSubmenu = item.submenu
+      end
+    end)
+    
+    item:SetScript("OnLeave", function()
+      bg:SetVertexColor(0.2, 0.2, 0.2, 0)
+    end)
+    
+    if not hasSubmenu and onClick then
+      item:SetScript("OnClick", function()
+        onClick()
+        menu:Hide()
+      end)
+    end
+    
+    table.insert(self.items, item)
+    self.yOffset = self.yOffset - (self.itemHeight + self.itemSpacing)
+    
+    return item
+  end
+  
+  -- Helper to create submenu
+  function menu:CreateSubmenu(submenuItems, parentItem)
+    local submenu = CreateFrame("Frame", nil, UIParent)
+    submenu:SetFrameStrata("FULLSCREEN_DIALOG")
+    submenu:SetFrameLevel(menu:GetFrameLevel() + 1)
+    submenu:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 16,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    submenu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+    submenu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    submenu:SetWidth(180)
+    submenu:Hide()
+    submenu:EnableMouse(true)
+    
+    local subYOffset = -5
+    
+    for i, subItemConfig in ipairs(submenuItems) do
+      local subText = subItemConfig.text or "Submenu Item"
+      local subOnClick = subItemConfig.onClick
+      
+      local subItem = CreateFrame("Button", nil, submenu)
+      subItem:SetWidth(170)
+      subItem:SetHeight(menu.itemHeight)
+      subItem:SetPoint("TOPLEFT", submenu, "TOPLEFT", 5, subYOffset)
+      
+      -- Background highlight
+      local subBg = subItem:CreateTexture(nil, "BACKGROUND")
+      subBg:SetAllPoints()
+      subBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+      subBg:SetVertexColor(0.2, 0.2, 0.2, 0)
+      subItem.bg = subBg
+      
+      -- Text (left-aligned)
+      local subFs = subItem:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      subFs:SetPoint("LEFT", subItem, "LEFT", 8, 0)
+      subFs:SetText(subText)
+      subFs:SetTextColor(menu.itemColor[1], menu.itemColor[2], menu.itemColor[3])
+      subItem.fs = subFs
+      
+      -- Highlight on hover
+      subItem:SetScript("OnEnter", function()
+        subBg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+      end)
+      
+      subItem:SetScript("OnLeave", function()
+        subBg:SetVertexColor(0.2, 0.2, 0.2, 0)
+      end)
+      
+      if subOnClick then
+        subItem:SetScript("OnClick", function()
+          subOnClick()
+          submenu:Hide()
+          menu:Hide()
+        end)
+      end
+      
+      subYOffset = subYOffset - (menu.itemHeight + menu.itemSpacing)
+    end
+    
+    submenu:SetHeight(math.max(30, math.abs(subYOffset) + 10))
+    
+    return submenu
+  end
+  
+  -- Method to finalize menu (set final height)
+  function menu:Finalize()
+    self:SetHeight(math.max(50, math.abs(self.yOffset) + 15))
+  end
+  
+  return menu
+end
+
 -- Create a standardized scrolling list with frame
 -- Returns: outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth
 function OGRH.CreateStyledScrollList(parent, width, height, hideScrollBar)
@@ -4616,312 +4845,106 @@ local function CreateMinimapButton()
   -- Create right-click menu
   local function ShowMinimapMenu(sourceButton)
     if not OGRH_MinimapMenu then
-      local menu = CreateFrame("Frame", "OGRH_MinimapMenu", UIParent)
-      menu:SetFrameStrata("FULLSCREEN_DIALOG")
-      menu:SetBackdrop({
-        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 16,
-        insets = {left = 4, right = 4, top = 4, bottom = 4}
+      -- Create menu using the standard menu builder
+      local menu = OGRH.CreateStandardMenu({
+        name = "OGRH_MinimapMenu",
+        width = 160,
+        title = "OG-RaidHelper",
+        titleColor = {1, 0.82, 0}, -- Gold title color
+        itemColor = {1, 1, 1} -- White menu items
       })
-      menu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-      menu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-      menu:SetWidth(160)
-      menu:SetHeight(138)
-      menu:Hide()
       
-      -- Register ESC key handler
-      OGRH.MakeFrameCloseOnEscape(menu, "OGRH_MinimapMenu")
+      OGRH_MinimapMenu = menu
       
-      -- Close menu when clicking outside
-      menu:SetScript("OnShow", function()
-        -- Create invisible backdrop to capture clicks
-        if not menu.backdrop then
-          local backdrop = CreateFrame("Frame", nil, UIParent)
-          backdrop:SetFrameStrata("FULLSCREEN")
-          backdrop:SetAllPoints()
-          backdrop:EnableMouse(true)
-          backdrop:SetScript("OnMouseDown", function()
-            menu:Hide()
-          end)
-          menu.backdrop = backdrop
-        end
-        menu.backdrop:Show()
-      end)
-      
-      menu:SetScript("OnHide", function()
-        if menu.backdrop then
-          menu.backdrop:Hide()
-        end
-      end)
-      
-      -- Title text
-      local titleText = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-      titleText:SetPoint("TOP", menu, "TOP", 0, -8)
-      titleText:SetText("OG-RaidHelper")
-      titleText:SetTextColor(1, 0.82, 0)
-      
-      local yOffset = -28
-      local itemHeight = 16
-      local itemSpacing = 2
-      
-      -- Helper to create menu items
-      local function CreateMenuItem(text, onClick, parent, yPos)
-        local item = CreateFrame("Button", nil, menu)
-        item:SetWidth(150)
-        item:SetHeight(itemHeight)
-        item:SetPoint("TOP", menu, "TOP", 0, yPos)
-        
-        -- Background highlight
-        local bg = item:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-        bg:SetVertexColor(0.2, 0.2, 0.2, 0)
-        item.bg = bg
-        
-        -- Text
-        local fs = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        fs:SetPoint("LEFT", item, "LEFT", 8, 0)
-        fs:SetText(text)
-        fs:SetTextColor(1, 1, 1)
-        item.fs = fs
-        
-        -- Highlight on hover
-        item:SetScript("OnEnter", function()
-          bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
-        end)
-        
-        item:SetScript("OnLeave", function()
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0)
-        end)
-        
-        item:SetScript("OnClick", function()
-          onClick()
-          menu:Hide()
-        end)
-        
-        return item
-      end
-      
-      -- Create Settings submenu
-      local settingsSubmenu
-      local function CreateSettingsSubmenu()
-        if settingsSubmenu then return settingsSubmenu end
-        
-        local submenu = CreateFrame("Frame", "OGRH_SettingsSubmenu", UIParent)
-        submenu:SetFrameStrata("FULLSCREEN_DIALOG")
-        submenu:SetFrameLevel(menu:GetFrameLevel() + 1)
-        submenu:SetBackdrop({
-          bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-          edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-          tile = true,
-          tileSize = 16,
-          edgeSize = 16,
-          insets = {left = 4, right = 4, top = 4, bottom = 4}
-        })
-        submenu:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-        submenu:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-        submenu:SetWidth(160)
-        submenu:SetHeight(98)
-        submenu:Hide()
-        submenu:EnableMouse(true)
-        
-        -- Close submenu when clicking outside
-        submenu:SetScript("OnShow", function()
-          if not submenu.backdrop then
-            local backdrop = CreateFrame("Frame", nil, UIParent)
-            backdrop:SetFrameStrata("FULLSCREEN")
-            backdrop:SetAllPoints()
-            backdrop:EnableMouse(true)
-            backdrop:SetScript("OnMouseDown", function()
-              submenu:Hide()
-              menu:Hide()
-            end)
-            submenu.backdrop = backdrop
+      -- Invites
+      local invitesItem = menu:AddItem({
+        text = "Invites",
+        onClick = function()
+          if not OGRH.ROLLFOR_AVAILABLE then
+            OGRH.Msg("Invites requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+            return
           end
-          submenu.backdrop:Show()
-        end)
-        
-        submenu:SetScript("OnHide", function()
-          if submenu.backdrop then
-            submenu.backdrop:Hide()
-          end
-        end)
-        
-        local subYOffset = -8
-        
-        -- Helper to create submenu items
-        local function CreateSubMenuItem(text, onClick, yPos)
-          local item = CreateFrame("Button", nil, submenu)
-          item:SetWidth(150)
-          item:SetHeight(itemHeight)
-          item:SetPoint("TOP", submenu, "TOP", 0, yPos)
           
-          local bg = item:CreateTexture(nil, "BACKGROUND")
-          bg:SetAllPoints()
-          bg:SetTexture("Interface\\Buttons\\WHITE8X8")
-          bg:SetVertexColor(0.2, 0.2, 0.2, 0)
-          item.bg = bg
+          OGRH.CloseAllWindows("OGRH_InvitesFrame")
           
-          local fs = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-          fs:SetPoint("LEFT", item, "LEFT", 8, 0)
-          fs:SetText(text)
-          fs:SetTextColor(1, 1, 1)
-          item.fs = fs
-          
-          item:SetScript("OnEnter", function()
-            bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
-          end)
-          
-          item:SetScript("OnLeave", function()
-            bg:SetVertexColor(0.2, 0.2, 0.2, 0)
-          end)
-          
-          item:SetScript("OnClick", function()
-            onClick()
-            submenu:Hide()
-            menu:Hide()
-          end)
-          
-          return item
-        end
-        
-        -- Encounters (was Setup Encounters)
-        CreateSubMenuItem("Encounters", function()
-          OGRH.CloseAllWindows("OGRH_EncounterSetupFrame")
-          if OGRH.ShowEncounterSetup then
-            OGRH.ShowEncounterSetup()
-          end
-        end, subYOffset)
-        subYOffset = subYOffset - itemHeight - itemSpacing
-        
-        -- Trade (was Setup Trade)
-        CreateSubMenuItem("Trade", function()
-          if OGRH.ShowTradeSettings then
-            OGRH.ShowTradeSettings()
+          if OGRH.Invites and OGRH.Invites.ShowWindow then
+            OGRH.Invites.ShowWindow()
           else
-            OGRH.Msg("Trade Settings module not loaded.")
+            OGRH.Msg("Invites module not loaded.")
           end
-        end, subYOffset)
-        subYOffset = subYOffset - itemHeight - itemSpacing
-        
-        -- Consumes (was Setup Consumes)
-        CreateSubMenuItem("Consumes", function()
-          if OGRH.ShowConsumesSettings then
-            OGRH.ShowConsumesSettings()
-          else
-            OGRH.Msg("Consumes module not loaded.")
-          end
-        end, subYOffset)
-        subYOffset = subYOffset - itemHeight - itemSpacing
-        
-        -- Auto Promote
-        CreateSubMenuItem("Auto Promote", function()
-          if OGRH.ShowAutoPromote then
-            OGRH.ShowAutoPromote()
-          else
-            OGRH.Msg("Auto Promote module not loaded.")
-          end
-        end, subYOffset)
-        subYOffset = subYOffset - itemHeight - itemSpacing
-        
-        -- Data Management
-        CreateSubMenuItem("Data Management", function()
-          OGRH.CloseAllWindows("OGRH_DataManagementFrame")
-          if OGRH.Sync and OGRH.Sync.ShowDataManagementWindow then
-            OGRH.Sync.ShowDataManagementWindow()
-          end
-        end, subYOffset)
-        
-        settingsSubmenu = submenu
-        return submenu
-      end
-      
-      -- Invites item (requires RollFor 4.8.1)
-      local invitesItem = CreateMenuItem("Invites", function()
-        if not OGRH.ROLLFOR_AVAILABLE then
-          OGRH.Msg("Invites requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
-          return
         end
-        
-        OGRH.CloseAllWindows("OGRH_InvitesFrame")
-        
-        if OGRH.Invites and OGRH.Invites.ShowWindow then
-          OGRH.Invites.ShowWindow()
-        else
-          OGRH.Msg("Invites module not loaded.")
-        end
-      end, menu, yOffset)
+      })
       
       -- Gray out if RollFor not available
       if not OGRH.ROLLFOR_AVAILABLE then
         invitesItem.fs:SetTextColor(0.5, 0.5, 0.5)
       end
       
-      yOffset = yOffset - itemHeight - itemSpacing
-      
-      -- SR Validation item (requires RollFor 4.8.1)
-      local srValidationItem = CreateMenuItem("SR Validation", function()
-        if not OGRH.ROLLFOR_AVAILABLE then
-          OGRH.Msg("SR Validation requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
-          return
+      -- SR Validation
+      local srValidationItem = menu:AddItem({
+        text = "SR Validation",
+        onClick = function()
+          if not OGRH.ROLLFOR_AVAILABLE then
+            OGRH.Msg("SR Validation requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+            return
+          end
+          
+          OGRH.CloseAllWindows("OGRH_SRValidationFrame")
+          
+          if OGRH.SRValidation and OGRH.SRValidation.ShowWindow then
+            OGRH.SRValidation.ShowWindow()
+          else
+            OGRH.Msg("SR Validation module not loaded.")
+          end
         end
-        
-        OGRH.CloseAllWindows("OGRH_SRValidationFrame")
-        
-        if OGRH.SRValidation and OGRH.SRValidation.ShowWindow then
-          OGRH.SRValidation.ShowWindow()
-        else
-          OGRH.Msg("SR Validation module not loaded.")
-        end
-      end, menu, yOffset)
+      })
       
       -- Gray out if RollFor not available
       if not OGRH.ROLLFOR_AVAILABLE then
         srValidationItem.fs:SetTextColor(0.5, 0.5, 0.5)
       end
       
-      yOffset = yOffset - itemHeight - itemSpacing
-      
-      -- Audit Addons item
-      local addonAuditItem = CreateMenuItem("Audit Addons", function()
-        if OGRH.ShowAddonAudit then
-          OGRH.ShowAddonAudit()
-        else
-          OGRH.Msg("Addon Audit module not loaded.")
-        end
-      end, menu, yOffset)
-      
-      yOffset = yOffset - itemHeight - itemSpacing
-      
-      -- Monitor Consumes toggle item
-      menu.monitorConsumesItem = CreateMenuItem("Monitor Consumes", function()
-        OGRH.EnsureSV()
-        OGRH_SV.monitorConsumes = not OGRH_SV.monitorConsumes
-        
-        -- Update button text color
-        if OGRH_SV.monitorConsumes then
-          menu.monitorConsumesItem.fs:SetText("|cff00ff00Monitor Consumes|r")
-          if OGRH.ShowConsumeMonitor then
-            OGRH.ShowConsumeMonitor()
-          end
-        else
-          menu.monitorConsumesItem.fs:SetText("Monitor Consumes")
-          if OGRH.HideConsumeMonitor then
-            OGRH.HideConsumeMonitor()
+      -- Audit Addons
+      menu:AddItem({
+        text = "Audit Addons",
+        onClick = function()
+          if OGRH.ShowAddonAudit then
+            OGRH.ShowAddonAudit()
+          else
+            OGRH.Msg("Addon Audit module not loaded.")
           end
         end
-        
-        if OGRH_SV.monitorConsumes then
-          OGRH.Msg("Consume monitoring |cff00ff00enabled|r.")
-        else
-          OGRH.Msg("Consume monitoring |cffff0000disabled|r.")
-        end
-      end, menu, yOffset)
+      })
       
-      -- Set initial text color based on current state
+      -- Monitor Consumes toggle
+      menu.monitorConsumesItem = menu:AddItem({
+        text = "Monitor Consumes",
+        onClick = function()
+          OGRH.EnsureSV()
+          OGRH_SV.monitorConsumes = not OGRH_SV.monitorConsumes
+          
+          -- Update button text color
+          if OGRH_SV.monitorConsumes then
+            menu.monitorConsumesItem.fs:SetText("|cff00ff00Monitor Consumes|r")
+            if OGRH.ShowConsumeMonitor then
+              OGRH.ShowConsumeMonitor()
+            end
+          else
+            menu.monitorConsumesItem.fs:SetText("Monitor Consumes")
+            if OGRH.HideConsumeMonitor then
+              OGRH.HideConsumeMonitor()
+            end
+          end
+          
+          if OGRH_SV.monitorConsumes then
+            OGRH.Msg("Consume monitoring |cff00ff00enabled|r.")
+          else
+            OGRH.Msg("Consume monitoring |cffff0000disabled|r.")
+          end
+        end
+      })
+      
+      -- Helper function to update monitor consumes text
       menu.UpdateMonitorConsumesText = function()
         OGRH.EnsureSV()
         if OGRH_SV.monitorConsumes then
@@ -4931,76 +4954,88 @@ local function CreateMinimapButton()
         end
       end
       
-      yOffset = yOffset - itemHeight - itemSpacing
+      -- Settings submenu
+      menu:AddItem({
+        text = "Settings",
+        submenu = {
+          {
+            text = "Encounters",
+            onClick = function()
+              OGRH.CloseAllWindows("OGRH_EncounterSetupFrame")
+              if OGRH.ShowEncounterSetup then
+                OGRH.ShowEncounterSetup()
+              end
+            end
+          },
+          {
+            text = "Trade",
+            onClick = function()
+              if OGRH.ShowTradeSettings then
+                OGRH.ShowTradeSettings()
+              else
+                OGRH.Msg("Trade Settings module not loaded.")
+              end
+            end
+          },
+          {
+            text = "Consumes",
+            onClick = function()
+              if OGRH.ShowConsumesSettings then
+                OGRH.ShowConsumesSettings()
+              else
+                OGRH.Msg("Consumes module not loaded.")
+              end
+            end
+          },
+          {
+            text = "Auto Promote",
+            onClick = function()
+              if OGRH.ShowAutoPromote then
+                OGRH.ShowAutoPromote()
+              else
+                OGRH.Msg("Auto Promote module not loaded.")
+              end
+            end
+          },
+          {
+            text = "Data Management",
+            onClick = function()
+              OGRH.CloseAllWindows("OGRH_DataManagementFrame")
+              if OGRH.Sync and OGRH.Sync.ShowDataManagementWindow then
+                OGRH.Sync.ShowDataManagementWindow()
+              end
+            end
+          }
+        }
+      })
       
-      -- Settings item (opens submenu)
-      local settingsItem = CreateMenuItem("Settings >", function()
-        -- Click handler - do nothing, mouseover handles submenu
-      end, menu, yOffset)
-      
-      -- Track if we should keep submenu open
-      local submenuCheckFrame
-      local function StartSubmenuCheck()
-        if not submenuCheckFrame then
-          submenuCheckFrame = CreateFrame("Frame")
-        end
-        submenuCheckFrame:SetScript("OnUpdate", function()
-          local submenu = CreateSettingsSubmenu()
-          -- Hide submenu if mouse is over neither the Settings item nor the submenu
-          if not MouseIsOver(settingsItem) and not MouseIsOver(submenu) then
-            submenu:Hide()
-            submenuCheckFrame:SetScript("OnUpdate", nil)
+      -- Hide/Show toggle
+      menu.toggleItem = menu:AddItem({
+        text = "Hide",
+        onClick = function()
+          if OGRH_Main then
+            if OGRH_Main:IsVisible() then
+              OGRH_Main:Hide()
+              OGRH_SV.ui.hidden = true
+            else
+              OGRH_Main:Show()
+              OGRH_SV.ui.hidden = false
+            end
           end
-        end)
-      end
-      
-      -- Show submenu on mouseover
-      settingsItem:SetScript("OnEnter", function()
-        settingsItem.bg:SetVertexColor(0.3, 0.3, 0.3, 0.5)
-        local submenu = CreateSettingsSubmenu()
-        
-        -- Position submenu to the right of the Settings item
-        submenu:ClearAllPoints()
-        submenu:SetPoint("TOPLEFT", settingsItem, "TOPRIGHT", 0, 0)
-        submenu:Show()
-        
-        -- Start checking for mouse position
-        StartSubmenuCheck()
-      end)
-      
-      -- Keep background normal when leaving, but let OnUpdate handle hiding
-      settingsItem:SetScript("OnLeave", function()
-        settingsItem.bg:SetVertexColor(0.2, 0.2, 0.2, 0)
-      end)
-      
-      -- Store reference for submenu management
-      menu.settingsItem = settingsItem
-      
-      yOffset = yOffset - itemHeight - itemSpacing
-      
-      -- Hide item
-      local toggleItem = CreateMenuItem("Hide", function()
-        if OGRH_Main then
-          if OGRH_Main:IsVisible() then
-            OGRH_Main:Hide()
-            OGRH_SV.ui.hidden = true
-          else
-            OGRH_Main:Show()
-            OGRH_SV.ui.hidden = false
-          end
         end
-      end, menu, yOffset)
+      })
       
-      menu.toggleItem = toggleItem
-      
-      -- Update toggle item text based on window state
+      -- Helper function to update toggle text
       menu.UpdateToggleText = function()
         if OGRH_Main and OGRH_Main:IsVisible() then
-          toggleItem.fs:SetText("Hide")
+          menu.toggleItem.fs:SetText("Hide")
         else
-          toggleItem.fs:SetText("Show")
+          menu.toggleItem.fs:SetText("Show")
         end
       end
+      
+      -- Finalize menu height
+      menu:Finalize()
     end
     
     local menu = OGRH_MinimapMenu
