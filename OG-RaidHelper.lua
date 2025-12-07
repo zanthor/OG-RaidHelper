@@ -250,7 +250,31 @@ btnMin:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.minimized = not OG
 local function applyLocked(lock) btnLock:SetText("Lock") end
 btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)
 
-local function restoreMain() ensureSV(); local ui=OGRH_SV.ui or {}; if ui.point and ui.x and ui.y then Main:ClearAllPoints(); Main:SetPoint(ui.point, UIParent, ui.relPoint or ui.point, ui.x, ui.y) end; applyMinimized(ui.minimized); applyLocked(ui.locked) end
+local function restoreMain() 
+  ensureSV() 
+  local ui=OGRH_SV.ui or {} 
+  if ui.point and ui.x and ui.y then 
+    Main:ClearAllPoints() 
+    Main:SetPoint(ui.point, UIParent, ui.relPoint or ui.point, ui.x, ui.y) 
+  end 
+  applyMinimized(ui.minimized) 
+  applyLocked(ui.locked)
+  
+  -- Schedule consume monitor restore after a short delay to ensure modules are loaded
+  if ui.selectedRaid and ui.selectedEncounter then
+    local restoreFrame = CreateFrame("Frame")
+    local elapsed = 0
+    restoreFrame:SetScript("OnUpdate", function()
+      elapsed = elapsed + arg1
+      if elapsed >= 1 then
+        restoreFrame:SetScript("OnUpdate", nil)
+        if OGRH and OGRH.ShowConsumeMonitor then
+          OGRH.ShowConsumeMonitor()
+        end
+      end
+    end)
+  end
+end
 local _mainLoader = CreateFrame("Frame","OGRH_MainLoader"); _mainLoader:RegisterEvent("VARIABLES_LOADED"); _mainLoader:SetScript("OnEvent", function() restoreMain() end)
 
 ------------------------------------------------------------

@@ -598,6 +598,13 @@ function OGRH.ShowConsumeMonitor()
     if OGRH_ConsumeMonitorFrame.Update then
       OGRH_ConsumeMonitorFrame.Update()
     end
+    -- Manually register and reposition in case OnShow doesn't fire
+    if OGRH.RegisterAuxiliaryPanel then
+      OGRH.RegisterAuxiliaryPanel(OGRH_ConsumeMonitorFrame, 10)
+    end
+    if OGRH.RepositionAuxiliaryPanels then
+      OGRH.RepositionAuxiliaryPanels()
+    end
     return
   end
   
@@ -615,31 +622,18 @@ function OGRH.ShowConsumeMonitor()
   })
   frame:SetBackdropColor(0, 0, 0, 0.85)
   
-  -- Position relative to main UI
-  frame.PositionFrame = function()
-    if not OGRH_Main or not OGRH_Main:IsVisible() then
-      frame:SetPoint("CENTER", UIParent, "CENTER", 300, 0)
-      return
+  -- Register with auxiliary panel system (priority 10 = consume monitor goes first)
+  frame:SetScript("OnShow", function()
+    if OGRH.RegisterAuxiliaryPanel then
+      OGRH.RegisterAuxiliaryPanel(this, 10)
     end
-    
-    local screenHeight = UIParent:GetHeight()
-    local mainBottom = OGRH_Main:GetBottom()
-    local mainTop = OGRH_Main:GetTop()
-    local frameHeight = frame:GetHeight()
-    
-    frame:ClearAllPoints()
-    
-    -- Try to dock below main UI
-    if mainBottom and (mainBottom - frameHeight) > 0 then
-      frame:SetPoint("TOP", OGRH_Main, "BOTTOM", 0, 0)
-    -- Otherwise dock above main UI
-    elseif mainTop and (mainTop + frameHeight) < screenHeight then
-      frame:SetPoint("BOTTOM", OGRH_Main, "TOP", 0, 0)
-    else
-      -- Fallback to center if neither position works
-      frame:SetPoint("CENTER", UIParent, "CENTER", 300, 0)
+  end)
+  
+  frame:SetScript("OnHide", function()
+    if OGRH.UnregisterAuxiliaryPanel then
+      OGRH.UnregisterAuxiliaryPanel(this)
     end
-  end
+  end)
   
   -- Consume rows container
   frame.consumeRows = {}
@@ -899,9 +893,6 @@ function OGRH.ShowConsumeMonitor()
     -- Resize frame
     local newHeight = 6 + (rowIndex - 1) * 22 + 6
     frame:SetHeight(newHeight)
-    
-    -- Position frame relative to main UI
-    frame.PositionFrame()
     
     frame:Show()
   end

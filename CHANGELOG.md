@@ -1,6 +1,6 @@
 # OG-RaidHelper Changelog
 
-## Version 1.22.8 - Menu System Improvements
+## Version 1.22.8 - Menu System & Panel Positioning Improvements
 **Release Date:** December 7, 2025
 
 ### Features
@@ -10,6 +10,14 @@
   - Configurable title and item colors (titleColor, itemColor)
   - All menus now use standardized system (minimap button, encounter select)
   - Reduced code duplication by ~300 lines
+
+- **Auxiliary Panel Positioning System**: Centralized panel stacking management
+  - Automatic positioning of all auxiliary panels (consume monitor, ready check, push structure, etc.)
+  - Panels intelligently stack below or above main UI based on available screen space
+  - Priority-based ordering ensures consistent layout (consume monitor → ready check → push structure)
+  - 2-pixel gap between panels prevents border overlap
+  - Automatic repositioning on main UI movement or panel visibility changes
+  - Future-proof system for adding new panels without positioning conflicts
 
 ### UI Improvements
 - **Encounter Select Menu**: Enhanced right-click menu on encounter button
@@ -21,6 +29,10 @@
 
 ### Bug Fixes
 - Fixed Settings menu item showing duplicate arrow ("Settings > >")
+- Fixed push structure sync panel overlapping other panels
+- Fixed all auxiliary panels now using consistent frame strata (MEDIUM/HIGH instead of DIALOG)
+- Fixed sync panel not registering with positioning system on creation and re-show
+- Fixed consume monitor not appearing on reload when encounter with consumes is selected
 - Fixed inconsistent text colors between menus (both now use white for items)
 
 ## Version 1.22.1 - Invites Module Fixes

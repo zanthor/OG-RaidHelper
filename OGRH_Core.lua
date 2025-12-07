@@ -257,13 +257,20 @@ function OGRH.ShowStructureSyncPanel(isSender, encounterName)
   if OGRH_StructureSyncPanel then
     OGRH_StructureSyncPanel:Show()
     OGRH.UpdateStructureSyncPanel(isSender, encounterName)
+    -- Manually trigger registration since OnShow might not fire
+    if OGRH.RegisterAuxiliaryPanel then
+      OGRH.RegisterAuxiliaryPanel(OGRH_StructureSyncPanel, 30)
+    end
+    if OGRH.RepositionAuxiliaryPanels then
+      OGRH.RepositionAuxiliaryPanels()
+    end
     return
   end
   
   local frame = CreateFrame("Frame", "OGRH_StructureSyncPanel", UIParent)
   frame:SetWidth(200)
   frame:SetHeight(90)
-  frame:SetFrameStrata("DIALOG")
+  frame:SetFrameStrata("MEDIUM")
   frame:EnableMouse(false)
   
   frame:SetBackdrop({
@@ -276,57 +283,16 @@ function OGRH.ShowStructureSyncPanel(isSender, encounterName)
   })
   frame:SetBackdropColor(0, 0, 0, 0.85)
   
-  -- Position relative to main UI
-  frame.PositionFrame = function()
-    if not OGRH_Main or not OGRH_Main:IsVisible() then
-      frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-      return
+  -- Register with auxiliary panel system (priority 30 = after ready check)
+  frame:SetScript("OnShow", function()
+    if OGRH.RegisterAuxiliaryPanel then
+      OGRH.RegisterAuxiliaryPanel(this, 30)
     end
-    
-    local screenHeight = UIParent:GetHeight()
-    local mainBottom = OGRH_Main:GetBottom()
-    local mainTop = OGRH_Main:GetTop()
-    local frameHeight = frame:GetHeight()
-    
-    frame:ClearAllPoints()
-    
-    -- Check if ConsumeMonitor is visible and positioned
-    local consumeOffset = 0
-    if OGRH_ConsumeMonitorFrame and OGRH_ConsumeMonitorFrame:IsVisible() then
-      consumeOffset = OGRH_ConsumeMonitorFrame:GetHeight() + 5
-    end
-    
-    -- Try to dock below main UI (with consume monitor offset)
-    if mainBottom and (mainBottom - frameHeight - consumeOffset) > 0 then
-      if consumeOffset > 0 then
-        frame:SetPoint("TOP", OGRH_ConsumeMonitorFrame, "BOTTOM", 0, 0)
-      else
-        frame:SetPoint("TOP", OGRH_Main, "BOTTOM", 0, 0)
-      end
-    -- Otherwise dock above main UI
-    elseif mainTop and (mainTop + frameHeight) < screenHeight then
-      frame:SetPoint("BOTTOM", OGRH_Main, "TOP", 0, 0)
-    else
-      frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-    end
-  end
+  end)
   
-  frame:PositionFrame()
-  
-  -- Register for main UI movement to reposition
-  frame:SetScript("OnUpdate", function()
-    if not this:IsVisible() then
-      return
-    end
-    
-    if this.lastMainPos then
-      local currentPos = OGRH_Main and OGRH_Main:GetLeft()
-      if currentPos and currentPos ~= this.lastMainPos then
-        this:PositionFrame()
-        this.lastMainPos = currentPos
-      end
-    else
-      this.lastMainPos = OGRH_Main and OGRH_Main:GetLeft()
+  frame:SetScript("OnHide", function()
+    if OGRH.UnregisterAuxiliaryPanel then
+      OGRH.UnregisterAuxiliaryPanel(this)
     end
   end)
   
@@ -343,8 +309,22 @@ function OGRH.ShowStructureSyncPanel(isSender, encounterName)
   statusText:SetJustifyH("CENTER")
   frame.statusText = statusText
   
+  -- Assign to global BEFORE any operations
+  OGRH_StructureSyncPanel = frame
+  
   OGRH.UpdateStructureSyncPanel(isSender, encounterName)
+  
+  -- Manually register BEFORE showing (OnShow might not fire in time)
+  if OGRH.RegisterAuxiliaryPanel then
+    OGRH.RegisterAuxiliaryPanel(frame, 30)
+  end
+  
   frame:Show()
+  
+  -- Trigger immediate positioning
+  if OGRH.RepositionAuxiliaryPanels then
+    OGRH.RepositionAuxiliaryPanels()
+  end
 end
 
 -- Update Structure Sync Panel content
@@ -368,6 +348,14 @@ function OGRH.ShowStructureSyncProgress(isSender, progress, complete, encounterN
   end
   
   local frame = OGRH_StructureSyncPanel
+  
+  -- Ensure frame is registered and positioned
+  if frame and OGRH.RegisterAuxiliaryPanel then
+    OGRH.RegisterAuxiliaryPanel(frame, 30)
+    if OGRH.RepositionAuxiliaryPanels then
+      OGRH.RepositionAuxiliaryPanels()
+    end
+  end
   
   -- Create or update progress bar
   if not frame.progressBar then
@@ -461,6 +449,154 @@ function OGRH.StyleButton(button)
     this:SetBackdropColor(0.25, 0.35, 0.35, 1)
     this:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
   end)
+end
+
+-- ========================================
+-- AUXILIARY PANEL POSITIONING SYSTEM
+-- ========================================
+-- Centralized system for managing stacked panels below/above main UI
+OGRH.AuxiliaryPanels = OGRH.AuxiliaryPanels or {
+  panels = {}, -- Registered panels in display order
+  updateFrame = nil
+}
+
+-- Register an auxiliary panel for automatic positioning
+-- priority: lower numbers appear closer to main UI (1 = closest)
+function OGRH.RegisterAuxiliaryPanel(frame, priority)
+  if not frame then return end
+  
+  priority = priority or 100
+  
+  -- Check if already registered
+  for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
+    if panel.frame == frame then
+      panel.priority = priority
+      OGRH.RepositionAuxiliaryPanels()
+      return
+    end
+  end
+  
+  -- Add new panel
+  table.insert(OGRH.AuxiliaryPanels.panels, {
+    frame = frame,
+    priority = priority
+  })
+  
+  -- Sort by priority
+  table.sort(OGRH.AuxiliaryPanels.panels, function(a, b)
+    return a.priority < b.priority
+  end)
+  
+  OGRH.RepositionAuxiliaryPanels()
+end
+
+-- Unregister an auxiliary panel
+function OGRH.UnregisterAuxiliaryPanel(frame)
+  if not frame then return end
+  
+  for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
+    if panel.frame == frame then
+      table.remove(OGRH.AuxiliaryPanels.panels, i)
+      OGRH.RepositionAuxiliaryPanels()
+      return
+    end
+  end
+end
+
+-- Reposition all registered auxiliary panels
+function OGRH.RepositionAuxiliaryPanels()
+  if not OGRH_Main or not OGRH_Main:IsVisible() then return end
+  
+  local screenHeight = UIParent:GetHeight()
+  local mainBottom = OGRH_Main:GetBottom()
+  local mainTop = OGRH_Main:GetTop()
+  
+  if not mainBottom or not mainTop then return end
+  
+  -- Separate panels into visible below and above
+  local visibleBelow = {}
+  local visibleAbove = {}
+  
+  for _, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
+    if panel.frame:IsVisible() then
+      local frameHeight = panel.frame:GetHeight() or 0
+      table.insert(visibleBelow, {frame = panel.frame, height = frameHeight})
+    end
+  end
+  
+  -- Calculate total height of panels
+  local totalBelowHeight = 0
+  for _, panel in ipairs(visibleBelow) do
+    totalBelowHeight = totalBelowHeight + panel.height
+  end
+  
+  -- Position panels below or above based on available space
+  local gap = -2  -- Negative gap to stack panels with small spacing
+  
+  if (mainBottom - totalBelowHeight) > 0 then
+    -- Stack below main UI
+    local currentAnchor = OGRH_Main
+    local currentPoint = "BOTTOM"
+    
+    for _, panel in ipairs(visibleBelow) do
+      panel.frame:ClearAllPoints()
+      panel.frame:SetPoint("TOP", currentAnchor, currentPoint, 0, gap)
+      currentAnchor = panel.frame
+      currentPoint = "BOTTOM"
+    end
+  elseif (mainTop + totalBelowHeight) < screenHeight then
+    -- Stack above main UI (reverse order)
+    local currentAnchor = OGRH_Main
+    local currentPoint = "TOP"
+    
+    for i = table.getn(visibleBelow), 1, -1 do
+      local panel = visibleBelow[i]
+      panel.frame:ClearAllPoints()
+      panel.frame:SetPoint("BOTTOM", currentAnchor, currentPoint, 0, -gap)
+      currentAnchor = panel.frame
+      currentPoint = "TOP"
+    end
+  else
+    -- Not enough space either way, fallback to individual positioning
+    for _, panel in ipairs(visibleBelow) do
+      panel.frame:ClearAllPoints()
+      panel.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
+  end
+end
+
+-- Initialize automatic repositioning on main UI movement or panel visibility changes
+if not OGRH.AuxiliaryPanels.updateFrame then
+  local updateFrame = CreateFrame("Frame")
+  updateFrame.lastMainPos = nil
+  updateFrame.lastPanelStates = {}
+  
+  updateFrame:SetScript("OnUpdate", function()
+    if not OGRH_Main or not OGRH_Main:IsVisible() then return end
+    
+    -- Check for main UI movement
+    local currentPos = OGRH_Main:GetLeft()
+    if currentPos and currentPos ~= this.lastMainPos then
+      this.lastMainPos = currentPos
+      OGRH.RepositionAuxiliaryPanels()
+    end
+    
+    -- Check for panel visibility changes
+    local needsUpdate = false
+    for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
+      local isVisible = panel.frame:IsVisible()
+      if this.lastPanelStates[i] ~= isVisible then
+        this.lastPanelStates[i] = isVisible
+        needsUpdate = true
+      end
+    end
+    
+    if needsUpdate then
+      OGRH.RepositionAuxiliaryPanels()
+    end
+  end)
+  
+  OGRH.AuxiliaryPanels.updateFrame = updateFrame
 end
 
 -- ========================================
@@ -1076,22 +1212,23 @@ function OGRH.ShowReadyCheckTimer()
       end
     end)
     
+    -- Register with auxiliary panel system (priority 20 = after consume monitor)
+    frame:SetScript("OnShow", function()
+      if OGRH.RegisterAuxiliaryPanel then
+        OGRH.RegisterAuxiliaryPanel(this, 20)
+      end
+    end)
+    
+    frame:SetScript("OnHide", function()
+      if OGRH.UnregisterAuxiliaryPanel then
+        OGRH.UnregisterAuxiliaryPanel(this)
+      end
+    end)
+    
     OGRH_ReadyCheckTimerFrame = frame
   end
   
   local frame = OGRH_ReadyCheckTimerFrame
-  
-  -- Position frame below main UI (or below consume status if it exists)
-  if OGRH_Main and OGRH_Main:IsVisible() then
-    -- Check if there's a consume status frame visible
-    -- For now, position below main UI
-    frame:ClearAllPoints()
-    frame:SetPoint("TOP", OGRH_Main, "BOTTOM", 0, -5)
-  else
-    -- Fallback to center of screen
-    frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", -380, 100)
-  end
   
   -- Reset and show
   frame.startTime = GetTime()
@@ -1099,6 +1236,14 @@ function OGRH.ShowReadyCheckTimer()
   frame.statusBar:SetStatusBarColor(0.2, 0.8, 0.2, 1)
   frame.timerText:SetText("30s")
   frame:Show()
+  
+  -- Manually trigger registration and positioning (in case OnShow doesn't fire)
+  if OGRH.RegisterAuxiliaryPanel then
+    OGRH.RegisterAuxiliaryPanel(frame, 20)
+  end
+  if OGRH.RepositionAuxiliaryPanels then
+    OGRH.RepositionAuxiliaryPanels()
+  end
 end
 
 function OGRH.HideReadyCheckTimer()
@@ -2153,8 +2298,16 @@ addonFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 addonFrame:RegisterEvent("READY_CHECK")
 addonFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 addonFrame:RegisterEvent("PLAYER_LOGOUT")
+addonFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 addonFrame:SetScript("OnEvent", function()
-  if event == "PLAYER_LOGOUT" then
+  if event == "PLAYER_ENTERING_WORLD" then
+    -- Restore consume monitor if encounter is selected
+    if OGRH_SV and OGRH_SV.ui and OGRH_SV.ui.selectedRaid and OGRH_SV.ui.selectedEncounter then
+      if OGRH.ShowConsumeMonitor then
+        OGRH.ShowConsumeMonitor()
+      end
+    end
+  elseif event == "PLAYER_LOGOUT" then
     -- Clean up modules on logout
     if OGRH.CleanupModules then
       OGRH.CleanupModules()

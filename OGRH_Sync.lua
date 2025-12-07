@@ -1487,8 +1487,12 @@ function OGRH.Sync.ShowSyncPanel(isSender)
   if OGRH_SyncPanelFrame then
     OGRH_SyncPanelFrame:Show()
     OGRH.Sync.UpdateSyncPanel(isSender)
-    if OGRH_SyncPanelFrame.PositionFrame then
-      OGRH_SyncPanelFrame:PositionFrame()
+    -- Manually register and reposition
+    if OGRH.RegisterAuxiliaryPanel then
+      OGRH.RegisterAuxiliaryPanel(OGRH_SyncPanelFrame, 30)
+    end
+    if OGRH.RepositionAuxiliaryPanels then
+      OGRH.RepositionAuxiliaryPanels()
     end
     return
   end
@@ -1496,7 +1500,7 @@ function OGRH.Sync.ShowSyncPanel(isSender)
   local frame = CreateFrame("Frame", "OGRH_SyncPanelFrame", UIParent)
   frame:SetWidth(180)
   frame:SetHeight(100) -- Increased base height
-  frame:SetFrameStrata("DIALOG")
+  frame:SetFrameStrata("MEDIUM")
   frame:EnableMouse(true)
   
   frame:SetBackdrop({
@@ -1507,43 +1511,23 @@ function OGRH.Sync.ShowSyncPanel(isSender)
   })
   frame:SetBackdropColor(0, 0, 0, 0.85)
   
-  -- Position relative to main UI (like consume monitor)
-  frame.PositionFrame = function()
-    if not OGRH_Main or not OGRH_Main:IsVisible() then
-      frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-      return
+  -- Register with auxiliary panel system (priority 30)
+  frame:SetScript("OnShow", function()
+    if OGRH.RegisterAuxiliaryPanel then
+      OGRH.RegisterAuxiliaryPanel(this, 30)
     end
-    
-    local screenHeight = UIParent:GetHeight()
-    local mainBottom = OGRH_Main:GetBottom()
-    local mainTop = OGRH_Main:GetTop()
-    local frameHeight = frame:GetHeight()
-    
-    frame:ClearAllPoints()
-    
-    -- Check if ConsumeMonitor is visible and positioned
-    local consumeOffset = 0
-    if OGRH_ConsumeMonitorFrame and OGRH_ConsumeMonitorFrame:IsVisible() then
-      consumeOffset = OGRH_ConsumeMonitorFrame:GetHeight() + 5
-    end
-    
-    -- Try to dock below main UI (with consume monitor offset)
-    if mainBottom and (mainBottom - frameHeight - consumeOffset) > 0 then
-      if consumeOffset > 0 then
-        frame:SetPoint("TOP", OGRH_ConsumeMonitorFrame, "BOTTOM", 0, 0)
-      else
-        frame:SetPoint("TOP", OGRH_Main, "BOTTOM", 0, 0)
-      end
-    -- Otherwise dock above main UI
-    elseif mainTop and (mainTop + frameHeight) < screenHeight then
-      frame:SetPoint("BOTTOM", OGRH_Main, "TOP", 0, 0)
-    else
-      -- Fallback to center if neither position works
-      frame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
-    end
-  end
+  end)
   
-  frame:PositionFrame()
+  frame:SetScript("OnHide", function()
+    if OGRH.UnregisterAuxiliaryPanel then
+      OGRH.UnregisterAuxiliaryPanel(this)
+    end
+  end)
+  
+  -- Manually register immediately
+  if OGRH.RegisterAuxiliaryPanel then
+    OGRH.RegisterAuxiliaryPanel(frame, 30)
+  end
   
   -- Register for main UI movement to reposition
   frame:SetScript("OnUpdate", function()
