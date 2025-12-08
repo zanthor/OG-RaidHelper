@@ -576,104 +576,14 @@ function OGRH.Sync.ShowDataManagementWindow(forceRecreate)
     frame.pushScrollFrame = pushScrollFrame
     frame.pushScrollBar = pushScrollBar
     
-    -- Import/Export scroll frame backdrop (hidden by default)
-    local importExportBackdrop = CreateFrame("Frame", nil, detailPanel)
-    importExportBackdrop:SetWidth(350)
-    importExportBackdrop:SetHeight(240)
+    -- Import/Export scrolling text box (hidden by default)
+    local importExportBackdrop, importExportEditBox, importExportScrollFrame, importExportScrollBar = OGRH.CreateScrollingTextBox(detailPanel, 350, 240)
     importExportBackdrop:SetPoint("TOPLEFT", detailPanel, "TOPLEFT", 15, -35)
-    importExportBackdrop:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 16,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    importExportBackdrop:SetBackdropColor(0, 0, 0, 1)
-    importExportBackdrop:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     importExportBackdrop:Hide()
     frame.importExportBackdrop = importExportBackdrop
-    
-    -- Scroll frame
-    local importExportScrollFrame = CreateFrame("ScrollFrame", nil, importExportBackdrop)
-    importExportScrollFrame:SetPoint("TOPLEFT", 5, -6)
-    importExportScrollFrame:SetPoint("BOTTOMRIGHT", -28, 6)
-    frame.importExportScrollFrame = importExportScrollFrame
-    
-    -- Calculate actual content width: backdrop width - margins - scrollbar
-    local contentWidth = 350 - 5 - 28 - 5  -- 312 pixels
-    
-    -- Scroll child
-    local importExportScrollChild = CreateFrame("Frame", nil, importExportScrollFrame)
-    importExportScrollFrame:SetScrollChild(importExportScrollChild)
-    importExportScrollChild:SetWidth(contentWidth)
-    importExportScrollChild:SetHeight(400)
-    
-    -- Edit box
-    local importExportEditBox = CreateFrame("EditBox", nil, importExportScrollChild)
-    importExportEditBox:SetPoint("TOPLEFT", 0, 0)
-    importExportEditBox:SetWidth(contentWidth)
-    importExportEditBox:SetHeight(400)
-    importExportEditBox:SetMultiLine(true)
-    importExportEditBox:SetAutoFocus(false)
-    importExportEditBox:SetFontObject(ChatFontNormal)
-    importExportEditBox:SetTextInsets(5, 5, 3, 3)
-    importExportEditBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
     frame.importExportEditBox = importExportEditBox
-    
-    -- Scrollbar
-    local importExportScrollBar = CreateFrame("Slider", nil, importExportBackdrop)
-    importExportScrollBar:SetPoint("TOPRIGHT", importExportBackdrop, "TOPRIGHT", -5, -16)
-    importExportScrollBar:SetPoint("BOTTOMRIGHT", importExportBackdrop, "BOTTOMRIGHT", -5, 16)
-    importExportScrollBar:SetWidth(16)
-    importExportScrollBar:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true,
-      tileSize = 16,
-      edgeSize = 8,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    importExportScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    importExportScrollBar:SetOrientation("VERTICAL")
-    importExportScrollBar:SetMinMaxValues(0, 1)
-    importExportScrollBar:SetValue(0)
-    importExportScrollBar:SetValueStep(22)
-    importExportScrollBar:SetScript("OnValueChanged", function()
-      importExportScrollFrame:SetVerticalScroll(this:GetValue())
-    end)
+    frame.importExportScrollFrame = importExportScrollFrame
     frame.importExportScrollBar = importExportScrollBar
-    
-    -- Update scroll range when text changes
-    importExportEditBox:SetScript("OnTextChanged", function()
-      local maxScroll = importExportScrollChild:GetHeight() - importExportScrollFrame:GetHeight()
-      if maxScroll > 0 then
-        importExportScrollBar:SetMinMaxValues(0, maxScroll)
-        importExportScrollBar:Show()
-      else
-        importExportScrollBar:Hide()
-      end
-    end)
-    
-    -- Mouse wheel scrolling
-    importExportScrollFrame:EnableMouseWheel(true)
-    importExportScrollFrame:SetScript("OnMouseWheel", function()
-      local current = importExportScrollBar:GetValue()
-      local maxScroll = importExportScrollChild:GetHeight() - importExportScrollFrame:GetHeight()
-      if maxScroll > 0 then
-        if arg1 > 0 then
-          importExportScrollBar:SetValue(math.max(0, current - 22))
-        else
-          importExportScrollBar:SetValue(math.min(maxScroll, current + 22))
-        end
-      end
-    end)
-    
-    -- Make the backdrop clickable to focus the editbox
-    importExportBackdrop:EnableMouse(true)
-    importExportBackdrop:SetScript("OnMouseDown", function()
-      frame.importExportEditBox:SetFocus()
-    end)
     
     -- Set up keyboard capture on the detail panel
     detailPanel:EnableKeyboard(true)

@@ -239,7 +239,8 @@ function OGRH.CloseAllWindows(exceptFrame)
     "OGRH_EncountersMenu",
     "OGRH_ConsumesFrame",
     "OGRH_DataManagementFrame",
-    "OGRH_RaidLeadSelectionFrame"
+    "OGRH_RaidLeadSelectionFrame",
+    "OGRH_RecruitmentFrame"
   }
   
   for _, frameName in ipairs(windows) do
@@ -1085,6 +1086,107 @@ function OGRH.CreateStyledListItem(parent, width, height, frameType)
   -- Frame type: no dynamic styling, just uses default INACTIVE color via backdrop
   
   return item
+end
+
+-- Create a scrolling multi-line text box with backdrop and scrollbar
+-- Returns: backdrop, editBox, scrollFrame, scrollBar
+function OGRH.CreateScrollingTextBox(parent, width, height)
+  if not parent then return nil end
+  
+  -- Backdrop frame
+  local backdrop = CreateFrame("Frame", nil, parent)
+  backdrop:SetWidth(width)
+  backdrop:SetHeight(height)
+  backdrop:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  backdrop:SetBackdropColor(0, 0, 0, 1)
+  backdrop:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  
+  -- Scroll frame
+  local scrollFrame = CreateFrame("ScrollFrame", nil, backdrop)
+  scrollFrame:SetPoint("TOPLEFT", 5, -6)
+  scrollFrame:SetPoint("BOTTOMRIGHT", -28, 6)
+  
+  -- Calculate actual content width: width - margins - scrollbar
+  local contentWidth = width - 5 - 28 - 5
+  
+  -- Scroll child
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  scrollFrame:SetScrollChild(scrollChild)
+  scrollChild:SetWidth(contentWidth)
+  scrollChild:SetHeight(400)
+  
+  -- Edit box
+  local editBox = CreateFrame("EditBox", nil, scrollChild)
+  editBox:SetPoint("TOPLEFT", 0, 0)
+  editBox:SetWidth(contentWidth)
+  editBox:SetHeight(400)
+  editBox:SetMultiLine(true)
+  editBox:SetAutoFocus(false)
+  editBox:SetFontObject(ChatFontNormal)
+  editBox:SetTextInsets(5, 5, 3, 3)
+  editBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  
+  -- Scrollbar
+  local scrollBar = CreateFrame("Slider", nil, backdrop)
+  scrollBar:SetPoint("TOPRIGHT", backdrop, "TOPRIGHT", -5, -16)
+  scrollBar:SetPoint("BOTTOMRIGHT", backdrop, "BOTTOMRIGHT", -5, 16)
+  scrollBar:SetWidth(16)
+  scrollBar:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 8,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollBar:SetOrientation("VERTICAL")
+  scrollBar:SetMinMaxValues(0, 1)
+  scrollBar:SetValue(0)
+  scrollBar:SetValueStep(22)
+  scrollBar:SetScript("OnValueChanged", function()
+    scrollFrame:SetVerticalScroll(this:GetValue())
+  end)
+  
+  -- Update scroll range when text changes
+  editBox:SetScript("OnTextChanged", function()
+    local maxScroll = scrollChild:GetHeight() - scrollFrame:GetHeight()
+    if maxScroll > 0 then
+      scrollBar:SetMinMaxValues(0, maxScroll)
+      scrollBar:Show()
+    else
+      scrollBar:Hide()
+    end
+  end)
+  
+  -- Mouse wheel scrolling
+  scrollFrame:EnableMouseWheel(true)
+  scrollFrame:SetScript("OnMouseWheel", function()
+    local current = scrollBar:GetValue()
+    local maxScroll = scrollChild:GetHeight() - scrollFrame:GetHeight()
+    if maxScroll > 0 then
+      if arg1 > 0 then
+        scrollBar:SetValue(math.max(0, current - 22))
+      else
+        scrollBar:SetValue(math.min(maxScroll, current + 22))
+      end
+    end
+  end)
+  
+  -- Make the backdrop clickable to focus the editbox
+  backdrop:EnableMouse(true)
+  backdrop:SetScript("OnMouseDown", function()
+    editBox:SetFocus()
+  end)
+  
+  return backdrop, editBox, scrollFrame, scrollBar
 end
 
 -- Helper function to set list item state (selected/inactive)
@@ -5032,6 +5134,18 @@ local function CreateMinimapButton()
       if not OGRH.ROLLFOR_AVAILABLE then
         invitesItem.fs:SetTextColor(0.5, 0.5, 0.5)
       end
+      
+      -- Guild Recruitment
+      menu:AddItem({
+        text = "Guild Recruitment",
+        onClick = function()
+          if OGRH.ShowRecruitmentWindow then
+            OGRH.ShowRecruitmentWindow()
+          else
+            OGRH.Msg("Recruitment module not loaded.")
+          end
+        end
+      })
       
       -- SR Validation
       local srValidationItem = menu:AddItem({

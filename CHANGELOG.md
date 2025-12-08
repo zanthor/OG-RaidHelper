@@ -1,5 +1,54 @@
 # OG-RaidHelper Changelog
 
+## Version 1.23.0 - Guild Recruitment Module
+**Release Date:** December 7, 2025
+
+### Features
+- **Guild Recruitment Module**: Complete advertising and contact management system
+  - Automated guild recruitment message broadcasting to selected chat channels
+  - Channel selection: General, Trade, World, or Raid chat
+  - Configurable interval between advertisements (default 5 minutes)
+  - Start/Stop Recruiting toggle with visual feedback
+  - Character limit (255) with live counter for recruitment messages
+  - Message persistence across sessions
+
+- **Recruiting Panel**: Active recruitment status display
+  - Countdown progress bar showing time until next advertisement
+  - Timer display in M:SS format
+  - Quick Stop button for immediate cancellation
+  - Priority-based stacking with other auxiliary panels
+  - Auto-show/hide based on recruiting state
+  - Persists recruiting state across /reload
+
+- **Whisper Contact System**: Automatic tracking and chat interface
+  - Intelligent whisper filtering (tracks only when recruiting or existing contact)
+  - Contact list with class-colored names and timestamps (MM/DD HH:MM format)
+  - Full chat history view with detailed timestamps (YYYY-MM-DD HH:MM)
+  - Class color detection via pfUI database integration
+  - WHO query system for unknown players with throttling protection
+  - Reply interface for sending whispers directly from contact view
+
+- **Contact Management**: Standard deletion and tracking controls
+  - Delete button using standardized interface
+  - Deleted contacts tracking prevents automatic re-adding
+  - Contacts persist across sessions in saved variables
+  - Scheduled list refresh for smooth performance (0.5s batch updates)
+  - Window registry integration (closes other dialogs when opening)
+
+### UI Improvements
+- Class-colored player names throughout contact list and chat interface
+- Consistent styling with existing Data Management module
+- Dynamic left panel with Advertise option and contact list
+- Full-width chat view with message history and reply box
+- Standard list item buttons with proper spacing
+
+### Technical Implementation
+- pfUI_playerDB integration for immediate class lookup
+- WHO query queue with 2-second throttling to prevent server limits
+- Player cache system stores class information for performance
+- Auxiliary panel system integration (priority 15)
+- Saved variables: whisperHistory, playerCache, deletedContacts
+
 ## Version 1.22.8 - Menu System & Panel Positioning Improvements
 **Release Date:** December 7, 2025
 
