@@ -440,6 +440,22 @@ function OGRH.ShowEncounterWindow(encounterName)
     title:SetText("Encounter Planning")
     frame.title = title
     
+    -- Export Raid button (top left)
+    local exportRaidBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    exportRaidBtn:SetWidth(90)
+    exportRaidBtn:SetHeight(24)
+    exportRaidBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
+    exportRaidBtn:SetText("Export Raid")
+    OGRH.StyleButton(exportRaidBtn)
+    exportRaidBtn:SetScript("OnClick", function()
+      if frame.selectedRaid then
+        OGRH.ShowExportRaidWindow(frame.selectedRaid)
+      else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid first.")
+      end
+    end)
+    frame.exportRaidBtn = exportRaidBtn
+    
     -- Status label (anchored to top left corner, hidden by default)
     local statusLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     statusLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -12)
@@ -4264,6 +4280,398 @@ function OGRH.MarkPlayersFromMainUI()
   end
   
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Marked " .. markedCount .. " players.")
+end
+
+-- ========================================
+-- EXPORT RAID WINDOW
+-- ========================================
+
+-- Helper function to strip WoW color codes
+local function StripColorCodes(text)
+  if not text then return "" end
+  -- Remove |cFFxxxxxx and |r tags
+  local stripped = string.gsub(text, "|c[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]", "")
+  stripped = string.gsub(stripped, "|r", "")
+  -- Remove raid icons {rt1} etc
+  stripped = string.gsub(stripped, "{rt%d}", "")
+  return stripped
+end
+
+-- Helper function to convert WoW color codes to RGB hex for HTML
+local function ConvertColorToHex(colorCode)
+  if not colorCode then return "000000" end
+  -- Extract RRGGBB from |cFFRRGGBB or |cAARRGGBB
+  local hex = string.match(colorCode, "|c[0-9a-fA-F][0-9a-fA-F]([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])")
+  return hex or "FFFFFF"
+end
+
+-- Helper function to escape CSV fields
+local function EscapeCSV(text)
+  if not text then return "" end
+  -- Strip color codes first
+  text = StripColorCodes(text)
+  -- If contains comma, quote, or newline, wrap in quotes and escape quotes
+  if string.find(text, '[,"\n]') then
+    text = string.gsub(text, '"', '""')
+    return '"' .. text .. '"'
+  end
+  return text
+end
+
+function OGRH.ShowExportRaidWindow(raidName)
+  if not raidName then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No raid selected.")
+    return
+  end
+  
+  -- Build export data structure
+  local exportData = {}
+  exportData.raidName = raidName
+  exportData.encounters = {}
+  
+  -- Get encounters for this raid
+  local encounters = {}
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and OGRH_SV.encounterMgmt.encounters[raidName] then
+    encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+  end
+  
+  -- Process each encounter
+  for i = 1, table.getn(encounters) do
+    local encounterName = encounters[i]
+    local encounterData = {
+      name = encounterName, 
+      announcements = {},
+      roles = {},
+      assignments = {},
+      raidMarks = {},
+      assignmentNumbers = {}
+    }
+    
+    -- Get announcement data
+    if OGRH_SV.encounterAnnouncements and 
+       OGRH_SV.encounterAnnouncements[raidName] and
+       OGRH_SV.encounterAnnouncements[raidName][encounterName] then
+      
+      local announcementData = OGRH_SV.encounterAnnouncements[raidName][encounterName]
+      
+      -- Get role configuration
+      local orderedRoles = {}
+      if OGRH_SV.encounterMgmt.roles and 
+         OGRH_SV.encounterMgmt.roles[raidName] and 
+         OGRH_SV.encounterMgmt.roles[raidName][encounterName] then
+        
+        local encounterRoles = OGRH_SV.encounterMgmt.roles[raidName][encounterName]
+        local column1 = encounterRoles.column1 or {}
+        local column2 = encounterRoles.column2 or {}
+        
+        for j = 1, table.getn(column1) do
+          table.insert(orderedRoles, column1[j])
+        end
+        for j = 1, table.getn(column2) do
+          table.insert(orderedRoles, column2[j])
+        end
+      end
+      encounterData.roles = orderedRoles
+      
+      -- Get assignments
+      if OGRH_SV.encounterAssignments and 
+         OGRH_SV.encounterAssignments[raidName] and
+         OGRH_SV.encounterAssignments[raidName][encounterName] then
+        encounterData.assignments = OGRH_SV.encounterAssignments[raidName][encounterName]
+      end
+      
+      -- Get raid marks
+      if OGRH_SV.encounterRaidMarks and
+         OGRH_SV.encounterRaidMarks[raidName] and
+         OGRH_SV.encounterRaidMarks[raidName][encounterName] then
+        encounterData.raidMarks = OGRH_SV.encounterRaidMarks[raidName][encounterName]
+      end
+      
+      -- Get assignment numbers
+      if OGRH_SV.encounterAssignmentNumbers and
+         OGRH_SV.encounterAssignmentNumbers[raidName] and
+         OGRH_SV.encounterAssignmentNumbers[raidName][encounterName] then
+        encounterData.assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[raidName][encounterName]
+      end
+      
+      -- Process announcement lines
+      for j = 1, table.getn(announcementData) do
+        local lineText = announcementData[j]
+        if lineText and lineText ~= "" then
+          local processedText = OGRH.Announcements.ReplaceTags(lineText, orderedRoles, encounterData.assignments, encounterData.raidMarks, encounterData.assignmentNumbers)
+          if processedText and processedText ~= "" then
+            table.insert(encounterData.announcements, processedText)
+          end
+        end
+      end
+    end
+    
+    table.insert(exportData.encounters, encounterData)
+  end
+  
+  -- Function to generate plain text format
+  local function GeneratePlainText(data)
+    local lines = {}
+    table.insert(lines, "=== " .. data.raidName .. " ===")
+    table.insert(lines, "")
+    
+    for i = 1, table.getn(data.encounters) do
+      local encounter = data.encounters[i]
+      table.insert(lines, "--- " .. encounter.name .. " ---")
+      for j = 1, table.getn(encounter.announcements) do
+        table.insert(lines, StripColorCodes(encounter.announcements[j]))
+      end
+      table.insert(lines, "")
+    end
+    
+    return table.concat(lines, "\n")
+  end
+  
+  -- Function to generate CSV format (for Google Sheets)
+  local function GenerateCSV(data)
+    local lines = {}
+    table.insert(lines, "Raid,Encounter,R.T,R.M,R.P,R.A")
+    
+    for i = 1, table.getn(data.encounters) do
+      local encounter = data.encounters[i]
+      local roles = encounter.roles
+      local assignments = encounter.assignments
+      local raidMarks = encounter.raidMarks
+      local assignmentNumbers = encounter.assignmentNumbers
+      
+      -- Iterate through each role
+      for roleIndex = 1, table.getn(roles) do
+        local role = roles[roleIndex]
+        if assignments[roleIndex] then
+          -- Get all assigned players for this role
+          local roleAssignments = assignments[roleIndex]
+          
+          for slotIndex = 1, table.getn(roleAssignments) do
+            local playerName = roleAssignments[slotIndex]
+            if playerName and playerName ~= "" then
+              -- Get role title
+              local roleTitle = role.title or ""
+              
+              -- Get mark index
+              local markIndex = 0
+              if raidMarks[roleIndex] and raidMarks[roleIndex][slotIndex] then
+                markIndex = raidMarks[roleIndex][slotIndex]
+              end
+              
+              -- Get assignment number
+              local assignmentNum = 0
+              if assignmentNumbers[roleIndex] and assignmentNumbers[roleIndex][slotIndex] then
+                assignmentNum = assignmentNumbers[roleIndex][slotIndex]
+              end
+              
+              -- Build role tags
+              local roleTag = "R" .. roleIndex .. ".T"
+              local markTag = "R" .. roleIndex .. ".M" .. slotIndex
+              local playerTag = "R" .. roleIndex .. ".P" .. slotIndex
+              local assignTag = "R" .. roleIndex .. ".A" .. slotIndex
+              
+              -- Build CSV line with actual values
+              local line = EscapeCSV(data.raidName) .. "," ..
+                           EscapeCSV(encounter.name) .. "," ..
+                           EscapeCSV(roleTitle) .. "," ..
+                           (markIndex > 0 and tostring(markIndex) or "") .. "," ..
+                           EscapeCSV(playerName) .. "," ..
+                           (assignmentNum > 0 and tostring(assignmentNum) or "")
+              table.insert(lines, line)
+            end
+          end
+        end
+      end
+    end
+    
+    return table.concat(lines, "\n")
+  end
+  
+  -- Function to generate HTML format (preserves colors)
+  local function GenerateHTML(data)
+    local lines = {}
+    table.insert(lines, "<html><head><style>")
+    table.insert(lines, "body { font-family: Arial, sans-serif; background: #000; color: #fff; }")
+    table.insert(lines, "h1 { color: #FFD100; }")
+    table.insert(lines, "h2 { color: #00FF00; margin-top: 20px; }")
+    table.insert(lines, ".announcement { margin: 5px 0; }")
+    table.insert(lines, "</style></head><body>")
+    table.insert(lines, "<h1>" .. data.raidName .. "</h1>")
+    
+    for i = 1, table.getn(data.encounters) do
+      local encounter = data.encounters[i]
+      table.insert(lines, "<h2>" .. encounter.name .. "</h2>")
+      
+      for j = 1, table.getn(encounter.announcements) do
+        local text = encounter.announcements[j]
+        local htmlText = ""
+        local pos = 1
+        local inColor = false
+        local currentColor = "FFFFFF"
+        
+        while pos <= string.len(text) do
+          -- Check for color code
+          local colorStart, colorEnd, colorCode = string.find(text, "(|c[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", pos)
+          local resetStart = string.find(text, "|r", pos)
+          
+          if colorStart == pos then
+            if inColor then
+              htmlText = htmlText .. "</span>"
+            end
+            currentColor = ConvertColorToHex(colorCode)
+            htmlText = htmlText .. '<span style="color:#' .. currentColor .. ';">'
+            inColor = true
+            pos = colorEnd + 1
+          elseif resetStart == pos then
+            if inColor then
+              htmlText = htmlText .. "</span>"
+              inColor = false
+            end
+            pos = resetStart + 2
+          else
+            -- Regular character
+            local char = string.sub(text, pos, pos)
+            if char == "<" then
+              htmlText = htmlText .. "&lt;"
+            elseif char == ">" then
+              htmlText = htmlText .. "&gt;"
+            elseif char == "&" then
+              htmlText = htmlText .. "&amp;"
+            else
+              htmlText = htmlText .. char
+            end
+            pos = pos + 1
+          end
+        end
+        
+        if inColor then
+          htmlText = htmlText .. "</span>"
+        end
+        
+        -- Remove raid icon tags
+        htmlText = string.gsub(htmlText, "{rt%d}", "")
+        
+        table.insert(lines, '<div class="announcement">' .. htmlText .. '</div>')
+      end
+    end
+    
+    table.insert(lines, "</body></html>")
+    return table.concat(lines, "\n")
+  end
+  
+  -- Default to plain text
+  local currentFormat = "plain"
+  local exportText = GeneratePlainText(exportData)
+  
+  -- Create or show export window
+  local exportFrame = CreateFrame("Frame", "OGRH_ExportRaidFrame", UIParent)
+  exportFrame:SetWidth(600)
+  exportFrame:SetHeight(400)
+  exportFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  exportFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+  exportFrame:EnableMouse(true)
+  exportFrame:SetMovable(true)
+  exportFrame:RegisterForDrag("LeftButton")
+  exportFrame:SetScript("OnDragStart", function() exportFrame:StartMoving() end)
+  exportFrame:SetScript("OnDragStop", function() exportFrame:StopMovingOrSizing() end)
+  
+  exportFrame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  exportFrame:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Title
+  local title = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", exportFrame, "TOP", 0, -15)
+  title:SetText("Export Raid: " .. raidName)
+  
+  -- Close button
+  local closeBtn = CreateFrame("Button", nil, exportFrame, "UIPanelButtonTemplate")
+  closeBtn:SetWidth(60)
+  closeBtn:SetHeight(24)
+  closeBtn:SetPoint("TOPRIGHT", exportFrame, "TOPRIGHT", -10, -10)
+  closeBtn:SetText("Close")
+  OGRH.StyleButton(closeBtn)
+  closeBtn:SetScript("OnClick", function() 
+    exportFrame:Hide()
+    exportFrame:SetParent(nil)
+  end)
+  
+  -- Instructions
+  local instructions = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  instructions:SetPoint("TOPLEFT", exportFrame, "TOPLEFT", 15, -45)
+  instructions:SetText("Select format:")
+  
+  -- Format buttons
+  local plainTextBtn = CreateFrame("Button", nil, exportFrame, "UIPanelButtonTemplate")
+  plainTextBtn:SetWidth(90)
+  plainTextBtn:SetHeight(22)
+  plainTextBtn:SetPoint("TOPLEFT", instructions, "BOTTOMLEFT", 0, -4)
+  plainTextBtn:SetText("Plain Text")
+  OGRH.StyleButton(plainTextBtn)
+  
+  local csvBtn = CreateFrame("Button", nil, exportFrame, "UIPanelButtonTemplate")
+  csvBtn:SetWidth(130)
+  csvBtn:SetHeight(22)
+  csvBtn:SetPoint("LEFT", plainTextBtn, "RIGHT", 5, 0)
+  csvBtn:SetText("CSV (Spreadsheet)")
+  OGRH.StyleButton(csvBtn)
+  
+  local htmlBtn = CreateFrame("Button", nil, exportFrame, "UIPanelButtonTemplate")
+  htmlBtn:SetWidth(120)
+  htmlBtn:SetHeight(22)
+  htmlBtn:SetPoint("LEFT", csvBtn, "RIGHT", 5, 0)
+  htmlBtn:SetText("HTML (Colors)")
+  OGRH.StyleButton(htmlBtn)
+  
+  -- Copy instructions
+  local copyInstructions = exportFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  copyInstructions:SetPoint("TOPLEFT", plainTextBtn, "BOTTOMLEFT", 0, -8)
+  copyInstructions:SetText("Copy: Ctrl+A to select all, Ctrl+C to copy")
+  copyInstructions:SetTextColor(0.7, 0.7, 0.7)
+  
+  -- Text box using standard scrolling text box
+  local textBackdrop, textBox, scrollFrame, scrollBar = OGRH.CreateScrollingTextBox(exportFrame, 570, 240)
+  textBackdrop:SetPoint("TOPLEFT", copyInstructions, "BOTTOMLEFT", 0, -8)
+  
+  textBox:SetText(exportText)
+  textBox:SetScript("OnEscapePressed", function() textBox:ClearFocus() end)
+  
+  -- Format button handlers
+  plainTextBtn:SetScript("OnClick", function()
+    currentFormat = "plain"
+    textBox:SetText(GeneratePlainText(exportData))
+    textBox:HighlightText()
+    textBox:SetFocus()
+  end)
+  
+  csvBtn:SetScript("OnClick", function()
+    currentFormat = "csv"
+    textBox:SetText(GenerateCSV(exportData))
+    textBox:HighlightText()
+    textBox:SetFocus()
+  end)
+  
+  htmlBtn:SetScript("OnClick", function()
+    currentFormat = "html"
+    textBox:SetText(GenerateHTML(exportData))
+    textBox:HighlightText()
+    textBox:SetFocus()
+  end)
+  
+  -- Highlight text on show
+  textBox:HighlightText()
+  textBox:SetFocus()
+  
+  exportFrame:Show()
+  
+  -- Register ESC key handler after showing to ensure it's closed first
+  OGRH.MakeFrameCloseOnEscape(exportFrame, "OGRH_ExportRaidFrame")
 end
 
 -- Initialize encounter frame on VARIABLES_LOADED to ensure ReplaceTags is available

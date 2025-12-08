@@ -1,9 +1,21 @@
 # OG-RaidHelper Changelog
 
-## Version 1.23.0 - Guild Recruitment Module
-**Release Date:** December 7, 2025
+## Version 1.23.0 - Guild Recruitment Module & Data Export
+**Release Date:** December 8, 2025
 
 ### Features
+- **Raid Data Export**: Export raid encounter assignments in multiple formats
+  - Export Raid button in Encounter Planning window (top left)
+  - Three export formats available via button selection:
+    - **Plain Text**: Clean, readable format without color codes for text editors
+    - **CSV (Spreadsheet)**: Structured data export for Google Sheets/Excel
+      - Columns: Raid, Encounter, R.T (Role Title), R.M (Mark Index), R.P (Player Name), R.A (Assignment Number)
+      - Perfect for creating reference tabs with formulas and pivot tables
+    - **HTML (Colors)**: Preserves WoW color codes as HTML for web viewing or import to Google Docs
+  - Pre-selected text for easy copying (Ctrl+A, Ctrl+C)
+  - Higher frame strata (FULLSCREEN_DIALOG) ensures ESC closes export window first
+  - Processes all announcement tags with player names, marks, and assignments
+
 - **Guild Recruitment Module**: Complete advertising and contact management system
   - Automated guild recruitment message broadcasting to selected chat channels
   - Channel selection: General, Trade, World, or Raid chat
