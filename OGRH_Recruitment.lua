@@ -24,6 +24,8 @@ function OGRH.EnsureRecruitmentSV()
     OGRH_SV.recruitment = {
       enabled = false,
       message = "",
+      messages = {"", "", "", "", ""}, -- 5 preset messages
+      selectedMessageIndex = 1, -- Currently selected message (1-5)
       selectedChannel = "general", -- Radio button selection: general, trade, world, raid
       interval = 600, -- Default 10 minutes between ads
       lastAdTime = 0,
@@ -45,6 +47,18 @@ function OGRH.EnsureRecruitmentSV()
   end
   if not OGRH_SV.recruitment.deletedContacts then
     OGRH_SV.recruitment.deletedContacts = {}
+  end
+  
+  -- Ensure messages array exists (for migration)
+  if not OGRH_SV.recruitment.messages then
+    OGRH_SV.recruitment.messages = {"", "", "", "", ""}
+    -- Migrate old single message to Message 1
+    if OGRH_SV.recruitment.message and OGRH_SV.recruitment.message ~= "" then
+      OGRH_SV.recruitment.messages[1] = OGRH_SV.recruitment.message
+    end
+  end
+  if not OGRH_SV.recruitment.selectedMessageIndex then
+    OGRH_SV.recruitment.selectedMessageIndex = 1
   end
   
   -- Migrate old channels format to new selectedChannel format
@@ -79,6 +93,10 @@ function OGRH.ShowRecruitmentWindow()
   
   if recruitmentFrame then
     recruitmentFrame:Show()
+    -- Refresh the contact list to show any new whispers
+    if recruitmentFrame.PopulateLeftList then
+      recruitmentFrame.PopulateLeftList()
+    end
     -- Refresh the view to update button state
     if recruitmentFrame.ShowAdvertiseView then
       recruitmentFrame.ShowAdvertiseView()
@@ -279,6 +297,122 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   messageLabel:SetText("Recruitment Message (0/255 characters):")
   table.insert(detailPanel.content, messageLabel)
   
+  -- Message selector button
+  local messageSelectorBtn = CreateFrame("Button", nil, detailPanel, "UIPanelButtonTemplate")
+  messageSelectorBtn:SetPoint("LEFT", messageLabel, "RIGHT", 10, 0)
+  messageSelectorBtn:SetWidth(100)
+  messageSelectorBtn:SetHeight(22)
+  messageSelectorBtn:SetText("Message " .. OGRH_SV.recruitment.selectedMessageIndex)
+  if OGRH.StyleButton then
+    OGRH.StyleButton(messageSelectorBtn)
+  end
+  table.insert(detailPanel.content, messageSelectorBtn)
+  
+  -- Dropdown menu handler
+  messageSelectorBtn:SetScript("OnClick", function()
+    -- Create menu frame
+    local menuFrame = CreateFrame("Frame", nil, UIParent)
+    menuFrame:SetWidth(100)
+    menuFrame:SetHeight(5 * 20 + 10)
+    menuFrame:SetPoint("TOPLEFT", messageSelectorBtn, "BOTTOMLEFT", 0, -2)
+    menuFrame:SetFrameStrata("TOOLTIP")
+    menuFrame:SetFrameLevel(100)
+    menuFrame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    menuFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    menuFrame:EnableMouse(true)
+    
+    -- Close menu on hide
+    menuFrame:SetScript("OnHide", function()
+      this:SetParent(nil)
+    end)
+    
+    -- Create menu items for Message 1-5
+    for i = 1, 5 do
+      local btn = CreateFrame("Button", nil, menuFrame)
+      btn:SetWidth(94)
+      btn:SetHeight(18)
+      btn:SetPoint("TOPLEFT", menuFrame, "TOPLEFT", 3, -3 - ((i-1) * 20))
+      
+      local bg = btn:CreateTexture(nil, "BACKGROUND")
+      bg:SetAllPoints()
+      bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+      bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+      bg:Hide()
+      
+      local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      text:SetPoint("LEFT", btn, "LEFT", 5, 0)
+      text:SetText("Message " .. i)
+      
+      -- Highlight current selection
+      if i == OGRH_SV.recruitment.selectedMessageIndex then
+        text:SetTextColor(1, 0.82, 0)
+      end
+      
+      -- Capture index for closure
+      local messageIndex = i
+      
+      btn:SetScript("OnEnter", function()
+        bg:Show()
+      end)
+      
+      btn:SetScript("OnLeave", function()
+        bg:Hide()
+      end)
+      
+      btn:SetScript("OnClick", function()
+        -- Save current message before switching
+        if detailPanel.messageBox then
+          OGRH_SV.recruitment.messages[OGRH_SV.recruitment.selectedMessageIndex] = detailPanel.messageBox:GetText()
+        end
+        
+        -- Switch to new message
+        OGRH_SV.recruitment.selectedMessageIndex = messageIndex
+        
+        -- Update dropdown button text
+        if detailPanel.messageSelectorBtn then
+          detailPanel.messageSelectorBtn:SetText("Message " .. messageIndex)
+        end
+        
+        -- Load new message text
+        if detailPanel.messageBox then
+          local newMessage = OGRH_SV.recruitment.messages[messageIndex] or ""
+          detailPanel.messageBox:SetText(newMessage)
+          -- Update character count
+          if detailPanel.messageLabel then
+            detailPanel.messageLabel:SetText("Recruitment Message (" .. string.len(newMessage) .. "/255 characters):")
+          end
+        end
+        
+        menuFrame:Hide()
+      end)
+    end
+    
+    -- Close menu when clicking outside
+    local closeFrame = CreateFrame("Frame", nil, UIParent)
+    closeFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+    closeFrame:SetFrameLevel(99)
+    closeFrame:SetAllPoints()
+    closeFrame:EnableMouse(true)
+    closeFrame:SetScript("OnMouseDown", function()
+      menuFrame:Hide()
+      this:Hide()
+    end)
+    closeFrame:SetScript("OnHide", function()
+      this:SetParent(nil)
+    end)
+    menuFrame:SetScript("OnHide", function()
+      closeFrame:Hide()
+      this:SetParent(nil)
+    end)
+  end)
+  
   -- Message edit box using ScrollFrame to properly clip text selection
   local messageBackdrop = CreateFrame("Frame", nil, detailPanel)
   messageBackdrop:SetPoint("TOPLEFT", messageLabel, "BOTTOMLEFT", 0, -4)
@@ -323,11 +457,22 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   messageBox:SetScript("OnTextChanged", function()
     local text = this:GetText()
     local len = string.len(text)
+    -- Save to current selected message slot
+    OGRH_SV.recruitment.messages[OGRH_SV.recruitment.selectedMessageIndex] = text
+    -- Also update legacy message field for backward compatibility
     OGRH_SV.recruitment.message = text
     -- Update character count in label
     messageLabel:SetText("Recruitment Message (" .. len .. "/255 characters):")
   end)
-  messageBox:SetText(OGRH_SV.recruitment.message or "")
+  
+  -- Load text from selected message slot
+  local currentMessage = OGRH_SV.recruitment.messages[OGRH_SV.recruitment.selectedMessageIndex] or ""
+  messageBox:SetText(currentMessage)
+  
+  -- Store references for dropdown handler
+  detailPanel.messageBox = messageBox
+  detailPanel.messageLabel = messageLabel
+  detailPanel.messageSelectorBtn = messageSelectorBtn
   
   -- Channel selection (radio buttons in single line)
   local channelLabel = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")

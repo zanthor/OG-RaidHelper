@@ -10,7 +10,8 @@
   - Configurable interval between advertisements (default 5 minutes)
   - Start/Stop Recruiting toggle with visual feedback
   - Character limit (255) with live counter for recruitment messages
-  - Message persistence across sessions
+  - 5 preset message templates with dropdown selector for quick switching
+  - Message persistence across sessions (all 5 presets saved independently)
 
 - **Recruiting Panel**: Active recruitment status display
   - Countdown progress bar showing time until next advertisement
