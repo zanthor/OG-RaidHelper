@@ -1339,7 +1339,7 @@ function OGRH.PerformAutoSort()
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RGO]|r Executing " .. table.getn(moveQueue) .. " moves - see debug window for details")
   
   -- PHASE 3: Execute the queue with delays
-  local moveDelay = ((OGRH_SV.rgo and OGRH_SV.rgo.sortSpeed) or 100) / 1000 -- Default 100ms, configurable via /ogrh sortspeed
+  local moveDelay = ((OGRH_SV.rgo and OGRH_SV.rgo.sortSpeed) or 250) / 1000 -- Default 250ms, configurable via /ogrh sortspeed
   local moveIndex = 1
   local moveFrame = CreateFrame("Frame")
   moveFrame.timer = 0

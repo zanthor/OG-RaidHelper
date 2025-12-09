@@ -626,7 +626,7 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
       if OGRH_SV.rgo and OGRH_SV.rgo.sortSpeed then
         OGRH.Msg("Current auto-sort speed: " .. OGRH_SV.rgo.sortSpeed .. "ms")
       else
-        OGRH.Msg("Current auto-sort speed: 100ms (default)")
+        OGRH.Msg("Current auto-sort speed: 250ms (default)")
       end
     end
   else OGRH.Msg("Usage: /"..OGRH.CMD.." sand | shuffle [delay_ms] | sortspeed [delay_ms]") end
