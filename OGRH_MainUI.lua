@@ -595,7 +595,9 @@ end
 local _loader = CreateFrame("Frame"); _loader:RegisterEvent("VARIABLES_LOADED"); _loader:SetScript("OnEvent", function() restoreMain() end)
 
 SlashCmdList[string.upper(OGRH.CMD)] = function(m)
-  local sub = string.lower(OGRH.Trim(m or ""))
+  local fullMsg = OGRH.Trim(m or "")
+  local sub = string.lower(fullMsg)
+  
   if sub=="sand" then 
     if OGRH.SetTradeType and OGRH.ExecuteTrade then 
       OGRH.SetTradeType("sand")
@@ -603,7 +605,31 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else 
       OGRH.Msg("Trade helper not loaded.") 
     end
-  else OGRH.Msg("Usage: /"..OGRH.CMD.." sand") end
+  elseif string.find(sub, "^shuffle") then
+    if OGRH.ShuffleRaid then
+      -- Extract number from command (e.g., "shuffle 50")
+      local _, _, numStr = string.find(fullMsg, "^%s*%a+%s+(%d+)")
+      local delayMs = tonumber(numStr)
+      OGRH.ShuffleRaid(delayMs)
+    else
+      OGRH.Msg("Shuffle function not loaded.")
+    end
+  elseif string.find(sub, "^sortspeed") then
+    -- Extract number from command (e.g., "sortspeed 50")
+    local _, _, numStr = string.find(fullMsg, "^%s*%a+%s+(%d+)")
+    local speedMs = tonumber(numStr)
+    if speedMs then
+      if not OGRH_SV.rgo then OGRH_SV.rgo = {} end
+      OGRH_SV.rgo.sortSpeed = speedMs
+      OGRH.Msg("Auto-sort speed set to " .. speedMs .. "ms between moves")
+    else
+      if OGRH_SV.rgo and OGRH_SV.rgo.sortSpeed then
+        OGRH.Msg("Current auto-sort speed: " .. OGRH_SV.rgo.sortSpeed .. "ms")
+      else
+        OGRH.Msg("Current auto-sort speed: 100ms (default)")
+      end
+    end
+  else OGRH.Msg("Usage: /"..OGRH.CMD.." sand | shuffle [delay_ms] | sortspeed [delay_ms]") end
 end
 _G["SLASH_"..string.upper(OGRH.CMD).."1"] = "/"..OGRH.CMD
 

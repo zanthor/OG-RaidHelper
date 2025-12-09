@@ -1,9 +1,60 @@
 # OG-RaidHelper Changelog
 
+## Version 1.26.0 - Raid Group Organization & Auto-Sort
+**Release Date:** December 8, 2025
+
+### Features
+- **Raid Group Organization (RGO)**: Complete raid composition planning system
+  - 8 groups × 5 slots with class priority configuration per slot
+  - Priority dialog with class selection and role checkboxes (Tanks, Healers, Melee, Ranged, DPS, Support, Any)
+  - Support for multiple entries of same class with different role requirements
+  - Visual slot display showing top 3 priorities with role indicators
+  - Raid size selector (10/20/40 man) with dynamic group enable/disable
+  - Drag-and-drop slot reordering: Left-click to swap, Right-click to copy
+  - Settings persist per raid size configuration
+
+- **Auto-Sort Algorithm**: Intelligent raid reorganization based on priorities
+  - Three-phase sorting: Plan → Queue → Execute
+  - Scores players based on class match + role match (110-position×10 points)
+  - Handles full groups with smart swapping (prefers unassigned players)
+  - Configurable sort speed via `/ogrh sortspeed [ms]` (default 100ms between moves)
+  - Toggle via minimap menu: Invites → Sort Raid
+  - Automatic disable after execution to prevent loops
+
+- **Role System Integration**: 
+  - Auto-assign roles by class defaults (Warriors→Tanks, Priests/Paladins/Druids→Healers, Rogues→Melee, others→Ranged)
+  - Role assignments now persist to saved variables immediately
+  - Fixed role sync between Roles UI and RGO auto-sort
+
+### Commands
+- `/ogrh shuffle [delay_ms]` - Shuffle raid with 20 random swaps (default 500ms intervals, for testing)
+- `/ogrh sortspeed [ms]` - Set/view auto-sort speed (default 100ms)
+- `/rgo` - Open Raid Group Organization window
+
+### UI Improvements
+- Class priority dialog with scrollable lists and multi-selection
+- Visual feedback for enabled/disabled groups based on raid size
+- Drag cursor indicator showing source slot during drag operations
+- Minimap menu reorganized: Invites now has submenu with "Show Invites" and "Sort Raid"
+
+### Technical Implementation
+- Queue-based move execution prevents infinite loops
+- Scoring system evaluates all class positions for best role match
+- Saved variables: `OGRH_SV.rgo.raidSizes[size][group][slot]` for priorities
+- `OGRH_SV.rgo.sortSpeed` for configurable sort delay
+- `OGRH_SV.rgo.autoSortEnabled` for toggle state
+
 ## Version 1.23.0 - Guild Recruitment Module & Data Export
 **Release Date:** December 8, 2025
 
 ### Features
+- **OGST Library**: Extracted UI template functions into reusable library
+  - New `Libs\OGST\OGST.lua` - OG Standard Templates library for cross-addon reuse
+  - Comprehensive API documentation in `Libs\OGST\README.md`
+  - Functions: StyleButton, CreateStandardMenu, CreateStyledScrollList, CreateStyledListItem, AddListItemButtons, CreateScrollingTextBox, MakeFrameCloseOnEscape
+  - Backward compatible wrappers in OGRH_Core maintain existing addon functionality
+  - Standardized constants for colors and dimensions
+  - Can be used in other addons for consistent UI styling
 - **Raid Data Export**: Export raid encounter assignments in multiple formats
   - Export Raid button in Encounter Planning window (top left)
   - Three export formats available via button selection:

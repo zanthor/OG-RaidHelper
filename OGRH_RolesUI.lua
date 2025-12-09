@@ -563,6 +563,11 @@ local function CreateRolesFrame()
                                         elseif class == "ROGUE" then
                                             roleIndex = 3  -- Melee
                                         end
+                                        -- Save the default role assignment
+                                        if not OGRH_SV then OGRH_SV = {} end
+                                        if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                                        local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
+                                        OGRH_SV.roles[name] = roleNames[roleIndex]
                                     end
                                 else
                                     -- First join and not in RollFor - fall back to class defaults
@@ -573,6 +578,11 @@ local function CreateRolesFrame()
                                     elseif class == "ROGUE" then
                                         roleIndex = 3  -- Melee
                                     end
+                                    -- Save the default role assignment
+                                    if not OGRH_SV then OGRH_SV = {} end
+                                    if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                                    local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
+                                    OGRH_SV.roles[name] = roleNames[roleIndex]
                                 end
                             end
                         else
@@ -584,6 +594,11 @@ local function CreateRolesFrame()
                             elseif class == "ROGUE" then
                                 roleIndex = 3  -- Melee
                             end
+                            -- Save the default role assignment
+                            if not OGRH_SV then OGRH_SV = {} end
+                            if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                            local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
+                            OGRH_SV.roles[name] = roleNames[roleIndex]
                         end
                         
                         table.insert(ROLE_COLUMNS[roleIndex].players, name)

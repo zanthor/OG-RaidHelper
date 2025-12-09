@@ -993,6 +993,52 @@ function OGRH.Sync.CalculateChecksum(data)
     end
   end
   
+  -- Hash RGO data (raid group organization)
+  if data.rgo then
+    -- Hash current raid size
+    if data.rgo.currentRaidSize then
+      local sizeStr = tostring(data.rgo.currentRaidSize)
+      for j = 1, string.len(sizeStr) do
+        checksum = checksum + string.byte(sizeStr, j) * 6000
+      end
+    end
+    
+    -- Hash all raid size configurations
+    if data.rgo.raidSizes then
+      for raidSize, groups in pairs(data.rgo.raidSizes) do
+        local sizeNum = tonumber(raidSize) or 0
+        for groupNum, slots in pairs(groups) do
+          for slotNum, slotData in pairs(slots) do
+            -- Hash priority list (similar to classPriority)
+            if slotData.priorityList and type(slotData.priorityList) == "table" then
+              for classIndex, className in ipairs(slotData.priorityList) do
+                if type(className) == "string" then
+                  for j = 1, string.len(className) do
+                    checksum = checksum + string.byte(className, j) * sizeNum * groupNum * slotNum * classIndex * 7000
+                  end
+                end
+              end
+            end
+            
+            -- Hash priority roles (similar to classPriorityRoles)
+            if slotData.priorityRoles and type(slotData.priorityRoles) == "table" then
+              for priorityIndex, roles in pairs(slotData.priorityRoles) do
+                if type(roles) == "table" then
+                  local prioIdx = tonumber(priorityIndex) or 0
+                  -- Hash role flags
+                  checksum = checksum + (roles.Tanks and 1 or 0) * sizeNum * groupNum * slotNum * prioIdx * 8001
+                  checksum = checksum + (roles.Healers and 1 or 0) * sizeNum * groupNum * slotNum * prioIdx * 8002
+                  checksum = checksum + (roles.Melee and 1 or 0) * sizeNum * groupNum * slotNum * prioIdx * 8003
+                  checksum = checksum + (roles.Ranged and 1 or 0) * sizeNum * groupNum * slotNum * prioIdx * 8004
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  
   return tostring(checksum)
 end
 
@@ -1008,7 +1054,8 @@ function OGRH.Sync.GetCurrentChecksum()
     encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers,
     encounterAnnouncements = OGRH_SV.encounterAnnouncements,
     tradeItems = OGRH_SV.tradeItems,
-    consumes = OGRH_SV.consumes
+    consumes = OGRH_SV.consumes,
+    rgo = OGRH_SV.rgo
   }
   
   return OGRH.Sync.CalculateChecksum(currentData)
@@ -1026,7 +1073,8 @@ function OGRH.Sync.GetDefaultsChecksum()
     encounterAssignmentNumbers = OGRH.FactoryDefaults.encounterAssignmentNumbers,
     encounterAnnouncements = OGRH.FactoryDefaults.encounterAnnouncements,
     tradeItems = OGRH.FactoryDefaults.tradeItems,
-    consumes = OGRH.FactoryDefaults.consumes
+    consumes = OGRH.FactoryDefaults.consumes,
+    rgo = OGRH.FactoryDefaults.rgo
   }
   
   return OGRH.Sync.CalculateChecksum(defaultsData)
@@ -1069,6 +1117,9 @@ function OGRH.Sync.LoadDefaults()
   if OGRH.FactoryDefaults.consumes then
     OGRH_SV.consumes = OGRH.FactoryDefaults.consumes
   end
+  if OGRH.FactoryDefaults.rgo then
+    OGRH_SV.rgo = OGRH.FactoryDefaults.rgo
+  end
   
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Factory defaults loaded successfully!")
   
@@ -1084,6 +1135,14 @@ function OGRH.Sync.LoadDefaults()
   end
   if OGRH_ConsumesFrame and OGRH_ConsumesFrame.RefreshConsumesList then
     OGRH_ConsumesFrame.RefreshConsumesList()
+  end
+  -- Refresh RGO window (even if not visible, so it's ready when opened)
+  if RGOFrame then
+    for groupNum = 1, 8 do
+      for slotNum = 1, 5 do
+        OGRH.UpdateRGOSlotDisplay(groupNum, slotNum)
+      end
+    end
   end
   
   -- Refresh data management window if open
@@ -1121,7 +1180,8 @@ function OGRH.Sync.ExportData()
     encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
     encounterAnnouncements = OGRH_SV.encounterAnnouncements or {},
     tradeItems = OGRH_SV.tradeItems or {},
-    consumes = OGRH_SV.consumes or {}
+    consumes = OGRH_SV.consumes or {},
+    rgo = OGRH_SV.rgo or {}
   }
   
   -- Serialize to string
@@ -1186,6 +1246,9 @@ function OGRH.Sync.ImportData()
   if importData.consumes then
     OGRH_SV.consumes = importData.consumes
   end
+  if importData.rgo then
+    OGRH_SV.rgo = importData.rgo
+  end
   
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Encounter data imported successfully.")
   
@@ -1201,6 +1264,14 @@ function OGRH.Sync.ImportData()
   end
   if OGRH_ConsumesFrame and OGRH_ConsumesFrame.RefreshConsumesList then
     OGRH_ConsumesFrame.RefreshConsumesList()
+  end
+  -- Refresh RGO window (even if not visible, so it's ready when opened)
+  if RGOFrame then
+    for groupNum = 1, 8 do
+      for slotNum = 1, 5 do
+        OGRH.UpdateRGOSlotDisplay(groupNum, slotNum)
+      end
+    end
   end
 end
 
@@ -1776,6 +1847,7 @@ function OGRH.Sync.StartTransmission(acceptors)
     encounterAnnouncements = OGRH_SV.encounterAnnouncements,
     tradeItems = OGRH_SV.tradeItems,
     consumes = OGRH_SV.consumes,
+    rgo = OGRH_SV.rgo,
     checksum = OGRH.Sync.GetCurrentChecksum()
   }
   
@@ -2095,6 +2167,9 @@ function OGRH.Sync.HandleSyncDataEnd(sender, data)
   if structureData.consumes then
     OGRH_SV.consumes = structureData.consumes
   end
+  if structureData.rgo then
+    OGRH_SV.rgo = structureData.rgo
+  end
   
   -- Verify checksum
   local newChecksum = OGRH.Sync.GetCurrentChecksum()
@@ -2108,6 +2183,14 @@ function OGRH.Sync.HandleSyncDataEnd(sender, data)
   end
   if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRaidsList then
     OGRH_EncounterFrame.RefreshRaidsList()
+  end
+  -- Refresh RGO window (even if not visible, so it's ready when opened)
+  if RGOFrame then
+    for groupNum = 1, 8 do
+      for slotNum = 1, 5 do
+        OGRH.UpdateRGOSlotDisplay(groupNum, slotNum)
+      end
+    end
   end
   
   -- Show success

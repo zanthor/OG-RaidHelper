@@ -225,8 +225,9 @@ function OGRH.FormatConsumeItemLinks(consumeData, escapeForProcessing)
 end
 
 -- Centralized window management - close all dialog windows except the specified one
-function OGRH.CloseAllWindows(exceptFrame)
-  local windows = {
+-- Register legacy frame names with OGST library
+if OGST and OGST.LegacyFrameNames then
+  OGST.LegacyFrameNames = {
     "OGRH_EncounterFrame",
     "OGRH_RolesFrame",
     "OGRH_EncounterSetupFrame",
@@ -242,14 +243,12 @@ function OGRH.CloseAllWindows(exceptFrame)
     "OGRH_RaidLeadSelectionFrame",
     "OGRH_RecruitmentFrame"
   }
-  
-  for _, frameName in ipairs(windows) do
-    if frameName ~= exceptFrame then
-      local frame = getglobal(frameName)
-      if frame and frame:IsVisible() then
-        frame:Hide()
-      end
-    end
+end
+
+-- Wrapper for OGST.CloseAllWindows (backward compatibility)
+function OGRH.CloseAllWindows(exceptFrame)
+  if OGST and OGST.CloseAllWindows then
+    OGST.CloseAllWindows(exceptFrame)
   end
 end
 
@@ -451,6 +450,98 @@ function OGRH.StyleButton(button)
     this:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
   end)
 end
+
+-- ========================================
+-- OGST LIBRARY WRAPPERS
+-- ========================================
+-- Wrapper functions maintain backward compatibility with existing code
+-- while using the OGST library under the hood
+
+-- Wrap OGST.CreateStandardWindow for backward compatibility
+OGRH.CreateStandardWindow = function(config)
+  if OGST and OGST.CreateStandardWindow then
+    return OGST.CreateStandardWindow(config)
+  end
+  return nil
+end
+
+-- Wrap OGST.StyleButton for backward compatibility
+OGRH.StyleButton = function(button)
+  if OGST and OGST.StyleButton then
+    OGST.StyleButton(button)
+  end
+end
+
+-- Wrap OGST.CreateStandardMenu for backward compatibility
+OGRH.CreateStandardMenu = function(config)
+  if OGST and OGST.CreateStandardMenu then
+    return OGST.CreateStandardMenu(config)
+  end
+  return nil
+end
+
+-- Wrap OGST.CreateStyledScrollList for backward compatibility
+OGRH.CreateStyledScrollList = function(parent, width, height, hideScrollBar)
+  if OGST and OGST.CreateStyledScrollList then
+    return OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
+  end
+  return nil
+end
+
+-- Wrap OGST.CreateStyledListItem for backward compatibility
+OGRH.CreateStyledListItem = function(parent, width, height, frameType)
+  if OGST and OGST.CreateStyledListItem then
+    return OGST.CreateStyledListItem(parent, width, height, frameType)
+  end
+  return nil
+end
+
+-- Wrap OGST.AddListItemButtons for backward compatibility
+OGRH.AddListItemButtons = function(listItem, index, listLength, onMoveUp, onMoveDown, onDelete, hideUpDown)
+  if OGST and OGST.AddListItemButtons then
+    return OGST.AddListItemButtons(listItem, index, listLength, onMoveUp, onMoveDown, onDelete, hideUpDown)
+  end
+  return nil, nil, nil
+end
+
+-- Wrap OGST.SetListItemSelected for backward compatibility
+OGRH.SetListItemSelected = function(item, isSelected)
+  if OGST and OGST.SetListItemSelected then
+    OGST.SetListItemSelected(item, isSelected)
+  end
+end
+
+-- Wrap OGST.SetListItemColor for backward compatibility
+OGRH.SetListItemColor = function(item, r, g, b, a)
+  if OGST and OGST.SetListItemColor then
+    OGST.SetListItemColor(item, r, g, b, a)
+  end
+end
+
+-- Wrap OGST.CreateScrollingTextBox for backward compatibility
+OGRH.CreateScrollingTextBox = function(parent, width, height)
+  if OGST and OGST.CreateScrollingTextBox then
+    return OGST.CreateScrollingTextBox(parent, width, height)
+  end
+  return nil
+end
+
+-- Wrap OGST.MakeFrameCloseOnEscape for backward compatibility
+OGRH.MakeFrameCloseOnEscape = function(frame, frameName, closeCallback)
+  if OGST and OGST.MakeFrameCloseOnEscape then
+    OGST.MakeFrameCloseOnEscape(frame, frameName, closeCallback)
+  end
+end
+
+-- Expose OGST constants through OGRH namespace
+OGRH.LIST_COLORS = OGST and OGST.LIST_COLORS or {
+  SELECTED = {r = 0.2, g = 0.4, b = 0.2, a = 0.8},
+  INACTIVE = {r = 0.2, g = 0.2, b = 0.2, a = 0.5},
+  HOVER = {r = 0.2, g = 0.5, b = 0.2, a = 0.5}
+}
+
+OGRH.LIST_ITEM_HEIGHT = OGST and OGST.LIST_ITEM_HEIGHT or 20
+OGRH.LIST_ITEM_SPACING = OGST and OGST.LIST_ITEM_SPACING or 2
 
 -- ========================================
 -- AUXILIARY PANEL POSITIONING SYSTEM
@@ -1781,6 +1872,52 @@ function OGRH.CalculateAllStructureChecksum()
     for consumeName, consumeData in pairs(OGRH_SV.consumes) do
       for j = 1, string.len(consumeName) do
         checksum = checksum + string.byte(consumeName, j) * 40
+      end
+    end
+  end
+  
+  -- Hash RGO data (raid group organization)
+  if OGRH_SV.rgo then
+    -- Hash current raid size
+    if OGRH_SV.rgo.currentRaidSize then
+      local sizeStr = tostring(OGRH_SV.rgo.currentRaidSize)
+      for j = 1, string.len(sizeStr) do
+        checksum = checksum + string.byte(sizeStr, j) * 6000
+      end
+    end
+    
+    -- Hash all raid size configurations
+    if OGRH_SV.rgo.raidSizes then
+      for raidSize, groups in pairs(OGRH_SV.rgo.raidSizes) do
+        local sizeNum = tonumber(raidSize) or 0
+        for groupNum, slots in pairs(groups) do
+          for slotNum, slotData in pairs(slots) do
+            -- Hash priority list (similar to classPriority)
+            if slotData.priorityList and type(slotData.priorityList) == "table" then
+              for classIndex, className in ipairs(slotData.priorityList) do
+                if type(className) == "string" then
+                  for j = 1, string.len(className) do
+                    checksum = checksum + string.byte(className, j) * sizeNum * groupNum * slotNum * classIndex * 7000
+                  end
+                end
+              end
+            end
+            
+            -- Hash priority roles (similar to classPriorityRoles)
+            if slotData.priorityRoles and type(slotData.priorityRoles) == "table" then
+              for priorityIndex, roles in pairs(slotData.priorityRoles) do
+                if type(roles) == "table" then
+                  local prioIdx = tonumber(priorityIndex) or 0
+                  -- Hash role flags
+                  checksum = checksum + (roles.Tanks and 1 or 0) * sizeNum * groupNum * slotNum * prioIdx * 8001
+                  checksum = checksum + (roles.Healers and 1 or 0) * sizeNum * groupNum * slotNum * prioIdx * 8002
+                  checksum = checksum + (roles.Melee and 1 or 0) * sizeNum * groupNum * slotNum * prioIdx * 8003
+                  checksum = checksum + (roles.Ranged and 1 or 0) * sizeNum * groupNum * slotNum * prioIdx * 8004
+                end
+              end
+            end
+          end
+        end
       end
     end
   end
@@ -4251,7 +4388,8 @@ function OGRH.ExportShareData()
     encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
     encounterAnnouncements = OGRH_SV.encounterAnnouncements or {},
     tradeItems = OGRH_SV.tradeItems or {},
-    consumes = OGRH_SV.consumes or {}
+    consumes = OGRH_SV.consumes or {},
+    rgo = OGRH_SV.rgo or {}
   }
   
   -- Serialize to string (using a simple format)
@@ -4449,6 +4587,9 @@ function OGRH.ImportShareData(dataString, isSingleEncounter)
     if importData.consumes then
       OGRH_SV.consumes = importData.consumes
     end
+    if importData.rgo then
+      OGRH_SV.rgo = importData.rgo
+    end
     
     OGRH.Msg("|cff00ff00Success:|r Encounter data imported.")
     
@@ -4472,6 +4613,14 @@ function OGRH.ImportShareData(dataString, isSingleEncounter)
   end
   if OGRH_ConsumesFrame and OGRH_ConsumesFrame.RefreshConsumesList then
     OGRH_ConsumesFrame.RefreshConsumesList()
+  end
+  -- Refresh RGO window (even if not visible, so it's ready when opened)
+  if RGOFrame then
+    for groupNum = 1, 8 do
+      for slotNum = 1, 5 do
+        OGRH.UpdateRGOSlotDisplay(groupNum, slotNum)
+      end
+    end
   end
 end
 
@@ -4510,6 +4659,9 @@ function OGRH.LoadFactoryDefaults()
   if OGRH.FactoryDefaults.consumes then
     OGRH_SV.consumes = OGRH.FactoryDefaults.consumes
   end
+  if OGRH.FactoryDefaults.rgo then
+    OGRH_SV.rgo = OGRH.FactoryDefaults.rgo
+  end
   
   OGRH.Msg("|cff00ff00Factory defaults loaded successfully!|r")
   
@@ -4525,6 +4677,14 @@ function OGRH.LoadFactoryDefaults()
   end
   if OGRH_ConsumesFrame and OGRH_ConsumesFrame.RefreshConsumesList then
     OGRH_ConsumesFrame.RefreshConsumesList()
+  end
+  -- Refresh RGO window (even if not visible, so it's ready when opened)
+  if RGOFrame then
+    for groupNum = 1, 8 do
+      for slotNum = 1, 5 do
+        OGRH.UpdateRGOSlotDisplay(groupNum, slotNum)
+      end
+    end
   end
 end
 
@@ -5111,23 +5271,43 @@ local function CreateMinimapButton()
       
       OGRH_MinimapMenu = menu
       
-      -- Invites
+      -- Invites submenu
       local invitesItem = menu:AddItem({
         text = "Invites",
-        onClick = function()
-          if not OGRH.ROLLFOR_AVAILABLE then
-            OGRH.Msg("Invites requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
-            return
-          end
-          
-          OGRH.CloseAllWindows("OGRH_InvitesFrame")
-          
-          if OGRH.Invites and OGRH.Invites.ShowWindow then
-            OGRH.Invites.ShowWindow()
-          else
-            OGRH.Msg("Invites module not loaded.")
-          end
-        end
+        submenu = {
+          {
+            text = "Show Invites",
+            onClick = function()
+              if not OGRH.ROLLFOR_AVAILABLE then
+                OGRH.Msg("Invites requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+                return
+              end
+              
+              OGRH.CloseAllWindows("OGRH_InvitesFrame")
+              
+              if OGRH.Invites and OGRH.Invites.ShowWindow then
+                OGRH.Invites.ShowWindow()
+              else
+                OGRH.Msg("Invites module not loaded.")
+              end
+            end
+          },
+          {
+            text = "Sort Raid",
+            onClick = function()
+              if not OGRH_SV.rgo then OGRH_SV.rgo = {} end
+              OGRH_SV.rgo.autoSortEnabled = not OGRH_SV.rgo.autoSortEnabled
+              
+              if OGRH_SV.rgo.autoSortEnabled then
+                -- Clear completed groups when starting a new sort
+                OGRH_SV.rgo.completedGroups = {}
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r AutoSort enabled - will run every 1 second")
+              else
+                DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RaidHelper]|r AutoSort disabled")
+              end
+            end
+          }
+        }
       })
       
       -- Gray out if RollFor not available
@@ -5261,6 +5441,16 @@ local function CreateMinimapButton()
                 OGRH.ShowAutoPromote()
               else
                 OGRH.Msg("Auto Promote module not loaded.")
+              end
+            end
+          },
+          {
+            text = "Raid Group Organization",
+            onClick = function()
+              if OGRH.ShowRGOWindow then
+                OGRH.ShowRGOWindow()
+              else
+                OGRH.Msg("Raid Group Organization module not loaded.")
               end
             end
           },

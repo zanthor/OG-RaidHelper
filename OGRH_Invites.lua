@@ -574,14 +574,22 @@ function OGRH.Invites.ShowWindow()
   
   -- Bottom action buttons
   local inviteAllBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  inviteAllBtn:SetWidth(120)
+  inviteAllBtn:SetWidth(70)
   inviteAllBtn:SetHeight(28)
   inviteAllBtn:SetPoint("BOTTOMLEFT", 20, 15)
-  inviteAllBtn:SetText("Invite All Online")
+  inviteAllBtn:SetText("Invite")
   OGRH.StyleButton(inviteAllBtn)
   inviteAllBtn:SetScript("OnClick", function()
     OGRH.Invites.InviteAllOnline()
   end)
+  
+  -- Initialize auto-sort state (default off)
+  if not OGRH_SV.rgo then
+    OGRH_SV.rgo = {}
+  end
+  if OGRH_SV.rgo.autoSortEnabled == nil then
+    OGRH_SV.rgo.autoSortEnabled = false
+  end
   
   -- Refresh button (bottom right)
   local refreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")

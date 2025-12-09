@@ -12,10 +12,15 @@ OGRH.RaidLead = {
   pollInProgress = false       -- Whether a poll is active
 }
 
--- Check if local player is the raid lead
-function OGRH.IsRaidLead()
+-- Check if local player is the raid admin
+function OGRH.IsRaidAdmin()
   local playerName = UnitName("player")
   return OGRH.RaidLead.currentLead == playerName
+end
+
+-- Backward compatibility wrapper
+function OGRH.IsRaidLead()
+  return OGRH.IsRaidAdmin()
 end
 
 -- Check if local player can edit (is raid lead, or not in raid)
@@ -156,8 +161,8 @@ function OGRH.PollAddonUsers()
   
   -- Calculate checksum for ALL structure data
   local checksum = "0"
-  if OGRH.CalculateAllStructureChecksum then
-    checksum = OGRH.CalculateAllStructureChecksum()
+  if OGRH.Sync and OGRH.Sync.GetCurrentChecksum then
+    checksum = OGRH.Sync.GetCurrentChecksum()
   end
   
   table.insert(OGRH.RaidLead.pollResponses, {
@@ -567,8 +572,8 @@ function OGRH.ShowRaidLeadSelectionUI()
       -- Display checksum (color red if different from local) - only for RaidHelper users
       if btn.checksumText then
         local localChecksum = "0"
-        if OGRH.CalculateAllStructureChecksum then
-          localChecksum = OGRH.CalculateAllStructureChecksum()
+        if OGRH.Sync and OGRH.Sync.GetCurrentChecksum then
+          localChecksum = OGRH.Sync.GetCurrentChecksum()
         end
         
         local displayChecksum = response.checksum or "0"
