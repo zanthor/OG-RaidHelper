@@ -1,5 +1,24 @@
 # OG-RaidHelper Changelog
 
+## Version 1.25.2 - Auto-Sort Bug Fixes
+**Release Date:** December 11, 2025
+
+### Bug Fixes
+- **Fixed endless loop in auto-sort timer**: Removed continuous polling timer that was causing infinite recursion
+- **Redesigned auto-sort execution**: Timer now only runs during active sort operations, not continuously
+- **Added combat detection**: Players in combat are now skipped and will be retried automatically
+- **Added sanity check**: Maximum move attempts limited to 3x expected moves to prevent infinite loops
+- **Fixed UI trigger**: "Sort Raid" button now directly calls sort function instead of toggling a flag
+- **Improved messaging**: Removed debug window references, added class-colored player names in skip messages
+- **Combat notifications**: Clear feedback when players are skipped due to combat status
+
+### Technical Changes
+- Added `IsPlayerInCombat()` helper function using `UnitAffectingCombat()`
+- Implemented `movesAttempted` counter with `maxMoveAttempts` threshold (3x expected moves)
+- Auto-sort frame lifecycle properly managed via `OGRH.activeAutoSortFrame`
+- Skip messages now include class-colored player names using `OGRH.ClassColorHex()`
+- Removed unused `autoSortEnabled` flag and polling timer
+
 ## Version 1.26.0 - Raid Group Organization & Auto-Sort
 **Release Date:** December 8, 2025
 

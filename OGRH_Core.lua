@@ -5295,16 +5295,18 @@ local function CreateMinimapButton()
           {
             text = "Sort Raid",
             onClick = function()
-              if not OGRH_SV.rgo then OGRH_SV.rgo = {} end
-              OGRH_SV.rgo.autoSortEnabled = not OGRH_SV.rgo.autoSortEnabled
-              
-              if OGRH_SV.rgo.autoSortEnabled then
-                -- Clear completed groups when starting a new sort
-                OGRH_SV.rgo.completedGroups = {}
-                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r AutoSort enabled - will run every 1 second")
-              else
-                DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RaidHelper]|r AutoSort disabled")
+              -- Check if sort is already running
+              if OGRH.activeAutoSortFrame then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RaidHelper]|r Auto-sort is already in progress!")
+                return
               end
+              
+              -- Clear completed groups and run the sort
+              if not OGRH_SV.rgo then OGRH_SV.rgo = {} end
+              OGRH_SV.rgo.completedGroups = {}
+              
+              DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Starting raid auto-sort...")
+              OGRH.PerformAutoSort()
             end
           }
         }

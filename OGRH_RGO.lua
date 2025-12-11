@@ -878,10 +878,17 @@ end
 -- ========================================
 -- AUTO-SORT FUNCTIONALITY
 -- ========================================
+-- Auto-sort executes immediately when called and manages its own timer
+-- during the move execution phase. No background polling occurs.
 
--- Timer for auto-sort
-local autoSortTimer = 0
-local AUTO_SORT_INTERVAL = 1 -- seconds
+-- Check if a player is in combat by their raid index
+local function IsPlayerInCombat(raidIndex)
+  if not raidIndex or raidIndex < 1 or raidIndex > 40 then
+    return false
+  end
+  local unitId = "raid" .. raidIndex
+  return UnitAffectingCombat(unitId)
+end
 
 -- Get current raid size based on number of players
 local function GetCurrentRaidSize()
@@ -1191,11 +1198,15 @@ function OGRH.PerformAutoSort()
   
   -- Check if we're the designated raid admin (not just any leader/assistant)
   if not OGRH.IsRaidAdmin() then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RGO]|r You must be the raid admin to use auto-sort.")
     return -- Only raid admin can run auto-sort
   end
   
-  -- Disable auto-sort IMMEDIATELY to prevent re-runs during execution
-  OGRH_SV.rgo.autoSortEnabled = false
+  -- Check if already running
+  if OGRH.activeAutoSortFrame then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RGO]|r Auto-sort is already in progress!")
+    return
+  end
   
   -- Build the roster
   if not OGRH_SV.roles then OGRH_SV.roles = {} end
@@ -1334,24 +1345,60 @@ function OGRH.PerformAutoSort()
     return
   end
   
+  local expectedMoves = table.getn(moveQueue)
   DebugLog("")
-  DebugLog("Executing " .. table.getn(moveQueue) .. " moves...")
-  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RGO]|r Executing " .. table.getn(moveQueue) .. " moves - see debug window for details")
+  DebugLog("Executing " .. expectedMoves .. " moves...")
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RGO]|r Executing " .. expectedMoves .. " moves...")
   
   -- PHASE 3: Execute the queue with delays
   local moveDelay = ((OGRH_SV.rgo and OGRH_SV.rgo.sortSpeed) or 250) / 1000 -- Default 250ms, configurable via /ogrh sortspeed
   local moveIndex = 1
-  local moveFrame = CreateFrame("Frame")
+  local movesAttempted = 0
+  local maxMoveAttempts = expectedMoves * 3 -- Sanity check: allow 3x expected moves
+  
+  -- Store globally so timer can control it
+  if not OGRH.activeAutoSortFrame then
+    OGRH.activeAutoSortFrame = CreateFrame("Frame")
+  end
+  local moveFrame = OGRH.activeAutoSortFrame
   moveFrame.timer = 0
   moveFrame.queue = moveQueue
+  moveFrame.expectedMoves = expectedMoves
   
   moveFrame:SetScript("OnUpdate", function()
     this.timer = this.timer + arg1
     if this.timer >= moveDelay then
       this.timer = 0
       
+      -- Sanity check: stop if we've attempted too many moves
+      if movesAttempted >= maxMoveAttempts then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RGO]|r Auto-sort aborted: exceeded maximum move attempts (" .. maxMoveAttempts .. "). Possible infinite loop detected.")
+        DebugLog("ERROR: Exceeded max move attempts - aborting")
+        this:SetScript("OnUpdate", nil)
+        OGRH.activeAutoSortFrame = nil
+        return
+      end
+      
       if moveIndex <= table.getn(this.queue) then
         local move = this.queue[moveIndex]
+        movesAttempted = movesAttempted + 1
+        
+        -- Check if player is in combat
+        if IsPlayerInCombat(move.playerIndex) then
+          DebugLog("Skip " .. moveIndex .. ": " .. move.playerName .. " is in combat")
+          -- Get player class for colored name
+          local playerClass = nil
+          for _, p in ipairs(GetRaidRoster()) do
+            if p.name == move.playerName then
+              playerClass = p.class
+              break
+            end
+          end
+          local coloredName = OGRH.ClassColorHex(playerClass) .. move.playerName .. "|r"
+          DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RGO]|r Skipping " .. coloredName .. " (in combat)")
+          -- Don't increment moveIndex, will retry this move next tick
+          return
+        end
         
         -- Find someone in the target group to swap with, or just move if there's room
         local targetGroupPlayers = GetGroupPlayers(GetRaidRoster(), move.toGroup)
@@ -1362,44 +1409,49 @@ function OGRH.PerformAutoSort()
           SetRaidSubgroup(move.playerIndex, move.toGroup)
         else
           -- Group is full, need to swap with someone
-          -- Priority 1: Find a player who doesn't belong in this group AND has no assignment anywhere
-          -- Priority 2: Find a player who doesn't belong in this group but has an assignment elsewhere (will be moved later)
+          -- Priority 1: Find a player who doesn't belong in this group AND has no assignment anywhere AND not in combat
+          -- Priority 2: Find a player who doesn't belong in this group but has an assignment elsewhere (will be moved later) AND not in combat
           local swapTarget = nil
           local swapTargetHasAssignment = false
           
           for _, player in ipairs(targetGroupPlayers) do
-            local shouldBeHere = false
-            for slot, name in pairs(targetState[move.toGroup]) do
-              if name == player.name then
-                shouldBeHere = true
-                break
-              end
-            end
-            
-            if not shouldBeHere then
-              -- Check if this player has an assignment in ANY other group
-              local hasOtherAssignment = false
-              for gNum, groupSlots in pairs(targetState) do
-                if gNum ~= move.toGroup then
-                  for slot, name in pairs(groupSlots) do
-                    if name == player.name then
-                      hasOtherAssignment = true
-                      break
-                    end
-                  end
-                  if hasOtherAssignment then break end
+            -- Skip players in combat
+            if IsPlayerInCombat(player.index) then
+              DebugLog("  Skip potential swap target " .. player.name .. " (in combat)")
+            else
+              local shouldBeHere = false
+              for slot, name in pairs(targetState[move.toGroup]) do
+                if name == player.name then
+                  shouldBeHere = true
+                  break
                 end
               end
               
-              -- Prefer swapping with someone who has no assignment (true "extra")
-              if not hasOtherAssignment then
-                swapTarget = player
-                swapTargetHasAssignment = false
-                break -- This is ideal, use it
-              elseif not swapTarget then
-                -- Fallback: someone who will be moved later
-                swapTarget = player
-                swapTargetHasAssignment = true
+              if not shouldBeHere then
+                -- Check if this player has an assignment in ANY other group
+                local hasOtherAssignment = false
+                for gNum, groupSlots in pairs(targetState) do
+                  if gNum ~= move.toGroup then
+                    for slot, name in pairs(groupSlots) do
+                      if name == player.name then
+                        hasOtherAssignment = true
+                        break
+                      end
+                    end
+                    if hasOtherAssignment then break end
+                  end
+                end
+                
+                -- Prefer swapping with someone who has no assignment (true "extra")
+                if not hasOtherAssignment then
+                  swapTarget = player
+                  swapTargetHasAssignment = false
+                  break -- This is ideal, use it
+                elseif not swapTarget then
+                  -- Fallback: someone who will be moved later
+                  swapTarget = player
+                  swapTargetHasAssignment = true
+                end
               end
             end
           end
@@ -1409,8 +1461,20 @@ function OGRH.PerformAutoSort()
             DebugLog("Swap " .. moveIndex .. ": " .. move.playerName .. " <-> " .. swapTarget.name .. assignmentNote)
             SwapRaidSubgroup(move.playerIndex, swapTarget.index)
           else
-            -- All players in target group are supposed to be there - this shouldn't happen
-            DebugLog("ERROR: Can't swap " .. move.playerName .. " - all players in G" .. move.toGroup .. " are assigned there!")
+            -- Can't find anyone to swap with (all in combat or all belong here)
+            DebugLog("Skip " .. moveIndex .. ": Can't swap " .. move.playerName .. " - no valid swap targets available")
+            -- Get player class for colored name
+            local playerClass = nil
+            for _, p in ipairs(GetRaidRoster()) do
+              if p.name == move.playerName then
+                playerClass = p.class
+                break
+              end
+            end
+            local coloredName = OGRH.ClassColorHex(playerClass) .. move.playerName .. "|r"
+            DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RGO]|r Skipping " .. coloredName .. " (no available swap targets)")
+            -- Don't increment moveIndex, will retry this move next tick
+            return
           end
         end
         
@@ -1419,33 +1483,18 @@ function OGRH.PerformAutoSort()
         -- All moves complete
         DebugLog("")
         DebugLog("=== AUTO-SORT COMPLETE ===")
+        DebugLog("Total move attempts: " .. movesAttempted .. " (expected: " .. this.expectedMoves .. ")")
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RGO]|r Auto-sort completed! Raid composition optimized.")
         this:SetScript("OnUpdate", nil)
+        OGRH.activeAutoSortFrame = nil
       end
     end
   end)
 end
 
--- Create hidden frame for OnUpdate timer
-local autoSortFrame = CreateFrame("Frame")
--- DISABLED: Timer causing endless loop
--- autoSortFrame:SetScript("OnUpdate", function()
---   if not OGRH_SV.rgo or not OGRH_SV.rgo.autoSortEnabled then
---     return
---   end
---   
---   if not this.timer then
---     this.timer = 0
---     DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[RGO]|r AutoSort timer initialized")
---   end
---   
---   this.timer = this.timer + arg1
---   if this.timer >= AUTO_SORT_INTERVAL then
---     this.timer = 0
---     DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[RGO]|r Timer triggered, calling PerformAutoSort")
---     OGRH.PerformAutoSort()
---   end
--- end)
+-- Timer now runs ONLY during active sort operations (managed by PerformAutoSort)
+-- The timer is created on-demand and cleaned up when sorting completes
+-- This prevents endless loops and only processes moves when explicitly requested
 
 -- ========================================
 -- SHUFFLE RAID (TESTING)
