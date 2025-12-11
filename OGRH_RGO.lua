@@ -1428,23 +1428,24 @@ end
 
 -- Create hidden frame for OnUpdate timer
 local autoSortFrame = CreateFrame("Frame")
-autoSortFrame:SetScript("OnUpdate", function()
-  if not OGRH_SV.rgo or not OGRH_SV.rgo.autoSortEnabled then
-    return
-  end
-  
-  if not this.timer then
-    this.timer = 0
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[RGO]|r AutoSort timer initialized")
-  end
-  
-  this.timer = this.timer + arg1
-  if this.timer >= AUTO_SORT_INTERVAL then
-    this.timer = 0
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[RGO]|r Timer triggered, calling PerformAutoSort")
-    OGRH.PerformAutoSort()
-  end
-end)
+-- DISABLED: Timer causing endless loop
+-- autoSortFrame:SetScript("OnUpdate", function()
+--   if not OGRH_SV.rgo or not OGRH_SV.rgo.autoSortEnabled then
+--     return
+--   end
+--   
+--   if not this.timer then
+--     this.timer = 0
+--     DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[RGO]|r AutoSort timer initialized")
+--   end
+--   
+--   this.timer = this.timer + arg1
+--   if this.timer >= AUTO_SORT_INTERVAL then
+--     this.timer = 0
+--     DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff[RGO]|r Timer triggered, calling PerformAutoSort")
+--     OGRH.PerformAutoSort()
+--   end
+-- end)
 
 -- ========================================
 -- SHUFFLE RAID (TESTING)
