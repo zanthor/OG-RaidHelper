@@ -1,5 +1,28 @@
 # OG-RaidHelper Changelog
 
+## Version 1.25.3 - Encounter Auto-Assign Improvements  
+**Release Date:** December 11, 2025
+
+### Encounter Planning - Auto-Assign Enhancements
+- **Allow Other Roles**: Players assigned to roles with `allowOtherRoles` can now be considered for subsequent role assignments
+  - In 2-pass mode: Players from `allowOtherRoles` roles are immediately available for other roles in the same pass
+  - In 3-pass mode: All players blocked in passes 1-2, then reusable in pass 3 regardless of `allowOtherRoles`
+- **Smart assignment distribution**: System always prioritizes players with fewer existing assignments to distribute load evenly
+- **Invert Fill Order**: Auto-assign now respects `invertFillOrder` flag, filling class priority slots bottom-up when enabled
+- **3-Pass Mode**: When BOTH `invertFillOrder` AND `allowOtherRoles` are enabled:
+  - Pass 1: Default roles top-down (no duplicates)
+  - Pass 2: Class priority bottom-up (no duplicates)
+  - Pass 3: Default roles top-down (allow duplicates to fill remaining empty slots, reusing players from pass 1)
+- **Assignment protection**: Players from roles WITHOUT `allowOtherRoles` are never reused in other roles
+
+### Technical Changes
+- Added `GetAssignmentCount()` helper to track player assignment frequency
+- Enhanced `AutoAssignRollForSlot()` with `defaultRolesOnly`, `allowDuplicates`, and `isThreePassMode` parameters
+- Player candidate lists always sorted by assignment count (ascending) to ensure fair distribution
+- Separate tracking: `assignedPlayers` (permanent) vs `tempAssignedPlayers` (temporary)
+- Pass 3 filtering: Only considers players with existing assignments (count > 0) to consolidate reuse
+- 2-pass vs 3-pass mode logic properly distinguishes when to respect `allowOtherRoles` for immediate reuse
+
 ## Version 1.25.2 - Auto-Sort Bug Fixes
 **Release Date:** December 11, 2025
 

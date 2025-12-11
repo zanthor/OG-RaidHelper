@@ -56,7 +56,8 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   end
   
   -- Track assignments
-  local assignedPlayers = {}
+  local assignedPlayers = {}  -- Players who can NEVER be reused (from roles without allowOtherRoles)
+  local tempAssignedPlayers = {}  -- Players temporarily blocked in passes 1-2, can be reused in pass 3
   local assignmentCount = 0
   local processedRoles = {}
   
@@ -69,12 +70,42 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   
   local assignments = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter]
   
-  -- TWO-PASS ASSIGNMENT:
-  -- Pass 1: Assign all class priority slots across all roles (leave slots empty if no class match)
-  -- Pass 2: Fill remaining empty slots with defaultRoles assignments
+  -- Check if any role has both invertFillOrder AND allowOtherRoles
+  local needsThreePass = false
+  for _, roleData in ipairs(allRoles) do
+    if roleData.role.invertFillOrder and roleData.role.allowOtherRoles then
+      needsThreePass = true
+      break
+    end
+  end
   
-  for passNum = 1, 2 do
-    local classPriorityOnly = (passNum == 1)
+  -- MULTI-PASS ASSIGNMENT:
+  -- Standard 2-pass: Pass 1 = class priority, Pass 2 = default roles
+  -- Special 3-pass (when any role has invertFillOrder AND allowOtherRoles):
+  --   Pass 1 = default roles top-down (no duplicates)
+  --   Pass 2 = class priority bottom-up (no duplicates) 
+  --   Pass 3 = default roles top-down (allow duplicates to fill remaining)
+  
+  local maxPasses = needsThreePass and 3 or 2
+  for passNum = 1, maxPasses do
+    -- Determine pass type
+    local classPriorityOnly = false
+    local defaultRolesOnly = false
+    local allowDuplicates = false
+    
+    if needsThreePass then
+      if passNum == 1 then
+        defaultRolesOnly = true  -- Pass 1: default roles only, no duplicates
+      elseif passNum == 2 then
+        classPriorityOnly = true  -- Pass 2: class priority only, no duplicates
+      else
+        -- Pass 3: Same as pass 1 (default roles only) but allow duplicates
+        defaultRolesOnly = true
+        allowDuplicates = true
+      end
+    else
+      classPriorityOnly = (passNum == 1)  -- Standard: Pass 1 = class priority, Pass 2 = default
+    end
     processedRoles = {}  -- Reset for each pass
     
     -- Process each role
@@ -152,7 +183,7 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
             
             -- Skip if slot is already filled
             if not assignments[currentRoleIndex][slotIdx] then
-              OGRH.AutoAssignRollForSlot(currentRole, currentRoleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly)
+              OGRH.AutoAssignRollForSlot(currentRole, currentRoleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers)
               if assignments[currentRoleIndex][slotIdx] then
                 assignmentCount = assignmentCount + 1
               end
@@ -161,9 +192,25 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
         else
           -- SINGLE ROLE: Process each slot sequentially
           local slots = role.slots or 1
-          for slotIdx = 1, slots do
+          
+          -- Determine slot processing order
+          local slotOrder = {}
+          if role.invertFillOrder and role.allowOtherRoles and classPriorityOnly then
+            -- 3-pass mode: Pass 2 (class priority) is bottom-up
+            for slotIdx = slots, 1, -1 do
+              table.insert(slotOrder, slotIdx)
+            end
+          else
+            -- All other cases: Process slots top-down
+            for slotIdx = 1, slots do
+              table.insert(slotOrder, slotIdx)
+            end
+          end
+          
+          -- Process slots in the determined order
+          for _, slotIdx in ipairs(slotOrder) do
             if not assignments[roleIndex][slotIdx] then
-              OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly)
+              OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers, needsThreePass)
               if assignments[roleIndex][slotIdx] then
                 assignmentCount = assignmentCount + 1
               end
@@ -188,11 +235,27 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
 end
 
 -- Helper function to assign a single slot from RollFor data
-function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly)
+function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers, isThreePassMode)
   local assigned = false
+  passNum = passNum or 0  -- Default to 0 if not provided
+  tempAssignedPlayers = tempAssignedPlayers or {}  -- Default to empty table if not provided
+  isThreePassMode = isThreePassMode or false  -- Default to false if not provided
   
-  -- PHASE 1: Try class priority first if configured
-  if role.classPriority and role.classPriority[slotIdx] and table.getn(role.classPriority[slotIdx]) > 0 then
+  -- Helper function to count how many times a player has been assigned
+  local function GetAssignmentCount(playerName)
+    local count = 0
+    for _, roleAssignments in pairs(assignments) do
+      for _, assignedName in pairs(roleAssignments) do
+        if assignedName == playerName then
+          count = count + 1
+        end
+      end
+    end
+    return count
+  end
+  
+  -- PHASE 1: Try class priority first if configured (skip if defaultRolesOnly)
+  if not defaultRolesOnly and role.classPriority and role.classPriority[slotIdx] and table.getn(role.classPriority[slotIdx]) > 0 then
     local priorityList = role.classPriority[slotIdx]
     
     -- Try each class in priority order
@@ -200,10 +263,21 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
       -- Build list of players with this class
       local classPlayers = {}
       for _, playerData in ipairs(rollForPlayers) do
-        if not assignedPlayers[playerData.name] and playerData.class then
-          local playerRoleBucket = MapRollForRole(playerData.role)
-          
-          if string.upper(playerData.class) == string.upper(className) and playerRoleBucket then
+        -- Check if player is available
+        -- assignedPlayers = permanently blocked (role didn't have allowOtherRoles)
+        -- tempAssignedPlayers = temporarily blocked in passes 1-2
+        local canUsePlayer = not assignedPlayers[playerData.name]
+        if canUsePlayer and not allowDuplicates then
+          -- In passes 1-2, also check temporary assignments
+          canUsePlayer = not tempAssignedPlayers[playerData.name]
+        end
+        -- In pass 3, only reuse players who already have assignments
+        if canUsePlayer and allowDuplicates then
+          canUsePlayer = (GetAssignmentCount(playerData.name) > 0)
+        end
+        
+        if playerData.class and canUsePlayer then
+          if string.upper(playerData.class) == string.upper(className) then
             local roleMatches = false
             
             -- Check if this slot/class has specific classPriorityRoles configured
@@ -216,14 +290,19 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
               if not anyRoleEnabled then
                 -- No checkboxes enabled = accept from any role
                 roleMatches = true
-              elseif (playerRoleBucket == "TANKS" and allowedRoles.Tanks) or
-                     (playerRoleBucket == "HEALERS" and allowedRoles.Healers) or
-                     (playerRoleBucket == "MELEE" and allowedRoles.Melee) or
-                     (playerRoleBucket == "RANGED" and allowedRoles.Ranged) then
-                roleMatches = true
+              else
+                -- Checkboxes enabled - need to match role
+                local playerRoleBucket = MapRollForRole(playerData.role)
+                if playerRoleBucket and (
+                   (playerRoleBucket == "TANKS" and allowedRoles.Tanks) or
+                   (playerRoleBucket == "HEALERS" and allowedRoles.Healers) or
+                   (playerRoleBucket == "MELEE" and allowedRoles.Melee) or
+                   (playerRoleBucket == "RANGED" and allowedRoles.Ranged)) then
+                  roleMatches = true
+                end
               end
             else
-              -- No classPriorityRoles for this class, accept from any role in Phase 1
+              -- No classPriorityRoles configured for this class = accept any player of this class
               roleMatches = true
             end
             
@@ -234,13 +313,31 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
         end
       end
       
-      -- Sort alphabetically for consistent results
-      table.sort(classPlayers)
+      -- Sort players to prefer those with fewer assignments (distribute load evenly)
+      table.sort(classPlayers, function(a, b)
+        local countA = GetAssignmentCount(a)
+        local countB = GetAssignmentCount(b)
+        if countA ~= countB then
+          return countA < countB  -- Prefer players with fewer assignments
+        end
+        return a < b  -- Alphabetical for consistent results when counts are equal
+      end)
       
       -- Assign first available player
       if table.getn(classPlayers) > 0 then
         assignments[roleIndex][slotIdx] = classPlayers[1]
-        assignedPlayers[classPlayers[1]] = true
+        -- Permanent block: role doesn't allow other roles
+        if not role.allowOtherRoles then
+          assignedPlayers[classPlayers[1]] = true
+        end
+        -- Temporary block: we're in pass 1 or 2 (no duplicates allowed yet)
+        -- In 3-pass mode: always block in passes 1-2, allow in pass 3
+        -- In 2-pass mode: only block if role doesn't allow other roles
+        if not allowDuplicates then
+          if isThreePassMode or not role.allowOtherRoles then
+            tempAssignedPlayers[classPlayers[1]] = true
+          end
+        end
         assigned = true
         
         -- Update class cache
@@ -256,11 +353,26 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
     end
   end
   
-  -- PHASE 2: If no class priority or class priority didn't assign anyone, try defaultRoles
-  -- (only in pass 2 when classPriorityOnly is false)
+  -- PHASE 2: Try defaultRoles if appropriate
+  -- Skip if: already assigned, or this is class priority only pass, or no defaultRoles configured
   if not assigned and not classPriorityOnly and role.defaultRoles then
+    -- Build list of matching players
+    local matchingPlayers = {}
     for _, playerData in ipairs(rollForPlayers) do
-      if not assignedPlayers[playerData.name] then
+      -- Check if player is available
+      -- assignedPlayers = permanently blocked (role didn't have allowOtherRoles)
+      -- tempAssignedPlayers = temporarily blocked in passes 1-2
+      local canUsePlayer = not assignedPlayers[playerData.name]
+      if canUsePlayer and not allowDuplicates then
+        -- In passes 1-2, also check temporary assignments
+        canUsePlayer = not tempAssignedPlayers[playerData.name]
+      end
+      -- In pass 3, only reuse players who already have assignments
+      if canUsePlayer and allowDuplicates then
+        canUsePlayer = (GetAssignmentCount(playerData.name) > 0)
+      end
+      
+      if canUsePlayer then
         local playerRoleBucket = MapRollForRole(playerData.role)
         
         -- Check if player matches role's defaultRoles
@@ -275,17 +387,41 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
         end
         
         if matches then
-          -- Assign player
-          assignments[roleIndex][slotIdx] = playerData.name
-          assignedPlayers[playerData.name] = true
-          
-          -- Update class cache if we have class data
-          if playerData.class and OGRH.UpdatePlayerClass then
-            OGRH.UpdatePlayerClass(playerData.name, playerData.class)
-          end
-          
-          break
+          table.insert(matchingPlayers, playerData)
         end
+      end
+    end
+    
+    -- Sort players to prefer those with fewer assignments (distribute load evenly)
+    table.sort(matchingPlayers, function(a, b)
+      local countA = GetAssignmentCount(a.name)
+      local countB = GetAssignmentCount(b.name)
+      if countA ~= countB then
+        return countA < countB  -- Prefer players with fewer assignments
+      end
+      return a.name < b.name  -- Alphabetical for consistent results when counts are equal
+    end)
+    
+    -- Assign first available player
+    if table.getn(matchingPlayers) > 0 then
+      local selectedPlayer = matchingPlayers[1]
+      assignments[roleIndex][slotIdx] = selectedPlayer.name
+      -- Permanent block: role doesn't allow other roles
+      if not role.allowOtherRoles then
+        assignedPlayers[selectedPlayer.name] = true
+      end
+      -- Temporary block: we're in pass 1 or 2 (no duplicates allowed yet)
+      -- In 3-pass mode: always block in passes 1-2, allow in pass 3
+      -- In 2-pass mode: only block if role doesn't allow other roles
+      if not allowDuplicates then
+        if isThreePassMode or not role.allowOtherRoles then
+          tempAssignedPlayers[selectedPlayer.name] = true
+        end
+      end
+      
+      -- Update class cache if we have class data
+      if selectedPlayer.class and OGRH.UpdatePlayerClass then
+        OGRH.UpdatePlayerClass(selectedPlayer.name, selectedPlayer.class)
       end
     end
   end
