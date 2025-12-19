@@ -25,6 +25,7 @@ function OGRH.EnsureRecruitmentSV()
       enabled = false,
       message = "",
       messages = {"", "", "", "", ""}, -- 5 preset messages
+      messages2 = {"", "", "", "", ""}, -- 5 preset second messages
       selectedMessageIndex = 1, -- Currently selected message (1-5)
       selectedChannel = "general", -- Radio button selection: general, trade, world, raid
       interval = 600, -- Default 10 minutes between ads
@@ -34,7 +35,9 @@ function OGRH.EnsureRecruitmentSV()
       playerCache = {}, -- [playerName] = {class = "CLASS", level = number, guild = "name"}
       deletedContacts = {}, -- [playerName] = true for explicitly deleted contacts
       autoAd = false, -- Auto-advertise on interval
-      isRecruiting = false -- Currently recruiting
+      isRecruiting = false, -- Currently recruiting
+      rotateMessages = {false, false, false, false, false}, -- Which messages to include in rotation
+      lastRotationIndex = 0 -- Last message index sent in rotation
     }
   end
   
@@ -57,8 +60,17 @@ function OGRH.EnsureRecruitmentSV()
       OGRH_SV.recruitment.messages[1] = OGRH_SV.recruitment.message
     end
   end
+  if not OGRH_SV.recruitment.messages2 then
+    OGRH_SV.recruitment.messages2 = {"", "", "", "", ""}
+  end
   if not OGRH_SV.recruitment.selectedMessageIndex then
     OGRH_SV.recruitment.selectedMessageIndex = 1
+  end
+  if not OGRH_SV.recruitment.rotateMessages then
+    OGRH_SV.recruitment.rotateMessages = {false, false, false, false, false}
+  end
+  if not OGRH_SV.recruitment.lastRotationIndex then
+    OGRH_SV.recruitment.lastRotationIndex = 0
   end
   
   -- Migrate old channels format to new selectedChannel format
@@ -367,9 +379,12 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
       end)
       
       btn:SetScript("OnClick", function()
-        -- Save current message before switching
+        -- Save current messages before switching
         if detailPanel.messageBox then
           OGRH_SV.recruitment.messages[OGRH_SV.recruitment.selectedMessageIndex] = detailPanel.messageBox:GetText()
+        end
+        if detailPanel.messageBox2 then
+          OGRH_SV.recruitment.messages2[OGRH_SV.recruitment.selectedMessageIndex] = detailPanel.messageBox2:GetText()
         end
         
         -- Switch to new message
@@ -387,6 +402,14 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
           -- Update character count
           if detailPanel.messageLabel then
             detailPanel.messageLabel:SetText("Recruitment Message (" .. string.len(newMessage) .. "/255 characters):")
+          end
+        end
+        if detailPanel.messageBox2 then
+          local newMessage2 = OGRH_SV.recruitment.messages2[messageIndex] or ""
+          detailPanel.messageBox2:SetText(newMessage2)
+          -- Update character count
+          if detailPanel.messageLabel2 then
+            detailPanel.messageLabel2:SetText("Second Message (" .. string.len(newMessage2) .. "/255 characters):")
           end
         end
         
@@ -417,7 +440,7 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   local messageBackdrop = CreateFrame("Frame", nil, detailPanel)
   messageBackdrop:SetPoint("TOPLEFT", messageLabel, "BOTTOMLEFT", 0, -4)
   messageBackdrop:SetWidth(350)
-  messageBackdrop:SetHeight(100)
+  messageBackdrop:SetHeight(50)
   messageBackdrop:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -474,9 +497,71 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   detailPanel.messageLabel = messageLabel
   detailPanel.messageSelectorBtn = messageSelectorBtn
   
+  -- Second Message label
+  local messageLabel2 = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  messageLabel2:SetPoint("TOPLEFT", messageBackdrop, "BOTTOMLEFT", 0, -8)
+  messageLabel2:SetText("Second Message (0/255 characters):")
+  table.insert(detailPanel.content, messageLabel2)
+  
+  -- Second Message edit box
+  local messageBackdrop2 = CreateFrame("Frame", nil, detailPanel)
+  messageBackdrop2:SetPoint("TOPLEFT", messageLabel2, "BOTTOMLEFT", 0, -4)
+  messageBackdrop2:SetWidth(350)
+  messageBackdrop2:SetHeight(50)
+  messageBackdrop2:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  messageBackdrop2:SetBackdropColor(0, 0, 0, 1)
+  messageBackdrop2:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  table.insert(detailPanel.content, messageBackdrop2)
+  
+  -- ScrollFrame for second message
+  local messageScrollFrame2 = CreateFrame("ScrollFrame", nil, messageBackdrop2)
+  messageScrollFrame2:SetPoint("TOPLEFT", 5, -5)
+  messageScrollFrame2:SetPoint("BOTTOMRIGHT", -5, 5)
+  
+  -- Scroll child for second message
+  local messageScrollChild2 = CreateFrame("Frame", nil, messageScrollFrame2)
+  messageScrollFrame2:SetScrollChild(messageScrollChild2)
+  messageScrollChild2:SetWidth(contentWidth)
+  messageScrollChild2:SetHeight(400)
+  
+  -- Edit box for second message
+  local messageBox2 = CreateFrame("EditBox", nil, messageScrollChild2)
+  messageBox2:SetPoint("TOPLEFT", 0, 0)
+  messageBox2:SetWidth(contentWidth)
+  messageBox2:SetHeight(400)
+  messageBox2:SetMultiLine(true)
+  messageBox2:SetAutoFocus(false)
+  messageBox2:SetMaxLetters(255)
+  messageBox2:SetFontObject(GameFontHighlightSmall)
+  messageBox2:SetTextInsets(5, 5, 3, 3)
+  messageBox2:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  messageBox2:SetScript("OnTextChanged", function()
+    local text = this:GetText()
+    local len = string.len(text)
+    -- Save to current selected message slot
+    OGRH_SV.recruitment.messages2[OGRH_SV.recruitment.selectedMessageIndex] = text
+    -- Update character count in label
+    messageLabel2:SetText("Second Message (" .. len .. "/255 characters):")
+  end)
+  
+  -- Load text from selected message slot
+  local currentMessage2 = OGRH_SV.recruitment.messages2[OGRH_SV.recruitment.selectedMessageIndex] or ""
+  messageBox2:SetText(currentMessage2)
+  
+  -- Store references for dropdown handler
+  detailPanel.messageBox2 = messageBox2
+  detailPanel.messageLabel2 = messageLabel2
+  
   -- Channel selection (radio buttons in single line)
   local channelLabel = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  channelLabel:SetPoint("TOPLEFT", messageBackdrop, "BOTTOMLEFT", 0, -12)
+  channelLabel:SetPoint("TOPLEFT", messageBackdrop2, "BOTTOMLEFT", 0, -12)
   channelLabel:SetText("Advertise in:")
   table.insert(detailPanel.content, channelLabel)
   
@@ -550,6 +635,34 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   intervalBox:SetText(tostring(math.floor((OGRH_SV.recruitment.interval or 600) / 60)))
   table.insert(detailPanel.content, intervalBox)
   
+  -- Rotate Message section
+  local rotateLabel = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  rotateLabel:SetPoint("TOPLEFT", intervalLabel, "BOTTOMLEFT", 0, -12)
+  rotateLabel:SetText("Rotate Message #:")
+  table.insert(detailPanel.content, rotateLabel)
+  
+  -- Rotation checkboxes (1-5)
+  local rotateCheckboxes = {}
+  for i = 1, 5 do
+    local checkbox = CreateFrame("CheckButton", nil, detailPanel, "UICheckButtonTemplate")
+    checkbox:SetPoint("TOPLEFT", rotateLabel, "BOTTOMLEFT", (i-1) * 50, -8)
+    checkbox:SetWidth(24)
+    checkbox:SetHeight(24)
+    checkbox:SetChecked(OGRH_SV.recruitment.rotateMessages[i])
+    
+    -- Capture index for closure
+    local messageIndex = i
+    checkbox:SetScript("OnClick", function()
+      OGRH_SV.recruitment.rotateMessages[messageIndex] = this:GetChecked()
+    end)
+    table.insert(detailPanel.content, checkbox)
+    table.insert(rotateCheckboxes, checkbox)
+    
+    local label = checkbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("LEFT", checkbox, "RIGHT", 4, 0)
+    label:SetText(i)
+  end
+  
   -- Start/Stop Recruiting button
   local recruitBtn = CreateFrame("Button", nil, detailPanel, "UIPanelButtonTemplate")
   recruitBtn:SetWidth(140)
@@ -579,7 +692,50 @@ end
 function OGRH.SendRecruitmentAd()
   OGRH.EnsureRecruitmentSV()
   
-  local message = OGRH_SV.recruitment.message
+  -- Check if rotation is enabled (more than one message checked)
+  local rotateMessages = OGRH_SV.recruitment.rotateMessages
+  local checkedMessages = {}
+  local checkedCount = 0
+  for i = 1, 5 do
+    if rotateMessages[i] then
+      table.insert(checkedMessages, i)
+      checkedCount = checkedCount + 1
+    end
+  end
+  
+  local message
+  local message2
+  local messageIndex
+  
+  if checkedCount > 1 then
+    -- Rotation mode: cycle through checked messages
+    local lastIndex = OGRH_SV.recruitment.lastRotationIndex
+    
+    -- Find next message in rotation
+    local nextIndex = nil
+    for _, idx in ipairs(checkedMessages) do
+      if idx > lastIndex then
+        nextIndex = idx
+        break
+      end
+    end
+    
+    -- If no next message found, wrap around to first
+    if not nextIndex then
+      nextIndex = checkedMessages[1]
+    end
+    
+    messageIndex = nextIndex
+    message = OGRH_SV.recruitment.messages[nextIndex]
+    message2 = OGRH_SV.recruitment.messages2[nextIndex]
+    OGRH_SV.recruitment.lastRotationIndex = nextIndex
+  else
+    -- Single message mode: use current selected message
+    messageIndex = OGRH_SV.recruitment.selectedMessageIndex
+    message = OGRH_SV.recruitment.messages[messageIndex]
+    message2 = OGRH_SV.recruitment.messages2[messageIndex]
+  end
+  
   if not message or message == "" then
     OGRH.Msg("Please set a recruitment message first.")
     return
@@ -592,19 +748,38 @@ function OGRH.SendRecruitmentAd()
   end
   
   -- Send to the selected channel
+  local msgSuffix = ""
+  if checkedCount > 1 then
+    msgSuffix = " (Message " .. messageIndex .. ")"
+  end
+  
+  local hasSecondMessage = message2 and message2 ~= ""
+  
   if selectedChannel == "general" then
     SendChatMessage(message, "CHANNEL", nil, GetChannelName("General"))
-    OGRH.Msg("Recruitment message sent to General Chat.")
+    if hasSecondMessage then
+      SendChatMessage(message2, "CHANNEL", nil, GetChannelName("General"))
+    end
+    OGRH.Msg("Recruitment message" .. (hasSecondMessage and "s" or "") .. " sent to General Chat." .. msgSuffix)
   elseif selectedChannel == "trade" then
     SendChatMessage(message, "CHANNEL", nil, GetChannelName("Trade"))
-    OGRH.Msg("Recruitment message sent to Trade Chat.")
+    if hasSecondMessage then
+      SendChatMessage(message2, "CHANNEL", nil, GetChannelName("Trade"))
+    end
+    OGRH.Msg("Recruitment message" .. (hasSecondMessage and "s" or "") .. " sent to Trade Chat." .. msgSuffix)
   elseif selectedChannel == "world" then
     SendChatMessage(message, "CHANNEL", nil, GetChannelName("World"))
-    OGRH.Msg("Recruitment message sent to World Chat.")
+    if hasSecondMessage then
+      SendChatMessage(message2, "CHANNEL", nil, GetChannelName("World"))
+    end
+    OGRH.Msg("Recruitment message" .. (hasSecondMessage and "s" or "") .. " sent to World Chat." .. msgSuffix)
   elseif selectedChannel == "raid" then
     if GetNumRaidMembers() > 0 then
       SendChatMessage(message, "RAID")
-      OGRH.Msg("Recruitment message sent to Raid Chat.")
+      if hasSecondMessage then
+        SendChatMessage(message2, "RAID")
+      end
+      OGRH.Msg("Recruitment message" .. (hasSecondMessage and "s" or "") .. " sent to Raid Chat." .. msgSuffix)
     else
       OGRH.Msg("You are not in a raid.")
       return

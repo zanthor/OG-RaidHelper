@@ -3,13 +3,14 @@
 ## Author: Gnuzmas
 ## Version: 1.25.3
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
-## SavedVariables: OGRH_SV
+## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV
 
 OGRH_Backport.lua
 
 Libs\LibStub\LibStub.lua
 Libs\Libs.xml
 Libs\OGST\OGST.lua
+Libs\OGST\OGST_Sample.lua
 
 OGRH_Core.lua
 OGRH_Defaults.lua
@@ -33,3 +34,5 @@ OGRH_Recruitment.lua
 OGRH_RGO.lua
 
 Modules\cthun.lua
+Modules\OGRH-ConsumeHelperDefaults.lua
+Modules\OGRH-ConsumeHelper.lua

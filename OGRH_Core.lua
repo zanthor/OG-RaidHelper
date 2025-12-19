@@ -5468,6 +5468,38 @@ local function CreateMinimapButton()
         }
       })
       
+      -- Modules submenu
+      menu:AddItem({
+        text = "Modules",
+        submenu = {
+          {
+            text = "Consume Helper",
+            submenu = {
+              {
+                text = "Manage Consumes",
+                onClick = function()
+                  if OGRH.ShowManageConsumes then
+                    OGRH.ShowManageConsumes()
+                  else
+                    OGRH.Msg("Manage Consumes module not loaded.")
+                  end
+                end
+              },
+              {
+                text = "Setup",
+                onClick = function()
+                  if OGRH.ShowConsumeHelper then
+                    OGRH.ShowConsumeHelper()
+                  else
+                    OGRH.Msg("Consume Helper module not loaded.")
+                  end
+                end
+              }
+            }
+          }
+        }
+      })
+      
       -- Hide/Show toggle
       menu.toggleItem = menu:AddItem({
         text = "Hide",
