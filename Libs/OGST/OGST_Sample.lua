@@ -453,9 +453,8 @@ SlashCmdList["OGST"] = function(msg)
   if msg == "spy" then
     OGST_Sample.SpyUI()
   elseif msg == "design" then
-    OGST.DESIGN_MODE = not OGST.DESIGN_MODE
-    local status = OGST.DESIGN_MODE and "enabled" or "disabled"
-    DEFAULT_CHAT_FRAME:AddMessage("OGST Design Mode: " .. status)
+    -- Use library function to toggle design mode
+    OGST.ToggleDesignMode()
     
     -- Update tooltips helper
     local function updateTooltips(frame, name, frameType)
@@ -467,36 +466,9 @@ SlashCmdList["OGST"] = function(msg)
       end
     end
     
-    -- Update existing windows
+    -- Update sample-specific components that aren't part of standard windows
+    -- Update sample-specific components that aren't part of standard windows
     if OGST_Sample.mainWindow then
-      if OGST_Sample.mainWindow.headerFrame then
-        if OGST.DESIGN_MODE then
-          OGST_Sample.mainWindow.headerFrame:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 0, right = 0, top = 0, bottom = 0 }
-          })
-          OGST_Sample.mainWindow.headerFrame:SetBackdropBorderColor(0, 1, 0, 1)
-        else
-          OGST_Sample.mainWindow.headerFrame:SetBackdrop(nil)
-        end
-        updateTooltips(OGST_Sample.mainWindow.headerFrame, "Header Frame", "Frame")
-      end
-      
-      if OGST_Sample.mainWindow.contentFrame then
-        if OGST.DESIGN_MODE then
-          OGST_Sample.mainWindow.contentFrame:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 0, right = 0, top = 0, bottom = 0 }
-          })
-          OGST_Sample.mainWindow.contentFrame:SetBackdropBorderColor(1, 0, 0, 1)
-        else
-          OGST_Sample.mainWindow.contentFrame:SetBackdrop(nil)
-        end
-        updateTooltips(OGST_Sample.mainWindow.contentFrame, "Content Frame", "Frame")
-      end
-      
       -- Toggle textbox containers
       if OGST_Sample.mainWindow.hContainer then
         if OGST.DESIGN_MODE then

@@ -1,5 +1,5 @@
 --[[
-  OG-RaidHelper Consume Helper Default Configuration
+  OG-ReadHelper Consume Helper Default Configuration
   
   To use:
   1. Configure your consume items in-game

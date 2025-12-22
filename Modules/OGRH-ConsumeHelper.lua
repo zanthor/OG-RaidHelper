@@ -1,15 +1,20 @@
 -- OGRH-ConsumeHelper.lua
 -- Module for managing consume tracking and configuration
--- Part of OG-RaidHelper
+-- Part of OG-RaidHelper / OG-ReadHelper
 
+-- Namespace compatibility: Work with either OGRH or OGRH_Read
+local OGRH = OGRH or OGRH_Read
 if not OGRH then
-  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Error: OGRH-ConsumeHelper requires OGRH_Core to be loaded first!|r")
+  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Error: OGRH-ConsumeHelper requires OGRH_Core or OGRH_Read core to be loaded first!|r")
   return
 end
 
 -- Create namespace
 OGRH.ConsumeHelper = OGRH.ConsumeHelper or {}
 local ConsumeHelper = OGRH.ConsumeHelper
+
+-- Also make it available globally for compatibility
+_G.ConsumeHelper = ConsumeHelper
 
 -- Initialize saved variables (separate from main OGRH data to avoid sync/checksum issues)
 local function InitializeSavedVariables()
@@ -71,7 +76,8 @@ end
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:SetScript("OnEvent", function()
-  if arg1 == "OG-RaidHelper" then
+  -- Support both OG-RaidHelper and OG-ReadHelper
+  if arg1 == "OG-RaidHelper" or arg1 == "OG-ReadHelper" then
     InitializeSavedVariables()
     ReportLoadedConsumes()
     this:UnregisterEvent("ADDON_LOADED")
@@ -99,6 +105,44 @@ local CLASS_COLORS = {
   ["Warlock"] = {r = 0.58, g = 0.51, b = 0.79},
   ["Warrior"] = {r = 0.78, g = 0.61, b = 0.43}
 }
+
+-- Helper function to count items in bags by itemId
+local function CountItemInBags(itemId)
+  -- Items with charges that should count total charges, not number of items
+  local chargeBasedItems = {
+    [20748] = true, -- Brilliant Mana Oil
+    [20749] = true, -- Brilliant Wizard Oil
+    [20750] = true, -- Wizard Oil
+    [20745] = true, -- Minor Wizard Oil
+    [20746] = true, -- Lesser Wizard Oil
+    [20744] = true, -- Minor Mana Oil
+    [20747] = true, -- Lesser Mana Oil
+  }
+  
+  local total = 0
+  
+  for bag = 0, 4 do
+    for slot = 1, GetContainerNumSlots(bag) do
+      local link = GetContainerItemLink(bag, slot)
+      if link then
+        local _, _, linkItemId = string.find(link, "item:(%d+)")
+        if linkItemId and tonumber(linkItemId) == itemId then
+          -- For all items (including charge-based), count the displayed number
+          -- For charge items this is charges, for stackable items this is stack count
+          local texture, count = GetContainerItemInfo(bag, slot)
+          count = tonumber(count) or 1
+          -- WoW 1.12.1 returns negative numbers for items with charges
+          if chargeBasedItems[itemId] and count < 0 then
+            count = math.abs(count)
+          end
+          total = total + count
+        end
+      end
+    end
+  end
+  
+  return total
+end
 
 -- Data structure
 ConsumeHelper.data = ConsumeHelper.data or {
@@ -151,6 +195,25 @@ local function EnsurePlayerExists(playerName, playerClass)
   end
 end
 
+-- Get first assigned role for current player
+local function GetCurrentPlayerRole()
+  local playerName = UnitName("player")
+  OGRH_ConsumeHelper_SV.playerRoles = OGRH_ConsumeHelper_SV.playerRoles or {}
+  local playerData = OGRH_ConsumeHelper_SV.playerRoles[playerName]
+  
+  if playerData and ConsumeHelper.data and ConsumeHelper.data.roles then
+    local roles = ConsumeHelper.data.roles
+    for i = 1, getn(roles) do
+      local roleName = roles[i]
+      if playerData[roleName] then
+        return roleName
+      end
+    end
+  end
+  
+  return nil
+end
+
 ------------------------------
 --   Frame Creation         --
 ------------------------------
@@ -168,7 +231,11 @@ function ConsumeHelper.CreateFrame()
     title = "Consume Helper",
     closeButton = true,
     escapeCloses = true,
-    closeOnNewWindow = true
+    closeOnNewWindow = true,
+    onClose = function()
+      -- Re-open Manage Consumes when setup closes
+      OGRH.ShowManageConsumes()
+    end
   })
   
   if not frame then
@@ -1521,6 +1588,567 @@ end
 --   Item Management        --
 ------------------------------
 
+-- Deposit all consumes from bags into bank
+function ConsumeHelper.DepositConsumes()
+  if not OGRH_ConsumeHelper_SV or not OGRH_ConsumeHelper_SV.setupConsumes then return end
+  
+  -- Build a set of all consume item IDs from setupConsumes
+  local consumeItemIds = {}
+  for i = 1, getn(OGRH_ConsumeHelper_SV.setupConsumes) do
+    local itemId = OGRH_ConsumeHelper_SV.setupConsumes[i]
+    if type(itemId) == "string" then
+      itemId = string.gsub(itemId, "^%s*(.-)%s*$", "%1")
+      itemId = tonumber(itemId)
+    end
+    if itemId then
+      consumeItemIds[itemId] = true
+    end
+  end
+  
+  -- Build list of items to deposit
+  local itemsToDeposit = {}
+  
+  for bag = 4, 0, -1 do
+    local numSlots = GetContainerNumSlots(bag)
+    if numSlots then
+      for slot = numSlots, 1, -1 do
+        local itemLink = GetContainerItemLink(bag, slot)
+        if itemLink then
+          local _, _, itemIdStr = string.find(itemLink, "item:(%d+)")
+          local itemId = tonumber(itemIdStr)
+          
+          -- Check if this item is a consume
+          if itemId and consumeItemIds[itemId] then
+            table.insert(itemsToDeposit, {bag = bag, slot = slot})
+          end
+        end
+      end
+    end
+  end
+  
+  if getn(itemsToDeposit) == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00No consume items found in bags.|r")
+    return
+  end
+  
+  -- Create deposit frame if it doesn't exist
+  if not ConsumeHelper.depositFrame then
+    ConsumeHelper.depositFrame = CreateFrame("Frame")
+  end
+  
+  local frame = ConsumeHelper.depositFrame
+  frame.queue = itemsToDeposit
+  frame.currentIndex = 1
+  frame.totalDeposited = 0
+  frame.delay = 0.1
+  frame.timer = 0
+  
+  frame:SetScript("OnUpdate", function()
+    frame.timer = frame.timer + arg1
+    
+    if frame.timer >= frame.delay then
+      frame.timer = 0
+      
+      if frame.currentIndex > getn(frame.queue) then
+        -- Done depositing, now restack
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Deposited " .. frame.totalDeposited .. " consume items. Restacking...|r")
+        frame:SetScript("OnUpdate", nil)
+        
+        -- Restack bags after deposit
+        ConsumeHelper.RestackBags(function()
+          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Restack complete.|r")
+          
+          -- Refresh the list to show updated counts
+          local manageFrame = getglobal("OGRH_ManageConsumesFrame")
+          if manageFrame then
+            ConsumeHelper.PopulateManageConsumesList(manageFrame)
+          end
+        end)
+        return
+      end
+      
+      local item = frame.queue[frame.currentIndex]
+      frame.currentIndex = frame.currentIndex + 1
+      
+      -- Pick up the item from bag
+      PickupContainerItem(item.bag, item.slot)
+      
+      -- Deposit into bank
+      if CursorHasItem() then
+        local deposited = false
+        
+        -- Find empty slot in base bank
+        for bankSlot = 1, 28 do
+          local texture = GetContainerItemInfo(-1, bankSlot)
+          if not texture then
+            PutItemInBag(BankButtonIDToInvSlotID(bankSlot))
+            deposited = true
+            break
+          end
+        end
+        
+        -- If not deposited, check bank bags for empty slots
+        if not deposited then
+          for bankBag = 5, 11 do
+            local numBankSlots = GetContainerNumSlots(bankBag)
+            if numBankSlots and numBankSlots > 0 then
+              for bankBagSlot = 1, numBankSlots do
+                local texture = GetContainerItemInfo(bankBag, bankBagSlot)
+                if not texture then
+                  PickupContainerItem(bankBag, bankBagSlot)
+                  deposited = true
+                  break
+                end
+              end
+              if deposited then break end
+            end
+          end
+        end
+        
+        if deposited then
+          frame.totalDeposited = frame.totalDeposited + 1
+        else
+          -- Bank full, put item back and stop
+          PickupContainerItem(item.bag, item.slot)
+          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Deposited " .. frame.totalDeposited .. " consume items.|r |cffff0000Bank is now full!|r")
+          frame:SetScript("OnUpdate", nil)
+        end
+      end
+    end
+  end)
+end
+
+-- Withdraw consumes from bank to bags based on current list
+function ConsumeHelper.WithdrawConsumes()
+  -- Get the manage consumes frame
+  local frame = getglobal("OGRH_ManageConsumesFrame")
+  if not frame or not frame.withdrawBox or not frame.consumeScrollChild then return end
+  
+  -- Get multiplier from textbox
+  local multiplierText = frame.withdrawBox:GetText()
+  local multiplier = tonumber(multiplierText) or 1
+  if multiplier < 1 then multiplier = 1 end
+  
+  -- Check if raid is selected
+  if not ConsumeHelper.manageConsumesData or not ConsumeHelper.manageConsumesData.selectedRaid then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Select a raid first.|r")
+    return
+  end
+  
+  -- Read items from the already-populated list
+  local scrollChild = frame.consumeScrollChild
+  local children = {scrollChild:GetChildren()}
+  local itemsToWithdraw = {}
+  
+  for i = 1, getn(children) do
+    local child = children[i]
+    if child.itemData then
+      table.insert(itemsToWithdraw, child.itemData)
+    end
+  end
+  
+  if getn(itemsToWithdraw) == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00No consumes in the current list.|r")
+    return
+  end
+  
+  -- Build withdraw queue with calculated amounts
+  local withdrawQueue = {}
+  for i = 1, getn(itemsToWithdraw) do
+    local itemData = itemsToWithdraw[i]
+    local needed = (itemData.quantity or 0) * multiplier
+    local have = CountItemInBags(itemData.itemId)
+    local deficit = needed - have
+    
+    if deficit > 0 then
+      table.insert(withdrawQueue, {
+        itemId = itemData.itemId,
+        targetAmount = needed,
+        amount = deficit
+      })
+    end
+  end
+  
+  if getn(withdrawQueue) == 0 then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00You already have enough of all consumes.|r")
+    return
+  end
+  
+  -- Create withdraw frame if it doesn't exist
+  if not ConsumeHelper.withdrawFrame then
+    ConsumeHelper.withdrawFrame = CreateFrame("Frame")
+  end
+  
+  local wFrame = ConsumeHelper.withdrawFrame
+  wFrame.queue = withdrawQueue
+  wFrame.currentIndex = 1
+  wFrame.totalWithdrawn = 0
+  wFrame.delay = 0.2
+  wFrame.timer = 0
+  wFrame.pendingSplit = nil
+  
+  wFrame:SetScript("OnUpdate", function()
+    wFrame.timer = wFrame.timer + arg1
+    
+    if wFrame.timer >= wFrame.delay then
+      wFrame.timer = 0
+      
+      -- Check if we're waiting for a return-to-bank operation
+      if wFrame.pendingSplit then
+        wFrame.pendingSplit.waitTime = (wFrame.pendingSplit.waitTime or 0) + wFrame.delay
+        
+        if wFrame.pendingSplit.waitTime >= 0.4 then
+          -- Operation complete, move on
+          wFrame.totalWithdrawn = wFrame.totalWithdrawn + wFrame.pendingSplit.amount
+          wFrame.pendingSplit = nil
+        end
+        return
+      end
+      
+      if wFrame.currentIndex > getn(wFrame.queue) then
+        -- Done withdrawing, now restack
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Withdrew " .. wFrame.totalWithdrawn .. " consume items. Restacking...|r")
+        wFrame:SetScript("OnUpdate", nil)
+        
+        -- Restack bags after withdraw
+        ConsumeHelper.RestackBags(function()
+          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00Restack complete.|r")
+          
+          -- Refresh the list to show updated counts
+          local frame = getglobal("OGRH_ManageConsumesFrame")
+          if frame then
+            ConsumeHelper.PopulateManageConsumesList(frame)
+          end
+        end)
+        return
+      end
+      
+      local item = wFrame.queue[wFrame.currentIndex]
+      
+      -- Get how much we still need (recalculate each tick)
+      local needed = item.targetAmount
+      local have = CountItemInBags(item.itemId)
+      local stillNeeded = needed - have
+      
+      if stillNeeded <= 0 then
+        -- We have enough now, move to next item
+        wFrame.currentIndex = wFrame.currentIndex + 1
+        return
+      end
+      
+      -- Find item in bank (do this fresh each tick)
+      -- Scan all locations and find items with appropriate charges/counts
+      local foundStacks = {}
+      
+      -- Charge-based items (wizard oils) where we track charges not items
+      local chargeBasedItems = {
+        [20748] = true, -- Brilliant Mana Oil
+        [20749] = true, -- Brilliant Wizard Oil
+        [20750] = true, -- Wizard Oil
+        [20745] = true, -- Minor Wizard Oil
+        [20746] = true, -- Lesser Wizard Oil
+        [20744] = true, -- Minor Mana Oil
+        [20747] = true, -- Lesser Mana Oil
+      }
+      
+      local isChargeBased = chargeBasedItems[item.itemId]
+      
+      -- Check base bank slots first
+      for slot = 1, 28 do
+        local itemLink = GetContainerItemLink(-1, slot)
+        if itemLink then
+          local _, count = GetContainerItemInfo(-1, slot)
+          local _, _, itemIdStr = string.find(itemLink, "item:(%d+)")
+          local itemId = tonumber(itemIdStr)
+          if itemId == item.itemId then
+            count = tonumber(count) or 1
+            -- WoW 1.12.1 returns negative numbers for items with charges
+            if isChargeBased and count < 0 then
+              count = math.abs(count)
+            end
+            -- Include all items (we'll sort and take what we need)
+            table.insert(foundStacks, {bag = -1, slot = slot, count = count})
+          end
+        end
+      end
+      
+      -- Check bank bags
+      for bag = 5, 11 do
+        local numSlots = GetContainerNumSlots(bag)
+        if numSlots and numSlots > 0 then
+          for slot = 1, numSlots do
+            local itemLink = GetContainerItemLink(bag, slot)
+            if itemLink then
+              local _, count = GetContainerItemInfo(bag, slot)
+              local _, _, itemIdStr = string.find(itemLink, "item:(%d+)")
+              local itemId = tonumber(itemIdStr)
+              if itemId == item.itemId then
+                count = tonumber(count) or 1
+                -- WoW 1.12.1 returns negative numbers for items with charges
+                if isChargeBased and count < 0 then
+                  count = math.abs(count)
+                end
+                -- Include all items (we'll sort and take what we need)
+                table.insert(foundStacks, {bag = bag, slot = slot, count = count})
+              end
+            end
+          end
+        end
+      end
+      
+      if getn(foundStacks) == 0 then
+        -- Item not found in bank
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffff00Could not find enough " .. (GetItemInfo(item.itemId) or item.itemId) .. " in bank.|r")
+        wFrame.currentIndex = wFrame.currentIndex + 1
+        return
+      end
+      
+      -- Sort by count ascending (smallest first)
+      table.sort(foundStacks, function(a, b) return a.count < b.count end)
+      
+      -- Take from smallest stack
+      local bankBag = foundStacks[1].bag
+      local bankSlot = foundStacks[1].slot
+      local bankCount = foundStacks[1].count
+      
+      -- Find empty or partial stack in bags
+      local emptyBag, emptySlot = nil, nil
+      local partialBag, partialSlot, partialCount = nil, nil, 0
+      
+      -- For charge-based items, skip partial stack logic (can't merge them)
+      if not chargeBasedItems[item.itemId] then
+        -- First look for partial stacks of this item
+        for bag = 0, 4 do
+          for slot = 1, GetContainerNumSlots(bag) do
+            local itemLink = GetContainerItemLink(bag, slot)
+            if itemLink then
+              local _, count = GetContainerItemInfo(bag, slot)
+              local _, _, bagItemId = string.find(itemLink, "item:(%d+)")
+              bagItemId = tonumber(bagItemId)
+              
+              if bagItemId == item.itemId and count and count < 20 then
+                -- Found partial stack
+                if not partialBag or count > partialCount then
+                  partialBag = bag
+                  partialSlot = slot
+                  partialCount = count
+                end
+              end
+            elseif not emptyBag then
+              -- Remember first empty slot
+              emptyBag = bag
+              emptySlot = slot
+            end
+          end
+        end
+      end
+      
+      -- For charge-based items or if no partial found, look for empty slots
+      if chargeBasedItems[item.itemId] or not partialBag then
+        for bag = 0, 4 do
+          for slot = 1, GetContainerNumSlots(bag) do
+            local itemLink = GetContainerItemLink(bag, slot)
+            if not itemLink and not emptyBag then
+              emptyBag = bag
+              emptySlot = slot
+              break
+            end
+          end
+          if emptyBag then break end
+        end
+      end
+      
+      -- Use partial stack if found, otherwise empty slot
+      local targetBag = partialBag or emptyBag
+      local targetSlot = partialSlot or emptySlot
+      
+      if not targetBag then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000No bag space available.|r")
+        wFrame:SetScript("OnUpdate", nil)
+        return
+      end
+      
+      -- For charge-based items, never try to split - always take whole item
+      local isChargeBased = chargeBasedItems[item.itemId]
+      if isChargeBased or stillNeeded >= bankCount then
+        -- Take the whole item/stack
+        PickupContainerItem(bankBag, bankSlot)
+        if CursorHasItem() then
+          PickupContainerItem(targetBag, targetSlot)
+          wFrame.totalWithdrawn = wFrame.totalWithdrawn + bankCount
+        end
+      else
+        -- Need less than full stack - split only what we need
+        SplitContainerItem(bankBag, bankSlot, stillNeeded)
+        PickupContainerItem(targetBag, targetSlot)
+        
+        -- Mark pending to wait for split to complete
+        wFrame.pendingSplit = {itemId = item.itemId, amount = stillNeeded, waitTime = 0}
+        return
+      end
+    end
+  end)
+end
+
+-- Restack partial stacks in bags to consolidate items
+-- Based on Bagshui's restack implementation
+function ConsumeHelper.RestackBags(onComplete)
+  -- Build inventory cache of all bag items
+  local itemStacks = {}  -- [itemId] = { {bag, slot, count, maxStack}, ... }
+  
+  -- Blacklist of non-stackable items that appear stackable (items with charges)
+  local nonStackableItems = {
+    [20748] = true, -- Brilliant Mana Oil
+    [20749] = true, -- Brilliant Wizard Oil
+    [20750] = true, -- Wizard Oil
+    [20745] = true, -- Minor Wizard Oil
+    [20746] = true, -- Lesser Wizard Oil
+    [20744] = true, -- Minor Mana Oil
+    [20747] = true, -- Lesser Mana Oil
+  }
+  
+  for bag = 0, 4 do
+    local numSlots = GetContainerNumSlots(bag)
+    for slot = 1, numSlots do
+      local texture, count, locked = GetContainerItemInfo(bag, slot)
+      if texture and not locked then
+        local link = GetContainerItemLink(bag, slot)
+        if link then
+          local _, _, itemId = string.find(link, "item:(%d+)")
+          itemId = tonumber(itemId)
+          if itemId and not nonStackableItems[itemId] then
+            -- Get stack size from item info
+            local _, _, _, _, _, _, _, maxStack = GetItemInfo(itemId)
+            count = tonumber(count) or 1
+            maxStack = tonumber(maxStack) or 20
+            
+            -- Skip non-stackable items (maxStack = 1, like wizard oils with charges)
+            -- Only track partial stacks of actually stackable items
+            if maxStack > 1 and count < maxStack then
+              if not itemStacks[itemId] then
+                itemStacks[itemId] = {}
+              end
+              table.insert(itemStacks[itemId], {
+                bag = bag,
+                slot = slot,
+                count = count,
+                maxStack = maxStack
+              })
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- Build queue of moves (source, target pairs)
+  local moveQueue = {}
+  
+  for itemId, stacks in pairs(itemStacks) do
+    -- Only process if we have multiple partial stacks
+    if getn(stacks) > 1 then
+      -- Sort from largest to smallest
+      table.sort(stacks, function(a, b) return a.count > b.count end)
+      
+      -- Try to fill largest stacks by pulling from smallest
+      for targetIdx = 1, getn(stacks) - 1 do
+        local target = stacks[targetIdx]
+        
+        if target.count < target.maxStack then
+          -- Work backwards through sources (smallest stacks first)
+          for sourceIdx = getn(stacks), 2, -1 do
+            local source = stacks[sourceIdx]
+            
+            if source.count > 0 and target.count < target.maxStack then
+              -- Queue this move
+              table.insert(moveQueue, {
+                sourceBag = source.bag,
+                sourceSlot = source.slot,
+                targetBag = target.bag,
+                targetSlot = target.slot
+              })
+              
+              -- Update counts for planning purposes
+              local moved = math.min(source.count, target.maxStack - target.count)
+              target.count = target.count + moved
+              source.count = source.count - moved
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- Execute the move queue
+  if getn(moveQueue) > 0 then
+    local frame = CreateFrame("Frame")
+    frame.queue = moveQueue
+    frame.currentIndex = 1
+    frame.timer = 0
+    frame.delay = 0.15  -- Delay between moves
+    frame.onComplete = onComplete
+    frame.retryCount = 0
+    frame.maxRetries = 3
+    
+    frame:SetScript("OnUpdate", function()
+      frame.timer = frame.timer + arg1
+      
+      if frame.timer >= frame.delay then
+        frame.timer = 0
+        
+        if frame.currentIndex > getn(frame.queue) then
+          -- Done
+          frame:SetScript("OnUpdate", nil)
+          if frame.onComplete then
+            frame.onComplete()
+          end
+          return
+        end
+        
+        local move = frame.queue[frame.currentIndex]
+        
+        -- Check if items are locked
+        local _, _, sourceLocked = GetContainerItemInfo(move.sourceBag, move.sourceSlot)
+        local _, _, targetLocked = GetContainerItemInfo(move.targetBag, move.targetSlot)
+        
+        if not sourceLocked and not targetLocked then
+          -- Perform the move (pickup source, then pickup target to swap/merge)
+          PickupContainerItem(move.sourceBag, move.sourceSlot)
+          if CursorHasItem() then
+            PickupContainerItem(move.targetBag, move.targetSlot)
+          end
+          
+          -- Check if move succeeded (cursor should be empty after successful merge)
+          if not CursorHasItem() then
+            -- Success, move to next item
+            frame.currentIndex = frame.currentIndex + 1
+            frame.retryCount = 0
+          else
+            -- Failed - item couldn't be merged (probably non-stackable)
+            -- Clear cursor and skip this item
+            ClearCursor()
+            frame.currentIndex = frame.currentIndex + 1
+            frame.retryCount = 0
+          end
+        else
+          -- Items locked, retry with counter
+          frame.retryCount = frame.retryCount + 1
+          if frame.retryCount >= frame.maxRetries then
+            -- Give up on this item and move to next
+            frame.currentIndex = frame.currentIndex + 1
+            frame.retryCount = 0
+          end
+        end
+      end
+    end)
+  else
+    -- No restacking needed
+    if onComplete then
+      onComplete()
+    end
+  end
+end
+
 function ConsumeHelper.DeleteItem(frame, itemId)
   if not ConsumeHelper.data.selectedRaid or not ConsumeHelper.data.selectedClass then return end
   
@@ -1686,14 +2314,604 @@ function ConsumeHelper.ShowWindow()
 end
 
 ------------------------------
---   Global Access          --
+--   Manage Consumes Window --
 ------------------------------
 
--- Show Manage Consumes window (stub for now, will be implemented)
+-- Show Manage Consumes window
 function ConsumeHelper.ShowManageConsumes()
-  OGRH.Msg("Manage Consumes window - Coming soon!")
-  -- TODO: Implement manage consumes interface
+  -- Create or show window
+  local frame = getglobal("OGRH_ManageConsumesFrame")
+  if frame then
+    -- Check bank state when showing existing window
+    local isBankOpen = false
+    for i = 5, 11 do
+      if GetContainerNumSlots(i) and GetContainerNumSlots(i) > 0 then
+        isBankOpen = true
+        break
+      end
+    end
+    
+    if isBankOpen then
+      frame.bankPanel:Show()
+    else
+      frame.bankPanel:Hide()
+    end
+    OGST.RepositionDockedPanels()
+    
+    frame:Show()
+    return
+  end
+  
+  -- Create window using OGST
+  frame = OGST.CreateStandardWindow({
+    name = "OGRH_ManageConsumesFrame",
+    width = 250,
+    height = 400,
+    title = "Consumes",
+    closeButton = true,
+    escapeCloses = true,
+    closeOnNewWindow = true
+  })
+  
+  -- Add Setup button to left side of title bar
+  local setupBtn = CreateFrame("Button", nil, frame.headerFrame, "UIPanelButtonTemplate")
+  setupBtn:SetWidth(60)
+  setupBtn:SetHeight(20)
+  setupBtn:SetText("Setup")
+  setupBtn:SetPoint("LEFT", frame.headerFrame, "LEFT", 5, 0)
+  OGST.StyleButton(setupBtn)
+  setupBtn:SetScript("OnClick", function()
+    OGRH.ShowConsumeHelper()
+  end)
+  
+  local contentFrame = frame.contentFrame
+  
+  -- Create content panel using OGST
+  local contentPanel = OGST.CreateContentPanel(contentFrame, {
+    name = "OGRH_ManageConsumesContentPanel",
+    fillParent = true
+  })
+  contentPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+  
+  frame.contentPanel = contentPanel
+  
+  -- Build menu items for raids
+  local raidMenuItems = {}
+  for _, raid in ipairs(ConsumeHelper.data.raids) do
+    local raidName = raid.name
+    table.insert(raidMenuItems, {
+      text = raidName,
+      onClick = function()
+        if not ConsumeHelper.manageConsumesData then
+          ConsumeHelper.manageConsumesData = {}
+        end
+        ConsumeHelper.manageConsumesData.selectedRaid = raidName
+        frame.raidButton:SetText(raidName)
+        ConsumeHelper.PopulateManageConsumesList(frame)
+      end
+    })
+  end
+  
+  -- Create raid menu button using OGST
+  local raidButtonContainer, raidButton, raidMenu = OGST.CreateMenuButton(contentPanel, {
+    label = "Select",
+    labelAnchor = "LEFT",
+    labelWidth = 70,
+    buttonText = "Raid",
+    buttonHeight = 24,
+    fillWidth = true,
+    singleSelect = true,
+    menuItems = raidMenuItems
+  })
+  raidButtonContainer:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 5, -5)
+  
+  frame.raidButton = raidButton
+  frame.raidButtonContainer = raidButtonContainer
+  frame.raidMenu = raidMenu
+  
+  -- Create consume list below the menu button, filling remaining space
+  local listFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGST.CreateStyledScrollList(
+    contentPanel,
+    240,  -- Fixed width for list container
+    1,  -- Height will be controlled by anchoring
+    false
+  )
+  
+  -- Anchor list to fill remaining space below menu button
+  OGST.AnchorElement(listFrame, raidButtonContainer, {
+    position = "fillBelow",
+    gap = 5,
+    padding = 5
+  })
+  
+  frame.consumeListFrame = listFrame
+  frame.consumeScrollFrame = scrollFrame
+  frame.consumeScrollChild = scrollChild
+  frame.consumeScrollBar = scrollBar
+  frame.consumeContentWidth = contentWidth
+  
+  -- Create bank action docked panel (hidden by default)
+  local bankPanel = CreateFrame("Frame", "OGRH_BankActionsPanel", UIParent)
+  bankPanel:SetHeight(40)
+  bankPanel:EnableMouse(true)
+  bankPanel:Hide()
+  
+  -- Register as docked panel at bottom of consume window
+  OGST.RegisterDockedPanel(bankPanel, {
+    parentFrame = frame,
+    axis = "vertical",
+    preferredSide = "bottom",
+    priority = 1,
+    autoMove = true,
+    hideInCombat = false,
+    title = ""
+  })
+  
+  -- Deposit button
+  local depositBtn = CreateFrame("Button", nil, bankPanel, "UIPanelButtonTemplate")
+  depositBtn:SetWidth(80)
+  depositBtn:SetHeight(25)
+  depositBtn:SetText("Deposit")
+  depositBtn:SetPoint("LEFT", bankPanel, "LEFT", 10, 0)
+  OGST.StyleButton(depositBtn)
+  
+  -- Deposit button click handler
+  depositBtn:SetScript("OnClick", function()
+    ConsumeHelper.DepositConsumes()
+  end)
+  
+  -- Withdraw button (directly next to Deposit)
+  local withdrawBtn = CreateFrame("Button", nil, bankPanel, "UIPanelButtonTemplate")
+  withdrawBtn:SetWidth(80)
+  withdrawBtn:SetHeight(25)
+  withdrawBtn:SetText("Withdraw")
+  withdrawBtn:SetPoint("LEFT", depositBtn, "RIGHT", 5, 0)
+  OGST.StyleButton(withdrawBtn)
+  
+  -- Withdraw button click handler
+  withdrawBtn:SetScript("OnClick", function()
+    ConsumeHelper.WithdrawConsumes()
+  end)
+  
+  -- x label
+  local xLabel = bankPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  xLabel:SetText("x")
+  xLabel:SetPoint("LEFT", withdrawBtn, "RIGHT", 10, 0)
+  
+  -- Withdraw amount textbox
+  local withdrawBox = CreateFrame("EditBox", nil, bankPanel)
+  withdrawBox:SetWidth(30)
+  withdrawBox:SetHeight(20)
+  withdrawBox:SetPoint("LEFT", xLabel, "RIGHT", 5, 0)
+  withdrawBox:SetAutoFocus(false)
+  withdrawBox:SetFontObject(GameFontHighlight)
+  withdrawBox:SetMaxLetters(2)
+  withdrawBox:SetNumeric(true)
+  withdrawBox:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  withdrawBox:SetBackdropColor(0, 0, 0, 1)
+  withdrawBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  withdrawBox:SetTextInsets(5, 5, 0, 0)
+  withdrawBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  withdrawBox:SetScript("OnEnterPressed", function() this:ClearFocus() end)
+  
+  frame.bankPanel = bankPanel
+  frame.withdrawBox = withdrawBox
+  
+  -- Set default multiplier value immediately and on show
+  withdrawBox:SetText("1")
+  local oldOnShow = frame:GetScript("OnShow")
+  frame:SetScript("OnShow", function()
+    if oldOnShow then oldOnShow() end
+    -- Always ensure multiplier has a default value when window shows
+    if not withdrawBox:GetText() or withdrawBox:GetText() == "" then
+      withdrawBox:SetText("1")
+    end
+    -- Check if bank is already open and show panel
+    local isBankOpen = false
+    for i = 5, 11 do
+      if GetContainerNumSlots(i) then
+        isBankOpen = true
+        break
+      end
+    end
+    if isBankOpen then
+      bankPanel:Show()
+      OGST.RepositionDockedPanels()
+    end
+  end)
+  
+  -- Register for bank and bag events
+  frame:RegisterEvent("BANKFRAME_OPENED")
+  frame:RegisterEvent("BANKFRAME_CLOSED")
+  frame:RegisterEvent("BAG_UPDATE")
+  frame:RegisterEvent("BAG_UPDATE_COOLDOWN")
+  frame:SetScript("OnEvent", function()
+    if event == "BANKFRAME_OPENED" then
+      bankPanel:Show()
+      OGST.RepositionDockedPanels()
+      -- Set multiplier default when bank opens
+      if not withdrawBox:GetText() or withdrawBox:GetText() == "" then
+        withdrawBox:SetText("1")
+      end
+    elseif event == "BANKFRAME_CLOSED" then
+      bankPanel:Hide()
+      OGST.RepositionDockedPanels()
+    elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_COOLDOWN" then
+      -- Refresh list to update counts
+      ConsumeHelper.PopulateManageConsumesList(frame)
+    end
+  end)
+  
+  -- Populate the consume list
+  ConsumeHelper.PopulateManageConsumesList(frame)
+  
+  -- Check initial bank state and update panel visibility
+  local isBankOpen = false
+  for i = 5, 11 do
+    if GetContainerNumSlots(i) and GetContainerNumSlots(i) > 0 then
+      isBankOpen = true
+      break
+    end
+  end
+  
+  if isBankOpen then
+    bankPanel:Show()
+  else
+    bankPanel:Hide()
+  end
+  OGST.RepositionDockedPanels()
+  
+  frame:Show()
 end
+
+-- Populate the consume list in the Manage Consumes window
+function ConsumeHelper.PopulateManageConsumesList(frame)
+  if not frame or not frame.consumeScrollChild then return end
+  
+  local scrollChild = frame.consumeScrollChild
+  local contentWidth = frame.consumeContentWidth
+  
+  -- Clear existing items
+  local children = {scrollChild:GetChildren()}
+  for _, child in ipairs(children) do
+    child:Hide()
+    child:SetParent(nil)
+  end
+  
+  -- Check if raid is selected
+  if not ConsumeHelper.manageConsumesData or not ConsumeHelper.manageConsumesData.selectedRaid then
+    scrollChild:SetHeight(1)
+    return
+  end
+  
+  local selectedRaidName = ConsumeHelper.manageConsumesData.selectedRaid
+  
+  -- Get player name and class
+  local playerName = UnitName("player")
+  local localizedClass, playerClass = UnitClass("player")
+  playerClass = string.upper(string.sub(playerClass, 1, 1)) .. string.lower(string.sub(playerClass, 2))
+  
+  -- Check if player has assigned roles
+  OGRH_ConsumeHelper_SV.playerRoles = OGRH_ConsumeHelper_SV.playerRoles or {}
+  local playerData = OGRH_ConsumeHelper_SV.playerRoles[playerName]
+  
+  -- Find the first assigned role for this player
+  local playerRole = nil
+  if playerData and ConsumeHelper.data and ConsumeHelper.data.roles then
+    local roles = ConsumeHelper.data.roles
+    for i = 1, getn(roles) do
+      local roleName = roles[i]
+      if playerData[roleName] then
+        playerRole = roleName
+        break
+      end
+    end
+  end
+  
+  -- If no role assigned, show empty
+  if not playerRole then
+    scrollChild:SetHeight(1)
+    return
+  end
+  
+  -- Get items for this raid
+  OGRH_ConsumeHelper_SV.consumes = OGRH_ConsumeHelper_SV.consumes or {}
+  local raidData = OGRH_ConsumeHelper_SV.consumes[selectedRaidName]
+  
+  -- Collect items to display
+  local itemsToShow = {}
+  
+  -- Add selected raid items (combine all: role, class, All)
+  if raidData then
+    local raidItems = {}
+    if raidData[playerRole] then
+      for i = 1, getn(raidData[playerRole]) do
+        table.insert(raidItems, raidData[playerRole][i])
+      end
+    end
+    if raidData[playerClass] then
+      for i = 1, getn(raidData[playerClass]) do
+        table.insert(raidItems, raidData[playerClass][i])
+      end
+    end
+    if raidData["All"] then
+      for i = 1, getn(raidData["All"]) do
+        table.insert(raidItems, raidData["All"][i])
+      end
+    end
+    if getn(raidItems) > 0 then
+      table.insert(itemsToShow, {header = selectedRaidName, items = raidItems})
+    end
+  end
+  
+  -- Add General items if we're not viewing General
+  if selectedRaidName ~= "General" then
+    local generalData = OGRH_ConsumeHelper_SV.consumes["General"]
+    if generalData then
+      local generalItems = {}
+      if generalData[playerRole] then
+        for i = 1, getn(generalData[playerRole]) do
+          table.insert(generalItems, generalData[playerRole][i])
+        end
+      end
+      if generalData[playerClass] then
+        for i = 1, getn(generalData[playerClass]) do
+          table.insert(generalItems, generalData[playerClass][i])
+        end
+      end
+      if generalData["All"] then
+        for i = 1, getn(generalData["All"]) do
+          table.insert(generalItems, generalData["All"][i])
+        end
+      end
+      if getn(generalItems) > 0 then
+        table.insert(itemsToShow, {header = "General", items = generalItems})
+      end
+    end
+  end
+  
+  -- If no items to show, display empty
+  if getn(itemsToShow) == 0 then
+    scrollChild:SetHeight(1)
+    return
+  end
+  
+  local yOffset = 0
+  local rowHeight = OGST.LIST_ITEM_HEIGHT
+  local rowSpacing = OGST.LIST_ITEM_SPACING
+  local headerHeight = 20
+  
+  -- Display all sections
+  for sectionIdx = 1, getn(itemsToShow) do
+    local section = itemsToShow[sectionIdx]
+    
+    -- Create header
+    local headerItem = OGST.CreateStyledListItem(scrollChild, nil, headerHeight, "Frame")
+    headerItem:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOffset)
+    OGST.SetListItemColor(headerItem, 0.15, 0.15, 0.15, 1)
+    
+    local headerText = headerItem:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    headerText:SetPoint("LEFT", headerItem, "LEFT", 5, 0)
+    headerText:SetText(section.header)
+    headerText:SetTextColor(1, 0.82, 0)
+    
+    yOffset = yOffset + headerHeight + rowSpacing
+    
+    -- Sort items alphabetically by item name
+    local items = section.items
+    local sortedItems = {}
+    for i = 1, getn(items) do
+      local itemData = items[i]
+      local itemName = GetItemInfo(itemData.itemId) or ""
+      table.insert(sortedItems, {name = itemName, data = itemData})
+    end
+    table.sort(sortedItems, function(a, b) return a.name < b.name end)
+    
+    -- Display items in this section
+    for i = 1, getn(sortedItems) do
+      local itemData = sortedItems[i].data
+      local itemName = sortedItems[i].name
+      local item = OGST.CreateStyledListItem(scrollChild, nil, rowHeight, "Button")
+      item:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOffset)
+      
+      -- Store itemData on the button for later retrieval
+      item.itemData = itemData
+      
+      -- Get item count in inventory
+      local itemCount = CountItemInBags(itemData.itemId) or 0
+      local neededCount = tonumber(itemData.quantity) or 0
+      
+      if itemName and itemName ~= "" then
+        -- Item name on left
+        local nameText = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        nameText:SetPoint("LEFT", item, "LEFT", 5, 0)
+        nameText:SetText(itemName)
+        nameText:SetTextColor(1, 1, 1)
+        
+        -- Count on right (X / Y)
+        local countText = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        countText:SetPoint("RIGHT", item, "RIGHT", -5, 0)
+        countText:SetText(itemCount .. " / " .. neededCount)
+        
+        -- Color based on whether player has enough
+        if itemCount >= neededCount then
+          countText:SetTextColor(0, 1, 0)  -- Green
+        else
+          countText:SetTextColor(1, 0, 0)  -- Red
+        end
+      end
+      
+      yOffset = yOffset + rowHeight + rowSpacing
+    end
+  end
+  
+  scrollChild:SetHeight(math.max(1, yOffset))
+  
+  -- Update scrollbar to enable scrolling
+  if frame.consumeScrollFrame and frame.consumeScrollFrame.UpdateScrollBar then
+    frame.consumeScrollFrame.UpdateScrollBar()
+  end
+end
+
+-- Show raid selection menu
+function ConsumeHelper.ShowRaidSelectionMenu()
+  local frame = getglobal("OGRH_ManageConsumesFrame")
+  if not frame or not frame.raidMenu then return end
+  
+  local menu = frame.raidMenu
+  
+  -- Position menu below button
+  menu:ClearAllPoints()
+  menu:SetPoint("TOP", frame.raidButtonContainer, "BOTTOM", 0, -2)
+  menu:Show()
+end
+
+-- Refresh the consume list
+function ConsumeHelper.RefreshManageConsumes()
+  local frame = getglobal("OGRH_ManageConsumesFrame")
+  if not frame then return end
+  
+  local scrollChild = frame.scrollChild
+  local contentWidth = frame.contentWidth
+  
+  -- Clear existing items
+  local children = {scrollChild:GetChildren()}
+  for _, child in ipairs(children) do
+    child:Hide()
+    child:SetParent(nil)
+  end
+  
+  -- Check if raid is selected
+  if not ConsumeHelper.manageConsumesData or not ConsumeHelper.manageConsumesData.selectedRaid then
+    -- Show instruction text
+    local infoText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    infoText:SetPoint("TOP", scrollChild, "TOP", 0, -20)
+    infoText:SetText("|cff888888Select a raid|r")
+    infoText:SetWidth(contentWidth - 10)
+    infoText:SetJustifyH("CENTER")
+    scrollChild:SetHeight(1)
+    return
+  end
+  
+  local raidName = ConsumeHelper.manageConsumesData.selectedRaid
+  
+  -- Get player's class
+  local _, playerClass = UnitClass("player")
+  
+  -- Get player's configured role from playerRoles
+  local playerName = UnitName("player")
+  local playerRole = nil
+  
+  if OGRH_ConsumeHelper_SV.playerRoles and OGRH_ConsumeHelper_SV.playerRoles[playerName] then
+    -- Find any role that is set to true (ignoring "class" key)
+    for roleName, isAssigned in pairs(OGRH_ConsumeHelper_SV.playerRoles[playerName]) do
+      if roleName ~= "class" and isAssigned then
+        playerRole = roleName
+        break
+      end
+    end
+  end
+  
+  -- Try to find consumes - first by role, then by class name variations
+  local consumes = {}
+  local lookupKey = nil
+  
+  if OGRH_ConsumeHelper_SV.consumes and OGRH_ConsumeHelper_SV.consumes[raidName] then
+    local raidData = OGRH_ConsumeHelper_SV.consumes[raidName]
+    
+    -- Try role first (e.g., "Tank")
+    if playerRole and raidData[playerRole] then
+      consumes = raidData[playerRole]
+      lookupKey = playerRole
+    -- Try all caps class (e.g., "PALADIN")
+    elseif raidData[playerClass] then
+      consumes = raidData[playerClass]
+      lookupKey = playerClass
+    -- Try proper case (e.g., "Paladin")
+    else
+      local properClass = string.sub(playerClass, 1, 1) .. string.lower(string.sub(playerClass, 2))
+      if raidData[properClass] then
+        consumes = raidData[properClass]
+        lookupKey = properClass
+      end
+    end
+  end
+  
+  -- If no consumes configured
+  if getn(consumes) == 0 then
+    local infoText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    infoText:SetPoint("TOP", scrollChild, "TOP", 0, -20)
+    local displayName = playerRole or playerClass
+    infoText:SetText("|cff888888No consumes\nconfigured for\n" .. displayName .. "|r")
+    infoText:SetWidth(contentWidth - 10)
+    infoText:SetJustifyH("CENTER")
+    scrollChild:SetHeight(1)
+    return
+  end
+  
+  -- Populate consume list
+  local yOffset = 0
+  local rowHeight = 40
+  local rowSpacing = OGST.LIST_ITEM_SPACING
+  
+  for i, consumeData in ipairs(consumes) do
+    local item = OGST.CreateStyledListItem(scrollChild, contentWidth, rowHeight)
+    item:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOffset)
+    
+    -- Get item info
+    local itemName, itemLink, itemQuality, _, _, _, _, _, _, itemTexture = GetItemInfo(consumeData.itemId)
+    
+    -- Item icon
+    local icon = item:CreateTexture(nil, "ARTWORK")
+    icon:SetWidth(32)
+    icon:SetHeight(32)
+    icon:SetPoint("LEFT", item, "LEFT", 5, 0)
+    if itemTexture then
+      icon:SetTexture(itemTexture)
+    else
+      icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    end
+    
+    -- Item name and quantity
+    local nameText = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameText:SetPoint("TOPLEFT", icon, "TOPRIGHT", 5, -2)
+    nameText:SetPoint("RIGHT", item, "RIGHT", -5, 0)
+    nameText:SetJustifyH("LEFT")
+    nameText:SetTextColor(1, 1, 1)
+    
+    if itemName then
+      -- Color by quality
+      if itemQuality then
+        local r, g, b = GetItemQualityColor(itemQuality)
+        nameText:SetTextColor(r, g, b)
+      end
+      nameText:SetText(itemName)
+    else
+      nameText:SetText("Item " .. consumeData.itemId)
+    end
+    
+    -- Quantity
+    local qtyText = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    qtyText:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 5, 0)
+    qtyText:SetText("Quantity: " .. (consumeData.quantity or 1))
+    qtyText:SetTextColor(0.8, 0.8, 0.8)
+    
+    yOffset = yOffset + rowHeight + rowSpacing
+  end
+  
+  scrollChild:SetHeight(math.max(1, yOffset))
+end
+
+------------------------------
+--   Global Access          --
+------------------------------
 
 -- Make the show functions globally accessible
 OGRH.ShowConsumeHelper = ConsumeHelper.ShowWindow

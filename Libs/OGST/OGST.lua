@@ -45,6 +45,80 @@ OGST.LIST_COLORS = {
 OGST.LIST_ITEM_HEIGHT = 20
 OGST.LIST_ITEM_SPACING = 2
 
+-- Helper to get table size
+function OGST.GetTableSize(t)
+  local count = 0
+  for _ in pairs(t) do count = count + 1 end
+  return count
+end
+
+-- Toggle design mode and update all windows
+function OGST.ToggleDesignMode()
+  OGST.DESIGN_MODE = not OGST.DESIGN_MODE
+  
+  if OGST.DESIGN_MODE then
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Design mode |cff00ff00ENABLED|r")
+  else
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Design mode |cffff0000DISABLED|r")
+  end
+  
+  -- Update all registered windows
+  for windowName, windowFrame in pairs(OGST.WindowRegistry) do
+    if windowFrame and windowFrame:IsVisible() then
+      -- Update header frame
+      if windowFrame.headerFrame then
+        if OGST.DESIGN_MODE then
+          windowFrame.headerFrame:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 16,
+            insets = { left = 0, right = 0, top = 0, bottom = 0 }
+          })
+          windowFrame.headerFrame:SetBackdropBorderColor(0, 1, 0, 1)
+        else
+          windowFrame.headerFrame:SetBackdrop(nil)
+        end
+      end
+      
+      -- Update content frame
+      if windowFrame.contentFrame then
+        if OGST.DESIGN_MODE then
+          windowFrame.contentFrame:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 16,
+            insets = { left = 0, right = 0, top = 0, bottom = 0 }
+          })
+          windowFrame.contentFrame:SetBackdropBorderColor(1, 0, 0, 1)
+        else
+          windowFrame.contentFrame:SetBackdrop(nil)
+        end
+      end
+      
+      -- Update content panel
+      if windowFrame.contentPanel then
+        if OGST.DESIGN_MODE then
+          windowFrame.contentPanel:SetBackdropBorderColor(1, 1, 0, 1)
+        else
+          windowFrame.contentPanel:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+        end
+      end
+      
+      -- Update menu button container (raid button)
+      if windowFrame.raidButtonContainer then
+        if OGST.DESIGN_MODE then
+          windowFrame.raidButtonContainer:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 16,
+            insets = { left = 0, right = 0, top = 0, bottom = 0 }
+          })
+          windowFrame.raidButtonContainer:SetBackdropBorderColor(0, 1, 1, 1)
+        else
+          windowFrame.raidButtonContainer:SetBackdrop(nil)
+        end
+      end
+    end
+  end
+end
+
 -- ============================================
 -- WINDOW MANAGEMENT
 -- ============================================
@@ -145,11 +219,11 @@ function OGST.CreateStandardWindow(config)
   frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
   frame:Hide()
   
-  -- Register for closeOnNewWindow behavior
+  -- Register window in registry for design mode updates
+  OGST.WindowRegistry[config.name] = frame
+  
+  -- Store closeOnNewWindow flag
   frame.closeOnNewWindow = config.closeOnNewWindow or false
-  if frame.closeOnNewWindow then
-    OGST.WindowRegistry[config.name] = frame
-  end
   
   -- Close other windows when this one opens (only if this window has closeOnNewWindow = true)
   frame:SetScript("OnShow", function()
@@ -656,20 +730,56 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   })
   outerFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
   
+  -- Design mode border
+  if OGST.DESIGN_MODE then
+    outerFrame:SetBackdropBorderColor(1, 0, 0, 1)
+  end
+  OGST.AddDesignTooltip(outerFrame, "Scroll List Container", "Frame")
+  
   -- Adjust content width based on whether scrollbar will be shown
-  local scrollBarSpace = hideScrollBar and 0 or 20
+  local scrollBarWidth = 20
+  local baseContentWidth = width - 10
+  local contentWidthWithScroll = baseContentWidth - scrollBarWidth
+  local contentWidthNoScroll = baseContentWidth
   
   -- Scroll frame inside the outer frame
   local scrollFrame = CreateFrame("ScrollFrame", nil, outerFrame)
   scrollFrame:SetPoint("TOPLEFT", outerFrame, "TOPLEFT", 5, -5)
-  scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -(5 + scrollBarSpace), 5)
+  -- Initial right edge - will be adjusted by UpdateScrollBar
+  if hideScrollBar then
+    scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -5, 5)
+  else
+    scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -(5 + scrollBarWidth), 5)
+  end
+  
+  -- Design mode border
+  if OGST.DESIGN_MODE then
+    scrollFrame:SetBackdrop({
+      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+      edgeSize = 16,
+      insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    scrollFrame:SetBackdropBorderColor(0, 1, 0, 1)
+  end
+  OGST.AddDesignTooltip(scrollFrame, "Scroll Frame", "ScrollFrame")
   
   -- Scroll child
   local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-  local contentWidth = width - 10 - scrollBarSpace
-  scrollChild:SetWidth(contentWidth)
+  -- Start with width that accounts for scrollbar
+  scrollChild:SetWidth(hideScrollBar and contentWidthNoScroll or contentWidthWithScroll)
   scrollChild:SetHeight(1)
   scrollFrame:SetScrollChild(scrollChild)
+  
+  -- Design mode border
+  if OGST.DESIGN_MODE then
+    scrollChild:SetBackdrop({
+      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+      edgeSize = 16,
+      insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    scrollChild:SetBackdropBorderColor(0, 0, 1, 1)
+  end
+  OGST.AddDesignTooltip(scrollChild, "Scroll Child (Content)", "Frame")
   
   -- Scrollbar
   local scrollBar = CreateFrame("Slider", nil, outerFrame)
@@ -728,7 +838,37 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
     end
   end)
   
-  return outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth
+  -- Function to update scrollbar when content changes
+  local function UpdateScrollBar()
+    local maxScroll = scrollChild:GetHeight() - scrollFrame:GetHeight()
+    if maxScroll > 0 and not hideScrollBar then
+      -- Need scrollbar - adjust scrollFrame to make room and show scrollbar
+      scrollFrame:ClearAllPoints()
+      scrollFrame:SetPoint("TOPLEFT", outerFrame, "TOPLEFT", 5, -5)
+      scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -(5 + scrollBarWidth), 5)
+      scrollChild:SetWidth(contentWidthWithScroll)
+      scrollBar:SetMinMaxValues(0, maxScroll)
+      scrollBar:Show()
+    else
+      -- No scrollbar needed - expand scrollFrame and hide scrollbar
+      scrollFrame:ClearAllPoints()
+      scrollFrame:SetPoint("TOPLEFT", outerFrame, "TOPLEFT", 5, -5)
+      scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -5, 5)
+      scrollChild:SetWidth(contentWidthNoScroll)
+      scrollBar:Hide()
+      scrollFrame:SetVerticalScroll(0)
+    end
+  end
+  
+  -- Store update function on frames for external use
+  scrollFrame.UpdateScrollBar = UpdateScrollBar
+  scrollChild.UpdateScrollBar = UpdateScrollBar
+  outerFrame.UpdateScrollBar = UpdateScrollBar
+  
+  -- Initial update
+  UpdateScrollBar()
+  
+  return outerFrame, scrollFrame, scrollChild, scrollBar, scrollChild:GetWidth()
 end
 
 -- ============================================
@@ -748,7 +888,15 @@ function OGST.CreateStyledListItem(parent, width, height, frameType)
   frameType = frameType or "Button"
   
   local item = CreateFrame(frameType, nil, parent)
-  item:SetWidth(width)
+  
+  -- If width is provided, use it; otherwise anchor to fill parent width with 20px right padding
+  if width then
+    item:SetWidth(width)
+  else
+    item:SetPoint("LEFT", parent, "LEFT", 0, 0)
+    item:SetPoint("RIGHT", parent, "RIGHT", -20, 0)
+  end
+  
   item:SetHeight(height)
   
   -- For Frame types, use backdrop instead of texture
@@ -1412,6 +1560,8 @@ function OGST.CreateMenuButton(parent, config)
   local labelWidth = config.labelWidth or 0
   local buttonWidth = config.buttonWidth or 100
   local buttonHeight = config.buttonHeight or 24
+  local fillWidth = config.fillWidth or false
+  local singleSelect = config.singleSelect or false
   
   -- Container frame
   local container = CreateFrame("Frame", nil, parent)
@@ -1424,16 +1574,24 @@ function OGST.CreateMenuButton(parent, config)
   local containerWidth = buttonWidth
   local containerHeight = buttonHeight
   
-  if config.label then
-    if config.labelAnchor == "RIGHT" then
-      containerWidth = buttonWidth + gap + labelWidth
-    else  -- LEFT (default)
-      containerWidth = labelWidth + gap + buttonWidth
+  if fillWidth then
+    -- Fill parent width with padding
+    container:SetPoint("LEFT", parent, "LEFT", padding, 0)
+    container:SetPoint("RIGHT", parent, "RIGHT", -padding, 0)
+    container:SetHeight(containerHeight + (padding * 2))
+  else
+    -- Fixed width mode (original behavior)
+    if config.label then
+      if config.labelAnchor == "RIGHT" then
+        containerWidth = buttonWidth + gap + labelWidth
+      else  -- LEFT (default)
+        containerWidth = labelWidth + gap + buttonWidth
+      end
     end
+    
+    container:SetWidth(containerWidth + (padding * 2))
+    container:SetHeight(containerHeight + (padding * 2))
   end
-  
-  container:SetWidth(containerWidth + (padding * 2))
-  container:SetHeight(containerHeight + (padding * 2))
   
   -- Design mode border for container
   if OGST.DESIGN_MODE then
@@ -1449,7 +1607,12 @@ function OGST.CreateMenuButton(parent, config)
   
   -- Create button
   local button = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
-  button:SetWidth(buttonWidth)
+  
+  if not fillWidth then
+    -- Fixed width mode: set explicit width
+    button:SetWidth(buttonWidth)
+  end
+  
   button:SetHeight(buttonHeight)
   button:SetText(config.buttonText)
   OGST.StyleButton(button)
@@ -1476,6 +1639,11 @@ function OGST.CreateMenuButton(parent, config)
       if not container or not container.selectedItems then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGST MenuButton Error:|r Container or selectedItems is nil")
         return
+      end
+      
+      -- Handle single-select mode: clear all selections first
+      if singleSelect then
+        container.selectedItems = {}
       end
       
       -- Toggle selected state for this item
@@ -1555,16 +1723,31 @@ function OGST.CreateMenuButton(parent, config)
     local anchor = config.labelAnchor or "LEFT"
     if anchor == "RIGHT" then
       -- Button on left, label on right
-      button:SetPoint("LEFT", container, "LEFT", padding, 0)
+      if fillWidth then
+        button:SetPoint("LEFT", container, "LEFT", padding, 0)
+        button:SetPoint("RIGHT", labelText, "LEFT", -gap, 0)
+      else
+        button:SetPoint("LEFT", container, "LEFT", padding, 0)
+      end
       labelText:SetPoint("LEFT", button, "RIGHT", gap, 0)
     else
       -- Label on left, button on right (default)
       labelText:SetPoint("LEFT", container, "LEFT", padding, 0)
-      button:SetPoint("LEFT", labelText, "RIGHT", gap, 0)
+      if fillWidth then
+        button:SetPoint("LEFT", labelText, "RIGHT", gap, 0)
+        button:SetPoint("RIGHT", container, "RIGHT", -padding, 0)
+      else
+        button:SetPoint("LEFT", labelText, "RIGHT", gap, 0)
+      end
     end
   else
     -- No label, position button
-    button:SetPoint("LEFT", container, "LEFT", padding, 0)
+    if fillWidth then
+      button:SetPoint("LEFT", container, "LEFT", padding, 0)
+      button:SetPoint("RIGHT", container, "RIGHT", -padding, 0)
+    else
+      button:SetPoint("LEFT", container, "LEFT", padding, 0)
+    end
   end
   
   -- Store references
@@ -1672,6 +1855,10 @@ end
 
 -- ============================================
 -- TEXTURE & PANEL UTILITIES
+-- ============================================
+
+-- ============================================
+-- COLORED PANELS
 -- ============================================
 
 -- Create a colored panel with border and background
@@ -1987,6 +2174,15 @@ function OGST.AnchorElement(element, anchorTo, config)
   elseif position == "center" then
     -- Center on element
     element:SetPoint("CENTER", anchorTo, "CENTER", config.offsetX or 0, config.offsetY or 0)
+    
+  elseif position == "fillBelow" then
+    -- Fill remaining space below the anchor element within the parent
+    -- Anchors: TOPLEFT below anchorTo, RIGHT/BOTTOM to parent edges
+    local padding = config.padding or 5
+    element:ClearAllPoints()
+    element:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", config.offsetX or 0, config.offsetY or -gap)
+    element:SetPoint("RIGHT", anchorTo:GetParent(), "RIGHT", -padding, 0)
+    element:SetPoint("BOTTOM", anchorTo:GetParent(), "BOTTOM", 0, padding)
   end
   
   return element
@@ -2152,7 +2348,7 @@ function OGST.PositionPanelGroup(group)
   local parent = group.parentFrame
   local axis = group.axis
   local panels = group.panels
-  local gap = -2
+  local gap = 2  -- Positive gap = separation, negative gap = overlap
   
   if axis == "vertical" then
     -- Match panel widths to parent width if not explicitly set
@@ -2168,7 +2364,7 @@ function OGST.PositionPanelGroup(group)
     for _, panel in ipairs(panels) do
       totalHeight = totalHeight + panel.frame:GetHeight()
     end
-    totalHeight = totalHeight + (table.getn(panels) - 1) * math.abs(gap)
+    totalHeight = totalHeight + (table.getn(panels) - 1) * gap
     
     -- Determine actual side based on screen space
     local parentBottom = parent:GetBottom()
@@ -2236,7 +2432,7 @@ function OGST.PositionPanelGroup(group)
     for _, panel in ipairs(panels) do
       totalWidth = totalWidth + panel.frame:GetWidth()
     end
-    totalWidth = totalWidth + (table.getn(panels) - 1) * math.abs(gap)
+    totalWidth = totalWidth + (table.getn(panels) - 1) * gap
     
     -- Determine actual side based on screen space
     local parentLeft = parent:GetLeft()
