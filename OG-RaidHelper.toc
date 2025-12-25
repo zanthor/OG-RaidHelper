@@ -32,6 +32,7 @@ OGRH_Consumes.lua
 OGRH_Promotes.lua
 OGRH_Recruitment.lua
 OGRH_RGO.lua
+OGRH_RGO_Roster.lua
 
 Modules\cthun.lua
 Modules\OGRH-ConsumeHelperDefaults.lua

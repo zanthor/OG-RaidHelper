@@ -27,22 +27,100 @@ function OGST_Sample.Show()
     OGST_Sample.dockedPanels = {}
     
     -- Create side-by-side content panels that fill the window
-    -- Left panel: fixed 200px width, fills height (default 5px padding)
+    -- Left panel: fixed 200px width, fills height
     local leftPanel = OGST.CreateContentPanel(window.contentFrame, {
       width = 200,
       height = 100
     })
-    leftPanel:SetPoint("TOPLEFT", window.contentFrame, "TOPLEFT", 5, -5)
-    leftPanel:SetPoint("BOTTOM", window.contentFrame, "BOTTOM", 0, 5)
+    OGST.AnchorElement(leftPanel, window.contentFrame, { fillHeight = true, align = "left" })
     
-    -- Right panel: uses anchorTo config with default padding
+    -- Right panel: fills remaining space
     local rightPanel = OGST.CreateContentPanel(window.contentFrame, {
       width = 160,
-      height = 100,
-      anchorTo = leftPanel,
-      position = "right"
+      height = 100
     })
-    rightPanel:SetPoint("BOTTOMRIGHT", window.contentFrame, "BOTTOMRIGHT", -5, 5)
+    OGST.AnchorElement(rightPanel, leftPanel, { position = "right", fill = true })
+    -- Anchor right edge to parent to fill remaining space
+    rightPanel:SetPoint("RIGHT", window.contentFrame, "RIGHT", 0, 0)
+    
+    -- Add Sample Dialog button to right panel
+    local dialogBtnContainer = CreateFrame("Frame", nil, rightPanel)
+    dialogBtnContainer:SetWidth(140)  -- Fixed width
+    dialogBtnContainer:SetHeight(24)
+    OGST.AnchorElement(dialogBtnContainer, rightPanel, { position = "top", align = "left" })
+    
+    local dialogBtn = CreateFrame("Button", nil, dialogBtnContainer)
+    dialogBtn:SetAllPoints(dialogBtnContainer)
+    
+    local dialogBtnText = dialogBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    dialogBtnText:SetPoint("CENTER", dialogBtn, "CENTER", 0, 0)
+    dialogBtnText:SetText("Sample Dialog")
+    dialogBtnText:SetTextColor(1, 0.82, 0, 1)  -- Gold text (OGST standard)
+    
+    OGST.StyleButton(dialogBtn)
+    
+    dialogBtn:SetScript("OnClick", function()
+      -- Create and show sample dialog
+      local dialogData = OGST.CreateDialog({
+        title = "Sample Dialog",
+        width = 450,
+        height = 250,
+        content = "This is a sample dialog demonstrating OGST.CreateDialog().\n\nThe dialog supports:\n- Modal backdrop (dims background)\n- Configurable title\n- Content frame for custom UI\n- Multiple buttons with callbacks\n- ESC key closes dialog",
+        buttons = {
+          {text = "OK", onClick = function()
+            DEFAULT_CHAT_FRAME:AddMessage("Sample Dialog: OK clicked")
+          end},
+          {text = "Cancel", onClick = function()
+            DEFAULT_CHAT_FRAME:AddMessage("Sample Dialog: Cancel clicked")
+          end}
+        },
+        onClose = function()
+          DEFAULT_CHAT_FRAME:AddMessage("Sample Dialog closed")
+        end
+      })
+      
+      -- Show the dialog
+      dialogData.backdrop:Show()
+    end)
+    
+    window.dialogBtnContainer = dialogBtnContainer
+    
+    -- Add Static Text samples to right panel
+    
+    -- Single-line static text (label)
+    local singleLineText = OGST.CreateStaticText(rightPanel, {
+      text = "Single Line Label",
+      font = "GameFontNormalLarge",
+      color = {r = 1, g = 0.82, b = 0, a = 1},  -- Gold
+      align = "LEFT"
+    })
+    
+    OGST.AnchorElement(singleLineText, dialogBtnContainer, { position = "below", fillToParent = true })
+    window.singleLineText = singleLineText
+    
+    -- Single-line centered text
+    local centeredText = OGST.CreateStaticText(rightPanel, {
+      text = "Centered Text",
+      font = "GameFontNormal",
+      color = {r = 0.5, g = 1, b = 0.5, a = 1},  -- Light green
+      align = "CENTER"
+    })
+    
+    OGST.AnchorElement(centeredText, singleLineText, { position = "below", fill = true })
+    window.centeredText = centeredText
+    
+    -- Multi-line static text
+    local multiLineText = OGST.CreateStaticText(rightPanel, {
+      text = "This is a multi-line text demonstration. It will wrap automatically to fit the specified width.",
+      font = "GameFontNormalSmall",
+      color = {r = 1, g = 1, b = 1, a = 1},  -- White
+      align = "LEFT",
+      multiline = true
+      -- No fixed width - will fill parent when anchored with fill=true
+    })
+    
+    OGST.AnchorElement(multiLineText, centeredText, { position = "below", fill = true })
+    window.multiLineText = multiLineText
     
     -- Initialize settings
     OGST_Sample.horizontalAlignment = "left"
@@ -80,7 +158,7 @@ function OGST_Sample.Show()
       buttonWidth = 85,
       menuItems = alignmentMenuItems
     })
-    alignContainer:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 0, 0)
+    OGST.AnchorElement(alignContainer, leftPanel, { position = "top", align = "left" })
     
     -- Store reference for design mode toggle
     window.alignContainer = alignContainer
@@ -540,6 +618,78 @@ SlashCmdList["OGST"] = function(msg)
           OGST_Sample.mainWindow.alignContainer:SetBackdrop(nil)
         end
         updateTooltips(OGST_Sample.mainWindow.alignContainer, "Alignment", "Frame")
+      end
+      
+      -- Toggle dialog button container
+      if OGST_Sample.mainWindow.dialogBtnContainer then
+        if OGST.DESIGN_MODE then
+          OGST_Sample.mainWindow.dialogBtnContainer:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 16,
+            insets = { left = 0, right = 0, top = 0, bottom = 0 }
+          })
+          OGST_Sample.mainWindow.dialogBtnContainer:SetBackdropBorderColor(0.5, 0.5, 1, 1)
+        else
+          OGST_Sample.mainWindow.dialogBtnContainer:SetBackdrop(nil)
+        end
+        updateTooltips(OGST_Sample.mainWindow.dialogBtnContainer, "Sample Dialog Button", "Button")
+      end
+      
+      -- Toggle single line text container
+      if OGST_Sample.mainWindow.singleLineContainer then
+        if OGST.DESIGN_MODE then
+          OGST_Sample.mainWindow.singleLineContainer:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+          })
+          OGST_Sample.mainWindow.singleLineContainer:SetBackdropColor(0, 0, 0, 0)
+          OGST_Sample.mainWindow.singleLineContainer:SetBackdropBorderColor(1, 0, 1, 1)
+        else
+          OGST_Sample.mainWindow.singleLineContainer:SetBackdrop(nil)
+        end
+        updateTooltips(OGST_Sample.mainWindow.singleLineContainer, "Single Line Static Text", "FontString")
+      end
+      
+      -- Toggle centered text container
+      if OGST_Sample.mainWindow.centeredContainer then
+        if OGST.DESIGN_MODE then
+          OGST_Sample.mainWindow.centeredContainer:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+          })
+          OGST_Sample.mainWindow.centeredContainer:SetBackdropColor(0, 0, 0, 0)
+          OGST_Sample.mainWindow.centeredContainer:SetBackdropBorderColor(1, 0, 1, 1)
+        else
+          OGST_Sample.mainWindow.centeredContainer:SetBackdrop(nil)
+        end
+        updateTooltips(OGST_Sample.mainWindow.centeredContainer, "Centered Static Text", "FontString")
+      end
+      
+      -- Toggle multi-line text container
+      if OGST_Sample.mainWindow.multiLineContainer then
+        if OGST.DESIGN_MODE then
+          OGST_Sample.mainWindow.multiLineContainer:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+          })
+          OGST_Sample.mainWindow.multiLineContainer:SetBackdropColor(0, 0, 0, 0)
+          OGST_Sample.mainWindow.multiLineContainer:SetBackdropBorderColor(1, 0, 1, 1)
+        else
+          OGST_Sample.mainWindow.multiLineContainer:SetBackdrop(nil)
+        end
+        updateTooltips(OGST_Sample.mainWindow.multiLineContainer, "Multi-line Static Text", "FontString")
       end
     end
   else

@@ -62,59 +62,45 @@ function OGST.ToggleDesignMode()
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Design mode |cffff0000DISABLED|r")
   end
   
+  -- Function to recursively update all child frames
+  local function UpdateFrameBorders(frame)
+    if not frame then return end
+    
+    -- Check if this frame has a design mode border marker
+    if frame.hasDesignBorder then
+      if OGST.DESIGN_MODE then
+        if not frame:GetBackdrop() or not frame:GetBackdrop().edgeFile then
+          frame:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 16,
+            insets = { left = 0, right = 0, top = 0, bottom = 0 }
+          })
+        end
+        frame:SetBackdropBorderColor(frame.designBorderColor.r, frame.designBorderColor.g, frame.designBorderColor.b, 1)
+      else
+        -- Only remove border if frame doesn't need backdrop for other reasons
+        if frame.removeBackdropWhenNotDesigning then
+          frame:SetBackdrop(nil)
+        else
+          -- Just reset border to normal color
+          if frame.normalBorderColor then
+            frame:SetBackdropBorderColor(frame.normalBorderColor.r, frame.normalBorderColor.g, frame.normalBorderColor.b, frame.normalBorderColor.a or 1)
+          end
+        end
+      end
+    end
+    
+    -- Recursively update children
+    local children = { frame:GetChildren() }
+    for _, child in ipairs(children) do
+      UpdateFrameBorders(child)
+    end
+  end
+  
   -- Update all registered windows
   for windowName, windowFrame in pairs(OGST.WindowRegistry) do
-    if windowFrame and windowFrame:IsVisible() then
-      -- Update header frame
-      if windowFrame.headerFrame then
-        if OGST.DESIGN_MODE then
-          windowFrame.headerFrame:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 0, right = 0, top = 0, bottom = 0 }
-          })
-          windowFrame.headerFrame:SetBackdropBorderColor(0, 1, 0, 1)
-        else
-          windowFrame.headerFrame:SetBackdrop(nil)
-        end
-      end
-      
-      -- Update content frame
-      if windowFrame.contentFrame then
-        if OGST.DESIGN_MODE then
-          windowFrame.contentFrame:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 0, right = 0, top = 0, bottom = 0 }
-          })
-          windowFrame.contentFrame:SetBackdropBorderColor(1, 0, 0, 1)
-        else
-          windowFrame.contentFrame:SetBackdrop(nil)
-        end
-      end
-      
-      -- Update content panel
-      if windowFrame.contentPanel then
-        if OGST.DESIGN_MODE then
-          windowFrame.contentPanel:SetBackdropBorderColor(1, 1, 0, 1)
-        else
-          windowFrame.contentPanel:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-        end
-      end
-      
-      -- Update menu button container (raid button)
-      if windowFrame.raidButtonContainer then
-        if OGST.DESIGN_MODE then
-          windowFrame.raidButtonContainer:SetBackdrop({
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 16,
-            insets = { left = 0, right = 0, top = 0, bottom = 0 }
-          })
-          windowFrame.raidButtonContainer:SetBackdropBorderColor(0, 1, 1, 1)
-        else
-          windowFrame.raidButtonContainer:SetBackdrop(nil)
-        end
-      end
+    if windowFrame then
+      UpdateFrameBorders(windowFrame)
     end
   end
 end
@@ -246,6 +232,11 @@ function OGST.CreateStandardWindow(config)
     frame:StopMovingOrSizing()
   end)
   
+  -- Mark for design mode system
+  headerFrame.hasDesignBorder = true
+  headerFrame.designBorderColor = {r = 1, g = 0, b = 0}  -- Red
+  headerFrame.removeBackdropWhenNotDesigning = true
+  
   -- Design mode border for header
   if OGST.DESIGN_MODE then
     headerFrame:SetBackdrop({
@@ -253,7 +244,7 @@ function OGST.CreateStandardWindow(config)
       edgeSize = 16,
       insets = { left = 0, right = 0, top = 0, bottom = 0 }
     })
-    headerFrame:SetBackdropBorderColor(0, 1, 0, 1)  -- Green for header
+    headerFrame:SetBackdropBorderColor(1, 0, 0, 1)  -- Red for header
   end
   OGST.AddDesignTooltip(headerFrame, "Header Frame", "Frame")
   
@@ -356,6 +347,11 @@ function OGST.CreateStandardWindow(config)
   contentFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", contentPadding, topOffset)
   contentFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -contentPadding, contentPadding)
   
+  -- Mark for design mode system
+  contentFrame.hasDesignBorder = true
+  contentFrame.designBorderColor = {r = 0, g = 1, b = 0}  -- Green
+  contentFrame.removeBackdropWhenNotDesigning = true
+  
   -- Design mode border
   if OGST.DESIGN_MODE then
     contentFrame:SetBackdrop({
@@ -363,13 +359,66 @@ function OGST.CreateStandardWindow(config)
       edgeSize = 16,
       insets = { left = 0, right = 0, top = 0, bottom = 0 }
     })
-    contentFrame:SetBackdropBorderColor(1, 0, 0, 1)
+    contentFrame:SetBackdropBorderColor(0, 1, 0, 1)  -- Green for content
   end
   OGST.AddDesignTooltip(contentFrame, "Content Frame", "Frame")
   
   frame.contentFrame = contentFrame
   
   return frame
+end
+
+-- ============================================
+-- BUTTON STYLING
+-- ============================================
+
+-- Create a styled button with consistent theming
+-- @param parent: Parent frame
+-- @param config: Configuration table
+--   - width: Button width (required)
+--   - height: Button height (default: 24)
+--   - text: Button text (required)
+--   - onClick: Click handler function
+-- @return button: Styled button frame
+function OGST.CreateButton(parent, config)
+  if not parent or not config or not config.text then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGST:|r CreateButton requires parent and config.text")
+    return nil
+  end
+  
+  local width = config.width or 100
+  local height = config.height or 24
+  
+  local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+  button:SetWidth(width)
+  button:SetHeight(height)
+  
+  local buttonText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  buttonText:SetPoint("CENTER", button, "CENTER", 0, 0)
+  buttonText:SetText(config.text)
+  buttonText:SetTextColor(1, 0.82, 0, 1)
+  
+  OGST.StyleButton(button)
+  
+  -- Mark for design mode system
+  button.hasDesignBorder = true
+  button.designBorderColor = {r = 0, g = 1, b = 0}  -- Green
+  button.normalBorderColor = {r = 0.4, g = 0.4, b = 0.4, a = 1}
+  button.removeBackdropWhenNotDesigning = false  -- Keep backdrop always
+  
+  -- Override border color in design mode
+  if OGST.DESIGN_MODE then
+    button:SetBackdropBorderColor(0, 1, 0, 1)  -- Green border for design mode
+  end
+  
+  if config.onClick then
+    button:SetScript("OnClick", config.onClick)
+  end
+  
+  -- Design mode tooltip
+  OGST.AddDesignTooltip(button, config.text .. " Button", "Button")
+  
+  return button
 end
 
 -- ============================================
@@ -730,6 +779,12 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   })
   outerFrame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
   
+  -- Mark for design mode system
+  outerFrame.hasDesignBorder = true
+  outerFrame.designBorderColor = {r = 1, g = 0, b = 0}  -- Red
+  outerFrame.normalBorderColor = {r = 0.4, g = 0.4, b = 0.4, a = 1}
+  outerFrame.removeBackdropWhenNotDesigning = false  -- Keep backdrop always
+  
   -- Design mode border
   if OGST.DESIGN_MODE then
     outerFrame:SetBackdropBorderColor(1, 0, 0, 1)
@@ -752,6 +807,11 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
     scrollFrame:SetPoint("BOTTOMRIGHT", outerFrame, "BOTTOMRIGHT", -(5 + scrollBarWidth), 5)
   end
   
+  -- Mark for design mode system
+  scrollFrame.hasDesignBorder = true
+  scrollFrame.designBorderColor = {r = 0, g = 1, b = 0}  -- Green
+  scrollFrame.removeBackdropWhenNotDesigning = true
+  
   -- Design mode border
   if OGST.DESIGN_MODE then
     scrollFrame:SetBackdrop({
@@ -769,6 +829,11 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   scrollChild:SetWidth(hideScrollBar and contentWidthNoScroll or contentWidthWithScroll)
   scrollChild:SetHeight(1)
   scrollFrame:SetScrollChild(scrollChild)
+  
+  -- Mark for design mode system
+  scrollChild.hasDesignBorder = true
+  scrollChild.designBorderColor = {r = 0, g = 0, b = 1}  -- Blue
+  scrollChild.removeBackdropWhenNotDesigning = true
   
   -- Design mode border
   if OGST.DESIGN_MODE then
@@ -865,6 +930,91 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   scrollChild.UpdateScrollBar = UpdateScrollBar
   outerFrame.UpdateScrollBar = UpdateScrollBar
   
+  -- Store scrollChild and contentWidth for list item creation
+  outerFrame.scrollChild = scrollChild
+  outerFrame.contentWidth = scrollChild:GetWidth()
+  
+  -- Add list management methods
+  outerFrame.items = {}
+  
+  function outerFrame:Clear()
+    for _, item in ipairs(self.items) do
+      item:Hide()
+      item:SetParent(nil)
+    end
+    self.items = {}
+    scrollChild:SetHeight(1)
+  end
+  
+  function outerFrame:AddItem(itemOrConfig)
+    local item
+    local config
+    
+    -- Check if parameter is a table config or an existing frame
+    if type(itemOrConfig) == "table" and not itemOrConfig.GetObjectType then
+      -- It's a config table, create the item
+      config = itemOrConfig
+      item = OGST.CreateStyledListItem(outerFrame, config.width, config.height, config.frameType or "Button", config)
+      
+      -- Store reference to parent list for selection management
+      item.parentList = outerFrame
+      
+      -- Wrap click handler to manage selection state
+      local userOnClick = config.onClick
+      item:SetScript("OnClick", function()
+        -- Deselect all items in this list
+        for _, listItem in ipairs(outerFrame.items) do
+          OGST.SetListItemSelected(listItem, false)
+        end
+        
+        -- Select this item
+        OGST.SetListItemSelected(this, true)
+        
+        -- Call user's onClick if provided
+        if userOnClick then
+          userOnClick()
+        end
+      end)
+    else
+      -- It's an existing frame
+      item = itemOrConfig
+      config = {}
+    end
+    
+    table.insert(self.items, item)
+    item:SetParent(scrollChild)
+    
+    -- Add up/down/delete buttons if callbacks provided
+    if config.onMoveUp or config.onMoveDown or config.onDelete then
+      local hideUpDown = not config.onMoveUp and not config.onMoveDown
+      local currentIndex = table.getn(self.items)
+      local listLength = currentIndex  -- Will be updated on re-render
+      
+      OGST.AddListItemButtons(
+        item, 
+        currentIndex, 
+        listLength,
+        config.onMoveUp,
+        config.onMoveDown,
+        config.onDelete,
+        hideUpDown,
+        config.alwaysEnableButtons
+      )
+    end
+    
+    local yOffset = 0
+    for i, listItem in ipairs(self.items) do
+      listItem:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOffset)
+      listItem:Show()
+      yOffset = yOffset + (listItem:GetHeight() or 24) + OGST.LIST_ITEM_SPACING
+    end
+    
+    scrollChild:SetHeight(math.max(yOffset, scrollFrame:GetHeight()))
+    UpdateScrollBar()
+    
+    return item
+  end
+  
   -- Initial update
   UpdateScrollBar()
   
@@ -876,27 +1026,26 @@ end
 -- ============================================
 
 -- Create a standardized list item with background and hover effects
--- @param parent: Parent frame
--- @param width: Item width
+-- @param parent: Parent frame (if it's a scroll list, automatically uses scrollChild)
+-- @param width: Item width (default: parent's contentWidth or 160)
 -- @param height: Item height (default: OGST.LIST_ITEM_HEIGHT)
 -- @param frameType: "Button" or "Frame" (default: "Button")
 -- @return itemFrame: Frame with .bg property for runtime color changes
-function OGST.CreateStyledListItem(parent, width, height, frameType)
+function OGST.CreateStyledListItem(parent, width, height, frameType, config)
   if not parent then return nil end
   
+  config = config or {}
   height = height or OGST.LIST_ITEM_HEIGHT
   frameType = frameType or "Button"
   
-  local item = CreateFrame(frameType, nil, parent)
+  -- If parent has scrollChild, use that as actual parent (for scroll lists)
+  local actualParent = parent.scrollChild or parent
   
-  -- If width is provided, use it; otherwise anchor to fill parent width with 20px right padding
-  if width then
-    item:SetWidth(width)
-  else
-    item:SetPoint("LEFT", parent, "LEFT", 0, 0)
-    item:SetPoint("RIGHT", parent, "RIGHT", -20, 0)
-  end
+  -- If parent has contentWidth, use that; otherwise default to 160
+  width = width or parent.contentWidth or 160
   
+  local item = CreateFrame(frameType, nil, actualParent)
+  item:SetWidth(width)
   item:SetHeight(height)
   
   -- For Frame types, use backdrop instead of texture
@@ -926,6 +1075,27 @@ function OGST.CreateStyledListItem(parent, width, height, frameType)
     )
     bg:Show()
     item.bg = bg
+  end
+  
+  -- Add default text if provided
+  if config.text then
+    item.text = item:CreateFontString(nil, "OVERLAY", config.font or "GameFontHighlight")
+    local align = config.textAlign or "LEFT"
+    local xOffset = (align == "LEFT" and 5) or (align == "RIGHT" and -5) or 0
+    item.text:SetPoint(align, item, align, xOffset, 0)
+    item.text:SetText(config.text)
+    
+    if config.textColor then
+      item.text:SetTextColor(config.textColor.r or 1, config.textColor.g or 1, config.textColor.b or 1, config.textColor.a or 1)
+    else
+      item.text:SetTextColor(1, 1, 1, 1)  -- Default white (GameFontHighlight color)
+    end
+    
+    -- Set text width to prevent overflow
+    if align == "LEFT" or align == "RIGHT" then
+      item.text:SetWidth(width - 10)  -- 5px padding on each side
+      item.text:SetJustifyH(align)
+    end
   end
   
   item:Show()
@@ -973,8 +1143,9 @@ end
 -- @param onMoveDown: Callback function when down button clicked
 -- @param onDelete: Callback function when delete button clicked
 -- @param hideUpDown: Optional boolean, if true only shows delete button
+-- @param alwaysEnableButtons: Optional boolean, if true buttons are never disabled based on position
 -- @return deleteButton, downButton, upButton
-function OGST.AddListItemButtons(listItem, index, listLength, onMoveUp, onMoveDown, onDelete, hideUpDown)
+function OGST.AddListItemButtons(listItem, index, listLength, onMoveUp, onMoveDown, onDelete, hideUpDown, alwaysEnableButtons)
   if not listItem then return nil, nil, nil end
   
   local buttonSize = 32
@@ -985,29 +1156,44 @@ function OGST.AddListItemButtons(listItem, index, listLength, onMoveUp, onMoveDo
   deleteBtn:SetWidth(buttonSize)
   deleteBtn:SetHeight(buttonSize)
   deleteBtn:SetPoint("RIGHT", listItem, "RIGHT", -2, 0)
+  deleteBtn:SetFrameLevel(listItem:GetFrameLevel() + 2)  -- Ensure button is above other elements
   deleteBtn:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
   deleteBtn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
   deleteBtn:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
   
   if onDelete then
     deleteBtn:SetScript("OnClick", onDelete)
+  else
+    deleteBtn:Hide()  -- Hide button if no callback
   end
   
   if hideUpDown then
     return deleteBtn, nil, nil
   end
   
+  -- Determine anchor point for up/down buttons
+  local anchorFrame = listItem
+  local anchorPoint = "RIGHT"
+  local anchorOffset = -2
+  
+  -- If delete button is visible, anchor to it instead
+  if onDelete then
+    anchorFrame = deleteBtn
+    anchorPoint = "LEFT"
+    anchorOffset = -buttonSpacing
+  end
+  
   -- Down button
   local downBtn = CreateFrame("Button", nil, listItem)
   downBtn:SetWidth(buttonSize)
   downBtn:SetHeight(buttonSize)
-  downBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -buttonSpacing, 0)
+  downBtn:SetPoint("RIGHT", anchorFrame, anchorPoint, anchorOffset, 0)
   downBtn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
   downBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
   downBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
   downBtn:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled")
   
-  if index >= listLength then
+  if not alwaysEnableButtons and index >= listLength then
     downBtn:Disable()
   elseif onMoveDown then
     downBtn:SetScript("OnClick", onMoveDown)
@@ -1023,7 +1209,7 @@ function OGST.AddListItemButtons(listItem, index, listLength, onMoveUp, onMoveDo
   upBtn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
   upBtn:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled")
   
-  if index <= 1 then
+  if not alwaysEnableButtons and index <= 1 then
     upBtn:Disable()
   elseif onMoveUp then
     upBtn:SetScript("OnClick", onMoveUp)
@@ -1130,6 +1316,10 @@ function OGST.CreateSingleLineTextBox(parent, width, height, config)
     })
     container:SetBackdropBorderColor(1, 1, 0, 1)  -- Yellow for textbox container
   end
+  -- Mark for dynamic design mode updates
+  container.hasDesignBorder = true
+  container.designBorderColor = {r = 1, g = 1, b = 0}  -- Yellow
+  
   local tooltipName = config.label or "TextBox Container"
   OGST.AddDesignTooltip(container, tooltipName, "Frame")
   
@@ -1303,7 +1493,21 @@ function OGST.CreateScrollingTextBox(parent, width, height)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   backdrop:SetBackdropColor(0, 0, 0, 1)
-  backdrop:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  
+  -- Mark for design mode system
+  backdrop.hasDesignBorder = true
+  backdrop.designBorderColor = {r = 0, g = 1, b = 0}  -- Green
+  backdrop.normalBorderColor = {r = 0.4, g = 0.4, b = 0.4, a = 1}
+  backdrop.removeBackdropWhenNotDesigning = false  -- Keep backdrop always
+  
+  -- Design mode border override
+  if OGST.DESIGN_MODE then
+    backdrop:SetBackdropBorderColor(0, 1, 0, 1)  -- Green for text box
+  else
+    backdrop:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  end
+  
+  OGST.AddDesignTooltip(backdrop, "Scrolling Text Box", "Frame")
   
   -- Scroll frame
   local scrollFrame = CreateFrame("ScrollFrame", nil, backdrop)
@@ -1435,6 +1639,10 @@ function OGST.CreateCheckbox(parent, config)
   
   container:SetWidth(containerWidth + (padding * 2))
   container:SetHeight(containerHeight + (padding * 2))
+  
+  -- Mark for design mode system
+  container.hasDesignBorder = true
+  container.designBorderColor = {r = 1, g = 0.5, b = 0}  -- Orange
   
   -- Design mode border for container
   if OGST.DESIGN_MODE then
@@ -1570,6 +1778,9 @@ function OGST.CreateMenuButton(parent, config)
   -- Store anchor gap as property for use with AnchorElement
   container.anchorGap = config.anchorGap or -12
   
+  -- CreateMenuButton has internal padding, so default anchor offsets should be 0
+  container._anchorOffset = 0
+  
   -- Calculate container dimensions
   local containerWidth = buttonWidth
   local containerHeight = buttonHeight
@@ -1594,6 +1805,10 @@ function OGST.CreateMenuButton(parent, config)
   end
   
   -- Design mode border for container
+  container.hasDesignBorder = true
+  container.designBorderColor = {r = 0, g = 1, b = 1}  -- Cyan
+  container.removeBackdropWhenNotDesigning = true
+  
   if OGST.DESIGN_MODE then
     container:SetBackdrop({
       edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1718,35 +1933,45 @@ function OGST.CreateMenuButton(parent, config)
     local labelColor = config.labelColor or {r=1, g=1, b=1}
     labelText:SetTextColor(labelColor.r, labelColor.g, labelColor.b)
     labelText:SetJustifyH("LEFT")
+    labelText:SetJustifyV("MIDDLE")
     
     -- Position label and button based on labelAnchor
     local anchor = config.labelAnchor or "LEFT"
     if anchor == "RIGHT" then
       -- Button on left, label on right
+      button:ClearAllPoints()
+      button:SetPoint("LEFT", container, "LEFT", padding, 0)
+      labelText:SetPoint("LEFT", button, "RIGHT", gap, 0)
+      
       if fillWidth then
-        button:SetPoint("LEFT", container, "LEFT", padding, 0)
         button:SetPoint("RIGHT", labelText, "LEFT", -gap, 0)
       else
-        button:SetPoint("LEFT", container, "LEFT", padding, 0)
+        -- Constrain button to container
+        button:SetPoint("RIGHT", container, "RIGHT", -padding, 0)
       end
-      labelText:SetPoint("LEFT", button, "RIGHT", gap, 0)
     else
       -- Label on left, button on right (default)
       labelText:SetPoint("LEFT", container, "LEFT", padding, 0)
+      button:ClearAllPoints()
+      button:SetPoint("LEFT", labelText, "RIGHT", gap, 0)
+      
       if fillWidth then
-        button:SetPoint("LEFT", labelText, "RIGHT", gap, 0)
         button:SetPoint("RIGHT", container, "RIGHT", -padding, 0)
       else
-        button:SetPoint("LEFT", labelText, "RIGHT", gap, 0)
+        -- Constrain button to container
+        button:SetPoint("RIGHT", container, "RIGHT", -padding, 0)
       end
     end
   else
     -- No label, position button
+    button:ClearAllPoints()
+    button:SetPoint("LEFT", container, "LEFT", padding, 0)
+    
     if fillWidth then
-      button:SetPoint("LEFT", container, "LEFT", padding, 0)
       button:SetPoint("RIGHT", container, "RIGHT", -padding, 0)
     else
-      button:SetPoint("LEFT", container, "LEFT", padding, 0)
+      -- Constrain button to container
+      button:SetPoint("RIGHT", container, "RIGHT", -padding, 0)
     end
   end
   
@@ -1851,6 +2076,342 @@ function OGST.MakeFrameCloseOnEscape(frame, frameName, closeCallback)
       closeCallback()
     end)
   end
+end
+
+-- ============================================
+-- DIALOG
+-- ============================================
+
+-- Create a modal dialog with backdrop, title, content frame, and configurable buttons
+-- @param config: Configuration table
+--   - title: Dialog title text (default: "Dialog")
+--   - width: Dialog width in pixels (default: 400)
+--   - height: Dialog height in pixels (default: 200)
+--   - content: Optional string for simple text content (creates FontString)
+--   - buttons: Array of button configs {text="OK", onClick=function}
+--              Default: single OK button that closes dialog
+--   - onClose: Optional callback when dialog closes
+--   - escapeCloses: Whether ESC key closes dialog (default: true)
+-- @return Table with: dialog (main frame), backdrop, contentFrame, buttons (array of button frames)
+function OGST.CreateDialog(config)
+  if not config then config = {} end
+  
+  local title = config.title or "Dialog"
+  local width = config.width or 400
+  local height = config.height or 200
+  local buttons = config.buttons
+  local onClose = config.onClose
+  local escapeCloses = config.escapeCloses
+  if escapeCloses == nil then escapeCloses = true end
+  
+  -- Default to single OK button if no buttons specified
+  if not buttons or table.getn(buttons) == 0 then
+    buttons = {{text = "OK", onClick = nil}}
+  end
+  
+  -- Create backdrop (modal overlay) with unique name for ESC handling
+  local uniqueName = "OGST_Dialog_" .. date("%Y%m%d%H%M%S") .. math.random(1000, 9999)
+  local backdrop = CreateFrame("Frame", uniqueName, UIParent)
+  backdrop:SetFrameStrata("FULLSCREEN_DIALOG")
+  backdrop:SetAllPoints(UIParent)
+  backdrop:EnableMouse(true) -- Blocks clicks to frames below
+  backdrop:SetScript("OnMouseDown", function() end) -- Eat clicks
+  
+  -- Dim effect
+  local backdropTex = backdrop:CreateTexture(nil, "BACKGROUND")
+  backdropTex:SetAllPoints(backdrop)
+  backdropTex:SetTexture(0, 0, 0, 0.7)
+  
+  -- Create dialog frame
+  local dialog = CreateFrame("Frame", nil, backdrop)
+  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+  dialog:SetFrameLevel(backdrop:GetFrameLevel() + 1)
+  dialog:SetWidth(width)
+  dialog:SetHeight(height)
+  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  dialog:EnableMouse(true)
+  
+  -- Dialog background with rounded corners (OGST standard)
+  dialog:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 }
+  })
+  dialog:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+  dialog:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  
+  -- Title bar
+  local titleBar = CreateFrame("Frame", nil, dialog)
+  titleBar:SetHeight(32)
+  titleBar:SetPoint("TOPLEFT", dialog, "TOPLEFT", 4, -4)
+  titleBar:SetPoint("TOPRIGHT", dialog, "TOPRIGHT", -4, -4)
+  
+  -- Title bar background with rounded top corners
+  titleBar:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    tile = true,
+    tileSize = 16
+  })
+  titleBar:SetBackdropColor(0.2, 0.2, 0.2, 1)
+  
+  local titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  titleText:SetPoint("LEFT", titleBar, "LEFT", 10, 0)
+  titleText:SetText(title)
+  titleText:SetTextColor(1, 0.82, 0, 1)
+  
+  -- Content frame (where custom UI or text goes)
+  local contentFrame = CreateFrame("Frame", nil, dialog)
+  contentFrame:SetPoint("TOPLEFT", titleBar, "BOTTOMLEFT", 10, -10)
+  contentFrame:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -10, 45) -- Leave space for buttons
+  
+  -- If simple text content provided, create FontString
+  if config.content and type(config.content) == "string" then
+    local contentText = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    contentText:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, 0)
+    contentText:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", 0, 0)
+    contentText:SetJustifyH("LEFT")
+    contentText:SetJustifyV("TOP")
+    contentText:SetText(config.content)
+    contentText:SetTextColor(1, 1, 1, 1)
+  end
+  
+  -- Button row at bottom
+  local buttonCount = table.getn(buttons)
+  local buttonWidth = 100
+  local buttonHeight = 24
+  local buttonSpacing = 10
+  local totalButtonWidth = (buttonCount * buttonWidth) + ((buttonCount - 1) * buttonSpacing)
+  local startX = (width - totalButtonWidth) / 2
+  
+  local buttonFrames = {}
+  for i = 1, buttonCount do
+    local btnConfig = buttons[i]
+    local btn = CreateFrame("Button", nil, dialog)
+    btn:SetWidth(buttonWidth)
+    btn:SetHeight(buttonHeight)
+    
+    local xOffset = startX + ((i - 1) * (buttonWidth + buttonSpacing))
+    btn:SetPoint("BOTTOMLEFT", dialog, "BOTTOMLEFT", xOffset, 10)
+    
+    -- Style button
+    OGST.StyleButton(btn)
+    
+    -- Set button text with gold color (default OGST style)
+    local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btnText:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    btnText:SetText(btnConfig.text or "Button")
+    btnText:SetTextColor(1, 0.82, 0, 1)
+    btn.text = btnText
+    
+    -- Button click handler
+    btn:SetScript("OnClick", function()
+      if btnConfig.onClick and type(btnConfig.onClick) == "function" then
+        btnConfig.onClick()
+      end
+      -- Close dialog after button click
+      backdrop:Hide()
+    end)
+    
+    table.insert(buttonFrames, btn)
+  end
+  
+  -- Close function
+  local function CloseDialog()
+    if onClose and type(onClose) == "function" then
+      onClose()
+    end
+    backdrop:Hide()
+  end
+  
+  -- ESC key handling - use custom key handler instead of UISpecialFrames
+  if escapeCloses then
+    backdrop:EnableKeyboard(true)
+    backdrop:SetScript("OnKeyDown", function()
+      if arg1 == "ESCAPE" then
+        CloseDialog()
+      end
+    end)
+    
+    -- Hook OnHide to call onClose callback
+    if onClose and type(onClose) == "function" then
+      backdrop:SetScript("OnHide", onClose)
+    end
+  end
+  
+  -- Store references
+  dialog.backdrop = backdrop
+  dialog.contentFrame = contentFrame
+  dialog.buttons = buttonFrames
+  dialog.Close = CloseDialog
+  
+  -- Return full structure
+  return {
+    dialog = dialog,
+    backdrop = backdrop,
+    contentFrame = contentFrame,
+    buttons = buttonFrames,
+    Close = CloseDialog
+  }
+end
+
+-- ============================================
+-- STATIC TEXT
+-- ============================================
+
+-- Create a static text display (FontString wrapper)
+-- @param parent: Parent frame
+-- @param config: Configuration table
+--   - text: Text to display (default: "")
+--   - font: Font template (default: "GameFontNormal")
+--   - color: RGBA table {r, g, b, a} (default: white {1, 1, 1, 1})
+--   - align: Horizontal justification "LEFT", "CENTER", "RIGHT" (default: "LEFT")
+--   - valign: Vertical justification "TOP", "MIDDLE", "BOTTOM" (default: "TOP")
+--   - multiline: Enable word wrap for multiple lines (default: false)
+--   - width: Width in pixels (required for multiline)
+--   - height: Height in pixels (optional)
+--   - padding: Internal padding from parent edges (default: 5)
+--   - paddingLeft: Left padding (overrides padding, default: 5)
+--   - paddingRight: Right padding (overrides padding, default: 5)
+--   - paddingTop: Top padding (overrides padding, default: 4)
+--   - paddingBottom: Bottom padding (overrides padding, default: 4)
+-- @return FontString
+function OGST.CreateStaticText(parent, config)
+  if not parent or not config then return nil end
+  
+  local text = config.text or ""
+  local font = config.font or "GameFontNormal"
+  local color = config.color or {r = 1, g = 1, b = 1, a = 1}
+  local align = config.align or "LEFT"
+  local valign = config.valign or "TOP"
+  local multiline = config.multiline or false
+  local width = config.width
+  local height = config.height
+  local padding = config.padding or 5
+  local paddingLeft = config.paddingLeft or padding
+  local paddingRight = config.paddingRight or padding
+  local paddingTop = config.paddingTop or padding
+  local paddingBottom = config.paddingBottom or padding
+  
+  -- Create container frame for design mode border
+  local container = CreateFrame("Frame", nil, parent)
+  container:EnableMouse(false)
+  
+  -- Mark for design mode system
+  container.hasDesignBorder = true
+  container.isStaticText = true  -- Identify as static text for default gap=0 in AnchorElement
+  container.designBorderColor = {r = 0, g = 1, b = 0}  -- Green
+  container.removeBackdropWhenNotDesigning = true
+  
+  -- Design mode border for container
+  if OGST.DESIGN_MODE then
+    container:SetBackdrop({
+      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+      edgeSize = 16,
+      insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    container:SetBackdropBorderColor(0, 1, 0, 1)  -- Green for static text
+  end
+  OGST.AddDesignTooltip(container, (text ~= "" and text) or "Static Text", "Frame")
+  
+  -- Create FontString
+  local fontString = container:CreateFontString(nil, "OVERLAY", font)
+  fontString:SetText(text)
+  fontString:SetTextColor(color.r, color.g, color.b, color.a or 1)
+  fontString:SetJustifyH(align)
+  fontString:SetJustifyV(valign)
+  
+  -- Position fontString within container with padding
+  if align == "CENTER" then
+    fontString:SetPoint("TOP", container, "TOP", 0, -paddingTop)
+    if width then
+      fontString:SetWidth(width)
+    end
+  elseif align == "RIGHT" then
+    fontString:SetPoint("TOPRIGHT", container, "TOPRIGHT", -paddingRight, -paddingTop)
+    if width then
+      fontString:SetWidth(width)
+    end
+  else  -- LEFT or default
+    fontString:SetPoint("TOPLEFT", container, "TOPLEFT", paddingLeft, -paddingTop)
+    if not width then
+      -- Fill horizontally with padding if no width specified
+      fontString:SetPoint("TOPRIGHT", container, "TOPRIGHT", -paddingRight, -paddingTop)
+    else
+      fontString:SetWidth(width)
+    end
+  end
+  
+  -- Set height if specified
+  if height then
+    fontString:SetHeight(height)
+  end
+  
+  -- Enable word wrap for multiline
+  if multiline then
+    fontString:SetNonSpaceWrap(true)
+  end
+  
+  -- Size container based on content or make it responsive for multiline
+  if multiline and not width then
+    -- Multiline without fixed width: container should fill available space, fontString fills container
+    -- Don't set fixed width - let caller anchor it with fill=true for responsive behavior
+    container:SetHeight(100)  -- Initial height, will grow as text wraps
+    
+    -- Add OnSizeChanged handler to update fontString width when container resizes
+    container:SetScript("OnSizeChanged", function()
+      local containerWidth = this:GetWidth()
+      if containerWidth > 0 then
+        local textWidth = containerWidth - paddingLeft - paddingRight
+        if textWidth > 0 then
+          fontString:SetWidth(textWidth)
+        end
+      end
+    end)
+  else
+    -- Single line or fixed width: size container to content
+    local fsWidth = width or fontString:GetWidth()
+    
+    -- Fallback if fontString hasn't been rendered yet
+    if fsWidth == 0 then
+      fsWidth = 100  -- Default fallback width
+    end
+    
+    -- For multiline with fixed width, set width first so GetHeight() returns wrapped height
+    if multiline and width then
+      fontString:SetWidth(width)
+    end
+    
+    local fsHeight = height or fontString:GetHeight()
+    
+    if fsHeight == 0 then
+      fsHeight = 20  -- Default fallback height
+    end
+    
+    container:SetWidth(fsWidth + paddingLeft + paddingRight)
+    container:SetHeight(fsHeight + paddingTop + paddingBottom)
+  end
+  
+  -- Store fontString reference for callers
+  container.fontString = fontString
+  
+  -- Add transparent wrapper methods so container can be used like a FontString
+  function container:SetText(newText)
+    fontString:SetText(newText)
+    -- Container is anchored, no resize needed
+  end
+  
+  function container:GetText()
+    return fontString:GetText()
+  end
+  
+  function container:SetTextColor(r, g, b, a)
+    fontString:SetTextColor(r, g, b, a or 1)
+  end
+  
+  return container
 end
 
 -- ============================================
@@ -2100,16 +2661,56 @@ function OGST.AnchorElement(element, anchorTo, config)
   
   config = config or {}
   local position = config.position or "below"
-  -- Use element's anchorGap property if available, otherwise config.gap, otherwise default 10
-  local gap = config.gap or element.anchorGap or 10
+  -- Default gap: 0 for static text controls, otherwise 5
+  local defaultGap = (element.isStaticText and 0) or 5
+  -- Use config.gap if provided, otherwise element's anchorGap property, otherwise defaultGap
+  local gap = config.gap or element.anchorGap or defaultGap
   local align = config.align
   local fill = config.fill
+  local fillToParent = config.fillToParent  -- Fill width/height to parent instead of anchorTo
   
   element:ClearAllPoints()
   
-  if position == "below" then
-    -- Stack below
+  -- Check if element has custom anchor offset (e.g., CreateMenuButton has internal padding)
+  local defaultOffset = element._anchorOffset or gap
+  
+  -- Handle fillHeight option - anchor top and bottom to parent while staying on left/right
+  if config.fillHeight then
+    local parent = anchorTo
+    if align == "left" then
+      element:SetPoint("TOPLEFT", parent, "TOPLEFT", config.offsetX or defaultOffset, config.offsetY or -defaultOffset)
+      element:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", config.offsetX or defaultOffset, config.offsetY or defaultOffset)
+    elseif align == "right" then
+      element:SetPoint("TOPRIGHT", parent, "TOPRIGHT", config.offsetX or -defaultOffset, config.offsetY or -defaultOffset)
+      element:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", config.offsetX or -defaultOffset, config.offsetY or defaultOffset)
+    end
+    return
+  end
+  
+  if position == "top" then
+    -- Anchor to top of parent (like positioning within a content panel)
     if fill then
+      element:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", config.offsetX or defaultOffset, config.offsetY or -defaultOffset)
+      element:SetPoint("TOPRIGHT", anchorTo, "TOPRIGHT", config.offsetX or -defaultOffset, config.offsetY or -defaultOffset)
+    else
+      align = align or "left"
+      if align == "left" then
+        element:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", config.offsetX or defaultOffset, config.offsetY or -defaultOffset)
+      elseif align == "center" then
+        element:SetPoint("TOP", anchorTo, "TOP", config.offsetX or 0, config.offsetY or -defaultOffset)
+      elseif align == "right" then
+        element:SetPoint("TOPRIGHT", anchorTo, "TOPRIGHT", config.offsetX or -defaultOffset, config.offsetY or -defaultOffset)
+      end
+    end
+    
+  elseif position == "below" then
+    -- Stack below
+    if fillToParent then
+      -- Anchor top to anchorTo, but left/right to parent
+      local parent = element:GetParent()
+      element:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", config.offsetX or 0, config.offsetY or -gap)
+      element:SetPoint("TOPRIGHT", anchorTo, "BOTTOMRIGHT", 0, config.offsetY or -gap)
+    elseif fill then
       element:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", config.offsetX or 0, config.offsetY or -gap)
       element:SetPoint("TOPRIGHT", anchorTo, "BOTTOMRIGHT", config.offsetX or 0, config.offsetY or -gap)
     else

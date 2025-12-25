@@ -5237,6 +5237,16 @@ local function CreateMinimapButton()
             end
           },
           {
+            text = "Roster Management",
+            onClick = function()
+              if OGRH.RosterMgmt and OGRH.RosterMgmt.ShowWindow then
+                OGRH.RosterMgmt.ShowWindow()
+              else
+                OGRH.Msg("Roster Management module not loaded.")
+              end
+            end
+          },
+          {
             text = "Data Management",
             onClick = function()
               OGRH.CloseAllWindows("OGRH_DataManagementFrame")
