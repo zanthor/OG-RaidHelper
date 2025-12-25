@@ -7,6 +7,9 @@ OGRH.RosterMgmt = OGRH.RosterMgmt or {}
 -- Local references
 local RosterMgmt = OGRH.RosterMgmt
 
+-- Temporary cache for removed role scores (not saved between sessions)
+local roleScoreCache = {}
+
 -- Constants
 local ROLES = {"TANKS", "HEALERS", "MELEE", "RANGED"}
 local ROLE_DISPLAY = {
@@ -694,9 +697,31 @@ function RosterMgmt.TogglePlayerRole(playerName, role)
   if isSecondary then
     -- Remove from secondary roles
     table.remove(player.secondaryRoles, secondaryIndex)
+    
+    -- Cache the current score before removing it
+    if not roleScoreCache[playerName] then
+      roleScoreCache[playerName] = {}
+    end
+    if player.rankings and player.rankings[role] then
+      roleScoreCache[playerName][role] = player.rankings[role]
+      player.rankings[role] = nil
+    end
   else
     -- Add as secondary role
     table.insert(player.secondaryRoles, role)
+    
+    -- Initialize rankings if needed
+    if not player.rankings then
+      player.rankings = { TANKS = 1000, HEALERS = 1000, MELEE = 1000, RANGED = 1000 }
+    end
+    
+    -- Try to restore from cache, otherwise use default
+    if roleScoreCache[playerName] and roleScoreCache[playerName][role] then
+      player.rankings[role] = roleScoreCache[playerName][role]
+      roleScoreCache[playerName][role] = nil
+    elseif not player.rankings[role] then
+      player.rankings[role] = 1000
+    end
   end
   
   player.lastUpdated = time()
