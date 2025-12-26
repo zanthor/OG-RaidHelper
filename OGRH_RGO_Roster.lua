@@ -1167,6 +1167,71 @@ function RosterMgmt.CreateToolbar(window)
     RosterMgmt.ShowAddPlayerDialog()
   end)
   
+  -- Manual Import button
+  local manualImportBtn = CreateFrame("Button", nil, toolbar)
+  manualImportBtn:SetWidth(100)
+  manualImportBtn:SetHeight(24)
+  manualImportBtn:SetPoint("LEFT", addBtn, "RIGHT", 10, 0)
+  
+  local manualImportText = manualImportBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  manualImportText:SetPoint("CENTER", manualImportBtn, "CENTER", 0, 0)
+  manualImportText:SetText("Manual Import")
+  manualImportText:SetTextColor(1, 0.82, 0, 1)
+  
+  OGST.StyleButton(manualImportBtn)
+  
+  manualImportBtn:SetScript("OnClick", function()
+    RosterMgmt.ShowManualImportDialog()
+  end)
+  
+  -- ShaguDPS button
+  local shaguBtn = CreateFrame("Button", nil, toolbar)
+  shaguBtn:SetWidth(80)
+  shaguBtn:SetHeight(24)
+  shaguBtn:SetPoint("LEFT", manualImportBtn, "RIGHT", 10, 0)
+  
+  local shaguText = shaguBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  shaguText:SetPoint("CENTER", shaguBtn, "CENTER", 0, 0)
+  shaguText:SetText("ShaguDPS")
+  
+  OGST.StyleButton(shaguBtn)
+  
+  -- Check if ShaguDPS is available
+  local hasShaguDPS = ShaguDPS ~= nil
+  if hasShaguDPS then
+    shaguText:SetTextColor(1, 0.82, 0, 1)
+    shaguBtn:SetScript("OnClick", function()
+      -- TODO: Open ShaguDPS import interface
+    end)
+  else
+    shaguText:SetTextColor(0.5, 0.5, 0.5, 1)
+    shaguBtn:Disable()
+  end
+  
+  -- DPSMate button
+  local dpsMateBtn = CreateFrame("Button", nil, toolbar)
+  dpsMateBtn:SetWidth(80)
+  dpsMateBtn:SetHeight(24)
+  dpsMateBtn:SetPoint("LEFT", shaguBtn, "RIGHT", 10, 0)
+  
+  local dpsMateText = dpsMateBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  dpsMateText:SetPoint("CENTER", dpsMateBtn, "CENTER", 0, 0)
+  dpsMateText:SetText("DPSMate")
+  
+  OGST.StyleButton(dpsMateBtn)
+  
+  -- Check if DPSMate is available
+  local hasDPSMate = DPSMate ~= nil
+  if hasDPSMate then
+    dpsMateText:SetTextColor(1, 0.82, 0, 1)
+    dpsMateBtn:SetScript("OnClick", function()
+      -- TODO: Open DPSMate import interface
+    end)
+  else
+    dpsMateText:SetTextColor(0.5, 0.5, 0.5, 1)
+    dpsMateBtn:Disable()
+  end
+  
   window.toolbar = toolbar
 end
 
@@ -1279,6 +1344,264 @@ function RosterMgmt.ShowRemovePlayerDialog()
   })
   
   dialogData.backdrop:Show()
+end
+
+-- Show manual import dialog
+function RosterMgmt.ShowManualImportDialog()
+  -- Window dimensions
+  local windowWidth = 910
+  local windowHeight = 419
+  
+  -- Calculate column dimensions
+  -- Available width = windowWidth - left padding (5) - right padding (5) - gaps between 5 columns (4 * 5 = 20)
+  local availableWidth = windowWidth - 10 - 20
+  local columnWidth = math.floor(availableWidth / 5)
+  
+  -- Calculate text box height
+  -- Available height = windowHeight - header (40) - bottom padding (5) - label (~15) - gap (0) - autorank gap (5) - autorank button (24)
+  local textBoxHeight = windowHeight - 40 - 5 - 15 - 0 - 5 - 24
+  
+  -- Create import window
+  local window = OGST.CreateStandardWindow({
+    name = "OGRH_ManualImportWindow",
+    width = windowWidth,
+    height = windowHeight,
+    title = "Manual Import - DPS Meter Data",
+    closeButton = true,
+    escapeCloses = true,
+    closeOnNewWindow = false
+  })
+  
+  if not window then return end
+  
+  -- Set proper frame strata to ensure it appears on top
+  window:SetFrameStrata("FULLSCREEN")
+  
+  -- Center the window
+  window:ClearAllPoints()
+  window:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  
+  -- Storage for parsed player data
+  local parsedPlayers = {
+    TANKS = {},
+    HEALERS = {},
+    MELEE = {},
+    RANGED = {}
+  }
+  
+  -- Storage for include checkboxes
+  local includeCheckboxes = {}
+  
+  -- Storage for list frames
+  local roleLists = {}
+  
+  -- Storage for role labels
+  local roleLabels = {}
+  
+  -- Import CSV button - anchor to bottom left of content frame
+  local autorankBtn = CreateFrame("Button", nil, window.contentFrame)
+  autorankBtn:SetHeight(24)
+  autorankBtn:SetWidth(85)
+  autorankBtn:SetPoint("BOTTOMLEFT", window.contentFrame, "BOTTOMLEFT", 0, 0)
+  
+  local autorankText = autorankBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  autorankText:SetPoint("CENTER", autorankBtn, "CENTER", 0, 0)
+  autorankText:SetText("Import CSV")
+  autorankText:SetTextColor(1, 0.82, 0, 1)
+  
+  OGST.StyleButton(autorankBtn)
+  
+  -- Declare CSV controls first (needed by ParseAndPopulate function)
+  local csvLabel, csvBackdrop, csvEditBox
+  
+  -- Parse CSV and populate role lists
+  local function ParseAndPopulate()
+    -- Clear existing data
+    for role in pairs(parsedPlayers) do
+      parsedPlayers[role] = {}
+    end
+    
+    -- Clear role lists
+    for role, list in pairs(roleLists) do
+      list:Clear()
+    end
+    
+    local csvText = csvEditBox:GetText()
+    if not csvText or csvText == "" then return end
+    
+    -- Remove leading/trailing quotes if present
+    csvText = string.gsub(csvText, "^\"", "")
+    csvText = string.gsub(csvText, "\"$", "")
+    
+    -- Split by newlines
+    local lines = {}
+    for line in string.gfind(csvText, "[^\n]+") do
+      table.insert(lines, line)
+    end
+    
+    -- Parse each line
+    for i = 1, table.getn(lines) do
+      local line = lines[i]
+      -- Parse CSV: PlayerName,Damage,DPS
+      local name, damage, dps = string.match(line, "([^,]+),([^,]+),([^,]+)")
+      
+      if name and dps then
+        -- Trim whitespace
+        name = string.gsub(name, "^%s*(.-)%s*$", "%1")
+        dps = string.gsub(dps, "^%s*(.-)%s*$", "%1")
+        
+        -- Get player class from OGRH cache
+        local class = OGRH.GetPlayerClass(name)
+        if not class then
+          class = "UNKNOWN"
+        end
+        
+        -- Determine role: check roster data first, then RolesUI saved data, then default
+        local role = "RANGED"  -- Default fallback
+        if OGRH_SV.rosterManagement.players[name] then
+          -- Player exists in roster management
+          role = OGRH_SV.rosterManagement.players[name].primaryRole
+        elseif OGRH_SV.roles and OGRH_SV.roles[name] then
+          -- Player has saved role from RolesUI
+          role = OGRH_SV.roles[name]
+        else
+          -- Use default role for class
+          role = RosterMgmt.GetDefaultRoleForClass(class)
+        end
+        
+        -- Get current ELO or default
+        local currentElo = 1000
+        if OGRH_SV.rosterManagement.players[name] and 
+           OGRH_SV.rosterManagement.players[name].rankings and
+           OGRH_SV.rosterManagement.players[name].rankings[role] then
+          currentElo = OGRH_SV.rosterManagement.players[name].rankings[role]
+        end
+        
+        -- TODO: Calculate adjustment (placeholder)
+        local adjustment = 0
+        
+        -- Store player data
+        table.insert(parsedPlayers[role], {
+          name = name,
+          class = class,
+          dps = tonumber(dps) or 0,
+          elo = currentElo,
+          adjustment = adjustment
+        })
+      end
+    end
+    
+    -- Populate role lists
+    for _, role in ipairs(ROLES) do
+      if roleLists[role] then
+        -- Sort by DPS descending
+        table.sort(parsedPlayers[role], function(a, b)
+          return a.dps > b.dps
+        end)
+        
+        -- Add to list
+        for j = 1, table.getn(parsedPlayers[role]) do
+          local player = parsedPlayers[role][j]
+          local r, g, b = GetClassColor(player.class)
+          
+          local displayText = string.format("%s %d [%s%d]", 
+            player.name, 
+            player.elo,
+            (player.adjustment >= 0 and "+" or ""),
+            player.adjustment
+          )
+          
+          roleLists[role]:AddItem({
+            text = displayText,
+            textColor = {r = r, g = g, b = b, a = 1},
+            onDelete = function()
+              -- Remove from parsed data
+              for k = 1, table.getn(parsedPlayers[role]) do
+                if parsedPlayers[role][k].name == player.name then
+                  table.remove(parsedPlayers[role], k)
+                  break
+                end
+              end
+              ParseAndPopulate()  -- Refresh list
+            end
+          })
+        end
+      end
+    end
+  end
+  
+  autorankBtn:SetScript("OnClick", function()
+    ParseAndPopulate()
+  end)
+  
+  -- Create 4 role columns from right to left (Ranged, Melee, Healers, Tanks)
+  -- Reverse ROLES to anchor from right to left
+  local reversedRoles = {"RANGED", "MELEE", "HEALERS", "TANKS"}
+  
+  for i, role in ipairs(reversedRoles) do
+    -- Role label
+    local roleLabel = OGST.CreateStaticText(window.contentFrame, {
+      text = ROLE_DISPLAY[role] .. ":",
+      font = "GameFontNormal",
+      align = "LEFT",
+      width = columnWidth
+    })
+    
+    -- Position first column (Ranged) at top-right, others relative to previous label moving left
+    if i == 1 then
+      OGST.AnchorElement(roleLabel, window.contentFrame, {position = "top", align = "right"})
+    else
+      OGST.AnchorElement(roleLabel, roleLabels[reversedRoles[i-1]], {position = "left"})
+    end
+    
+    roleLabels[role] = roleLabel
+    
+    -- Include checkbox - anchor to bottom aligned with role label
+    local checkbox = OGST.CreateCheckbox(window.contentFrame, {
+      width = columnWidth,
+      label = "Include",
+      checked = (role ~= "TANKS"),
+      labelPosition = "RIGHT"
+    })
+    OGST.AnchorElement(checkbox, roleLabel, {
+      position = "alignBottom",
+      parent = window.contentFrame
+    })
+    
+    includeCheckboxes[role] = checkbox.checkButton
+    
+    -- Create scrollable list for this role - fill space between label and checkbox using OGST
+    local listFrame = OGST.CreateStyledScrollList(window.contentFrame, columnWidth, 0, true)
+    OGST.AnchorElement(listFrame, roleLabel, {
+      position = "fillBetween",
+      bottomElement = checkbox,
+      offsetYBottom = -5
+    })
+    
+    roleLists[role] = listFrame
+  end
+  
+  -- CSV label - span from left edge to Tanks label using OGST
+  csvLabel = OGST.CreateStaticText(window.contentFrame, {
+    text = "Paste CSV Data:",
+    font = "GameFontNormal",
+    align = "LEFT"
+  })
+  OGST.AnchorElement(csvLabel, window.contentFrame, {
+    position = "spanHorizontal",
+    rightElement = roleLabels["TANKS"],
+    verticalAlign = "top"
+  })
+  
+  -- CSV text box - fill space between CSV label and Autorank button using OGST
+  csvBackdrop, csvEditBox = OGST.CreateScrollingTextBox(window.contentFrame, 0, 0)
+  OGST.AnchorElement(csvBackdrop, csvLabel, {
+    position = "fillBetween",
+    bottomElement = autorankBtn,
+    offsetYBottom = 5
+  })
+  
+  window:Show()
 end
 
 -- Refresh entire UI

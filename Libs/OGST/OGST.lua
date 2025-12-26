@@ -1514,24 +1514,47 @@ function OGST.CreateScrollingTextBox(parent, width, height)
   scrollFrame:SetPoint("TOPLEFT", 5, -6)
   scrollFrame:SetPoint("BOTTOMRIGHT", -28, 6)
   
-  local contentWidth = width - 5 - 28 - 5
-  
   -- Scroll child
   local scrollChild = CreateFrame("Frame", nil, scrollFrame)
   scrollFrame:SetScrollChild(scrollChild)
-  scrollChild:SetWidth(contentWidth)
-  scrollChild:SetHeight(400)
+  
+  local contentWidth
+  if width > 0 then
+    contentWidth = width - 5 - 28 - 5
+    scrollChild:SetWidth(contentWidth)
+  else
+    -- Dynamic width - will be calculated on show
+    contentWidth = 1
+    scrollChild:SetWidth(contentWidth)
+  end
+  scrollChild:SetHeight(800)
   
   -- Edit box
   local editBox = CreateFrame("EditBox", nil, scrollChild)
   editBox:SetPoint("TOPLEFT", 0, 0)
   editBox:SetWidth(contentWidth)
-  editBox:SetHeight(400)
+  editBox:SetHeight(800)
   editBox:SetMultiLine(true)
   editBox:SetAutoFocus(false)
   editBox:SetFontObject(ChatFontNormal)
+  editBox:SetTextColor(1, 1, 1, 1)
   editBox:SetTextInsets(5, 5, 3, 3)
   editBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  
+  -- For dynamic sizing, update dimensions when shown
+  if width == 0 then
+    backdrop:SetScript("OnShow", function()
+      local backdropWidth = backdrop:GetWidth()
+      if backdropWidth and backdropWidth > 0 then
+        -- scrollFrame takes up: backdrop - 5 (left) - 28 (right/scrollbar)
+        local scrollFrameWidth = backdropWidth - 33
+        scrollChild:SetWidth(scrollFrameWidth)
+        -- Add 40px to the width to work around EditBox wrap width issue
+        editBox:SetWidth(scrollFrameWidth + 40)
+      end
+    end)
+  end
+  
   
   -- Scrollbar
   local scrollBar = CreateFrame("Slider", nil, backdrop)
@@ -1557,6 +1580,20 @@ function OGST.CreateScrollingTextBox(parent, width, height)
   
   -- Update scroll range when text changes
   editBox:SetScript("OnTextChanged", function()
+    -- Update heights based on text content
+    local text = editBox:GetText()
+    if text and text ~= "" then
+      -- Count lines
+      local lines = 1
+      local _, count = string.gsub(text, "\n", "\n")
+      lines = lines + count
+      
+      -- Estimate height (each line ~14px with ChatFontNormal)
+      local textHeight = math.max(lines * 14 + 20, 800)
+      editBox:SetHeight(textHeight)
+      scrollChild:SetHeight(textHeight)
+    end
+    
     local maxScroll = scrollChild:GetHeight() - scrollFrame:GetHeight()
     if maxScroll > 0 then
       scrollBar:SetMinMaxValues(0, maxScroll)
@@ -2283,7 +2320,7 @@ function OGST.CreateStaticText(parent, config)
   
   local text = config.text or ""
   local font = config.font or "GameFontNormal"
-  local color = config.color or {r = 1, g = 1, b = 1, a = 1}
+  local color = config.color or {r = 1, g = 0.82, b = 0, a = 1}
   local align = config.align or "LEFT"
   local valign = config.valign or "TOP"
   local multiline = config.multiline or false
@@ -2327,12 +2364,12 @@ function OGST.CreateStaticText(parent, config)
   if align == "CENTER" then
     fontString:SetPoint("TOP", container, "TOP", 0, -paddingTop)
     if width then
-      fontString:SetWidth(width)
+      fontString:SetWidth(width - paddingLeft - paddingRight)
     end
   elseif align == "RIGHT" then
     fontString:SetPoint("TOPRIGHT", container, "TOPRIGHT", -paddingRight, -paddingTop)
     if width then
-      fontString:SetWidth(width)
+      fontString:SetWidth(width - paddingLeft - paddingRight)
     end
   else  -- LEFT or default
     fontString:SetPoint("TOPLEFT", container, "TOPLEFT", paddingLeft, -paddingTop)
@@ -2340,7 +2377,7 @@ function OGST.CreateStaticText(parent, config)
       -- Fill horizontally with padding if no width specified
       fontString:SetPoint("TOPRIGHT", container, "TOPRIGHT", -paddingRight, -paddingTop)
     else
-      fontString:SetWidth(width)
+      fontString:SetWidth(width - paddingLeft - paddingRight)
     end
   end
   
@@ -2372,26 +2409,38 @@ function OGST.CreateStaticText(parent, config)
     end)
   else
     -- Single line or fixed width: size container to content
-    local fsWidth = width or fontString:GetWidth()
-    
-    -- Fallback if fontString hasn't been rendered yet
-    if fsWidth == 0 then
-      fsWidth = 100  -- Default fallback width
+    if width then
+      -- If width is specified, container should be exactly that width
+      container:SetWidth(width)
+      
+      -- For multiline with fixed width, fontString already set to width - padding above
+      if multiline then
+        fontString:SetWidth(width - paddingLeft - paddingRight)
+      end
+      
+      local fsHeight = height or fontString:GetHeight()
+      if fsHeight == 0 then
+        fsHeight = 20  -- Default fallback height
+      end
+      
+      container:SetHeight(fsHeight + paddingTop + paddingBottom)
+    else
+      -- No width specified, size to content
+      local fsWidth = fontString:GetWidth()
+      
+      -- Fallback if fontString hasn't been rendered yet
+      if fsWidth == 0 then
+        fsWidth = 100  -- Default fallback width
+      end
+      
+      local fsHeight = height or fontString:GetHeight()
+      if fsHeight == 0 then
+        fsHeight = 20  -- Default fallback height
+      end
+      
+      container:SetWidth(fsWidth + paddingLeft + paddingRight)
+      container:SetHeight(fsHeight + paddingTop + paddingBottom)
     end
-    
-    -- For multiline with fixed width, set width first so GetHeight() returns wrapped height
-    if multiline and width then
-      fontString:SetWidth(width)
-    end
-    
-    local fsHeight = height or fontString:GetHeight()
-    
-    if fsHeight == 0 then
-      fsHeight = 20  -- Default fallback height
-    end
-    
-    container:SetWidth(fsWidth + paddingLeft + paddingRight)
-    container:SetHeight(fsHeight + paddingTop + paddingBottom)
   end
   
   -- Store fontString reference for callers
@@ -2784,6 +2833,44 @@ function OGST.AnchorElement(element, anchorTo, config)
     element:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", config.offsetX or 0, config.offsetY or -gap)
     element:SetPoint("RIGHT", anchorTo:GetParent(), "RIGHT", -padding, 0)
     element:SetPoint("BOTTOM", anchorTo:GetParent(), "BOTTOM", 0, padding)
+    
+  elseif position == "fillBetween" then
+    -- Fill space between two elements vertically
+    -- Requires config.bottomElement to specify the bottom anchor
+    -- Anchors: TOPLEFT/TOPRIGHT below anchorTo, BOTTOM above bottomElement
+    if not config.bottomElement then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGST:|r fillBetween requires config.bottomElement")
+      return
+    end
+    element:ClearAllPoints()
+    element:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", config.offsetX or 0, config.offsetYTop or -gap)
+    element:SetPoint("TOPRIGHT", anchorTo, "BOTTOMRIGHT", config.offsetX or 0, config.offsetYTop or -gap)
+    element:SetPoint("BOTTOM", config.bottomElement, "TOP", 0, config.offsetYBottom or -gap)
+    
+  elseif position == "spanHorizontal" then
+    -- Span horizontally between left anchor (anchorTo) and right anchor (config.rightElement)
+    -- Requires config.rightElement to specify the right anchor
+    -- Anchors: TOPLEFT to anchorTo, TOPRIGHT to rightElement
+    if not config.rightElement then
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGST:|r spanHorizontal requires config.rightElement")
+      return
+    end
+    element:ClearAllPoints()
+    local verticalAlign = config.verticalAlign or "top"
+    if verticalAlign == "top" then
+      element:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", config.offsetXLeft or 0, config.offsetY or 0)
+      element:SetPoint("TOPRIGHT", config.rightElement, "TOPLEFT", config.offsetXRight or 0, config.offsetY or 0)
+    elseif verticalAlign == "bottom" then
+      element:SetPoint("BOTTOMLEFT", anchorTo, "BOTTOMLEFT", config.offsetXLeft or 0, config.offsetY or 0)
+      element:SetPoint("BOTTOMRIGHT", config.rightElement, "BOTTOMLEFT", config.offsetXRight or 0, config.offsetY or 0)
+    end
+    
+  elseif position == "alignBottom" then
+    -- Align element to bottom of parent, maintaining horizontal position relative to anchorTo
+    -- Anchors: BOTTOMLEFT/BOTTOMRIGHT aligned with anchorTo horizontally, at parent bottom
+    local parent = config.parent or element:GetParent()
+    element:ClearAllPoints()
+    element:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", anchorTo:GetLeft() - parent:GetLeft(), config.offsetY or 0)
   end
   
   return element
