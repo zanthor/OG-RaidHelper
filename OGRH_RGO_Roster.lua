@@ -464,6 +464,12 @@ function RosterMgmt.RefreshPlayerList()
   
   if not scrollList then return end
   
+  -- Save current scroll position
+  local savedScrollPosition = 0
+  if scrollList.scrollFrame then
+    savedScrollPosition = scrollList.scrollFrame:GetVerticalScroll()
+  end
+  
   -- Clear existing items
   scrollList:Clear()
   
@@ -628,6 +634,20 @@ function RosterMgmt.RefreshPlayerList()
     -- Store player data on item for reference
     item.playerName = playerData.name
     item.playerData = playerData
+  end
+  
+  -- Restore scroll position after populating list
+  if scrollList.scrollFrame and savedScrollPosition > 0 then
+    -- Need to call UpdateScrollBar first to ensure proper scrollbar state
+    if scrollList.UpdateScrollBar then
+      scrollList.UpdateScrollBar()
+    end
+    -- Restore the saved scroll position
+    scrollList.scrollFrame:SetVerticalScroll(savedScrollPosition)
+    -- Update scrollbar to match
+    if scrollList.scrollBar and scrollList.scrollBar:IsShown() then
+      scrollList.scrollBar:SetValue(savedScrollPosition)
+    end
   end
 end
 
@@ -1389,6 +1409,9 @@ function RosterMgmt.ShowManualImportDialog()
     RANGED = {}
   }
   
+  -- Flag to track if Rank ELO has been used on current import
+  local hasRankedElo = false
+  
   -- Storage for include checkboxes
   local includeCheckboxes = {}
   
@@ -1399,20 +1422,96 @@ function RosterMgmt.ShowManualImportDialog()
   local roleLabels = {}
   
   -- Import CSV button - anchor to bottom left of content frame
-  local autorankBtn = CreateFrame("Button", nil, window.contentFrame)
-  autorankBtn:SetHeight(24)
-  autorankBtn:SetWidth(85)
-  autorankBtn:SetPoint("BOTTOMLEFT", window.contentFrame, "BOTTOMLEFT", 0, 0)
+  local importCsvBtn = CreateFrame("Button", nil, window.contentFrame)
+  importCsvBtn:SetHeight(24)
+  importCsvBtn:SetWidth(85)
+  importCsvBtn:SetPoint("BOTTOMLEFT", window.contentFrame, "BOTTOMLEFT", 0, 0)
   
-  local autorankText = autorankBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  autorankText:SetPoint("CENTER", autorankBtn, "CENTER", 0, 0)
-  autorankText:SetText("Import CSV")
-  autorankText:SetTextColor(1, 0.82, 0, 1)
+  local importCsvText = importCsvBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  importCsvText:SetPoint("CENTER", importCsvBtn, "CENTER", 0, 0)
+  importCsvText:SetText("Import CSV")
+  importCsvText:SetTextColor(1, 0.82, 0, 1)
   
-  OGST.StyleButton(autorankBtn)
+  OGST.StyleButton(importCsvBtn)
+  
+  -- Rank ELO button
+  local rankEloBtn = CreateFrame("Button", nil, window.contentFrame)
+  rankEloBtn:SetHeight(24)
+  rankEloBtn:SetWidth(75)
+  rankEloBtn:SetPoint("LEFT", importCsvBtn, "RIGHT", 5, 0)
+  
+  local rankEloText = rankEloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  rankEloText:SetPoint("CENTER", rankEloBtn, "CENTER", 0, 0)
+  rankEloText:SetText("Rank ELO")
+  rankEloText:SetTextColor(1, 0.82, 0, 1)
+  
+  OGST.StyleButton(rankEloBtn)
+  
+  -- Update ELO button - saves current ELO rankings
+  local updateEloBtn = CreateFrame("Button", nil, window.contentFrame)
+  updateEloBtn:SetHeight(24)
+  updateEloBtn:SetWidth(85)
+  updateEloBtn:SetPoint("LEFT", rankEloBtn, "RIGHT", 5, 0)
+  
+  local updateEloText = updateEloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  updateEloText:SetPoint("CENTER", updateEloBtn, "CENTER", 0, 0)
+  updateEloText:SetText("Update ELO")
+  updateEloText:SetTextColor(1, 0.82, 0, 1)
+  
+  OGST.StyleButton(updateEloBtn)
   
   -- Declare CSV controls first (needed by ParseAndPopulate function)
   local csvLabel, csvBackdrop, csvEditBox
+  
+  -- Refresh display from current parsedPlayers data (without re-parsing CSV)
+  local function RefreshDisplay()
+    -- Clear role lists
+    for role, list in pairs(roleLists) do
+      list:Clear()
+    end
+    
+    -- Populate role lists from parsedPlayers
+    for _, role in ipairs(ROLES) do
+      if roleLists[role] and parsedPlayers[role] then
+        -- Sort by DPS descending
+        table.sort(parsedPlayers[role], function(a, b)
+          return a.dps > b.dps
+        end)
+        
+        -- Add to list
+        for j = 1, table.getn(parsedPlayers[role]) do
+          local player = parsedPlayers[role][j]
+          local r, g, b = GetClassColor(player.class)
+          
+          local displayText = string.format("%s %d [%s%d]", 
+            player.name, 
+            player.elo,
+            (player.adjustment >= 0 and "+" or ""),
+            player.adjustment
+          )
+          
+          -- Capture role in closure
+          local playerRole = role
+          roleLists[role]:AddItem({
+            text = displayText,
+            textColor = {r = r, g = g, b = b, a = 1},
+            onDelete = function()
+              -- Remove from parsed data
+              if parsedPlayers[playerRole] then
+                for k = 1, table.getn(parsedPlayers[playerRole]) do
+                  if parsedPlayers[playerRole][k].name == player.name then
+                    table.remove(parsedPlayers[playerRole], k)
+                    break
+                  end
+                end
+              end
+              RefreshDisplay()  -- Refresh without re-parsing CSV
+            end
+          })
+        end
+      end
+    end
+  end
   
   -- Parse CSV and populate role lists
   local function ParseAndPopulate()
@@ -1491,47 +1590,119 @@ function RosterMgmt.ShowManualImportDialog()
       end
     end
     
-    -- Populate role lists
+    -- Refresh display
+    RefreshDisplay()
+  end
+  
+  importCsvBtn:SetScript("OnClick", function()
+    ParseAndPopulate()
+    -- Reset Rank ELO state for new import
+    hasRankedElo = false
+    rankEloBtn:Enable()
+    rankEloText:SetTextColor(1, 0.82, 0, 1)
+  end)
+  
+  -- Rank ELO button - Process ELO rankings using sequential comparison
+  rankEloBtn:SetScript("OnClick", function()
+    -- Calculate ELO adjustments for included roles
+    local kFactor = 32  -- ELO adjustment sensitivity
+    
     for _, role in ipairs(ROLES) do
-      if roleLists[role] then
-        -- Sort by DPS descending
-        table.sort(parsedPlayers[role], function(a, b)
-          return a.dps > b.dps
-        end)
-        
-        -- Add to list
-        for j = 1, table.getn(parsedPlayers[role]) do
-          local player = parsedPlayers[role][j]
-          local r, g, b = GetClassColor(player.class)
+      if includeCheckboxes[role] then
+        local isChecked = includeCheckboxes[role]:GetChecked()
+        if isChecked then
+          local players = parsedPlayers[role]
           
-          local displayText = string.format("%s %d [%s%d]", 
-            player.name, 
-            player.elo,
-            (player.adjustment >= 0 and "+" or ""),
-            player.adjustment
-          )
-          
-          roleLists[role]:AddItem({
-            text = displayText,
-            textColor = {r = r, g = g, b = b, a = 1},
-            onDelete = function()
-              -- Remove from parsed data
-              for k = 1, table.getn(parsedPlayers[role]) do
-                if parsedPlayers[role][k].name == player.name then
-                  table.remove(parsedPlayers[role], k)
-                  break
-                end
-              end
-              ParseAndPopulate()  -- Refresh list
+          if players and table.getn(players) > 1 then
+            -- Sort by DPS (already done, but ensure order)
+            table.sort(players, function(a, b)
+              return a.dps > b.dps
+            end)
+            
+            -- Sequential comparison: compare each player with the one below them
+            for i = 1, table.getn(players) - 1 do
+              local playerA = players[i]  -- Higher DPS
+              local playerB = players[i + 1]  -- Lower DPS
+              
+              -- Calculate expected scores using ELO formula
+              local expectedA = 1 / (1 + 10 ^ ((playerB.elo - playerA.elo) / 400))
+              local expectedB = 1 / (1 + 10 ^ ((playerA.elo - playerB.elo) / 400))
+              
+              -- Actual scores: winner gets 1, loser gets 0
+              local actualA = 1  -- PlayerA has higher DPS
+              local actualB = 0  -- PlayerB has lower DPS
+              
+              -- Calculate ELO changes
+              local changeA = math.floor(kFactor * (actualA - expectedA) + 0.5)
+              local changeB = math.floor(kFactor * (actualB - expectedB) + 0.5)
+              
+              -- Update ELO values
+              playerA.elo = playerA.elo + changeA
+              playerB.elo = playerB.elo + changeB
+              
+              -- Update adjustments for display
+              playerA.adjustment = (playerA.adjustment or 0) + changeA
+              playerB.adjustment = (playerB.adjustment or 0) + changeB
             end
-          })
+          end
         end
       end
     end
-  end
+    
+    -- Refresh all displays with updated ELO values
+    RefreshDisplay()
+    
+    -- Disable Rank ELO button after first use
+    hasRankedElo = true
+    rankEloBtn:Disable()
+    rankEloText:SetTextColor(0.5, 0.5, 0.5, 1)
+    
+    DEFAULT_CHAT_FRAME:AddMessage("ELO rankings calculated. Use 'Update ELO' to save these rankings.")
+  end)
   
-  autorankBtn:SetScript("OnClick", function()
-    ParseAndPopulate()
+  -- Update ELO button - saves current rankings to player records
+  updateEloBtn:SetScript("OnClick", function()
+    RosterMgmt.EnsureSV()
+    
+    local updateCount = 0
+    local addCount = 0
+    
+    for _, role in ipairs(ROLES) do
+      -- Only process roles that have their Include checkbox checked
+      if includeCheckboxes[role] and includeCheckboxes[role]:GetChecked() and parsedPlayers[role] then
+        for i = 1, table.getn(parsedPlayers[role]) do
+          local player = parsedPlayers[role][i]
+          local playerName = player.name
+          
+          -- Check if player exists in database
+          if OGRH_SV.rosterManagement.players[playerName] then
+            -- Update existing player's ranking for this role
+            OGRH_SV.rosterManagement.players[playerName].rankings[role] = player.elo
+            OGRH_SV.rosterManagement.players[playerName].lastUpdated = time()
+            updateCount = updateCount + 1
+          else
+            -- Add new player with this role as primary
+            if RosterMgmt.AddPlayer(playerName, player.class) then
+              -- Set this role as primary and update its ranking
+              OGRH_SV.rosterManagement.players[playerName].primaryRole = role
+              OGRH_SV.rosterManagement.players[playerName].rankings[role] = player.elo
+              addCount = addCount + 1
+            end
+          end
+        end
+      end
+    end
+    
+    if addCount > 0 then
+      DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00Added %d new players, updated %d players|r", addCount, updateCount))
+    else
+      DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00Updated ELO ratings for %d players|r", updateCount))
+    end
+    
+    -- Refresh the main roster display if it's open
+    if OGRH_RosterWindow and OGRH_RosterWindow:IsVisible() then
+      RosterMgmt.RefreshPlayerList()
+    end
   end)
   
   -- Create 4 role columns from right to left (Ranged, Melee, Healers, Tanks)
@@ -1556,26 +1727,26 @@ function RosterMgmt.ShowManualImportDialog()
     
     roleLabels[role] = roleLabel
     
-    -- Include checkbox - anchor to bottom aligned with role label
-    local checkbox = OGST.CreateCheckbox(window.contentFrame, {
+    -- Include checkbox - anchor to bottom aligned with role label (right-aligned)
+    local checkboxContainer, checkButton = OGST.CreateCheckbox(window.contentFrame, {
       width = columnWidth,
       label = "Include",
       checked = (role ~= "TANKS"),
       labelPosition = "RIGHT"
     })
-    OGST.AnchorElement(checkbox, roleLabel, {
+    OGST.AnchorElement(checkboxContainer, roleLabel, {
       position = "alignBottom",
-      parent = window.contentFrame
+      parent = window.contentFrame,
+      align = "right"
     })
     
-    includeCheckboxes[role] = checkbox.checkButton
+    includeCheckboxes[role] = checkButton
     
-    -- Create scrollable list for this role - fill space between label and checkbox using OGST
+    -- Create scrollable list for this role - fill space between label and checkbox
     local listFrame = OGST.CreateStyledScrollList(window.contentFrame, columnWidth, 0, true)
     OGST.AnchorElement(listFrame, roleLabel, {
       position = "fillBetween",
-      bottomElement = checkbox,
-      offsetYBottom = -5
+      bottomElement = checkboxContainer
     })
     
     roleLists[role] = listFrame
@@ -1593,11 +1764,11 @@ function RosterMgmt.ShowManualImportDialog()
     verticalAlign = "top"
   })
   
-  -- CSV text box - fill space between CSV label and Autorank button using OGST
+  -- CSV text box - fill space between CSV label and Import CSV button using OGST
   csvBackdrop, csvEditBox = OGST.CreateScrollingTextBox(window.contentFrame, 0, 0)
   OGST.AnchorElement(csvBackdrop, csvLabel, {
     position = "fillBetween",
-    bottomElement = autorankBtn,
+    bottomElement = importCsvBtn,
     offsetYBottom = 5
   })
   

@@ -930,8 +930,10 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   scrollChild.UpdateScrollBar = UpdateScrollBar
   outerFrame.UpdateScrollBar = UpdateScrollBar
   
-  -- Store scrollChild and contentWidth for list item creation
+  -- Store scrollChild, scrollFrame, scrollBar and contentWidth for external access
   outerFrame.scrollChild = scrollChild
+  outerFrame.scrollFrame = scrollFrame
+  outerFrame.scrollBar = scrollBar
   outerFrame.contentWidth = scrollChild:GetWidth()
   
   -- Add list management methods
@@ -2868,9 +2870,17 @@ function OGST.AnchorElement(element, anchorTo, config)
   elseif position == "alignBottom" then
     -- Align element to bottom of parent, maintaining horizontal position relative to anchorTo
     -- Anchors: BOTTOMLEFT/BOTTOMRIGHT aligned with anchorTo horizontally, at parent bottom
+    -- Supports align="right" to right-align element with anchorTo
     local parent = config.parent or element:GetParent()
     element:ClearAllPoints()
-    element:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", anchorTo:GetLeft() - parent:GetLeft(), config.offsetY or 0)
+    
+    if config.align == "right" then
+      -- Right-align element with anchorTo
+      element:SetPoint("BOTTOMRIGHT", parent, "BOTTOMLEFT", anchorTo:GetRight() - parent:GetLeft(), config.offsetY or 0)
+    else
+      -- Default: left-align element with anchorTo
+      element:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", anchorTo:GetLeft() - parent:GetLeft(), config.offsetY or 0)
+    end
   end
   
   return element
