@@ -1423,6 +1423,7 @@ function OGST.CreateSingleLineTextBox(parent, width, height, config)
   -- Mark for dynamic design mode updates
   container.hasDesignBorder = true
   container.designBorderColor = {r = 1, g = 1, b = 0}  -- Yellow
+  container.removeBackdropWhenNotDesigning = true  -- Container doesn't need backdrop normally
   
   local tooltipName = config.label or "TextBox Container"
   OGST.AddDesignTooltip(container, tooltipName, "Frame")
@@ -1804,6 +1805,7 @@ function OGST.CreateCheckbox(parent, config)
   -- Mark for design mode system
   container.hasDesignBorder = true
   container.designBorderColor = {r = 1, g = 0.5, b = 0}  -- Orange
+  container.removeBackdropWhenNotDesigning = true  -- Checkboxes don't need backdrop normally
   
   -- Design mode border for container
   if OGST.DESIGN_MODE then

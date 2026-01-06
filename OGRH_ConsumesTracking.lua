@@ -69,7 +69,7 @@ function OGRH.ShowTrackConsumes()
     1. Right detail panel (CreateContentPanel)
     2. Detail panel title
     3. Default message in detail panel
-    4. Action list items (Enable Tracking, Preview Tracking, Mapping, Settings)
+    4. Action list items (Enable Tracking, Preview Tracking, Mapping, Conflicts)
     5. CT.UpdateDetailPanel() function with all action panels
     6. CT.PollConsumes() function
     7. RABuffs integration functions
@@ -137,7 +137,7 @@ function CT.RefreshActionList()
     {name = "Enable Tracking"},
     {name = "Preview Tracking"},
     {name = "Mapping"},
-    {name = "Settings"}
+    {name = "Conflicts"}
   }
   
   for i, action in ipairs(actions) do
@@ -398,22 +398,372 @@ function CT.UpdateDetailPanel(actionName)
     
     table.insert(trackConsumesFrame.detailContent, desc)
     table.insert(trackConsumesFrame.detailContent, mappingList)
-    
-  --[[ COMMENTED OUT - Settings panel
-  elseif actionName == "Settings" then
+
+  elseif actionName == "Conflicts" then
+    -- Description
     local desc = OGST.CreateStaticText(detailPanel, {
-      text = "Configuration options will be added here once the feature is fully implemented.\n\nPlanned settings:\n- Pull trigger patterns\n- Tracking profiles\n- Log retention settings\n- RABuffs integration options",
+      text = "Configure buff conflicts and exclusions.",
       font = "GameFontNormal",
       color = {r = 0.8, g = 0.8, b = 0.8},
-      multiline = true,
+      multiline = false,
       width = 380
     })
-    OGST.AnchorElement(desc, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -40})
+    OGST.AnchorElement(desc, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
+    
+    -- Initialize conflict storage
+    if not OGRH_SV.consumesTracking.conflicts then
+      OGRH_SV.consumesTracking.conflicts = {}
+    end
+    
+    -- Top half: Conflict list (half height of detail panel)
+    local listHeight = 165  -- Approximately half of 355 remaining height
+    local conflictList = OGST.CreateStyledScrollList(detailPanel, 380, listHeight)
+    OGST.AnchorElement(conflictList, desc, {position = "below", padding = 10})
+    
+    -- Store currently selected conflict index
+    local selectedConflictIndex = nil
+    
+    -- Store checkbox references for radio button behavior
+    local typeCheckboxes = {}
+    local groupNumberBox  -- Forward declaration
+    
+    -- Function to update controls panel based on selected conflict
+    local function UpdateControlsForConflict(conflictIndex)
+      if not conflictIndex or conflictIndex < 1 or conflictIndex > table.getn(OGRH_SV.consumesTracking.conflicts) then
+        -- No valid conflict selected, clear all controls
+        for name, checkbox in pairs(typeCheckboxes) do
+          checkbox:SetChecked(false)
+        end
+        if groupNumberBox then
+          groupNumberBox:SetText("")
+          groupNumberBox:EnableKeyboard(false)
+          groupNumberBox:EnableMouse(false)
+          groupNumberBox:SetTextColor(0.5, 0.5, 0.5, 1)
+        end
+        return
+      end
+      
+      local conflict = OGRH_SV.consumesTracking.conflicts[conflictIndex]
+      if not conflict then return end
+      
+      -- Initialize conflictType if not present
+      if not conflict.conflictType then
+        conflict.conflictType = "Concoction"
+      end
+      
+      -- Update checkboxes based on conflict type
+      for name, checkbox in pairs(typeCheckboxes) do
+        checkbox:SetChecked(name == conflict.conflictType)
+      end
+      
+      -- Update group number box
+      if groupNumberBox then
+        if conflict.conflictType == "Group" and conflict.groupNumber then
+          groupNumberBox:SetText(tostring(conflict.groupNumber))
+          groupNumberBox:EnableKeyboard(true)
+          groupNumberBox:EnableMouse(true)
+          groupNumberBox:SetTextColor(1, 1, 1, 1)
+        else
+          groupNumberBox:SetText("")
+          if conflict.conflictType == "Group" then
+            groupNumberBox:EnableKeyboard(true)
+            groupNumberBox:EnableMouse(true)
+            groupNumberBox:SetTextColor(1, 1, 1, 1)
+          else
+            groupNumberBox:EnableKeyboard(false)
+            groupNumberBox:EnableMouse(false)
+            groupNumberBox:SetTextColor(0.5, 0.5, 0.5, 1)
+          end
+        end
+      end
+    end
+    
+    -- Function to refresh conflict list
+    local function RefreshConflictList()
+      conflictList:Clear()
+      
+      -- Add existing conflicts with delete buttons
+      local conflicts = OGRH_SV.consumesTracking.conflicts
+      for i = 1, table.getn(conflicts) do
+        local conflict = conflicts[i]
+        local buffName = "Unknown"
+        if RAB_Buffs and RAB_Buffs[conflict.buffKey] then
+          buffName = RAB_Buffs[conflict.buffKey].name or conflict.buffKey
+        end
+        
+        local conflictText = buffName
+        if conflict.conflictsWith and table.getn(conflict.conflictsWith) > 0 then
+          conflictText = conflictText .. " (conflicts: " .. table.getn(conflict.conflictsWith) .. ")"
+        end
+        
+        local capturedIndex = i  -- Capture for closure
+        conflictList:AddItem({
+          text = conflictText,
+          onClick = function()
+            selectedConflictIndex = capturedIndex
+            UpdateControlsForConflict(capturedIndex)
+          end,
+          onDelete = function()
+            table.remove(OGRH_SV.consumesTracking.conflicts, capturedIndex)
+            selectedConflictIndex = nil
+            RefreshConflictList()
+            UpdateControlsForConflict(nil)
+          end
+        })
+      end
+      
+      -- Add "Add Conflict" button as last item
+      local addConflictItem = conflictList:AddItem({
+        text = "Add Conflict",
+        textAlign = "CENTER",
+        textColor = {r = 0, g = 1, b = 0, a = 1},
+        onClick = function()
+          CT.ShowAddConflictDialog()
+        end
+      })
+    end
+    
+    RefreshConflictList()
+    
+    -- Bottom half: Controls panel
+    local controlsPanel = OGST.CreateContentPanel(detailPanel, {
+      width = 380,
+      height = 160  -- Remaining space
+    })
+    OGST.AnchorElement(controlsPanel, conflictList, {position = "below", padding = 10})
+    
+    -- Function to handle radio button behavior
+    local function OnTypeCheckboxClick(checkboxName)
+      -- Save to selected conflict
+      if selectedConflictIndex and OGRH_SV.consumesTracking.conflicts[selectedConflictIndex] then
+        OGRH_SV.consumesTracking.conflicts[selectedConflictIndex].conflictType = checkboxName
+      end
+      
+      for name, checkbox in pairs(typeCheckboxes) do
+        if name ~= checkboxName then
+          checkbox:SetChecked(false)
+        end
+      end
+      
+      -- Enable/disable group number input based on Group checkbox
+      if groupNumberBox then
+        if checkboxName == "Group" and typeCheckboxes.Group:GetChecked() then
+          groupNumberBox:EnableKeyboard(true)
+          groupNumberBox:EnableMouse(true)
+          groupNumberBox:SetTextColor(1, 1, 1, 1)
+        else
+          groupNumberBox:EnableKeyboard(false)
+          groupNumberBox:EnableMouse(false)
+          groupNumberBox:SetTextColor(0.5, 0.5, 0.5, 1)
+        end
+      end
+    end
+    
+    -- Concoction checkbox
+    local concoctionContainer, concoctionCheckbox = OGST.CreateCheckbox(controlsPanel, {
+      label = "Concoction",
+      checked = false,
+      onChange = function(checked)
+        if checked then
+          OnTypeCheckboxClick("Concoction")
+        end
+      end
+    })
+    OGST.AnchorElement(concoctionContainer, controlsPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
+    typeCheckboxes.Concoction = concoctionCheckbox
+    
+    -- Blasted Lands checkbox
+    local blastedLandsContainer, blastedLandsCheckbox = OGST.CreateCheckbox(controlsPanel, {
+      label = "Blasted Lands",
+      checked = false,
+      onChange = function(checked)
+        if checked then
+          OnTypeCheckboxClick("BlastedLands")
+        end
+      end
+    })
+    OGST.AnchorElement(blastedLandsContainer, concoctionContainer, {position = "below", padding = 5})
+    typeCheckboxes.BlastedLands = blastedLandsCheckbox
+    
+    -- Food checkbox
+    local foodContainer, foodCheckbox = OGST.CreateCheckbox(controlsPanel, {
+      label = "Food",
+      checked = false,
+      onChange = function(checked)
+        if checked then
+          OnTypeCheckboxClick("Food")
+        end
+      end
+    })
+    OGST.AnchorElement(foodContainer, blastedLandsContainer, {position = "below", padding = 5})
+    typeCheckboxes.Food = foodCheckbox
+    
+    -- Drink checkbox
+    local drinkContainer, drinkCheckbox = OGST.CreateCheckbox(controlsPanel, {
+      label = "Drink",
+      checked = false,
+      onChange = function(checked)
+        if checked then
+          OnTypeCheckboxClick("Drink")
+        end
+      end
+    })
+    OGST.AnchorElement(drinkContainer, foodContainer, {position = "below", padding = 5})
+    typeCheckboxes.Drink = drinkCheckbox
+    
+    -- Group checkbox
+    local groupContainer, groupCheckbox = OGST.CreateCheckbox(controlsPanel, {
+      label = "Group",
+      checked = false,
+      onChange = function(checked)
+        if checked then
+          OnTypeCheckboxClick("Group")
+        end
+      end
+    })
+    OGST.AnchorElement(groupContainer, drinkContainer, {position = "below", padding = 5})
+    typeCheckboxes.Group = groupCheckbox
+    
+    -- Group number text box (to the right of Group checkbox)
+    local groupNumberContainer, groupNumberBackdrop
+    groupNumberContainer, groupNumberBackdrop, groupNumberBox = OGST.CreateSingleLineTextBox(controlsPanel, 60, 24, {
+      maxLetters = 2,
+      numeric = true,
+      align = "CENTER",
+      onChange = function(text)
+        -- Save group number to selected conflict
+        if selectedConflictIndex and OGRH_SV.consumesTracking.conflicts[selectedConflictIndex] then
+          local num = tonumber(text)
+          if num then
+            OGRH_SV.consumesTracking.conflicts[selectedConflictIndex].groupNumber = num
+          end
+        end
+      end
+    })
+    OGST.AnchorElement(groupNumberContainer, groupContainer, {position = "right", align = "center", offsetX = 10, offsetY = 0})
+    
+    -- Initially disable the group number box
+    groupNumberBox:EnableKeyboard(false)
+    groupNumberBox:EnableMouse(false)
+    groupNumberBox:SetTextColor(0.5, 0.5, 0.5, 1)
+    
     table.insert(trackConsumesFrame.detailContent, desc)
-  end
-  ]]--
+    table.insert(trackConsumesFrame.detailContent, conflictList)
+    table.insert(trackConsumesFrame.detailContent, controlsPanel)
+    table.insert(trackConsumesFrame.detailContent, concoctionContainer)
+    table.insert(trackConsumesFrame.detailContent, foodContainer)
+    table.insert(trackConsumesFrame.detailContent, drinkContainer)
+    table.insert(trackConsumesFrame.detailContent, groupContainer)
+    table.insert(trackConsumesFrame.detailContent, groupNumberContainer)
+
   end -- Close if/elseif chain
 end -- Close UpdateDetailPanel function
+
+-- ============================================================================
+-- Add Conflict Dialog
+-- ============================================================================
+
+-- Show dialog to select a buff for conflict configuration
+function CT.ShowAddConflictDialog()
+  -- Get list of available consumables from RABuffs profile
+  local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
+  if not RABui_Settings or not RABui_Settings.Layout or not RABui_Settings.Layout[profileKey] then
+    OGRH.Msg("RABuffs profile 'OGRH_Consumables' not found. Please enable tracking first.")
+    return
+  end
+  
+  local profileBars = RABui_Settings.Layout[profileKey]
+  
+  -- Create list of consumables sorted alphabetically
+  local consumables = {}
+  for i, bar in ipairs(profileBars) do
+    if bar.buffKey and RAB_Buffs[bar.buffKey] then
+      table.insert(consumables, {
+        buffKey = bar.buffKey,
+        buffName = RAB_Buffs[bar.buffKey].name or bar.buffKey
+      })
+    end
+  end
+  
+  -- Sort alphabetically
+  table.sort(consumables, function(a, b)
+    return a.buffName < b.buffName
+  end)
+  
+  -- Create dialog
+  local dialogTable = OGST.CreateDialog({
+    title = "Add Conflict",
+    width = 400,
+    height = 450,
+    escapeCloses = true
+  })
+  
+  -- Get content frame from dialog
+  local contentFrame = dialogTable.contentFrame
+  local backdrop = dialogTable.backdrop
+  
+  -- Description
+  local desc = OGST.CreateStaticText(contentFrame, {
+    text = "Select a buff to configure conflicts for:",
+    font = "GameFontNormal",
+    color = {r = 0.8, g = 0.8, b = 0.8},
+    multiline = false,
+    width = 360
+  })
+  OGST.AnchorElement(desc, contentFrame, {position = "top", align = "left", offsetX = 10, offsetY = -10})
+  
+  -- Scrollable list of consumables
+  local buffList = OGST.CreateStyledScrollList(contentFrame, 360, 310)
+  OGST.AnchorElement(buffList, desc, {position = "below", padding = 10})
+  
+  -- Add consumables to list
+  for i = 1, table.getn(consumables) do
+    local consumable = consumables[i]
+    local capturedBuffKey = consumable.buffKey  -- Capture for closure
+    local capturedBuffName = consumable.buffName
+    
+    buffList:AddItem({
+      text = capturedBuffName,
+      onClick = function()
+        -- Create new conflict entry
+        if not OGRH_SV.consumesTracking.conflicts then
+          OGRH_SV.consumesTracking.conflicts = {}
+        end
+        
+        -- Check if conflict already exists for this buff
+        local exists = false
+        for j = 1, table.getn(OGRH_SV.consumesTracking.conflicts) do
+          if OGRH_SV.consumesTracking.conflicts[j].buffKey == capturedBuffKey then
+            exists = true
+            break
+          end
+        end
+        
+        if not exists then
+          table.insert(OGRH_SV.consumesTracking.conflicts, {
+            buffKey = capturedBuffKey,
+            conflictsWith = {}
+          })
+          
+          OGRH.Msg("Added conflict configuration for " .. capturedBuffName)
+          
+          -- Refresh the Conflicts panel if it's visible
+          if trackConsumesFrame and trackConsumesFrame:IsVisible() then
+            CT.UpdateDetailPanel("Conflicts")
+          end
+        else
+          OGRH.Msg("Conflict configuration already exists for " .. capturedBuffName)
+        end
+        
+        -- Close dialog
+        backdrop:Hide()
+      end
+    })
+  end
+  
+  -- Show the dialog
+  backdrop:Show()
+end
 
 -- ============================================================================
 -- Consumables Polling (Preview)
