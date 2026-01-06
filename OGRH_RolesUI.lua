@@ -788,6 +788,28 @@ local function CreateRolesFrame()
 
 end
 
+-- Global helper functions for external addon integration (e.g., RABuffs)
+-- Get a player's current role assignment
+function OGRH_GetPlayerRole(playerName)
+    if not OGRH_SV or not OGRH_SV.roles then
+        return nil
+    end
+    return OGRH_SV.roles[playerName]
+end
+
+-- Check if role system is available
+function OGRH_IsRoleSystemAvailable()
+    return (OGRH and OGRH_SV and OGRH_SV.roles) and true or false
+end
+
+-- Get all players in a specific role
+function OGRH_GetPlayersInRole(role)
+    if not OGRH or not OGRH.GetRolePlayers then
+        return {}
+    end
+    return OGRH.GetRolePlayers(role) or {}
+end
+
 -- Initialize when addon loads
 local _loader = CreateFrame("Frame")
 _loader:RegisterEvent("VARIABLES_LOADED")

@@ -762,13 +762,21 @@ end
 -- @param height: List height
 -- @param hideScrollBar: Optional boolean, true to hide scrollbar
 -- @return outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth
+-- TODO: Fix scrollChild width calculation when outerFrame is sized via fillBelow anchoring
+-- The scrollChild needs to properly fill the scrollFrame width when the list is dynamically sized
+-- Current workaround: Use static width/height instead of relying on anchor-based sizing
 function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   if not parent then return nil end
   
   -- Outer container frame with backdrop
   local outerFrame = CreateFrame("Frame", nil, parent)
-  outerFrame:SetWidth(width)
-  outerFrame:SetHeight(height)
+  -- Only set explicit size if non-zero (allow anchor system to handle sizing)
+  if width and width > 0 then
+    outerFrame:SetWidth(width)
+  end
+  if height and height > 0 then
+    outerFrame:SetHeight(height)
+  end
   outerFrame:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -792,8 +800,10 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   OGST.AddDesignTooltip(outerFrame, "Scroll List Container", "Frame")
   
   -- Adjust content width based on whether scrollbar will be shown
+  -- If width is 0 or not set, use default of 175 for calculations
+  local effectiveWidth = (width and width > 0) and width or 175
   local scrollBarWidth = 20
-  local baseContentWidth = width - 10
+  local baseContentWidth = effectiveWidth - 10
   local contentWidthWithScroll = baseContentWidth - scrollBarWidth
   local contentWidthNoScroll = baseContentWidth
   
@@ -930,11 +940,56 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   scrollChild.UpdateScrollBar = UpdateScrollBar
   outerFrame.UpdateScrollBar = UpdateScrollBar
   
+  -- Function to recalculate content width based on current outerFrame size
+  local function RecalculateContentWidth()
+    -- Get outerFrame width (this is reliable even with anchors if explicitly set)
+    local currentOuterWidth = outerFrame:GetWidth()
+    
+    if currentOuterWidth and currentOuterWidth > 0 then
+      -- scrollFrame is inset by 5px on left, and 5px + scrollBarWidth on right
+      -- So scrollChild should be: outerFrame width - 10 (left/right padding) - scrollBarWidth (if shown)
+      local scrollFrameWidth = currentOuterWidth - 10  -- Left 5px + right 5px padding
+      if not hideScrollBar and scrollBar:IsShown() then
+        scrollFrameWidth = scrollFrameWidth - scrollBarWidth
+      end
+      
+      -- Set scrollChild width
+      scrollChild:SetWidth(scrollFrameWidth)
+      
+      -- Update stored contentWidth
+      outerFrame.contentWidth = scrollFrameWidth
+      scrollChild.contentWidth = scrollFrameWidth
+      
+      -- Update all existing items to match new width
+      for _, item in ipairs(outerFrame.items) do
+        item:SetWidth(scrollFrameWidth)
+      end
+    end
+  end
+  
+  outerFrame.RecalculateContentWidth = RecalculateContentWidth
+  
+  -- Add OnSizeChanged handler to update scrollChild width when outer frame is resized
+  outerFrame:SetScript("OnSizeChanged", function()
+    this:RecalculateContentWidth()
+  end)
+  
+  -- Add OnShow handler to recalculate width and update items when frame is first shown
+  -- This is needed because fillBelow anchoring sets frame size asynchronously
+  outerFrame:SetScript("OnShow", function()
+    -- Delay slightly to allow anchor system to calculate sizes
+    this:SetScript("OnUpdate", function()
+      this:SetScript("OnUpdate", nil)
+      this:RecalculateContentWidth()
+    end)
+  end)
+  
   -- Store scrollChild, scrollFrame, scrollBar and contentWidth for external access
   outerFrame.scrollChild = scrollChild
   outerFrame.scrollFrame = scrollFrame
   outerFrame.scrollBar = scrollBar
   outerFrame.contentWidth = scrollChild:GetWidth()
+  scrollChild.contentWidth = scrollChild:GetWidth()  -- Also store on scrollChild for CreateStyledListItem
   
   -- Add list management methods
   outerFrame.items = {}
@@ -986,6 +1041,12 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
     table.insert(self.items, item)
     item:SetParent(scrollChild)
     
+    -- Recalculate content width in case outer frame was resized after creation
+    self:RecalculateContentWidth()
+    
+    -- Update item width to match current contentWidth
+    item:SetWidth(self.contentWidth)
+    
     -- Add up/down/delete buttons if callbacks provided
     if config.onMoveUp or config.onMoveDown or config.onDelete then
       local hideUpDown = not config.onMoveUp and not config.onMoveDown
@@ -1006,7 +1067,9 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
     
     local yOffset = 0
     for i, listItem in ipairs(self.items) do
+      listItem:ClearAllPoints()
       listItem:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOffset)
+      listItem:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", 0, -yOffset)
       listItem:Show()
       yOffset = yOffset + (listItem:GetHeight() or 24) + OGST.LIST_ITEM_SPACING
     end
@@ -1020,12 +1083,51 @@ function OGST.CreateStyledScrollList(parent, width, height, hideScrollBar)
   -- Initial update
   UpdateScrollBar()
   
+  -- Store scrollChild reference for debugging
+  outerFrame.scrollChild = scrollChild
+  
   return outerFrame, scrollFrame, scrollChild, scrollBar, scrollChild:GetWidth()
 end
 
 -- ============================================
 -- LIST ITEMS
 -- ============================================
+
+-- CRITICAL: LUA 5.0 CLOSURE SCOPING FOR EVENT HANDLERS
+-- =====================================================
+-- When creating list items in loops and attaching event handlers (OnClick, OnEnter, etc.),
+-- you MUST NOT capture loop variables directly in closures. In Lua 5.0, closures capture
+-- REFERENCES to variables, not their VALUES. This causes handlers to use the FINAL iteration
+-- value, not the current iteration value.
+--
+-- WRONG PATTERN (causes nil index errors):
+--   for i, action in ipairs(actions) do
+--     local item = OGST.CreateStyledListItem(parent, width, height)
+--     item:SetScript("OnClick", function()
+--       DoSomething(action.name)  -- 'action' refers to the LAST loop iteration!
+--     end)
+--   end
+--
+-- CORRECT PATTERN (store data on frame, use 'this' keyword):
+--   for i, action in ipairs(actions) do
+--     local item = OGST.CreateStyledListItem(parent, width, height)
+--     item.actionName = action.name  -- Store data as frame property
+--     item.bg = bg  -- Store references to child elements
+--     item:SetScript("OnClick", function()
+--       DoSomething(this.actionName)  -- Use 'this' to reference the frame
+--       this.bg:SetVertexColor(...)   -- Access stored references via 'this'
+--     end)
+--   end
+--
+-- KEY RULES:
+-- 1. Store any loop data you need as properties on the frame itself (item.myData = loopVar)
+-- 2. Use 'this' inside event handlers to reference the frame receiving the event
+-- 3. Access stored data via this.myData, not via closure-captured variables
+-- 4. This applies to ALL event handlers: OnClick, OnEnter, OnLeave, OnShow, etc.
+-- 5. WoW 1.12 uses 'this' (not 'self') - it's automatically set when events fire
+--
+-- This pattern is MANDATORY for WoW 1.12 / Lua 5.0 compatibility.
+-- =====================================================
 
 -- Create a standardized list item with background and hover effects
 -- @param parent: Parent frame (if it's a scroll list, automatically uses scrollChild)
@@ -1511,6 +1613,10 @@ function OGST.CreateScrollingTextBox(parent, width, height)
   
   OGST.AddDesignTooltip(backdrop, "Scrolling Text Box", "Frame")
   
+  -- Store dynamic sizing flags
+  backdrop.dynamicWidth = (width == 0)
+  backdrop.dynamicHeight = (height == 0)
+  
   -- Scroll frame
   local scrollFrame = CreateFrame("ScrollFrame", nil, backdrop)
   scrollFrame:SetPoint("TOPLEFT", 5, -6)
@@ -1543,15 +1649,31 @@ function OGST.CreateScrollingTextBox(parent, width, height)
   editBox:SetTextInsets(5, 5, 3, 3)
   editBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
   
-  -- For dynamic sizing, update dimensions when shown
-  if width == 0 then
+  -- For dynamic sizing, update dimensions when shown or size changes
+  if width == 0 or height == 0 then
     backdrop:SetScript("OnShow", function()
-      local backdropWidth = backdrop:GetWidth()
-      if backdropWidth and backdropWidth > 0 then
+      local backdropWidth = this:GetWidth()
+      local backdropHeight = this:GetHeight()
+      
+      if backdropWidth and backdropWidth > 0 and this.dynamicWidth then
         -- scrollFrame takes up: backdrop - 5 (left) - 28 (right/scrollbar)
         local scrollFrameWidth = backdropWidth - 33
         scrollChild:SetWidth(scrollFrameWidth)
         -- Add 40px to the width to work around EditBox wrap width issue
+        editBox:SetWidth(scrollFrameWidth + 40)
+      end
+      
+      -- Height doesn't need special handling - scrollChild and editBox handle text height dynamically
+    end)
+    
+    -- Also trigger on size update
+    backdrop:SetScript("OnSizeChanged", function()
+      local backdropWidth = this:GetWidth()
+      local backdropHeight = this:GetHeight()
+      
+      if backdropWidth and backdropWidth > 0 and this.dynamicWidth then
+        local scrollFrameWidth = backdropWidth - 33
+        scrollChild:SetWidth(scrollFrameWidth)
         editBox:SetWidth(scrollFrameWidth + 40)
       end
     end)
@@ -2829,12 +2951,36 @@ function OGST.AnchorElement(element, anchorTo, config)
     
   elseif position == "fillBelow" then
     -- Fill remaining space below the anchor element within the parent
-    -- Anchors: TOPLEFT below anchorTo, RIGHT/BOTTOM to parent edges
+    -- Anchors: TOP below anchorTo, LEFT/RIGHT/BOTTOM to parent edges
+    local padding = config.padding or 5
+    local parent = anchorTo:GetParent()
+    element:ClearAllPoints()
+    element:SetPoint("TOP", anchorTo, "BOTTOM", 0, config.offsetY or -gap)
+    element:SetPoint("LEFT", parent, "LEFT", padding, 0)
+    element:SetPoint("RIGHT", parent, "RIGHT", -padding, 0)
+    element:SetPoint("BOTTOM", parent, "BOTTOM", 0, padding)
+    -- Force width to match parent minus padding
+    local targetWidth = parent:GetWidth() - (padding * 2)
+    element:SetWidth(targetWidth)
+    
+  elseif position == "fillRight" then
+    -- Fill remaining space to the right of anchor element within the parent
+    -- Anchors: TOPLEFT/BOTTOMLEFT to right edge of anchorTo, RIGHT to parent's right edge
     local padding = config.padding or 5
     element:ClearAllPoints()
-    element:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", config.offsetX or 0, config.offsetY or -gap)
+    element:SetPoint("TOPLEFT", anchorTo, "TOPRIGHT", gap, 0)
+    element:SetPoint("BOTTOMLEFT", anchorTo, "BOTTOMRIGHT", gap, 0)
     element:SetPoint("RIGHT", anchorTo:GetParent(), "RIGHT", -padding, 0)
-    element:SetPoint("BOTTOM", anchorTo:GetParent(), "BOTTOM", 0, padding)
+    
+  elseif position == "fillBelowFromParent" then
+    -- Fill remaining space below a specified offsetY within the parent
+    -- Used when anchor element doesn't represent the top edge (e.g., centered button)
+    -- Anchors: TOPLEFT/RIGHT/BOTTOM to parent edges with offsetY
+    local padding = config.padding or 5
+    element:ClearAllPoints()
+    element:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", padding, config.offsetY or -gap)
+    element:SetPoint("RIGHT", anchorTo, "RIGHT", -padding, 0)
+    element:SetPoint("BOTTOM", anchorTo, "BOTTOM", 0, padding)
     
   elseif position == "fillBetween" then
     -- Fill space between two elements vertically

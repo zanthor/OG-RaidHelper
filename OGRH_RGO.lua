@@ -186,6 +186,18 @@ local CLASS_COLORS = {
 -- CLASS PRIORITY DIALOG
 -- ========================================
 
+-- TODO: Add generic role priority fallback for slots
+-- When all class priorities are unavailable for a slot, we should be able to
+-- fall back to a specific role (TANKS, HEALERS, MELEE, RANGED) instead of
+-- selecting random players. This would allow better raid composition control
+-- when specific classes aren't available but role requirements still need to be met.
+
+-- TODO: Add priority score to RGO rankings
+-- Allow assigning multiple classes to a slot priority list and use ELO/ranking scores
+-- to pick the best available player between them. This would enable flexible slot
+-- assignments like "Warrior > Paladin > Druid" and automatically select the highest
+-- ranked available player from those classes.
+
 function OGRH.ShowRGOClassPriorityDialog(groupNum, slotNum)
   local currentSize = OGRH_SV.rgo.currentRaidSize
   local slotData = OGRH_SV.rgo.raidSizes[currentSize][groupNum][slotNum]

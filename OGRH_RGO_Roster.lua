@@ -1603,6 +1603,11 @@ function RosterMgmt.ShowManualImportDialog()
   end)
   
   -- Rank ELO button - Process ELO rankings using sequential comparison
+  -- TODO: Add aura tracking and ELO modifiers
+  -- Track if the winner has specific raid buffs/auras (Boomkin aura, Windfury totem, 
+  -- Atiesh, etc.) and apply modifiers to ELO adjustments. Players with these buffs 
+  -- gain artificial DPS advantage, so their ELO gains should be reduced and their 
+  -- opponents' losses should be minimized to reflect true skill differences.
   rankEloBtn:SetScript("OnClick", function()
     -- Calculate ELO adjustments for included roles
     local kFactor = 32  -- ELO adjustment sensitivity

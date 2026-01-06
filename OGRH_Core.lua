@@ -5173,6 +5173,19 @@ local function CreateMinimapButton()
         end
       })
       
+      -- Track Consumes
+      menu:AddItem({
+        text = "Track Consumes",
+        onClick = function()
+          OGRH.CloseAllWindows("OGRH_TrackConsumesFrame")
+          if OGRH.ShowTrackConsumes then
+            OGRH.ShowTrackConsumes()
+          else
+            OGRH.Msg("Track Consumes module not loaded.")
+          end
+        end
+      })
+      
       -- Helper function to update monitor consumes text
       menu.UpdateMonitorConsumesText = function()
         OGRH.EnsureSV()
