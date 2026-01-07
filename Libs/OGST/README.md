@@ -1,10 +1,30 @@
 # OGST - OG Standard Templates Library
 
-Version 1.0.0
+Version 1.1.0
 
 A reusable UI template library for World of Warcraft 1.12.1 (Vanilla) addons, providing standardized components with consistent styling and behavior.
 
 ## Installation
+
+OGST can be used in two ways:
+
+### Option 1: Standalone Addon (Recommended)
+
+Install _OGST as a standalone addon. It will be loaded first (alphabetically) and used by all addons that depend on it.
+
+1. Place the `_OGST` folder in your `Interface\AddOns\` directory
+2. The addon will load automatically
+3. Other addons can reference it without embedding
+
+**Benefits:**
+- Single copy loaded in memory
+- Automatic version management
+- Easy to update across all addons
+- Smaller addon file sizes
+
+### Option 2: Embedded Library
+
+Embed OGST within your addon (useful for distribution or when users might not have standalone version).
 
 Add to your addon's `.toc` file:
 
@@ -12,7 +32,47 @@ Add to your addon's `.toc` file:
 Libs\OGST\OGST.lua
 ```
 
+**Version Management:**
+- If standalone _OGST is installed, it takes priority (loads first alphabetically)
+- If multiple addons embed OGST, the newest version is used
+- Older/duplicate versions automatically skip initialization
+- Load messages appear in chat to show which version is active
+
+## Version Checking
+
+OGST includes automatic version checking and load prioritization:
+
+- **Semantic versioning**: Uses `major.minor.patch` format (e.g., `1.1.0`)
+- **Smart loading**: Only the newest version initializes, others skip gracefully
+- **Load source tracking**: Shows whether loaded from standalone or which addon
+- **Chat notifications**: Displays version info on load/upgrade/skip
+
+Example chat messages:
+```
+OGST: Initialized v1.1.0 from standalone
+OGST: v1.0.0 already loaded from OG-RaidHelper, skipping duplicate load from OG-ReadHelper
+OGST: Upgrading from v1.0.0 (OG-RaidHelper) to v1.1.0 (standalone)
+```
+
 ## API Reference
+
+### Helper Functions
+
+#### OGST.GetResourcePath()
+Returns the base path to OGST resources (textures, etc.), automatically detecting whether OGST is loaded standalone or embedded.
+
+**Returns:** String path ending with backslash (e.g., `"Interface\\AddOns\\_OGST\\"`)
+
+**Example:**
+```lua
+-- Use OGST resources in your addon
+local texPath = OGST.GetResourcePath() .. "img\\my-texture"
+texture:SetTexture(texPath)
+```
+
+**Note:** This is handled automatically by OGST internally. You typically don't need to call this unless creating custom components that use OGST textures.
+
+---
 
 ### Constants
 
@@ -29,6 +89,12 @@ OGST.LIST_COLORS = {
 ```lua
 OGST.LIST_ITEM_HEIGHT = 20
 OGST.LIST_ITEM_SPACING = 2
+```
+
+#### Version Information
+```lua
+OGST.version       -- Current version string (e.g., "1.1.0")
+OGST.loadSource    -- Where OGST was loaded from (e.g., "standalone", "OG-RaidHelper")
 ```
 
 ---

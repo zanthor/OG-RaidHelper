@@ -14,6 +14,7 @@ Libs\OGST\OGST_Sample.lua
 
 OGRH_Core.lua
 OGRH_Defaults.lua
+OGRH_ConTrack_Defaults.lua
 OGRH_RaidLead.lua
 OGRH_Announce.lua
 OGRH_Sync.lua

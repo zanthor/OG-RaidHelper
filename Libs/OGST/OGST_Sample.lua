@@ -528,8 +528,28 @@ end
 
 -- Slash command handler
 SlashCmdList["OGST"] = function(msg)
+  -- Trim whitespace and convert to lowercase
+  msg = string.lower(msg or "")
+  msg = string.gsub(msg, "^%s*(.-)%s*$", "%1")
+  
   if msg == "spy" then
     OGST_Sample.SpyUI()
+  elseif msg == "version" or msg == "v" then
+    -- Show version info
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Standard Templates Library")
+    DEFAULT_CHAT_FRAME:AddMessage("  Version: |cffffffff" .. OGST.version .. "|r")
+    DEFAULT_CHAT_FRAME:AddMessage("  Load Source: |cffffffff" .. (OGST.loadSource or "unknown") .. "|r")
+    if OGST.previousLoadSource then
+      DEFAULT_CHAT_FRAME:AddMessage("  Previous Source: |cff888888" .. OGST.previousLoadSource .. "|r")
+    end
+  elseif msg == "help" or msg == "?" then
+    -- Show help
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST Commands:|r")
+    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst|r - Show sample window")
+    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst spy|r - UI Spy interface")
+    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst version|r - Show version information")
+    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst design|r - Toggle design mode")
+    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst help|r - Show this help")
   elseif msg == "design" then
     -- Use library function to toggle design mode
     OGST.ToggleDesignMode()

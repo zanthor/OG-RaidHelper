@@ -1,0 +1,11 @@
+## Interface: 11200
+## Title: _OGST - OG Standard Templates Library
+## Author: Gnuzmas
+## Version: 1.1.0
+## Notes: Standalone UI component library for WoW 1.12.1 addons. Provides standardized windows, buttons, menus, lists, and more.
+## X-Category: Library
+## X-License: MIT
+## X-Website: https://github.com/yourusername/_OGST
+
+OGST.lua
+OGST_Sample.lua

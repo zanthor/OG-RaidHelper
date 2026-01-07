@@ -1,16 +1,90 @@
 -- OGST.lua - OG Standard Templates Library
 -- Reusable UI template functions for World of Warcraft 1.12.1 addons
--- Version 1.0.0
+-- Version 1.1.0
 -- 
 -- This library provides standardized UI components and helper functions
 -- that can be used across multiple addons for consistent styling and behavior.
 
--- Create global namespace
+-- Version checking and load management
+-- This allows OGST to be loaded either as a standalone addon (_OGST)
+-- or embedded within other addons. The newest version takes priority.
+
+local OGST_NEW_VERSION = "1.1.0"
+local OGST_LOAD_SOURCE = nil  -- Will be set to "standalone" or addon name
+
+-- Determine where we're being loaded from
+do
+  local loadedFrom = debugstack()
+  if string.find(loadedFrom, "Interface\\AddOns\\_OGST\\") then
+    OGST_LOAD_SOURCE = "standalone"
+  elseif string.find(loadedFrom, "Interface\\AddOns\\") then
+    -- Extract addon name from path
+    local _, _, addonName = string.find(loadedFrom, "Interface\\AddOns\\([^\\]+)\\")
+    OGST_LOAD_SOURCE = addonName or "unknown"
+  else
+    OGST_LOAD_SOURCE = "unknown"
+  end
+end
+
+-- Compare semantic versions (format: "major.minor.patch")
+-- Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal
+local function CompareVersions(v1, v2)
+  local function parseVersion(v)
+    local major, minor, patch = string.match(v, "(%d+)%.(%d+)%.(%d+)")
+    return {
+      tonumber(major) or 0,
+      tonumber(minor) or 0,
+      tonumber(patch) or 0
+    }
+  end
+  
+  local v1Parts = parseVersion(v1)
+  local v2Parts = parseVersion(v2)
+  
+  for i = 1, 3 do
+    if v1Parts[i] > v2Parts[i] then
+      return 1
+    elseif v1Parts[i] < v2Parts[i] then
+      return -1
+    end
+  end
+  
+  return 0
+end
+
+-- Create global namespace with version checking
 if not OGST then
   OGST = {}
-  OGST.version = "1.0.0"
+  OGST.version = OGST_NEW_VERSION
+  OGST.loadSource = OGST_LOAD_SOURCE
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Initialized v" .. OGST_NEW_VERSION .. " from " .. OGST_LOAD_SOURCE)
+elseif OGST.version then
+  -- OGST already exists - check version
+  local comparison = CompareVersions(OGST_NEW_VERSION, OGST.version)
+  
+  if comparison > 0 then
+    -- New version is newer - we'll initialize below
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00OGST:|r Upgrading from v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
+    OGST.version = OGST_NEW_VERSION
+    OGST.previousLoadSource = OGST.loadSource
+    OGST.loadSource = OGST_LOAD_SOURCE
+  elseif comparison == 0 then
+    -- Same version - skip initialization
+    DEFAULT_CHAT_FRAME:AddMessage("|cff888888OGST:|r v" .. OGST.version .. " already loaded from " .. (OGST.loadSource or "unknown") .. ", skipping duplicate load from " .. OGST_LOAD_SOURCE)
+    return  -- Exit early, don't reinitialize
+  else
+    -- Old version - skip initialization
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGST:|r v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") is newer than v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. "), keeping existing version")
+    return  -- Exit early, don't reinitialize
+  end
+else
+  -- OGST exists but has no version (legacy)
+  DEFAULT_CHAT_FRAME:AddMessage("|cffffff00OGST:|r Upgrading legacy version to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
+  OGST.version = OGST_NEW_VERSION
+  OGST.loadSource = OGST_LOAD_SOURCE
 end
-OGST.DESIGN_MODE = false
+
+OGST.DESIGN_MODE = OGST.DESIGN_MODE or false
 
 -- Helper function to add design mode tooltips
 function OGST.AddDesignTooltip(frame, name, frameType)
@@ -44,6 +118,32 @@ OGST.LIST_COLORS = {
 -- Standard list item dimensions
 OGST.LIST_ITEM_HEIGHT = 20
 OGST.LIST_ITEM_SPACING = 2
+
+-- ============================================
+-- HELPER FUNCTIONS
+-- ============================================
+
+-- Get the correct path for OGST resources based on where it's loaded from
+-- Returns the base path to the OGST folder
+function OGST.GetResourcePath()
+  if not OGST._resourcePath then
+    -- Try to find where OGST is loaded from by checking known locations
+    -- Priority: standalone _OGST addon, then check for embedded versions
+    
+    -- Check if standalone exists
+    local testPath = "Interface\\AddOns\\_OGST\\img\\"
+    -- We can't directly test file existence in 1.12, so we'll store the source
+    
+    if OGST.loadSource == "standalone" then
+      OGST._resourcePath = "Interface\\AddOns\\_OGST\\"
+    else
+      -- Embedded version - construct path from load source
+      OGST._resourcePath = "Interface\\AddOns\\" .. (OGST.loadSource or "OG-RaidHelper") .. "\\Libs\\OGST\\"
+    end
+  end
+  
+  return OGST._resourcePath
+end
 
 -- Helper to get table size
 function OGST.GetTableSize(t)
@@ -313,13 +413,13 @@ function OGST.CreateStandardWindow(config)
     resizeTex:SetWidth(16)
     resizeTex:SetHeight(16)
     resizeTex:SetPoint("BOTTOMRIGHT", resizeBtn, "BOTTOMRIGHT")
-    resizeTex:SetTexture("Interface\\AddOns\\OG-RaidHelper\\Libs\\OGST\\img\\UI-ChatIM-SizeGrabber-Up")
+    resizeTex:SetTexture(OGST.GetResourcePath() .. "img\\UI-ChatIM-SizeGrabber-Up")
     
     local resizeTexHighlight = resizeBtn:CreateTexture(nil, "HIGHLIGHT")
     resizeTexHighlight:SetWidth(16)
     resizeTexHighlight:SetHeight(16)
     resizeTexHighlight:SetPoint("BOTTOMRIGHT", resizeBtn, "BOTTOMRIGHT")
-    resizeTexHighlight:SetTexture("Interface\\AddOns\\OG-RaidHelper\\Libs\\OGST\\img\\UI-ChatIM-SizeGrabber-Highlight")
+    resizeTexHighlight:SetTexture(OGST.GetResourcePath() .. "img\\UI-ChatIM-SizeGrabber-Highlight")
     
     -- Resize drag behavior
     resizeBtn:SetScript("OnDragStart", function()

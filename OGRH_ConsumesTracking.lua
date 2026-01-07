@@ -30,8 +30,36 @@ function CT.EnsureSavedVariables()
         "пулл%s+(%d+)",
         "тянем%s+(%d+)",
         "пул%s+(%d+)"
-      }
+      },
+      conflicts = {},
+      mapping = {},
+      weights = {}
     }
+  end
+  
+  -- Ensure sub-tables exist
+  if not OGRH_SV.consumesTracking.conflicts then
+    OGRH_SV.consumesTracking.conflicts = {}
+  end
+  if not OGRH_SV.consumesTracking.mapping then
+    OGRH_SV.consumesTracking.mapping = {}
+  end
+  if not OGRH_SV.consumesTracking.weights then
+    OGRH_SV.consumesTracking.weights = {}
+  end
+  
+  -- Set default weights for common buffs (only if not already set)
+  local defaultWeights = {
+    ["Flask of the Titans"] = 3,
+    ["Flask of Supreme Power"] = 3,
+    ["Flask of Distilled Wisdom"] = 3,
+    ["Flask of Chromatic Resistance"] = 3
+  }
+  
+  for buffKey, weight in pairs(defaultWeights) do
+    if not OGRH_SV.consumesTracking.weights[buffKey] then
+      OGRH_SV.consumesTracking.weights[buffKey] = weight
+    end
   end
 end
 
@@ -136,6 +164,7 @@ function CT.RefreshActionList()
   local actions = {
     {name = "Enable Tracking"},
     {name = "Preview Tracking"},
+    {name = "Weights"},
     {name = "Mapping"},
     {name = "Conflicts"}
   }
@@ -184,11 +213,6 @@ function CT.UpdateDetailPanel(actionName)
       checked = OGRH_SV.consumesTracking.enabled,
       onChange = function(isChecked)
         OGRH_SV.consumesTracking.enabled = isChecked
-        if isChecked then
-          OGRH.Msg("Consumes tracking |cff00ff00enabled|r.")
-        else
-          OGRH.Msg("Consumes tracking |cffff0000disabled|r.")
-        end
       end
     })
     OGST.AnchorElement(enableCheckbox, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
@@ -212,7 +236,15 @@ function CT.UpdateDetailPanel(actionName)
       height = 24,
       text = "Poll Consumes"
     })
-    OGST.AnchorElement(pollBtn, detailPanel, {position = "top", align = "center", offsetY = -10})
+    OGST.AnchorElement(pollBtn, detailPanel, {position = "top", align = "left", offsetY = -10, offsetX = 10})
+    
+    -- Announce Consumes button
+    local announceBtn = OGST.CreateButton(detailPanel, {
+      width = 140,
+      height = 24,
+      text = "Announce Consumes"
+    })
+    OGST.AnchorElement(announceBtn, pollBtn, {position = "right", align = "center", offsetX = 5})
     
     -- Create scrolling text box using OGST with dynamic sizing
     local textBoxBackdrop, textBoxEditBox, textBoxScrollFrame, textBoxScrollBar = OGST.CreateScrollingTextBox(
@@ -227,18 +259,135 @@ function CT.UpdateDetailPanel(actionName)
     -- Set initial text
     textBoxEditBox:SetText("|cff808080Click 'Poll Consumes' to preview current consumables status.|r")
     
-    -- Store references on the button frame
+    -- Store references on the button frames
     pollBtn.editBox = textBoxEditBox
     pollBtn.scrollBar = textBoxScrollBar
     pollBtn.scrollFrame = textBoxScrollFrame
     
-    -- Button click handler
+    announceBtn.editBox = textBoxEditBox
+    announceBtn.scrollBar = textBoxScrollBar
+    announceBtn.scrollFrame = textBoxScrollFrame
+    
+    -- Button click handlers
     pollBtn:SetScript("OnClick", function()
       CT.PollConsumes(this.editBox, this.scrollBar, this.scrollFrame)
     end)
     
+    announceBtn:SetScript("OnClick", function()
+      CT.AnnounceConsumes()
+    end)
+    
     table.insert(trackConsumesFrame.detailContent, pollBtn)
+    table.insert(trackConsumesFrame.detailContent, announceBtn)
     table.insert(trackConsumesFrame.detailContent, textBoxBackdrop)
+    
+  elseif actionName == "Weights" then
+    -- Weights configuration panel
+    local desc = OGST.CreateStaticText(detailPanel, {
+      text = "Configure the point value for each consumable. Higher weights increase their impact on the score.",
+      font = "GameFontNormalSmall",
+      color = {r = 0.8, g = 0.8, b = 0.8},
+      multiline = true,
+      width = detailPanel:GetWidth() - 20
+    })
+    OGST.AnchorElement(desc, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
+    
+    -- Get list of buffs from RABuffs profile
+    local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
+    
+    if not RABui_Settings or not RABui_Settings.Layout or not RABui_Settings.Layout[profileKey] then
+      local errorText = OGST.CreateStaticText(detailPanel, {
+        text = "RABuffs profile 'OGRH_Consumables' not found. Please enable tracking first.",
+        font = "GameFontNormalSmall",
+        color = {r = 1, g = 0.3, b = 0.3}
+      })
+      OGST.AnchorElement(errorText, desc, {position = "below", align = "left", offsetY = -20})
+      table.insert(trackConsumesFrame.detailContent, desc)
+      table.insert(trackConsumesFrame.detailContent, errorText)
+      return
+    end
+    
+    local profileBars = RABui_Settings.Layout[profileKey]
+    
+    -- Create list of consumables (use same logic as Mapping)
+    local consumables = {}
+    for i, bar in ipairs(profileBars) do
+      if bar.buffKey and RAB_Buffs[bar.buffKey] then
+        local buffData = RAB_Buffs[bar.buffKey]
+        local buffKey = bar.buffKey
+        local weight = OGRH_SV.consumesTracking.weights[buffKey] or 1
+        table.insert(consumables, {
+          buffKey = buffKey,
+          buffName = buffData.name or buffKey,
+          texture = buffData.icon,
+          label = bar.label or "",
+          weight = weight,
+          profileIndex = i
+        })
+      end
+    end
+    
+    -- Sort by buff name
+    table.sort(consumables, function(a, b)
+      return a.buffName < b.buffName
+    end)
+    
+    -- Create scrolling list for weights
+    local listWidth = 380
+    local listHeight = 355
+    local weightsList = OGST.CreateStyledScrollList(detailPanel, listWidth, listHeight)
+    OGST.AnchorElement(weightsList, desc, {position = "below", padding = 10})
+    
+    -- Add each consumable as a list item
+    for i, consumable in ipairs(consumables) do
+      local item = weightsList:AddItem({
+        text = string.format("[%d] %s", consumable.profileIndex, consumable.buffName)
+      })
+      
+      -- Plus button (rightmost)
+      local plusBtn = OGST.CreateButton(item, {
+        width = 18,
+        height = 18,
+        text = "+",
+        onClick = function()
+          local newWeight = item.currentWeight + 1
+          if newWeight > 10 then newWeight = 10 end  -- Max 10
+          item.currentWeight = newWeight
+          item.weightText:SetText(tostring(newWeight))
+          OGRH_SV.consumesTracking.weights[item.buffKey] = newWeight
+        end
+      })
+      plusBtn:SetPoint("RIGHT", item, "RIGHT", -5, 0)
+      
+      -- Minus button (left of plus)
+      local minusBtn = OGST.CreateButton(item, {
+        width = 18,
+        height = 18,
+        text = "-",
+        onClick = function()
+          local newWeight = item.currentWeight - 1
+          if newWeight < 0 then newWeight = 0 end  -- Min 0
+          item.currentWeight = newWeight
+          item.weightText:SetText(tostring(newWeight))
+          OGRH_SV.consumesTracking.weights[item.buffKey] = newWeight
+        end
+      })
+      minusBtn:SetPoint("RIGHT", plusBtn, "LEFT", -5, 0)
+      
+      -- Weight value display (left of minus button)
+      local weightText = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      weightText:SetPoint("RIGHT", minusBtn, "LEFT", -10, 0)
+      weightText:SetText(tostring(consumable.weight))
+      weightText:SetTextColor(1, 1, 0.5)
+      
+      -- Store references
+      item.buffKey = consumable.buffKey
+      item.weightText = weightText
+      item.currentWeight = consumable.weight
+    end
+    
+    table.insert(trackConsumesFrame.detailContent, desc)
+    table.insert(trackConsumesFrame.detailContent, weightsList)
     
   elseif actionName == "Mapping" then
     local desc = OGST.CreateStaticText(detailPanel, {
@@ -272,7 +421,8 @@ function CT.UpdateDetailPanel(actionName)
         table.insert(consumables, {
           buffKey = bar.buffKey,
           buffName = RAB_Buffs[bar.buffKey].name or bar.buffKey,
-          label = bar.label
+          label = bar.label,
+          index = i  -- Store the profile index
         })
       end
     end
@@ -300,8 +450,11 @@ function CT.UpdateDetailPanel(actionName)
     
     -- Add each consumable as a list item
     for i, consumable in ipairs(consumables) do
+      -- Create unique mapping key using buffKey and profile index
+      local mappingKey = consumable.buffKey .. "_" .. consumable.index
+      
       -- Initialize role mapping for this consumable if not exists
-      if not OGRH_SV.consumesTracking.roleMapping[consumable.buffKey] then
+      if not OGRH_SV.consumesTracking.roleMapping[mappingKey] then
         -- Get the label from RABuffs profile and parse it to determine initial checked state
         local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
         local profileBars = RABui_Settings.Layout[profileKey]
@@ -309,21 +462,19 @@ function CT.UpdateDetailPanel(actionName)
         local initialMapping = {tanks = false, healers = false, melee = false, ranged = false}
         
         if profileBars then
-          -- Find the bar with matching buffKey
-          for _, bar in ipairs(profileBars) do
-            if bar.buffKey == consumable.buffKey and bar.label then
-              initialMapping = CT.ParseLabelToRoles(bar.label)
-              break
-            end
+          -- Find the bar at this specific index
+          local bar = profileBars[consumable.index]
+          if bar and bar.buffKey == consumable.buffKey and bar.label then
+            initialMapping = CT.ParseLabelToRoles(bar.label)
           end
         end
         
-        OGRH_SV.consumesTracking.roleMapping[consumable.buffKey] = initialMapping
+        OGRH_SV.consumesTracking.roleMapping[mappingKey] = initialMapping
       end
       
-      -- Create item
+      -- Create item with index appended to name
       local item = mappingList:AddItem({
-        text = consumable.buffName
+        text = string.format("[%d] %s", consumable.index, consumable.buffName)
       })
       
       -- Add role checkboxes with icons
@@ -373,20 +524,22 @@ function CT.UpdateDetailPanel(actionName)
         checkbox:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
         
         -- Set initial checked state
-        checkbox:SetChecked(OGRH_SV.consumesTracking.roleMapping[consumable.buffKey][role])
+        checkbox:SetChecked(OGRH_SV.consumesTracking.roleMapping[mappingKey][role])
         
         -- Store reference for closure
         checkbox.buffKey = consumable.buffKey
+        checkbox.profileIndex = consumable.index
+        checkbox.mappingKey = mappingKey
         checkbox.role = role
         
         -- Click handler
         checkbox:SetScript("OnClick", function()
-          OGRH_SV.consumesTracking.roleMapping[this.buffKey][this.role] = this:GetChecked()
+          OGRH_SV.consumesTracking.roleMapping[this.mappingKey][this.role] = this:GetChecked()
           
           -- Update RABuffs label based on new role mapping
-          local roleMapping = OGRH_SV.consumesTracking.roleMapping[this.buffKey]
+          local roleMapping = OGRH_SV.consumesTracking.roleMapping[this.mappingKey]
           local newLabel = CT.GenerateLabelFromRoles(roleMapping)
-          CT.UpdateRABuffsLabel(this.buffKey, newLabel)
+          CT.UpdateRABuffsLabel(this.buffKey, newLabel, this.profileIndex)
         end)
         
         -- Update anchor for next pair
@@ -413,6 +566,24 @@ function CT.UpdateDetailPanel(actionName)
     -- Initialize conflict storage
     if not OGRH_SV.consumesTracking.conflicts then
       OGRH_SV.consumesTracking.conflicts = {}
+    end
+    
+    -- Migration: Add profileIndex to old conflicts that don't have it
+    local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
+    local profileBars = RABui_Settings and RABui_Settings.Layout and RABui_Settings.Layout[profileKey]
+    if profileBars then
+      for i = 1, table.getn(OGRH_SV.consumesTracking.conflicts) do
+        local conflict = OGRH_SV.consumesTracking.conflicts[i]
+        if conflict and conflict.buffKey and not conflict.profileIndex then
+          -- Find the first occurrence of this buffKey in the profile
+          for j, bar in ipairs(profileBars) do
+            if bar.buffKey == conflict.buffKey then
+              conflict.profileIndex = j
+              break
+            end
+          end
+        end
+      end
     end
     
     -- Top half: Conflict list (half height of detail panel)
@@ -482,21 +653,42 @@ function CT.UpdateDetailPanel(actionName)
     local function RefreshConflictList()
       conflictList:Clear()
       
-      -- Add existing conflicts with delete buttons
+      -- Build sortable list with buff names
       local conflicts = OGRH_SV.consumesTracking.conflicts
+      local sortedConflicts = {}
       for i = 1, table.getn(conflicts) do
         local conflict = conflicts[i]
         local buffName = "Unknown"
+        
         if RAB_Buffs and RAB_Buffs[conflict.buffKey] then
           buffName = RAB_Buffs[conflict.buffKey].name or conflict.buffKey
         end
         
-        local conflictText = buffName
+        table.insert(sortedConflicts, {
+          originalIndex = i,
+          buffName = buffName,
+          conflict = conflict
+        })
+      end
+      
+      -- Sort alphabetically by buff name
+      table.sort(sortedConflicts, function(a, b)
+        return a.buffName < b.buffName
+      end)
+      
+      -- Add sorted conflicts with delete buttons
+      for _, item in ipairs(sortedConflicts) do
+        local conflict = item.conflict
+        local buffName = item.buffName
+        local originalIndex = item.originalIndex
+        local buffIndex = conflict.profileIndex  -- Use stored profile index
+        
+        local conflictText = buffIndex and string.format("[%d] %s", buffIndex, buffName) or buffName
         if conflict.conflictsWith and table.getn(conflict.conflictsWith) > 0 then
           conflictText = conflictText .. " (conflicts: " .. table.getn(conflict.conflictsWith) .. ")"
         end
         
-        local capturedIndex = i  -- Capture for closure
+        local capturedIndex = originalIndex  -- Capture for closure
         conflictList:AddItem({
           text = conflictText,
           onClick = function()
@@ -680,7 +872,8 @@ function CT.ShowAddConflictDialog()
     if bar.buffKey and RAB_Buffs[bar.buffKey] then
       table.insert(consumables, {
         buffKey = bar.buffKey,
-        buffName = RAB_Buffs[bar.buffKey].name or bar.buffKey
+        buffName = RAB_Buffs[bar.buffKey].name or bar.buffKey,
+        index = i
       })
     end
   end
@@ -721,19 +914,21 @@ function CT.ShowAddConflictDialog()
     local consumable = consumables[i]
     local capturedBuffKey = consumable.buffKey  -- Capture for closure
     local capturedBuffName = consumable.buffName
+    local capturedIndex = consumable.index
     
     buffList:AddItem({
-      text = capturedBuffName,
+      text = string.format("[%d] %s", capturedIndex, capturedBuffName),
       onClick = function()
         -- Create new conflict entry
         if not OGRH_SV.consumesTracking.conflicts then
           OGRH_SV.consumesTracking.conflicts = {}
         end
         
-        -- Check if conflict already exists for this buff
+        -- Check if conflict already exists for this buff at this index
         local exists = false
         for j = 1, table.getn(OGRH_SV.consumesTracking.conflicts) do
-          if OGRH_SV.consumesTracking.conflicts[j].buffKey == capturedBuffKey then
+          local conflict = OGRH_SV.consumesTracking.conflicts[j]
+          if conflict.buffKey == capturedBuffKey and conflict.profileIndex == capturedIndex then
             exists = true
             break
           end
@@ -742,17 +937,14 @@ function CT.ShowAddConflictDialog()
         if not exists then
           table.insert(OGRH_SV.consumesTracking.conflicts, {
             buffKey = capturedBuffKey,
+            profileIndex = capturedIndex,
             conflictsWith = {}
           })
-          
-          OGRH.Msg("Added conflict configuration for " .. capturedBuffName)
           
           -- Refresh the Conflicts panel if it's visible
           if trackConsumesFrame and trackConsumesFrame:IsVisible() then
             CT.UpdateDetailPanel("Conflicts")
           end
-        else
-          OGRH.Msg("Conflict configuration already exists for " .. capturedBuffName)
         end
         
         -- Close dialog
@@ -768,15 +960,264 @@ end
 -- ============================================================================
 -- Consumables Polling (Preview)
 -- ============================================================================
+-- SCORING SYSTEM
+-- ============================================================================
+
+-- Helper: Get role letter from role name (TANKS->T, HEALERS->H, etc)
+local function GetRoleLetter(roleName)
+  if not roleName then return nil end
+  if roleName == "TANKS" then return "T"
+  elseif roleName == "HEALERS" then return "H"
+  elseif roleName == "MELEE" then return "M"
+  elseif roleName == "RANGED" then return "R"
+  end
+  return nil
+end
+
+-- Helper: Check if buff label includes a role letter
+local function BuffAppliesToRole(buffLabel, roleLetter)
+  if not buffLabel or not roleLetter then return false end
+  return string.find(buffLabel, roleLetter) ~= nil
+end
+
+-- Helper: Get conflict data for a buff at a specific profile index
+local function GetBuffConflict(buffKey, profileIndex)
+  if not OGRH_SV or not OGRH_SV.consumesTracking or not OGRH_SV.consumesTracking.conflicts then
+    return nil
+  end
+  
+  for _, conflict in ipairs(OGRH_SV.consumesTracking.conflicts) do
+    if conflict.buffKey == buffKey then
+      -- If profileIndex is provided, check it; otherwise match any
+      if profileIndex and conflict.profileIndex then
+        if conflict.profileIndex == profileIndex then
+          return conflict
+        end
+      else
+        -- Legacy support: if no profileIndex stored, match by buffKey only
+        return conflict
+      end
+    end
+  end
+  return nil
+end
+
+-- Helper: Check if player has any buff from a conflict group
+local function HasAnyBuffFromConflict(playerBuffs, conflictBuffKeys)
+  for _, buffKey in ipairs(conflictBuffKeys) do
+    if playerBuffs[buffKey] then
+      return true
+    end
+  end
+  return false
+end
+
+-- Calculate score for a single player
+function CT.CalculatePlayerScore(playerName, playerClass, raidData)
+  -- Get player's role from RolesUI
+  local playerRole = OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[playerName]
+  if not playerRole then
+    return nil, "No role assigned"
+  end
+  
+  local roleLetter = GetRoleLetter(playerRole)
+  if not roleLetter then
+    return nil, "Invalid role"
+  end
+  
+  -- Get player's buffs
+  local playerBuffs = {} -- {buffKey = true}
+  if raidData and raidData[playerName] then
+    playerBuffs = raidData[playerName].buffs or {}
+  end
+  
+  -- Load profile bars
+  local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
+  local profileBars = RABui_Settings and RABui_Settings.Layout and RABui_Settings.Layout[profileKey]
+  if not profileBars then
+    return nil, "Profile not found"
+  end
+  
+  -- Build list of required buffs for this player's role
+  local requiredBuffs = {} -- {buffKey = {bar, profileIndex}}
+  for profileIndex, bar in ipairs(profileBars) do
+    if bar.buffKey and RAB_Buffs[bar.buffKey] then
+      -- Check if buff applies to player's role
+      if BuffAppliesToRole(bar.label, roleLetter) then
+        -- Check class restrictions
+        local includeForClass = true
+        if bar.classes and bar.classes ~= "" and RAB_ClassShort and RAB_ClassShort[playerClass] then
+          local classCode = RAB_ClassShort[playerClass]
+          includeForClass = string.find(bar.classes, classCode) ~= nil
+        end
+        
+        if includeForClass then
+          -- Store as array to handle multiple entries with same buffKey
+          if not requiredBuffs[bar.buffKey] then
+            requiredBuffs[bar.buffKey] = {}
+          end
+          table.insert(requiredBuffs[bar.buffKey], {bar = bar, profileIndex = profileIndex})
+        end
+      end
+    end
+  end
+  
+  -- Group buffs by conflict type
+  -- Simpler approach: All buffs with same conflict type are grouped together
+  local conflictGroups = {} -- {conflictId = {buffKeys, hasAny}}
+  local processedBuffs = {} -- Track which buffs we've handled (buffKey_profileIndex)
+  
+  for buffKey, entries in pairs(requiredBuffs) do
+    for _, entry in ipairs(entries) do
+      local profileIndex = entry.profileIndex
+      local processKey = buffKey .. "_" .. profileIndex
+      
+      if not processedBuffs[processKey] then
+        local conflict = GetBuffConflict(buffKey, profileIndex)
+        
+        if conflict and conflict.conflictType then
+          local conflictId = conflict.conflictType
+          
+          -- For Group conflicts, include the group number in the ID
+          if conflict.conflictType == "Group" and conflict.groupNumber then
+            conflictId = "Group_" .. conflict.groupNumber
+          end
+          
+          -- Skip concoctions from conflict grouping - they're handled specially
+          local isConcoction = (buffKey == "emeraldmongoose" or buffKey == "dreamwater" or buffKey == "arcanegiants")
+          if not isConcoction then
+            if not conflictGroups[conflictId] then
+              conflictGroups[conflictId] = {buffKeys = {}, hasAny = false}
+            end
+            
+            table.insert(conflictGroups[conflictId].buffKeys, buffKey)
+            
+            if playerBuffs[buffKey] then
+              conflictGroups[conflictId].hasAny = true
+            end
+            
+            processedBuffs[processKey] = true
+          else
+            -- Mark concoctions as processed so they don't get counted in standalone loop
+            processedBuffs[processKey] = true
+          end
+        end
+      end
+    end
+  end
+  
+  -- Calculate score
+  -- Special handling for concoctions:
+  -- - Concoctions themselves don't count as possible buffs
+  -- - When checking if a player has a required buff, also check if they have a concoction that replaces it
+  local concoctionReplacements = {
+    emeraldmongoose = {"mongoose", "dreamshard"},     -- Emerald Mongoose replaces Mongoose + Dreamshard
+    dreamwater = {"firewater", "dreamtonic"},         -- Dreamwater replaces Firewater + Dreamtonic
+    arcanegiants = {"giants", "greaterarcane"}        -- Arcane Giant replaces Giants + Greater Arcane
+  }
+  
+  -- Helper function: Check if player has a buff OR a concoction that replaces it
+  local function PlayerHasBuff(buffKey)
+    -- Direct buff check
+    if playerBuffs[buffKey] then
+      return true
+    end
+    
+    -- Check if any concoction replaces this buff
+    for concKey, replacedBuffs in pairs(concoctionReplacements) do
+      if playerBuffs[concKey] then
+        for _, replacedKey in ipairs(replacedBuffs) do
+          if replacedKey == buffKey then
+            return true
+          end
+        end
+      end
+    end
+    
+    return false
+  end
+  
+  -- Helper function: Get weight for a buff (default 1)
+  local function GetBuffWeight(buffKey)
+    local weight = OGRH_SV.consumesTracking.weights[buffKey]
+    if weight and weight > 0 then
+      return weight
+    end
+    return 1  -- Default weight
+  end
+  
+  local possiblePoints = 0
+  local actualPoints = 0
+  
+  -- Count conflict groups (each group uses the weight of the first buff)
+  for conflictId, group in pairs(conflictGroups) do
+    -- Use weight of first buff in group
+    local firstBuff = group.buffKeys[1]
+    local weight = GetBuffWeight(firstBuff)
+    
+    possiblePoints = possiblePoints + weight
+    -- Check if player has any buff from this group (including concoction replacements)
+    local hasGroupBuff = false
+    for _, buffKey in ipairs(group.buffKeys) do
+      if PlayerHasBuff(buffKey) then
+        hasGroupBuff = true
+        break
+      end
+    end
+    if hasGroupBuff then
+      actualPoints = actualPoints + weight
+    end
+  end
+  
+  -- Count standalone buffs (not in any conflict)
+  -- Exclude ONLY the 3 concoction items from possible count
+  -- Buffs they replace still count as possible, and we check for concoctions when evaluating them
+  for buffKey, entries in pairs(requiredBuffs) do
+    for _, entry in ipairs(entries) do
+      local profileIndex = entry.profileIndex
+      local processKey = buffKey .. "_" .. profileIndex
+      
+      if not processedBuffs[processKey] then
+        -- Check if this is one of the 3 concoctions
+        local isConcoction = (buffKey == "emeraldmongoose" or buffKey == "dreamwater" or buffKey == "arcanegiants")
+        
+        if not isConcoction then
+          -- Get configurable weight for this buff
+          local buffValue = GetBuffWeight(buffKey)
+          
+          possiblePoints = possiblePoints + buffValue
+          
+          -- Check if player has this buff OR a concoction that replaces it
+          if PlayerHasBuff(buffKey) then
+            actualPoints = actualPoints + buffValue
+          end
+        end
+        -- If it IS a concoction, don't count it as a possible point
+      end
+    end
+  end
+  
+  local score = possiblePoints > 0 and floor((actualPoints / possiblePoints) * 100) or 0
+  
+  return score, nil, {
+    possible = possiblePoints,
+    actual = actualPoints,
+    role = playerRole,
+    roleLetter = roleLetter,
+    hasBuffs = playerBuffs,
+    conflictGroups = conflictGroups,
+    requiredBuffs = requiredBuffs,
+    concoctionReplacements = concoctionReplacements
+  }
+end
+
+-- ============================================================================
 
 -- Poll current consumables status from RABuffs
 function CT.PollConsumes(editBox, scrollBar, scrollFrame)
   if not editBox then
-    OGRH.Msg("PollConsumes error: editBox is nil")
     return
   end
-  
-  OGRH.Msg("Poll Consumes clicked - updating text...")
   
   if not CT.IsRABuffsAvailable() then
     editBox:SetText("|cffff0000Error:|r RABuffs addon not found.")
@@ -798,15 +1239,264 @@ function CT.PollConsumes(editBox, scrollBar, scrollFrame)
     return
   end
   
+  -- Build raid data structure: {playerName = {class, buffs={buffKey=true}}}
+  local raidData = {}
+  
+  -- First pass: collect all player buff data
+  for i, bar in ipairs(profileBars) do
+    if bar.buffKey and RAB_Buffs[bar.buffKey] then
+      local buffed, fading, total, misc, mhead, hhead, mtext, htext, invert, raw = RAB_CallRaidBuffCheck(bar, true, true)
+      
+      if raw and type(raw) == "table" then
+        for _, playerData in ipairs(raw) do
+          if playerData and playerData.name then
+            local playerName = playerData.name
+            local playerClass = playerData.class
+            
+            if not raidData[playerName] then
+              raidData[playerName] = {
+                class = playerClass,
+                buffs = {}
+              }
+            end
+            
+            if playerData.buffed then
+              raidData[playerName].buffs[bar.buffKey] = true
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- Calculate scores for all players
+  local playerScores = {} -- {{name, class, score, details}}
+  for playerName, data in pairs(raidData) do
+    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData)
+    if score then
+      table.insert(playerScores, {
+        name = playerName,
+        class = data.class,
+        score = score,
+        details = details
+      })
+    end
+  end
+  
+  -- Sort by score (highest first), then by name
+  table.sort(playerScores, function(a, b)
+    if a.score ~= b.score then
+      return a.score > b.score
+    else
+      return a.name < b.name
+    end
+  end)
+  
+  -- Calculate average score
+  local totalScore = 0
+  local countScored = 0
+  for _, playerScore in ipairs(playerScores) do
+    totalScore = totalScore + playerScore.score
+    countScored = countScored + 1
+  end
+  local avgScore = countScored > 0 and floor(totalScore / countScored) or 0
+  
   -- Build output text
   local output = {}
-  table.insert(output, "|cff00ff00=== Consumables Status ===|r")
+  table.insert(output, "|cff00ff00=== Consumables Ranking ===|r")
   table.insert(output, string.format("Time: %s", date("%H:%M:%S")))
-  table.insert(output, string.format("Profile: OGRH_Consumables (%d buffs)", table.getn(profileBars)))
+  table.insert(output, string.format("Players: %d | Avg Score: %d%%", countScored, avgScore))
   table.insert(output, "")
   
-  -- Don't modify RABui_Bars - just iterate the profile bars directly
-  -- Poll each bar from the OGRH_Consumables profile
+  -- Display ranked players with detailed consumable lists
+  for rank, playerScore in ipairs(playerScores) do
+    local details = playerScore.details
+    
+    -- Color based on score
+    local color
+    if playerScore.score >= 80 then
+      color = "|cff00ff00" -- Green
+    elseif playerScore.score >= 60 then
+      color = "|cffffff00" -- Yellow  
+    elseif playerScore.score >= 40 then
+      color = "|cffffaa00" -- Orange
+    else
+      color = "|cffff0000" -- Red
+    end
+    
+    table.insert(output, string.format("%s%d. %s [%s] - %d%% (%d/%d)|r",
+      color,
+      rank,
+      OGRH.ColorName(playerScore.name),
+      details.role or "?",
+      playerScore.score,
+      details.actual or 0,
+      details.possible or 0
+    ))
+    
+    -- Build lists of buffs/groups they have and are missing
+    -- Use conflict groups from the scoring details
+    local conflictGroups = details.conflictGroups or {}
+    local processedBuffs = {} -- Track which buffs are in conflict groups
+    local requiredBuffs = details.requiredBuffs or {}
+    local concoctionReplacements = details.concoctionReplacements or {}
+    local playerBuffs = details.hasBuffs or {}
+    local roleLetter = details.roleLetter
+    local playerClass = playerScore.class
+    local hasList = {}
+    local missingList = {}
+    
+    -- Build satisfiedByConcoction table: which buffs are satisfied by concoctions the player has
+    local satisfiedByConcoction = {}
+    for concKey, replacedBuffs in pairs(concoctionReplacements) do
+      if playerBuffs[concKey] then
+        for _, replacedKey in ipairs(replacedBuffs) do
+          -- Only mark as satisfied if the replaced buff is actually required for this player
+          if requiredBuffs[replacedKey] then
+            satisfiedByConcoction[replacedKey] = concKey
+          end
+        end
+      end
+    end
+    
+    -- First, display conflict groups (but handle concoctions specially)
+    for conflictId, group in pairs(conflictGroups) do
+      local groupBuffNames = {}
+      local seenNames = {} -- Avoid duplicates
+      for _, buffKey in ipairs(group.buffKeys) do
+        if RAB_Buffs[buffKey] then
+          local buffName = RAB_Buffs[buffKey].name or buffKey
+          if not seenNames[buffName] then
+            table.insert(groupBuffNames, buffName)
+            seenNames[buffName] = true
+          end
+        end
+        processedBuffs[buffKey] = true
+      end
+      
+      -- Determine conflict group display name
+      local groupName = conflictId
+      if conflictId == "Concoction" then
+        -- Special handling: show individual concoctions player has
+        -- Don't show as a grouped conflict, handle individually below
+        for _, buffKey in ipairs(group.buffKeys) do
+          processedBuffs[buffKey] = true -- Mark as processed so they don't appear in standalone
+        end
+      elseif conflictId == "Food" then
+        groupName = "Food (any: " .. table.concat(groupBuffNames, ", ") .. ")"
+        if group.hasAny then
+          table.insert(hasList, groupName)
+        else
+          table.insert(missingList, groupName)
+        end
+      elseif conflictId == "Drink" then
+        groupName = "Drink (any: " .. table.concat(groupBuffNames, ", ") .. ")"
+        if group.hasAny then
+          table.insert(hasList, groupName)
+        else
+          table.insert(missingList, groupName)
+        end
+      elseif conflictId == "BlastedLands" then
+        groupName = "Blasted Lands buff (any: " .. table.concat(groupBuffNames, ", ") .. ")"
+        if group.hasAny then
+          table.insert(hasList, groupName)
+        else
+          table.insert(missingList, groupName)
+        end
+      elseif string.find(conflictId, "^Group_") then
+        local groupNum = string.sub(conflictId, 7)
+        groupName = "Group " .. groupNum .. " buff (any: " .. table.concat(groupBuffNames, ", ") .. ")"
+        if group.hasAny then
+          table.insert(hasList, groupName)
+        else
+          table.insert(missingList, groupName)
+        end
+      end
+    end
+    
+    -- Then, display standalone buffs (not in any conflict)
+    
+    for _, bar in ipairs(profileBars) do
+      if bar.buffKey and RAB_Buffs[bar.buffKey] and not processedBuffs[bar.buffKey] then
+        -- Check if this buff applies to this player
+        local appliesToRole = BuffAppliesToRole(bar.label, roleLetter)
+        if appliesToRole then
+          -- Check class restrictions
+          local includeForClass = true
+          if bar.classes and bar.classes ~= "" and RAB_ClassShort and RAB_ClassShort[playerClass] then
+            local classCode = RAB_ClassShort[playerClass]
+            includeForClass = string.find(bar.classes, classCode) ~= nil
+          end
+          
+          if includeForClass then
+            local buffName = RAB_Buffs[bar.buffKey].name or bar.buffKey
+            local buffKey = bar.buffKey
+            
+            -- Check if it's a concoction the player has
+            local isConcoction = (buffKey == "emeraldmongoose" or buffKey == "dreamwater" or buffKey == "arcanegiants")
+            if isConcoction and playerBuffs[buffKey] then
+              -- Calculate how many required buffs this concoction replaces
+              local replacedBuffs = concoctionReplacements[buffKey] or {}
+              local replacedCount = 0
+              for _, replacedKey in ipairs(replacedBuffs) do
+                if requiredBuffs[replacedKey] then
+                  replacedCount = replacedCount + 1
+                end
+              end
+              -- Show concoction with actual contribution
+              if replacedCount > 0 then
+                table.insert(hasList, buffName .. " (+" .. replacedCount .. ")")
+              else
+                table.insert(hasList, buffName)
+              end
+            elseif not isConcoction then
+              -- Regular buff
+              if playerBuffs[buffKey] then
+                table.insert(hasList, buffName)
+              elseif not satisfiedByConcoction[buffKey] then
+                -- Only show as missing if it's not satisfied by a concoction
+                table.insert(missingList, buffName)
+              end
+            end
+          end
+        end
+      end
+    end
+    
+    -- Display what they have
+    if table.getn(hasList) > 0 then
+      table.insert(output, "   |cff00ff00✓ Has:|r")
+      for _, item in ipairs(hasList) do
+        table.insert(output, "      " .. item)
+      end
+    end
+    
+    -- Display what they're missing
+    if table.getn(missingList) > 0 then
+      table.insert(output, "   |cffff8800✗ Missing:|r")
+      for _, item in ipairs(missingList) do
+        table.insert(output, "      " .. item)
+      end
+    end
+    
+    -- Add spacing between players
+    table.insert(output, "")
+  end
+  
+  if countScored == 0 then
+    table.insert(output, "|cffff8800No players with assigned roles found.|r")
+    table.insert(output, "")
+    table.insert(output, "Please assign roles in the Roles UI first.")
+    table.insert(output, "")
+  end
+  
+  table.insert(output, "|cff888888Note: Scores based on role requirements and conflict configuration.|r")
+  
+  -- OLD CODE REMOVED: Individual buff status listings
+  -- Now we show ranked player scores instead
+  
+  -- Commented out old buff-by-buff display
+  --[[
   for i, bar in ipairs(profileBars) do
     if bar.buffKey and RAB_Buffs[bar.buffKey] then
       -- Call with needraw=true to get detailed player data
@@ -827,40 +1517,10 @@ function CT.PollConsumes(editBox, scrollBar, scrollFrame)
         color = "|cffff0000" -- Red
       end
       
-      table.insert(output, string.format("%s[%s] %s: %d/%d (%d%%)|r", 
-        color, bar.label or "?", buffName, buffedCount, totalCount, percentage))
-      
-      -- Add detailed player info if available
-      if raw and type(raw) == "table" and table.getn(raw) > 0 then
-        local withBuff = {}
-        local withoutBuff = {}
-        
-        for _, playerData in ipairs(raw) do
-          if playerData and playerData.name then
-            local playerName = playerData.name
-            local playerClass = playerData.class or "Unknown"
-            local playerGroup = playerData.group or 0
-            local formattedName = string.format("%s [%s; G%d]", playerName, playerClass, playerGroup)
-            
-            if playerData.buffed then
-              table.insert(withBuff, formattedName)
-            else
-              table.insert(withoutBuff, formattedName)
-            end
-          end
-        end
-        
-        if table.getn(withBuff) > 0 then
-          table.insert(output, "  |cff00ff00With buff:|r " .. table.concat(withBuff, ", "))
-        end
-        if table.getn(withoutBuff) > 0 then
-          table.insert(output, "  |cffff8800Missing:|r " .. table.concat(withoutBuff, ", "))
-        end
-      end
-      
-      table.insert(output, "")
+      -- OLD BUFF-BY-BUFF DISPLAY CODE REMOVED
     end
   end
+  --]]
   
   -- Update output text in editBox
   local outputStr = table.concat(output, "\n")
@@ -881,8 +1541,101 @@ function CT.PollConsumes(editBox, scrollBar, scrollFrame)
       scrollBar:SetValue(0)  -- Scroll to top
     end
   end
+end
+
+-- Announce top 10 consumables scores to raid chat
+function CT.AnnounceConsumes()
+  if not CT.IsRABuffsAvailable() then
+    OGRH.Msg("Error: RABuffs addon not found.")
+    return
+  end
   
-  OGRH.Msg("Poll complete - " .. table.getn(profileBars) .. " buffs checked")
+  if not CT.CheckForOGRHProfile() then
+    OGRH.Msg("Error: OGRH_Consumables profile not found.")
+    return
+  end
+  
+  -- Load the OGRH_Consumables profile bars
+  local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
+  local profileBars = RABui_Settings.Layout[profileKey]
+  
+  if not profileBars or table.getn(profileBars) == 0 then
+    OGRH.Msg("Error: OGRH_Consumables profile has no bars configured.")
+    return
+  end
+  
+  -- Build raid data structure
+  local raidData = {}
+  
+  for i, bar in ipairs(profileBars) do
+    if bar.buffKey and RAB_Buffs[bar.buffKey] then
+      local buffed, fading, total, misc, mhead, hhead, mtext, htext, invert, raw = RAB_CallRaidBuffCheck(bar, true, true)
+      
+      if raw and type(raw) == "table" then
+        for _, playerData in ipairs(raw) do
+          if playerData and playerData.name then
+            local playerName = playerData.name
+            local playerClass = playerData.class
+            
+            if not raidData[playerName] then
+              raidData[playerName] = {
+                class = playerClass,
+                buffs = {}
+              }
+            end
+            
+            if playerData.buffed then
+              raidData[playerName].buffs[bar.buffKey] = true
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- Calculate scores for all players
+  local playerScores = {}
+  for playerName, data in pairs(raidData) do
+    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData)
+    if score then
+      table.insert(playerScores, {
+        name = playerName,
+        class = data.class,
+        score = score,
+        details = details
+      })
+    end
+  end
+  
+  -- Sort by score (highest first), then by name
+  table.sort(playerScores, function(a, b)
+    if a.score ~= b.score then
+      return a.score > b.score
+    else
+      return a.name < b.name
+    end
+  end)
+  
+  -- Announce header
+  SendChatMessage("=== Consumables Ranking (Top 10) ===", "RAID")
+  
+  -- Announce top 10 players
+  local maxPlayers = math.min(10, table.getn(playerScores))
+  for rank = 1, maxPlayers do
+    local playerScore = playerScores[rank]
+    local details = playerScore.details
+    
+    local message = string.format("%d. %s [%s] - %d%% (%d/%d)",
+      rank,
+      playerScore.name,
+      details.role or "?",
+      playerScore.score,
+      details.actual or 0,
+      details.possible or 0
+    )
+    
+    SendChatMessage(message, "RAID")
+  end
 end
 
 -- ============================================================================
@@ -893,9 +1646,6 @@ end
 function CT.IsRABuffsAvailable()
   return RAB_CallRaidBuffCheck ~= nil and RAB_ImportProfile ~= nil
 end
-
--- Profile data for OGRH consumables tracking
-local OGRH_CONSUMABLES_PROFILE = '{[1]={["excludeNames"]={},["label"]="TXMX",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="arcanegiants",["priority"]=1,["useOnClick"]=false},[2]={["excludeNames"]={},["label"]="TXMX",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" as",["groups"]="",["out"]="RAID",["buffKey"]="dreamwater",["priority"]=1,["useOnClick"]=false},[3]={["excludeNames"]={},["label"]="TXMX",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" as",["groups"]="",["out"]="RAID",["buffKey"]="emeraldmongoose",["priority"]=1,["useOnClick"]=false},[4]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="telabimdelight",["priority"]=1,["useOnClick"]=false},[5]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="telabimsurprise",["priority"]=1,["useOnClick"]=false},[6]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" as",["groups"]="",["out"]="RAID",["buffKey"]="dreamshard",["priority"]=1,["useOnClick"]=false},[7]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" as",["groups"]="",["out"]="RAID",["buffKey"]="dreamtonic",["priority"]=1,["useOnClick"]=false},[8]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" wd",["groups"]="",["out"]="RAID",["buffKey"]="giants",["priority"]=1,["useOnClick"]=false},[9]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="greaterarcanepower",["priority"]=1,["useOnClick"]=false},[10]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="greaterfirepower",["priority"]=1,["useOnClick"]=false},[11]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="greaterfrostpower",["priority"]=1,["useOnClick"]=false},[12]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="greaternaturepower",["priority"]=1,["useOnClick"]=false},[13]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="mongoose",["priority"]=1,["useOnClick"]=false},[14]={["excludeNames"]={},["label"]="TXXX",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="supdef",["priority"]=1,["useOnClick"]=false},[15]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" lp",["groups"]="",["out"]="RAID",["buffKey"]="shadowpower",["priority"]=1,["useOnClick"]=false},[16]={["excludeNames"]={},["label"]="TXXX",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="titans",["priority"]=1,["useOnClick"]=false},[17]={["excludeNames"]={},["label"]="TXXX",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="giftarthas",["priority"]=1,["useOnClick"]=false},[18]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" as",["groups"]="",["out"]="RAID",["buffKey"]="greaterarcane",["priority"]=1,["useOnClick"]=false},[19]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="scorpok",["priority"]=1,["useOnClick"]=false},[20]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="mushroomstam",["priority"]=1,["useOnClick"]=false},[21]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="herbalsalad",["priority"]=1,["useOnClick"]=false},[22]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" wsd",["groups"]="",["out"]="RAID",["buffKey"]="jujumight",["priority"]=1,["useOnClick"]=false},[23]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="merlot",["priority"]=1,["useOnClick"]=false},[24]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="nightfinsoup",["priority"]=1,["useOnClick"]=false},[25]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="roids",["priority"]=1,["useOnClick"]=false},[26]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="rumseyrum",["priority"]=1,["useOnClick"]=false},[27]={["excludeNames"]={},["label"]="TXMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]=" wsd",["groups"]="",["out"]="RAID",["buffKey"]="firewater",["priority"]=1,["useOnClick"]=false},[28]={["excludeNames"]={},["label"]="THMR",["color"]={[1]=1,[2]=1,[3]=1},["extralabel"]="",["selfLimit"]=false,["classes"]="",["groups"]="",["out"]="RAID",["buffKey"]="spiritofzanza",["priority"]=1,["useOnClick"]=false}}'
 
 -- Check if the OGRH consumables profile exists in RABuffs
 function CT.CheckForOGRHProfile()
@@ -931,7 +1681,14 @@ function CT.InitializeRABuffsIntegration()
       RABui_Settings.Layout = {}
     end
     
-    local success = RAB_ImportProfile("OGRH_Consumables", OGRH_CONSUMABLES_PROFILE)
+    -- Use the default profile from the external defaults file
+    local profileData = OGRH.ConTrack and OGRH.ConTrack.DefaultProfile
+    if not profileData then
+      OGRH.Msg("|cffff0000Error:|r OGRH_ConTrack_Defaults.lua not loaded.")
+      return false
+    end
+    
+    local success = RAB_ImportProfile("OGRH_Consumables", profileData)
     if success then
       OGRH.Msg("OGRH_Consumables profile created in RABuffs.")
       
@@ -949,7 +1706,7 @@ function CT.InitializeRABuffsIntegration()
 end
 
 -- Update the label for a specific buff in RABuffs profile
-function CT.UpdateRABuffsLabel(buffKey, newLabel)
+function CT.UpdateRABuffsLabel(buffKey, newLabel, profileIndex)
   if not CT.IsRABuffsAvailable() then
     return false
   end
@@ -966,11 +1723,20 @@ function CT.UpdateRABuffsLabel(buffKey, newLabel)
     return false
   end
   
-  -- Find the bar with matching buffKey and update its label
-  for i, bar in ipairs(profileBars) do
-    if bar.buffKey == buffKey then
+  -- If profileIndex is provided, update that specific bar
+  if profileIndex then
+    local bar = profileBars[profileIndex]
+    if bar and bar.buffKey == buffKey then
       bar.label = newLabel
       return true
+    end
+  else
+    -- Legacy: Find the first bar with matching buffKey (for backward compatibility)
+    for i, bar in ipairs(profileBars) do
+      if bar.buffKey == buffKey then
+        bar.label = newLabel
+        return true
+      end
     end
   end
   
