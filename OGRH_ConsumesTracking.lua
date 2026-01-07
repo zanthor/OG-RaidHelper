@@ -25,6 +25,7 @@ function CT.EnsureSavedVariables()
       trackingProfiles = {},
       logToMemory = true,
       maxEntries = 200,
+      secondsBeforePull = 2,
       pullTriggers = {
         "pull%s+(%d+)",
         "пулл%s+(%d+)",
@@ -35,6 +36,11 @@ function CT.EnsureSavedVariables()
       mapping = {},
       weights = {}
     }
+  end
+  
+  -- Ensure secondsBeforePull exists for existing saves
+  if not OGRH_SV.consumesTracking.secondsBeforePull then
+    OGRH_SV.consumesTracking.secondsBeforePull = 2
   end
   
   -- Ensure sub-tables exist
@@ -207,15 +213,37 @@ function CT.UpdateDetailPanel(actionName)
   end
   
   if actionName == "Enable Tracking" then
-    -- Enable/Disable checkbox using OGST
+    -- Track on Pull checkbox using OGST
     local enableCheckbox, checkButton, checkLabel = OGST.CreateCheckbox(detailPanel, {
-      label = "Enable Tracking",
+      label = "Track on Pull",
       checked = OGRH_SV.consumesTracking.enabled,
       onChange = function(isChecked)
         OGRH_SV.consumesTracking.enabled = isChecked
       end
     })
     OGST.AnchorElement(enableCheckbox, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
+    
+    -- Numeric text input for seconds before pull with label
+    local secondsContainer, secondsBackdrop, secondsEditBox, secondsLabelText = OGST.CreateSingleLineTextBox(detailPanel, 150, 20, {
+      maxLetters = 2,
+      numeric = true,
+      align = "CENTER",
+      textBoxWidth = 40,
+      label = "seconds before pull.",
+      labelWidth = 100,
+      labelAnchor = "RIGHT",
+      labelFont = "GameFontNormalSmall",
+      gap = 5,
+      onChange = function(text)
+        local value = tonumber(text)
+        if value and value >= 0 and value <= 99 then
+          OGRH_SV.consumesTracking.secondsBeforePull = value
+        end
+      end
+    })
+    -- Set initial text
+    secondsEditBox:SetText(tostring(OGRH_SV.consumesTracking.secondsBeforePull or 2))
+    OGST.AnchorElement(secondsContainer, enableCheckbox, {position = "right", align = "center", offsetX = 5})
     
     -- Description
     local desc = OGST.CreateStaticText(detailPanel, {
@@ -227,6 +255,7 @@ function CT.UpdateDetailPanel(actionName)
     OGST.AnchorElement(desc, enableCheckbox, {position = "below", align = "left"})
     
     table.insert(trackConsumesFrame.detailContent, enableCheckbox)
+    table.insert(trackConsumesFrame.detailContent, secondsContainer)
     table.insert(trackConsumesFrame.detailContent, desc)
     
   elseif actionName == "Preview Tracking" then
