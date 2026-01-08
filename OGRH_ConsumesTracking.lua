@@ -22,6 +22,7 @@ function CT.EnsureSavedVariables()
   if not OGRH_SV.consumesTracking then
     OGRH_SV.consumesTracking = {
       enabled = true,
+      trackOnPull = false,
       trackingProfiles = {},
       logToMemory = true,
       maxEntries = 200,
@@ -36,6 +37,11 @@ function CT.EnsureSavedVariables()
       mapping = {},
       weights = {}
     }
+  end
+  
+  -- Ensure trackOnPull exists for existing saves
+  if OGRH_SV.consumesTracking.trackOnPull == nil then
+    OGRH_SV.consumesTracking.trackOnPull = false
   end
   
   -- Ensure secondsBeforePull exists for existing saves
@@ -77,6 +83,7 @@ end
 -- ============================================================================
 
 local trackConsumesFrame = nil
+local eventHandlerFrame = nil  -- Separate frame for event handling
 
 -- Show the Track Consumes window
 function OGRH.ShowTrackConsumes()
@@ -222,9 +229,9 @@ function CT.UpdateDetailPanel(actionName)
     -- Track on Pull checkbox using OGST
     local enableCheckbox, checkButton, checkLabel = OGST.CreateCheckbox(detailPanel, {
       label = "Track on Pull",
-      checked = OGRH_SV.consumesTracking.enabled,
+      checked = OGRH_SV.consumesTracking.trackOnPull,
       onChange = function(isChecked)
-        OGRH_SV.consumesTracking.enabled = isChecked
+        OGRH_SV.consumesTracking.trackOnPull = isChecked
       end
     })
     OGST.AnchorElement(enableCheckbox, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
@@ -1868,6 +1875,13 @@ end
 function CT.Initialize()
   CT.EnsureSavedVariables()
   
+  -- Register for BigWigs pull timer detection (Phase 3)
+  if not eventHandlerFrame then
+    eventHandlerFrame = CreateFrame("Frame", "OGRH_ConsumesTrackingEventFrame")
+  end
+  eventHandlerFrame:RegisterEvent("CHAT_MSG_ADDON")
+  eventHandlerFrame:SetScript("OnEvent", CT.OnPullTimerDetected)
+  
   -- Delay RABuffs integration to ensure it's fully loaded
   local rabuffsInitFrame = CreateFrame("Frame")
   local attempts = 0
@@ -1897,6 +1911,28 @@ end
 CT.selectedRecordIndex = nil
 CT.historyListFrame = nil
 CT.playerScoresListFrame = nil
+
+-- ============================================================================
+-- Phase 3: Pull Detection System - State Variables
+-- ============================================================================
+
+-- Current pull tracking state
+CT.currentPullNumber = 0
+CT.currentPullRequester = "Unknown"
+CT.currentPullStartTime = 0
+CT.captureScheduled = false
+CT.captureTimerFrame = nil
+
+-- ============================================================================
+-- Phase 3: Pull Detection System - State Variables
+-- ============================================================================
+
+-- Current pull tracking state
+CT.currentPullNumber = 0
+CT.currentPullRequester = "Unknown"
+CT.currentPullStartTime = 0
+CT.captureScheduled = false
+CT.captureTimerFrame = nil
 
 -- Sort players by role and score for display
 -- @param players table: Array of player records {name, class, role, score}
@@ -2025,6 +2061,87 @@ function CT.CaptureConsumesSnapshot()
   -- Announce to chat
   OGRH.Msg(string.format("Captured consume scores for %s - %s (%d players)", 
     raid, encounter, table.getn(players)))
+end
+
+-- ============================================================================
+-- Phase 3: Pull Detection System
+-- ============================================================================
+
+-- Schedule a capture timer based on pull duration
+-- @param pullDuration number: Total pull timer duration in seconds
+function CT.ScheduleCaptureTimer(pullDuration)
+  local secondsBeforePull = OGRH_SV.consumesTracking.secondsBeforePull or 2
+  local captureDelay = pullDuration - secondsBeforePull
+  
+  -- If pull is too short, capture immediately
+  if captureDelay <= 0 then
+    CT.CaptureConsumesSnapshot()
+    return
+  end
+  
+  -- Create timer frame if it doesn't exist
+  if not CT.captureTimerFrame then
+    CT.captureTimerFrame = CreateFrame("Frame")
+  end
+  
+  -- Set up timer
+  local startTime = GetTime()
+  local targetTime = startTime + captureDelay
+  CT.captureScheduled = true
+  
+  CT.captureTimerFrame:SetScript("OnUpdate", function()
+    local now = GetTime()
+    if now >= targetTime then
+      -- Time to capture!
+      this:SetScript("OnUpdate", nil)
+      CT.captureScheduled = false
+      CT.CaptureConsumesSnapshot()
+    end
+  end)
+end
+
+-- Event handler for BigWigs pull timer detection
+-- This function is called on CHAT_MSG_ADDON events
+function CT.OnPullTimerDetected()
+  if event ~= "CHAT_MSG_ADDON" then return end
+  
+  -- Ensure saved variables exist
+  if not OGRH_SV or not OGRH_SV.consumesTracking then return end
+  
+  -- Check if track on pull is enabled
+  if not OGRH_SV.consumesTracking.trackOnPull then return end
+  
+  -- Prevent duplicate captures for the same pull
+  if CT.captureScheduled then return end
+  
+  -- arg1 = prefix ("BigWigs")
+  -- arg2 = message ("PulltimerSync 10" or "PulltimerBroadcastSync 10")
+  -- arg3 = channel ("RAID" or "PARTY")
+  -- arg4 = sender (player name)
+  
+  if arg1 == "BigWigs" and arg2 and arg4 then
+    local message = arg2
+    local sender = arg4
+    
+    -- Parse pull timer duration from message
+    local _, _, duration = string.find(message, "PulltimerSync%s+(%d+)")
+    if not duration then
+      _, _, duration = string.find(message, "PulltimerBroadcastSync%s+(%d+)")
+    end
+    
+    if duration then
+      local pullDuration = tonumber(duration)
+      if pullDuration and pullDuration > 0 then
+        -- Store pull info
+        CT.currentPullNumber = pullDuration
+        CT.currentPullRequester = sender
+        CT.currentPullStartTime = GetTime()
+        
+        -- Schedule the capture
+        CT.ScheduleCaptureTimer(pullDuration)
+      end
+    end
+  end
 end
 
 -- Select a history record for viewing
