@@ -53,6 +53,9 @@ function CT.EnsureSavedVariables()
   if not OGRH_SV.consumesTracking.weights then
     OGRH_SV.consumesTracking.weights = {}
   end
+  if not OGRH_SV.consumesTracking.history then
+    OGRH_SV.consumesTracking.history = {}
+  end
   
   -- Set default weights for common buffs (only if not already set)
   local defaultWeights = {
@@ -168,7 +171,7 @@ function CT.RefreshActionList()
   
   -- Define action items
   local actions = {
-    {name = "Enable Tracking"},
+    {name = "Tracking"},
     {name = "Preview Tracking"},
     {name = "Weights"},
     {name = "Mapping"},
@@ -193,6 +196,9 @@ function CT.UpdateDetailPanel(actionName)
   local detailPanel = trackConsumesFrame.detailPanel
   if not detailPanel then return end
   
+  -- Track current selection
+  trackConsumesFrame.currentSelection = actionName
+  
   -- Clear existing content properly
   if trackConsumesFrame.detailContent and type(trackConsumesFrame.detailContent) == "table" then
     for i = 1, table.getn(trackConsumesFrame.detailContent) do
@@ -212,7 +218,7 @@ function CT.UpdateDetailPanel(actionName)
     trackConsumesFrame.defaultMessage:Hide()
   end
   
-  if actionName == "Enable Tracking" then
+  if actionName == "Tracking" then
     -- Track on Pull checkbox using OGST
     local enableCheckbox, checkButton, checkLabel = OGST.CreateCheckbox(detailPanel, {
       label = "Track on Pull",
@@ -245,18 +251,49 @@ function CT.UpdateDetailPanel(actionName)
     secondsEditBox:SetText(tostring(OGRH_SV.consumesTracking.secondsBeforePull or 2))
     OGST.AnchorElement(secondsContainer, enableCheckbox, {position = "right", align = "center", offsetX = 5})
     
-    -- Description
-    local desc = OGST.CreateStaticText(detailPanel, {
-      text = "When enabled, this module will track consumables by integrating with RABuffs to monitor raid members' buffs during pulls.\n\nFeatures will be added progressively.",
-      font = "GameFontNormalSmall",
-      color = {r = 0.8, g = 0.8, b = 0.8},
-      multiline = true
+    -- Create dual list panels using OGST properly (following Mapping pattern)
+    -- Static sizing: 600 window - 175 left panel - borders/padding = ~380 width total
+    local leftListWidth = 230
+    local rightListWidth = 150
+    local listHeight = 260
+    
+    -- Left Panel: History List
+    local historyLabel = OGST.CreateStaticText(detailPanel, {
+      text = "Tracking History",
+      font = "GameFontNormal",
+      color = {r = 1, g = 1, b = 1},
+      width = leftListWidth
     })
-    OGST.AnchorElement(desc, enableCheckbox, {position = "below", align = "left"})
+    OGST.AnchorElement(historyLabel, enableCheckbox, {position = "below", align = "left"})
+    
+    local historyListFrame = OGST.CreateStyledScrollList(detailPanel, leftListWidth, listHeight)
+    OGST.AnchorElement(historyListFrame, historyLabel, {position = "below"})
+    
+    -- Right Panel: Player Scores List (positioned relative to left panel)
+    local scoresLabel = OGST.CreateStaticText(detailPanel, {
+      text = "Player Scores",
+      font = "GameFontNormal",
+      color = {r = 1, g = 1, b = 1},
+      width = rightListWidth
+    })
+    OGST.AnchorElement(scoresLabel, historyLabel, {position = "right"})
+    
+    local playerScoresListFrame = OGST.CreateStyledScrollList(detailPanel, rightListWidth, listHeight)
+    OGST.AnchorElement(playerScoresListFrame, scoresLabel, {position = "below"})
+    
+    -- Store list frame references for refresh functions
+    CT.historyListFrame = historyListFrame
+    CT.playerScoresListFrame = playerScoresListFrame
     
     table.insert(trackConsumesFrame.detailContent, enableCheckbox)
     table.insert(trackConsumesFrame.detailContent, secondsContainer)
-    table.insert(trackConsumesFrame.detailContent, desc)
+    table.insert(trackConsumesFrame.detailContent, historyLabel)
+    table.insert(trackConsumesFrame.detailContent, historyListFrame)
+    table.insert(trackConsumesFrame.detailContent, scoresLabel)
+    table.insert(trackConsumesFrame.detailContent, playerScoresListFrame)
+    
+    -- Initial population of history list (after elements are added)
+    CT.RefreshHistoryList()
     
   elseif actionName == "Preview Tracking" then
     -- Poll Consumes button using OGST
@@ -1851,6 +1888,408 @@ function CT.Initialize()
     end
   end)
 end
+
+-- ============================================================================
+-- Phase 1: History Tracking - Data Management Functions
+-- ============================================================================
+
+-- Module-level state for tracking history UI
+CT.selectedRecordIndex = nil
+CT.historyListFrame = nil
+CT.playerScoresListFrame = nil
+
+-- Sort players by role and score for display
+-- @param players table: Array of player records {name, class, role, score}
+-- @return table: Sorted array of player records
+function CT.SortPlayersByRoleAndScore(players)
+  local sorted = {}
+  for i, player in ipairs(players) do
+    table.insert(sorted, player)
+  end
+  
+  -- Define role order: Tanks -> Healers -> Melee -> Ranged
+  local roleOrder = {TANKS = 1, HEALERS = 2, MELEE = 3, RANGED = 4}
+  
+  table.sort(sorted, function(a, b)
+    -- Primary: Role
+    local roleA = roleOrder[a.role] or 999
+    local roleB = roleOrder[b.role] or 999
+    if roleA ~= roleB then return roleA < roleB end
+    
+    -- Secondary: Score (descending - highest first)
+    if a.score ~= b.score then return a.score > b.score end
+    
+    -- Tertiary: Name (alphabetical)
+    return a.name < b.name
+  end)
+  
+  return sorted
+end
+
+-- Capture current raid consume scores and create a tracking record
+-- This is called when a pull timer is detected (future implementation)
+-- For now, this can be called manually for testing
+function CT.CaptureConsumesSnapshot()
+  -- Ensure saved variables are initialized
+  CT.EnsureSavedVariables()
+  
+  -- Get raid/encounter selection from main UI
+  -- TODO: This function needs to be implemented in the main UI module
+  local raid, encounter = OGRH.GetSelectedRaidAndEncounter()
+  if not raid or not encounter then
+    OGRH.Msg("Cannot capture consume scores: No raid/encounter selected.")
+    return
+  end
+  
+  -- Check if OGRH_Consumables profile exists
+  if not CT.CheckForOGRHProfile() then
+    OGRH.Msg("Cannot capture consume scores: OGRH_Consumables profile not found in RABuffs.")
+    return
+  end
+  
+  -- Load the OGRH_Consumables profile bars
+  local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
+  local profileBars = RABui_Settings.Layout[profileKey]
+  
+  if not profileBars or table.getn(profileBars) == 0 then
+    OGRH.Msg("Cannot capture consume scores: OGRH_Consumables profile has no bars configured.")
+    return
+  end
+  
+  -- Build raid data structure: {playerName = {class, buffs={buffKey=true}}}
+  local raidData = {}
+  
+  -- First pass: collect all player buff data
+  for i, bar in ipairs(profileBars) do
+    if bar.buffKey and RAB_Buffs[bar.buffKey] then
+      local buffed, fading, total, misc, mhead, hhead, mtext, htext, invert, raw = RAB_CallRaidBuffCheck(bar, true, true)
+      
+      if raw and type(raw) == "table" then
+        for _, playerData in ipairs(raw) do
+          if playerData and playerData.name then
+            local playerName = playerData.name
+            local playerClass = playerData.class
+            
+            if not raidData[playerName] then
+              raidData[playerName] = {
+                class = playerClass,
+                buffs = {}
+              }
+            end
+            
+            if playerData.buffed then
+              raidData[playerName].buffs[bar.buffKey] = true
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- Calculate scores for all raid members
+  local players = {}
+  for playerName, data in pairs(raidData) do
+    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData)
+    local role = OGRH_SV.roles and OGRH_SV.roles[playerName] or "UNKNOWN"
+    
+    table.insert(players, {
+      name = playerName,
+      class = data.class,
+      role = role,
+      score = score or 0
+    })
+  end
+  
+  -- Create tracking record with current timestamp
+  local timestamp = time()
+  local record = {
+    timestamp = timestamp,
+    date = date("%m/%d", timestamp),
+    time = date("%H:%M", timestamp),
+    raid = raid,
+    encounter = encounter,
+    players = players
+  }
+  
+  -- Insert at beginning of history (newest first)
+  table.insert(OGRH_SV.consumesTracking.history, 1, record)
+  
+  -- Trim to 50 records max
+  while table.getn(OGRH_SV.consumesTracking.history) > 50 do
+    table.remove(OGRH_SV.consumesTracking.history)
+  end
+  
+  -- Refresh UI if tracking panel is open
+  CT.RefreshTrackingHistoryLists()
+  
+  -- Announce to chat
+  OGRH.Msg(string.format("Captured consume scores for %s - %s (%d players)", 
+    raid, encounter, table.getn(players)))
+end
+
+-- Select a history record for viewing
+-- @param recordIndex number: Index in the history array
+function CT.SelectHistoryRecord(recordIndex)
+  -- Update selected index
+  CT.selectedRecordIndex = recordIndex
+  
+  -- Highlight selected item in history list
+  CT.RefreshHistoryListSelection()
+  
+  -- Populate player scores list
+  CT.RefreshPlayerScoresList(recordIndex)
+end
+
+-- Delete a history record (with confirmation)
+-- @param recordIndex number: Index in the history array
+function CT.DeleteHistoryRecord(recordIndex)
+  local record = OGRH_SV.consumesTracking.history[recordIndex]
+  if not record then return end
+  
+  -- Show confirmation dialog
+  local dialog = OGST.CreateDialog({
+    title = "Delete Record",
+    width = 400,
+    height = 150,
+    content = string.format("Delete tracking record from %s %s %s %s?", 
+      record.date, record.time, record.raid, record.encounter),
+    buttons = {
+      {
+        text = "Delete", 
+        onClick = function()
+          CT.ConfirmDeleteRecord(recordIndex)
+        end
+      },
+      {
+        text = "Cancel", 
+        onClick = function()
+          -- Dialog closes automatically
+        end
+      }
+    },
+    escapeCloses = true
+  })
+end
+
+-- Actually delete a record after confirmation
+-- @param recordIndex number: Index in the history array
+function CT.ConfirmDeleteRecord(recordIndex)
+  -- Remove record from history
+  table.remove(OGRH_SV.consumesTracking.history, recordIndex)
+  
+  -- Clear selection
+  CT.selectedRecordIndex = nil
+  
+  -- Refresh both lists
+  CT.RefreshTrackingHistoryLists()
+  
+  OGRH.Msg("Tracking record deleted.")
+end
+
+-- Refresh the history list (left panel)
+-- Rebuilds the left panel list with current history records
+function CT.RefreshHistoryList()
+  if not CT.historyListFrame then return end
+  
+  -- Clear existing items using OGST API
+  CT.historyListFrame:Clear()
+  
+  -- Get history records
+  local history = OGRH_SV.consumesTracking.history
+  if not history or table.getn(history) == 0 then
+    -- Show empty message using OGST API
+    local emptyItem = CT.historyListFrame:AddItem({
+      text = "|cff808080No tracking records.|r"
+    })
+    return
+  end
+  
+  -- Add list items for each record using OGST API
+  for i, record in ipairs(history) do
+    -- Create display text
+    local displayText = string.format("%s %s %s %s", 
+      record.date, record.time, record.raid, record.encounter)
+    
+    -- Add item using OGST API
+    local item = CT.historyListFrame:AddItem({
+      text = displayText
+    })
+    
+    -- Store record data on frame (CRITICAL: closure scoping pattern)
+    item.recordIndex = i
+    item.timestamp = record.timestamp
+    
+    -- Highlight if selected
+    if CT.selectedRecordIndex == i then
+      item:SetBackdropColor(0.3, 0.3, 0.5, 0.5)
+    end
+    
+    -- OnClick handler (uses 'this')
+    item:SetScript("OnClick", function()
+      CT.SelectHistoryRecord(this.recordIndex)
+    end)
+    
+    -- Add delete button using OGST API
+    OGST.AddListItemButtons(item, i, table.getn(history), 
+      nil, nil,  -- no up/down callbacks
+      function()  -- delete callback (uses 'this')
+        CT.DeleteHistoryRecord(this:GetParent().recordIndex)
+      end,
+      true  -- hide up/down buttons
+    )
+  end
+end
+
+-- Refresh the player scores list (right panel)
+-- @param recordIndex number: Index in the history array
+function CT.RefreshPlayerScoresList(recordIndex)
+  if not CT.playerScoresListFrame then return end
+  
+  -- Clear existing items using OGST API
+  CT.playerScoresListFrame:Clear()
+  
+  if not recordIndex then
+    CT.ClearPlayerScoresList()
+    return
+  end
+  
+  -- Get the selected record
+  local record = OGRH_SV.consumesTracking.history[recordIndex]
+  if not record or not record.players then
+    CT.ClearPlayerScoresList()
+    return
+  end
+  
+  -- Sort players by role and score
+  local sortedPlayers = CT.SortPlayersByRoleAndScore(record.players)
+  
+  if table.getn(sortedPlayers) == 0 then
+    local emptyItem = CT.playerScoresListFrame:AddItem({
+      text = "|cff808080No players in record.|r"
+    })
+    return
+  end
+  
+  -- Add list items for each player using OGST API
+  for i, player in ipairs(sortedPlayers) do
+    -- Build display text with role and score
+    local roleText = player.role or "UNKNOWN"
+    local displayText = string.format("[%s] %d  %s", roleText, player.score, player.name)
+    
+    -- Add item using OGST API
+    local item = CT.playerScoresListFrame:AddItem({
+      text = displayText
+    })
+    
+    -- Store player data on frame
+    item.playerName = player.name
+    item.playerClass = player.class
+    
+    -- Apply class color to the player name using OGRH's cached class data
+    if item.text then
+      local coloredText = string.format("[%s] %d  %s", 
+        roleText, player.score, OGRH.ColorName(player.name))
+      item.text:SetText(coloredText)
+    end
+  end
+end
+
+-- Refresh history list selection highlighting
+function CT.RefreshHistoryListSelection()
+  CT.RefreshHistoryList()
+end
+
+-- Clear the player scores list
+function CT.ClearPlayerScoresList()
+  if not CT.playerScoresListFrame then return end
+  
+  -- Clear existing items using OGST API
+  CT.playerScoresListFrame:Clear()
+  
+  -- Show default message using OGST API
+  local emptyItem = CT.playerScoresListFrame:AddItem({
+    text = "|cff808080Select a tracking record\nto view player scores.|r"
+  })
+end
+
+-- Refresh both tracking history lists together
+function CT.RefreshTrackingHistoryLists()
+  if CT.historyListFrame then
+    CT.RefreshHistoryList()
+    
+    if CT.selectedRecordIndex then
+      CT.RefreshPlayerScoresList(CT.selectedRecordIndex)
+    else
+      CT.ClearPlayerScoresList()
+    end
+  end
+end
+
+-- ============================================================================
+-- Testing Functions (Phase 1)
+-- ============================================================================
+
+-- Manually capture a snapshot (for testing Phase 1)
+-- Can be called via: /script OGRH.ConsumesTracking.TestCaptureSnapshot()
+function OGRH.ConsumesTracking.TestCaptureSnapshot()
+  CT.CaptureConsumesSnapshot()
+end
+
+-- List all history records (for testing Phase 1)
+-- Can be called via: /script OGRH.ConsumesTracking.TestListHistory()
+function OGRH.ConsumesTracking.TestListHistory()
+  CT.EnsureSavedVariables()
+  
+  local history = OGRH_SV.consumesTracking.history
+  local count = table.getn(history)
+  
+  OGRH.Msg(string.format("=== Tracking History (%d records) ===", count))
+  
+  if count == 0 then
+    OGRH.Msg("No records found.")
+    return
+  end
+  
+  for i, record in ipairs(history) do
+    OGRH.Msg(string.format("%d. %s %s - %s %s (%d players)", 
+      i, record.date, record.time, record.raid, record.encounter, 
+      table.getn(record.players)))
+  end
+end
+
+-- Delete a history record by index (for testing Phase 1)
+-- Can be called via: /script OGRH.ConsumesTracking.TestDeleteRecord(1)
+function OGRH.ConsumesTracking.TestDeleteRecord(index)
+  CT.EnsureSavedVariables()
+  
+  local history = OGRH_SV.consumesTracking.history
+  if not history[index] then
+    OGRH.Msg(string.format("Error: Record %d does not exist.", index))
+    return
+  end
+  
+  local record = history[index]
+  OGRH.Msg(string.format("Deleting record %d: %s %s - %s %s", 
+    index, record.date, record.time, record.raid, record.encounter))
+  
+  table.remove(history, index)
+  OGRH.Msg("Record deleted.")
+end
+
+-- Clear all history records (for testing Phase 1)
+-- Can be called via: /script OGRH.ConsumesTracking.TestClearHistory()
+function OGRH.ConsumesTracking.TestClearHistory()
+  CT.EnsureSavedVariables()
+  
+  local count = table.getn(OGRH_SV.consumesTracking.history)
+  OGRH_SV.consumesTracking.history = {}
+  
+  OGRH.Msg(string.format("Cleared %d history records.", count))
+end
+
+-- ============================================================================
+-- Initialization
+-- ============================================================================
 
 -- Call initialization directly
 CT.Initialize()

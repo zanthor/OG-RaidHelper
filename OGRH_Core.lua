@@ -5443,6 +5443,20 @@ minimapLoader:SetScript("OnEvent", function()
   CreateMinimapButton()
 end)
 
+-- ============================================================================
+-- Helper Functions - Consumables Tracking Integration
+-- ============================================================================
+
+-- Get currently selected raid and encounter from main UI
+-- Used by consumables tracking module to capture historical records
+-- @return string, string: raid name, encounter name (or nil, nil if not selected)
+function OGRH.GetSelectedRaidAndEncounter()
+  if OGRH_SV and OGRH_SV.ui then
+    return OGRH_SV.ui.selectedRaid, OGRH_SV.ui.selectedEncounter
+  end
+  return nil, nil
+end
+
 
 
 

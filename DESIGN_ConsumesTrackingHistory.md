@@ -180,7 +180,8 @@ end
 
 **Component**: `OGST.CreateStyledScrollList(parent, width, height)`  
 **Sort Order**: Chronological descending (newest first)  
-**Selection**: Single selection, highlights selected row
+**Selection**: Single selection, highlights selected row  
+**Delete Controls**: Each list item has a red "X" delete button on the right side
 
 ### List Item Format
 
@@ -269,19 +270,13 @@ local dialogTable = OGST.CreateDialog({
 
 ### List Item Format
 
-**Display Format**: `[ROLE_LETTER] SCORE Playername`
-
-**Role Letters**:
-- `T` = Tanks
-- `H` = Healers
-- `M` = Melee
-- `R` = Ranged
+**Display Format**: `[ROLE] SCORE Playername`
 
 **Examples**:
-- `[T] 95  Tankadin` (Paladin - gold color)
-- `[H] 87  Holypriest` (Priest - white color)
-- `[M] 78  Rogue1` (Rogue - yellow color)
-- `[R] 82  Mage1` (Mage - cyan color)
+- `[Tanks] 95  Tankadin` (Paladin - gold color)
+- `[Healers] 87  Holypriest` (Priest - white color)
+- `[Melee] 78  Rogue1` (Rogue - yellow color)
+- `[Ranged] 82  Mage1` (Mage - cyan color)
 
 **Sort Order**:
 1. Primary: Role (Tanks → Healers → Melee → Ranged)
@@ -321,7 +316,7 @@ for i, player in ipairs(sortedPlayers) do
   local roleLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   roleLabel:SetPoint("LEFT", item, "LEFT", 5, 0)
   roleLabel:SetText(string.format("[%s] %d  ", 
-    CT.GetRoleLetterShort(player.role), player.score))
+    player.role, player.score))
   roleLabel:SetTextColor(1, 1, 1)
   
   -- Create player name label (class colored)
@@ -340,21 +335,6 @@ for i, player in ipairs(sortedPlayers) do
 end
 ```
 
-### Role Letter Helper
-
-**Function**: `CT.GetRoleLetterShort(role)`
-
-**Implementation**:
-```lua
-function CT.GetRoleLetterShort(role)
-  if role == "TANKS" then return "T"
-  elseif role == "HEALERS" then return "H"
-  elseif role == "MELEE" then return "M"
-  elseif role == "RANGED" then return "R"
-  else return "?" end
-end
-```
-
 ---
 
 ## Tracking Trigger System
@@ -362,13 +342,13 @@ end
 ### Reference Implementation
 
 **Source**: RABuffs_Logger addon (already installed in workspace)  
-**Pattern**: Pull detection via combat log events
+**Pattern**: Pull timer detection via BigWigs addon messages
 
 **Key Components to Duplicate**:
-1. Combat log event registration (`CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE`)
-2. Boss engagement detection (specific creature names)
-3. Pre-pull timing window (X seconds before pull)
-4. Raid roster snapshot at trigger time
+1. Addon message event registration (BigWigs pull timer broadcasts)
+2. Pull timer duration extraction from addon message
+3. Calculated timing window (pullTimer - secondsBeforePull)
+4. Raid roster snapshot at calculated time
 
 ### Integration with Track on Pull
 
@@ -380,29 +360,27 @@ end
 ### Trigger Flow
 
 ```
-1. Combat log event fires (creature spell cast detected)
+1. BigWigs pull timer started (raid leader types /pull X)
    ↓
 2. Check if trackOnPull enabled
    ↓
-3. Parse creature name from combat log
+3. Parse pull timer duration from addon message (e.g., 10 seconds)
    ↓
-4. Check if creature matches known boss list
+4. Calculate capture time: pullTimer - secondsBeforePull (e.g., 10 - 2 = 8)
    ↓
-5. Check if currently in raid
+5. Check if raid/encounter selected in main UI
    ↓
-6. Check if raid/encounter selected in main UI
+6. Schedule capture at calculated time (8 seconds from now)
    ↓
-7. Schedule capture after secondsBeforePull delay
+7. When timer fires: Capture consume scores for all raid members
    ↓
-8. Capture consume scores for all raid members
+8. Create tracking record
    ↓
-9. Create tracking record
+9. Store record in OGRH_SV.consumesTracking.history
    ↓
-10. Store record in OGRH_SV.consumesTracking.history
+10. Trim history if > 50 records
    ↓
-11. Trim history if > 50 records
-   ↓
-12. Refresh UI if tracking panel open
+11. Refresh UI if tracking panel open
 ```
 
 ### Event Registration
@@ -412,57 +390,48 @@ end
 function CT.Initialize()
   -- Existing initialization...
   
-  -- Register for combat log events (pull detection)
-  trackConsumesFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE")
-  trackConsumesFrame:RegisterEvent("CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF")
-  trackConsumesFrame:SetScript("OnEvent", CT.OnPullDetectionEvent)
+  -- Register for BigWigs addon messages (pull timer detection)
+  trackConsumesFrame:RegisterEvent("CHAT_MSG_ADDON")
+  trackConsumesFrame:SetScript("OnEvent", CT.OnPullTimerDetected)
 end
 ```
 
-### Pull Detection Handler
+### Pull Timer Detection Handler
 
-**Function**: `CT.OnPullDetectionEvent(event, arg1, arg2, ...)`
+**Function**: `CT.OnPullTimerDetected(event)`
 
 **Logic**:
 1. Check if `OGRH_SV.consumesTracking.trackOnPull` is enabled
-2. Parse combat log message to extract creature name
-3. Cross-reference creature name against known boss list
-4. If boss detected and not already tracking this pull:
+2. Parse addon message to detect BigWigs pull timer
+   - Filter for BigWigs addon messages
+   - Extract pull timer duration (seconds)
+3. If valid pull timer detected and not already tracking this pull:
    - Get current raid/encounter selection from main UI
-   - Schedule capture timer (delay by `secondsBeforePull`)
+   - Calculate capture time: pullTimer - secondsBeforePull
+   - Schedule capture timer at calculated time
    - Set flag to prevent duplicate captures for same pull
 
-### Known Boss List
-
-**Storage**: Module-level table (not saved)
-
-**Initial List** (can be expanded later):
+**Example Implementation**:
 ```lua
-local KNOWN_BOSSES = {
-  -- Molten Core
-  ["Lucifron"] = true,
-  ["Magmadar"] = true,
-  ["Gehennas"] = true,
-  ["Garr"] = true,
-  ["Shazzrah"] = true,
-  ["Baron Geddon"] = true,
-  ["Sulfuron Harbinger"] = true,
-  ["Golemagg the Incinerator"] = true,
-  ["Majordomo Executus"] = true,
-  ["Ragnaros"] = true,
+function CT.OnPullTimerDetected()
+  if event ~= "CHAT_MSG_ADDON" then return end
+  if not OGRH_SV.consumesTracking.trackOnPull then return end
   
-  -- Blackwing Lair
-  ["Razorgore the Untamed"] = true,
-  ["Vaelastrasz the Corrupt"] = true,
-  ["Broodlord Lashlayer"] = true,
-  ["Firemaw"] = true,
-  ["Ebonroc"] = true,
-  ["Flamegor"] = true,
-  ["Chromaggus"] = true,
-  ["Nefarian"] = true,
-  
-  -- Add more as needed
-}
+  -- arg1 = prefix, arg2 = message, arg3 = channel, arg4 = sender
+  -- Check for BigWigs pull timer format (reference RABuffs_Logger)
+  if arg1 == "BigWigs" then  -- Verify exact prefix in RABuffs_Logger
+    -- Parse pull timer duration from arg2
+    local pullTimer = tonumber(string.match(arg2, "pull_timer:(%d+)"))
+    if pullTimer and pullTimer > 0 then
+      local secondsBeforePull = OGRH_SV.consumesTracking.secondsBeforePull or 2
+      local captureDelay = pullTimer - secondsBeforePull
+      
+      if captureDelay > 0 then
+        CT.ScheduleCaptureTimer(captureDelay)
+      end
+    end
+  end
+end
 ```
 
 ### Capture Function
