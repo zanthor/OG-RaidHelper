@@ -25,6 +25,7 @@ function CT.EnsureSavedVariables()
       trackOnPull = false,
       trackingProfiles = {},
       logToMemory = true,
+      logToCombatLog = false,
       maxEntries = 200,
       secondsBeforePull = 2,
       pullTriggers = {
@@ -47,6 +48,11 @@ function CT.EnsureSavedVariables()
   -- Ensure secondsBeforePull exists for existing saves
   if not OGRH_SV.consumesTracking.secondsBeforePull then
     OGRH_SV.consumesTracking.secondsBeforePull = 2
+  end
+  
+  -- Ensure logToCombatLog exists for existing saves
+  if OGRH_SV.consumesTracking.logToCombatLog == nil then
+    OGRH_SV.consumesTracking.logToCombatLog = false
   end
   
   -- Ensure sub-tables exist
@@ -257,6 +263,37 @@ function CT.UpdateDetailPanel(actionName)
     -- Set initial text
     secondsEditBox:SetText(tostring(OGRH_SV.consumesTracking.secondsBeforePull or 2))
     OGST.AnchorElement(secondsContainer, enableCheckbox, {position = "right", align = "center", offsetX = 5})
+    
+    -- Combat Log checkbox (disabled if SuperWoW not available)
+    local hasSuperWoW = CT.IsSuperWoWAvailable()
+    local combatLogCheckbox, combatLogCheckButton, combatLogLabel = OGST.CreateCheckbox(detailPanel, {
+      label = "Combat Log",
+      checked = OGRH_SV.consumesTracking.logToCombatLog and hasSuperWoW,
+      onChange = function(isChecked)
+        if hasSuperWoW then
+          OGRH_SV.consumesTracking.logToCombatLog = isChecked
+        end
+      end
+    })
+    OGST.AnchorElement(combatLogCheckbox, secondsContainer, {position = "right", align = "center", offsetX = 5})
+    
+    -- Disable checkbox if SuperWoW not available
+    if not hasSuperWoW then
+      combatLogCheckButton:Disable()
+      combatLogLabel:SetTextColor(0.5, 0.5, 0.5)
+      -- Add tooltip explaining requirement
+      combatLogCheckbox:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+        GameTooltip:SetText("SuperWoW Required", 1, 1, 1)
+        GameTooltip:AddLine("Combat log feature requires SuperWoW addon.", 1, 0.8, 0, true)
+        GameTooltip:AddLine("Get it from: github.com/balakethelock/SuperWoW", 0.5, 0.5, 1, true)
+        GameTooltip:Show()
+      end)
+      combatLogCheckbox:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+      end)
+    end
+    table.insert(trackConsumesFrame.detailContent, combatLogCheckbox)
     
     -- Create dual list panels using OGST properly (following Mapping pattern)
     -- Static sizing: 600 window - 175 left panel - borders/padding = ~380 width total
@@ -1614,6 +1651,46 @@ function CT.PollConsumes(editBox, scrollBar, scrollFrame)
       scrollBar:SetValue(0)  -- Scroll to top
     end
   end
+  
+  -- TESTING: Write to combat log if enabled
+  if OGRH_SV.consumesTracking.logToCombatLog and CT.IsSuperWoWAvailable() then
+    -- Get raid/encounter selection
+    local raid, encounter = OGRH.GetSelectedRaidAndEncounter()
+    if raid and encounter then
+      -- Convert playerScores to the format expected by WriteConsumesToCombatLog
+      local players = {}
+      for _, playerScore in ipairs(playerScores) do
+        table.insert(players, {
+          name = playerScore.name,
+          class = playerScore.class,
+          role = playerScore.details.role or "UNKNOWN",
+          score = playerScore.score
+        })
+      end
+      
+      -- Create a record structure
+      local timestamp = time()
+      local record = {
+        timestamp = timestamp,
+        date = date("%m/%d", timestamp),
+        time = date("%H:%M", timestamp),
+        raid = raid,
+        encounter = encounter,
+        players = players,
+        groupSize = GetNumRaidMembers()
+      }
+      
+      -- Write to combat log
+      local success, err = CT.WriteConsumesToCombatLog(record)
+      if success then
+        OGRH.Msg("|cff00ff00Poll results written to combat log|r")
+      else
+        OGRH.Msg("|cffff8800Warning:|r Failed to write to combat log: " .. (err or "Unknown error"))
+      end
+    else
+      OGRH.Msg("|cffff8800Note:|r Select a raid/encounter to write poll results to combat log")
+    end
+  end
 end
 
 -- Announce top 10 consumables scores to raid chat
@@ -1855,6 +1932,102 @@ function CT.ParseLabelToRoles(label)
 end
 
 -- ============================================================================
+-- SuperWoW / Combat Log Integration
+-- ============================================================================
+
+-- Check if SuperWoW is available (provides CombatLogAdd function)
+function CT.IsSuperWoWAvailable()
+  return CombatLogAdd ~= nil
+end
+
+-- Write consume tracking data to combat log via SuperWoW's CombatLogAdd
+-- This writes directly to Logs/WoWCombatLog.txt
+function CT.WriteConsumesToCombatLog(record)
+  if not CT.IsSuperWoWAvailable() then
+    return false, "SuperWoW not available"
+  end
+  
+  if not record then
+    return false, "No record provided"
+  end
+  
+  -- Format: OGRH_CONSUME_PULL: timestamp&date&time&raid&encounter&pullNumber&requester&groupSize
+  local header = string.format("OGRH_CONSUME_PULL: %s&%s&%s&%s&%s&%d&%s&%d",
+    tostring(record.timestamp or time()),
+    record.date or "",
+    record.time or "",
+    record.raid or "",
+    record.encounter or "",
+    CT.currentPullNumber or 0,
+    CT.currentPullRequester or "Unknown",
+    record.groupSize or GetNumRaidMembers()
+  )
+  
+  CombatLogAdd(header)
+  
+  -- Write each player's score
+  -- Format: OGRH_CONSUME_PLAYER: playerName&class&role&score&actualPoints&possiblePoints
+  if record.players then
+    for _, player in ipairs(record.players) do
+      -- Calculate actual and possible points for this player
+      local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
+      local profileBars = RABui_Settings and RABui_Settings.Layout and RABui_Settings.Layout[profileKey]
+      
+      local actualPoints = 0
+      local possiblePoints = 0
+      
+      if profileBars then
+        -- Recalculate detailed score for this player
+        local raidData = {}
+        for i, bar in ipairs(profileBars) do
+          if bar.buffKey and RAB_Buffs[bar.buffKey] then
+            local buffed, fading, total, misc, mhead, hhead, mtext, htext, invert, raw = RAB_CallRaidBuffCheck(bar, true, true)
+            
+            if raw and type(raw) == "table" then
+              for _, playerData in ipairs(raw) do
+                if playerData and playerData.name == player.name then
+                  if not raidData[player.name] then
+                    raidData[player.name] = {
+                      class = playerData.class,
+                      buffs = {}
+                    }
+                  end
+                  
+                  if playerData.buffed then
+                    raidData[player.name].buffs[bar.buffKey] = true
+                  end
+                end
+              end
+            end
+          end
+        end
+        
+        local score, err, details = CT.CalculatePlayerScore(player.name, player.class, raidData)
+        if details then
+          actualPoints = details.actual or 0
+          possiblePoints = details.possible or 0
+        end
+      end
+      
+      local playerLine = string.format("OGRH_CONSUME_PLAYER: %s&%s&%s&%d&%d&%d",
+        player.name,
+        player.class or "Unknown",
+        player.role or "UNKNOWN",
+        player.score or 0,
+        actualPoints,
+        possiblePoints
+      )
+      CombatLogAdd(playerLine)
+    end
+  end
+  
+  -- End marker
+  CombatLogAdd(string.format("OGRH_CONSUME_END: %s", tostring(record.timestamp or time())))
+  
+  return true
+end
+
+-- ============================================================================
 -- Pull Detection (Placeholder)
 -- ============================================================================
 
@@ -2044,8 +2217,17 @@ function CT.CaptureConsumesSnapshot()
     time = date("%H:%M", timestamp),
     raid = raid,
     encounter = encounter,
-    players = players
+    players = players,
+    groupSize = GetNumRaidMembers()
   }
+  
+  -- Write to combat log if enabled and SuperWoW available
+  if OGRH_SV.consumesTracking.logToCombatLog and CT.IsSuperWoWAvailable() then
+    local success, err = CT.WriteConsumesToCombatLog(record)
+    if not success then
+      OGRH.Msg("|cffff8800Warning:|r Failed to write to combat log: " .. (err or "Unknown error"))
+    end
+  end
   
   -- Insert at beginning of history (newest first)
   table.insert(OGRH_SV.consumesTracking.history, 1, record)
