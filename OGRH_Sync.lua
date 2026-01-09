@@ -886,14 +886,15 @@ function OGRH.Sync.CalculateChecksum(data)
     end
   end
   
-  -- Hash encounters list (from encounterMgmt.encounters)
-  if data.encounterMgmt and data.encounterMgmt.encounters then
-    for raidName, encounters in pairs(data.encounterMgmt.encounters) do
-      if type(encounters) == "table" then
-        for i = 1, table.getn(encounters) do
-          local encounterName = encounters[i]
-          for j = 1, string.len(encounterName) do
-            checksum = checksum + string.byte(encounterName, j) * i * 100
+  -- Hash encounters list (from new nested structure)
+  if data.encounterMgmt and data.encounterMgmt.raids then
+    for i = 1, table.getn(data.encounterMgmt.raids) do
+      local raid = data.encounterMgmt.raids[i]
+      if raid.encounters then
+        for j = 1, table.getn(raid.encounters) do
+          local encounterName = raid.encounters[j].name
+          for k = 1, string.len(encounterName) do
+            checksum = checksum + string.byte(encounterName, k) * j * 100
           end
         end
       end
@@ -1169,7 +1170,6 @@ function OGRH.Sync.ExportData()
   local encounterMgmt = {}
   if OGRH_SV.encounterMgmt then
     encounterMgmt.raids = OGRH_SV.encounterMgmt.raids
-    encounterMgmt.encounters = OGRH_SV.encounterMgmt.encounters
     encounterMgmt.roles = OGRH_SV.encounterMgmt.roles
   end
   

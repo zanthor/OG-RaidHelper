@@ -22,6 +22,8 @@ OGRH_MainUI.lua
 OGRH_RolesUI.lua
 OGRH_EncounterMgmt.lua
 OGRH_EncounterSetup.lua
+OGRH_AdvancedSettings.lua
+OGRH_BigWigs.lua
 OGRH_ClassPriority.lua
 OGRH_LinkRole.lua
 OGRH_Poll.lua
