@@ -595,22 +595,29 @@ local function InitializeSavedVars()
   MigrateRoleDefaultsToPoolDefaults()
   OGRH.MigrateRolesToStableIDs()
   
+  -- Initialize encounterMgmt if missing
   if not OGRH_SV.encounterMgmt then
     OGRH_SV.encounterMgmt = {
       raids = {}
       -- Note: No encounters table - new structure has encounters nested in raids
     }
-  else
-    -- Upgrade old structure if found
-    if OGRH_SV.encounterMgmt.raids and table.getn(OGRH_SV.encounterMgmt.raids) > 0 then
-      local firstRaid = OGRH_SV.encounterMgmt.raids[1]
-      if type(firstRaid) == "string" or (type(firstRaid) == "table" and not firstRaid.name) then
-        OGRH.UpgradeEncounterDataStructure()
-      end
-    elseif OGRH_SV.encounterMgmt.encounters then
-      -- Has old encounters table but no raids - upgrade
+  end
+  
+  -- Ensure raids array exists
+  if not OGRH_SV.encounterMgmt.raids then
+    OGRH_SV.encounterMgmt.raids = {}
+  end
+  
+  -- Upgrade old structure if found
+  if table.getn(OGRH_SV.encounterMgmt.raids) > 0 then
+    local firstRaid = OGRH_SV.encounterMgmt.raids[1]
+    -- Check if using old structure (string) or incomplete new structure (table without 'name' field)
+    if type(firstRaid) == "string" or (type(firstRaid) == "table" and not firstRaid.name) then
       OGRH.UpgradeEncounterDataStructure()
     end
+  elseif OGRH_SV.encounterMgmt.encounters then
+    -- Has old encounters table but no raids - upgrade
+    OGRH.UpgradeEncounterDataStructure()
   end
 end
 

@@ -876,25 +876,92 @@ function OGRH.Sync.CalculateChecksum(data)
   
   local checksum = 0
   
-  -- Hash raids list (from encounterMgmt.raids)
-  if data.encounterMgmt and data.encounterMgmt.raids then
-    for i = 1, table.getn(data.encounterMgmt.raids) do
-      local raidName = data.encounterMgmt.raids[i]
-      for j = 1, string.len(raidName) do
-        checksum = checksum + string.byte(raidName, j) * i * 50
-      end
-    end
-  end
-  
-  -- Hash encounters list (from new nested structure)
+  -- Hash raids list and encounters (from new nested structure)
   if data.encounterMgmt and data.encounterMgmt.raids then
     for i = 1, table.getn(data.encounterMgmt.raids) do
       local raid = data.encounterMgmt.raids[i]
-      if raid.encounters then
+      
+      -- Hash raid name
+      local raidName = raid.name or raid  -- Support both new (table) and old (string) structure
+      if type(raidName) == "string" then
+        for j = 1, string.len(raidName) do
+          checksum = checksum + string.byte(raidName, j) * i * 50
+        end
+      end
+      
+      -- Hash raid-level advanced settings
+      if type(raid) == "table" and raid.advancedSettings and raid.advancedSettings.consumeTracking then
+        local ct = raid.advancedSettings.consumeTracking
+        checksum = checksum + (ct.enabled and 1 or 0) * 50000023
+        checksum = checksum + (ct.readyThreshold or 0) * 500029
+        
+        if ct.requiredFlaskRoles then
+          local roleNames = {"Tanks", "Healers", "Melee", "Ranged"}
+          for _, roleName in ipairs(roleNames) do
+            if ct.requiredFlaskRoles[roleName] then
+              for k = 1, string.len(roleName) do
+                checksum = checksum + string.byte(roleName, k) * (k + 311) * 1019
+              end
+            end
+          end
+        end
+      end
+      
+      -- Hash encounters from nested structure
+      if type(raid) == "table" and raid.encounters then
         for j = 1, table.getn(raid.encounters) do
-          local encounterName = raid.encounters[j].name
-          for k = 1, string.len(encounterName) do
-            checksum = checksum + string.byte(encounterName, k) * j * 100
+          local encounter = raid.encounters[j]
+          local encounterName = encounter.name or encounter  -- Support both formats
+          if type(encounterName) == "string" then
+            for k = 1, string.len(encounterName) do
+              checksum = checksum + string.byte(encounterName, k) * j * 100
+            end
+          end
+          
+          -- Hash encounter-level advanced settings
+          if type(encounter) == "table" and encounter.advancedSettings then
+            -- BigWigs settings
+            if encounter.advancedSettings.bigwigs then
+              local bw = encounter.advancedSettings.bigwigs
+              checksum = checksum + (bw.enabled and 1 or 0) * 10000019
+              
+              if bw.encounterId and bw.encounterId ~= "" then
+                for k = 1, string.len(bw.encounterId) do
+                  checksum = checksum + string.byte(bw.encounterId, k) * (k + 107) * 1009
+                end
+              end
+            end
+            
+            -- Consume tracking settings
+            if encounter.advancedSettings.consumeTracking then
+              local ct = encounter.advancedSettings.consumeTracking
+              
+              -- Hash enabled flag (nil=inherit, false=disabled, true=enabled)
+              local enabledValue = 0
+              if ct.enabled == true then
+                enabledValue = 2
+              elseif ct.enabled == false then
+                enabledValue = 1
+              end
+              checksum = checksum + enabledValue * 100000037
+              
+              if ct.readyThreshold ~= nil then
+                checksum = checksum + ct.readyThreshold * 1000039
+              end
+              
+              if ct.requiredFlaskRoles then
+                local roleNames = {"Tanks", "Healers", "Melee", "Ranged"}
+                for _, roleName in ipairs(roleNames) do
+                  if ct.requiredFlaskRoles[roleName] ~= nil then
+                    for k = 1, string.len(roleName) do
+                      checksum = checksum + string.byte(roleName, k) * (k + 211) * 1013
+                    end
+                    local roleValue = ct.requiredFlaskRoles[roleName] and 2 or 1
+                    checksum = checksum + roleValue * 1017
+                  end
+                end
+              end
+            end
           end
         end
       end

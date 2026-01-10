@@ -93,6 +93,12 @@ end
 local _svf = CreateFrame("Frame"); _svf:RegisterEvent("VARIABLES_LOADED")
 _svf:SetScript("OnEvent", function() 
   OGRH.EnsureSV()
+  
+  -- Upgrade encounter data structure if needed (must happen early before any UI access)
+  if OGRH.UpgradeEncounterDataStructure then
+    OGRH.UpgradeEncounterDataStructure()
+  end
+  
   -- Load factory defaults on first run if configured
   if OGRH_SV.firstRun ~= false and OGRH.FactoryDefaults and type(OGRH.FactoryDefaults) == "table" and OGRH.FactoryDefaults.version then
     OGRH.LoadFactoryDefaults()
@@ -1551,6 +1557,25 @@ function OGRH.CalculateAllStructureChecksum()
       for j = 1, string.len(raidName) do
         checksum = checksum + string.byte(raidName, j) * i * 50
       end
+      
+      -- Hash raid-level advanced settings
+      if raid.advancedSettings and raid.advancedSettings.consumeTracking then
+        local ct = raid.advancedSettings.consumeTracking
+        -- Raid-level settings are always explicit (never nil)
+        checksum = checksum + (ct.enabled and 1 or 0) * 50000023
+        checksum = checksum + (ct.readyThreshold or 85) * 500029
+        
+        if ct.requiredFlaskRoles then
+          local roleNames = {"Tanks", "Healers", "Melee", "Ranged"}
+          for _, roleName in ipairs(roleNames) do
+            if ct.requiredFlaskRoles[roleName] then
+              for k = 1, string.len(roleName) do
+                checksum = checksum + string.byte(roleName, k) * (k + 311) * 1019
+              end
+            end
+          end
+        end
+      end
     end
   end
   
@@ -1560,10 +1585,63 @@ function OGRH.CalculateAllStructureChecksum()
       local raid = OGRH_SV.encounterMgmt.raids[i]
       if raid.encounters then
         for j = 1, table.getn(raid.encounters) do
-          local encounterName = raid.encounters[j].name
+          local encounter = raid.encounters[j]
+          local encounterName = encounter.name
           encounterCount = encounterCount + 1
           for k = 1, string.len(encounterName) do
             checksum = checksum + string.byte(encounterName, k) * j * 100
+          end
+          
+          -- Hash encounter-level advanced settings
+          if encounter.advancedSettings then
+            -- Hash BigWigs settings
+            if encounter.advancedSettings.bigwigs then
+              local bw = encounter.advancedSettings.bigwigs
+              checksum = checksum + (bw.enabled and 1 or 0) * 10000019
+              
+              if bw.encounterId and bw.encounterId ~= "" then
+                for k = 1, string.len(bw.encounterId) do
+                  checksum = checksum + string.byte(bw.encounterId, k) * (k + 107) * 1009
+                end
+              end
+            end
+            
+            -- Hash consume tracking settings
+            if encounter.advancedSettings.consumeTracking then
+              local ct = encounter.advancedSettings.consumeTracking
+              
+              -- Hash enabled flag (nil=inherit, false=disabled, true=enabled)
+              -- Must distinguish between nil/false/true for proper checksum
+              local enabledValue = 0  -- default for nil
+              if ct.enabled == true then
+                enabledValue = 2
+              elseif ct.enabled == false then
+                enabledValue = 1
+              end
+              checksum = checksum + enabledValue * 100000037
+              
+              -- Hash ready threshold (nil means inherit from raid)
+              if ct.readyThreshold ~= nil then
+                checksum = checksum + ct.readyThreshold * 1000039
+              end
+              
+              -- Hash required flask roles (must be deterministic)
+              if ct.requiredFlaskRoles then
+                local roleNames = {"Tanks", "Healers", "Melee", "Ranged"}
+                for _, roleName in ipairs(roleNames) do
+                  -- Only hash if explicitly set (not nil)
+                  if ct.requiredFlaskRoles[roleName] ~= nil then
+                    -- Hash role name
+                    for k = 1, string.len(roleName) do
+                      checksum = checksum + string.byte(roleName, k) * (k + 211) * 1013
+                    end
+                    -- Hash the boolean value (false=1, true=2)
+                    local roleValue = ct.requiredFlaskRoles[roleName] and 2 or 1
+                    checksum = checksum + roleValue * 1017
+                  end
+                end
+              end
+            end
           end
         end
       end
@@ -4408,6 +4486,24 @@ function OGRH.ImportShareData(dataString, isSingleEncounter)
     -- Full import - overwrite everything
     if importData.encounterMgmt then
       OGRH_SV.encounterMgmt = importData.encounterMgmt
+      
+      -- Ensure advancedSettings exist for all raids and encounters (migration safety)
+      if OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if OGRH.EnsureRaidAdvancedSettings then
+            OGRH.EnsureRaidAdvancedSettings(raid)
+          end
+          if raid.encounters then
+            for j = 1, table.getn(raid.encounters) do
+              local encounter = raid.encounters[j]
+              if OGRH.EnsureEncounterAdvancedSettings then
+                OGRH.EnsureEncounterAdvancedSettings(raid, encounter)
+              end
+            end
+          end
+        end
+      end
     end
     if importData.encounterRaidMarks then
       OGRH_SV.encounterRaidMarks = importData.encounterRaidMarks
