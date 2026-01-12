@@ -21,8 +21,9 @@ if errorlevel 1 (
 echo Python found. Running parser...
 echo.
 
-REM Run the parser with default settings (aggregated stats)
-python "%~dp0parse_consume_log.py" --aggregate
+REM Run the parser in interactive mode (default)
+REM User will be prompted to select output mode, encounter, and player count
+python "%~dp0parse_consume_log.py"
 
 echo.
 echo ========================================

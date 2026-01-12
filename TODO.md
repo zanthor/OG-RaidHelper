@@ -31,6 +31,21 @@ Enhancements to the Raid Invites system for better automation and visibility:
 
 **Status:** Planned
 
+### Add Cooldown Role to Encounter Setup/Manager
+**Description:**
+Add Cooldown Role assignment feature to Encounter Setup/Manager to better track and coordinate class-specific cooldowns during encounters.
+- Support for Druid cooldowns
+- Support for Warrior cooldowns
+- Support for Tank Druid cooldowns
+
+**Status:** Planned
+
+### Line Based Announcements
+**Description:**
+Add support for line-based announcements in the encounter system.
+
+**Status:** Planned
+
 
 
 ---

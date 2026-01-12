@@ -378,6 +378,128 @@ def print_player_leaderboard(player_stats: Dict[str, Dict[str, Any]], top_n: int
               f"{player['pulls']:<7} {player['avgScore']:<7.1f} {player['minScore']:<7} {player['maxScore']:<7}")
 
 
+def get_user_choices(logs: List[Dict[str, Any]]):
+    """Interactive prompts to get user preferences for output"""
+    
+    # Organize data by raid and date
+    raids_by_date = {}
+    for entry in logs:
+        raid = entry['raid']
+        date = entry['date']
+        encounter = entry['encounter']
+        
+        key = f"{raid} ({date})"
+        if key not in raids_by_date:
+            raids_by_date[key] = {
+                'raid': raid,
+                'date': date,
+                'pulls': 0,
+                'encounters': {}
+            }
+        
+        raids_by_date[key]['pulls'] += 1
+        
+        if encounter not in raids_by_date[key]['encounters']:
+            raids_by_date[key]['encounters'][encounter] = 0
+        raids_by_date[key]['encounters'][encounter] += 1
+    
+    print(f"\n{'='*80}")
+    print("OG-RaidHelper Consume Tracker - Configuration")
+    print(f"{'='*80}\n")
+    
+    # Choice 1: Output mode (summary vs details)
+    print("1. Output Mode:")
+    print("   [1] Summary - Aggregated player statistics")
+    print("   [2] Details - Individual pull data")
+    while True:
+        choice = input("\nSelect output mode (1 or 2): ").strip()
+        if choice in ['1', '2']:
+            output_mode = 'summary' if choice == '1' else 'details'
+            break
+        print("Invalid choice. Please enter 1 or 2.")
+    
+    # Choice 2: Raid selection (by date)
+    print(f"\n2. Raid Selection:")
+    print("   [0] All raids")
+    sorted_raids = sorted(raids_by_date.items(), key=lambda x: (x[1]['date'], x[1]['raid']))
+    for i, (key, data) in enumerate(sorted_raids, 1):
+        print(f"   [{i}] {key} ({data['pulls']} pulls, {len(data['encounters'])} encounters)")
+    
+    selected_raid_key = None
+    while True:
+        choice = input(f"\nSelect raid (0-{len(sorted_raids)}): ").strip()
+        if choice.isdigit() and 0 <= int(choice) <= len(sorted_raids):
+            if choice == '0':
+                selected_raid_key = None
+            else:
+                selected_raid_key = sorted_raids[int(choice)-1][0]
+            break
+        print(f"Invalid choice. Please enter a number between 0 and {len(sorted_raids)}.")
+    
+    # Choice 3: Encounter selection (within selected raid or all)
+    selected_encounter = None
+    selected_raid = None
+    selected_date = None
+    
+    if selected_raid_key:
+        raid_data = raids_by_date[selected_raid_key]
+        selected_raid = raid_data['raid']
+        selected_date = raid_data['date']
+        
+        print(f"\n3. Encounter Selection ({selected_raid_key}):")
+        print("   [0] All encounters in this raid")
+        sorted_encounters = sorted(raid_data['encounters'].items(), key=lambda x: x[1], reverse=True)
+        for i, (encounter, count) in enumerate(sorted_encounters, 1):
+            print(f"   [{i}] {encounter} ({count} pulls)")
+        
+        while True:
+            choice = input(f"\nSelect encounter (0-{len(sorted_encounters)}): ").strip()
+            if choice.isdigit() and 0 <= int(choice) <= len(sorted_encounters):
+                if choice == '0':
+                    selected_encounter = None
+                else:
+                    selected_encounter = sorted_encounters[int(choice)-1][0]
+                break
+            print(f"Invalid choice. Please enter a number between 0 and {len(sorted_encounters)}.")
+    
+    # Choice 4: Top X or All players (only for summary mode)
+    top_n = None
+    if output_mode == 'summary':
+        choice_num = 4 if selected_raid_key else 3
+        print(f"\n{choice_num}. Player Display:")
+        print("   [0] All players")
+        print("   [X] Top X players (enter a number)")
+        while True:
+            choice = input("\nEnter 0 for all, or a number for top X players: ").strip()
+            if choice.isdigit() and int(choice) >= 0:
+                top_n = int(choice) if int(choice) > 0 else None
+                break
+            print("Invalid choice. Please enter 0 or a positive number.")
+    
+    print(f"\n{'='*80}")
+    print("Configuration Summary:")
+    print(f"  Output Mode: {output_mode.title()}")
+    if selected_raid_key:
+        print(f"  Raid: {selected_raid_key}")
+        if selected_encounter:
+            print(f"  Encounter: {selected_encounter}")
+        else:
+            print(f"  Encounter: All encounters in this raid")
+    else:
+        print(f"  Selection: All raids and encounters")
+    if output_mode == 'summary':
+        print(f"  Players: {'All' if top_n is None else f'Top {top_n}'}")
+    print(f"{'='*80}\n")
+    
+    return {
+        'output_mode': output_mode,
+        'selected_raid': selected_raid,
+        'selected_date': selected_date,
+        'selected_encounter': selected_encounter,
+        'top_n': top_n
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Parse OG-RaidHelper consume tracking logs from WoWCombatLog.txt'
@@ -392,7 +514,7 @@ def main():
     parser.add_argument(
         '-o', '--output',
         type=Path,
-        help='Output directory for exports (default: current directory)'
+        help='Output directory for exports (default: output folder)'
     )
     parser.add_argument(
         '--json',
@@ -420,8 +542,17 @@ def main():
         action='store_true',
         help='Suppress summary output'
     )
+    parser.add_argument(
+        '--interactive',
+        action='store_true',
+        help='Run in interactive mode with prompts for output options (default if no other flags are set)'
+    )
     
     args = parser.parse_args()
+    
+    # Auto-enable interactive mode if no export flags are set
+    if not any([args.json, args.csv, args.aggregate, args.quiet]):
+        args.interactive = True
     
     # Check if log file exists
     if not args.logfile.exists():
@@ -436,6 +567,53 @@ def main():
         print("⚠ No OGRH_CONSUME entries found in log file.")
         return 0
     
+    # Interactive mode
+    if args.interactive:
+        user_choices = get_user_choices(logs)
+        
+        # Filter by raid and date if selected
+        if user_choices['selected_raid']:
+            logs = [entry for entry in logs 
+                   if entry['raid'] == user_choices['selected_raid'] 
+                   and entry['date'] == user_choices['selected_date']]
+            
+            # Further filter by encounter if selected
+            if user_choices['selected_encounter']:
+                logs = [entry for entry in logs 
+                       if entry['encounter'] == user_choices['selected_encounter']]
+        
+        # Generate output based on mode
+        if user_choices['output_mode'] == 'summary':
+            # Aggregated statistics
+            player_stats = aggregate_by_player(logs)
+            encounter_stats = aggregate_by_encounter(logs)
+            
+            # Print summary
+            print_summary(logs)
+            print_player_leaderboard(player_stats, user_choices['top_n'] or len(player_stats))
+            
+            # Export
+            output_dir = args.output or Path('output')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            export_player_aggregate_csv(player_stats, output_dir / f'consume_player_stats_{timestamp}.csv')
+            export_encounter_aggregate_csv(encounter_stats, output_dir / f'consume_encounter_stats_{timestamp}.csv')
+        else:
+            # Details mode - individual pulls
+            print_summary(logs)
+            
+            # Export
+            output_dir = args.output or Path('output')
+            output_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            export_to_csv(logs, output_dir / f'consume_tracking_{timestamp}.csv')
+            export_to_json(logs, output_dir / f'consume_tracking_{timestamp}.json')
+        
+        return 0
+    
+    # Non-interactive mode (original behavior)
     # Print summary unless quiet
     if not args.quiet:
         print_summary(logs)
@@ -448,7 +626,7 @@ def main():
         print_player_leaderboard(player_stats, args.top)
     
     # Export if requested
-    output_dir = args.output or Path('.')
+    output_dir = args.output or Path('output')
     output_dir.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
