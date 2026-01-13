@@ -1122,8 +1122,75 @@ local function HasAnyBuffFromConflict(playerBuffs, conflictBuffKeys)
   return false
 end
 
+-- Helper: Check if a buff key represents a flask
+local function IsFlaskBuff(buffKey)
+  -- Flask buff keys in RABuffs (correct keys)
+  local flaskKeys = {
+    flask = true,            -- Flask of Supreme Power
+    titans = true,           -- Flask of the Titans  
+    wisdom = true,           -- Flask of Distilled Wisdom
+    chromatic = true,        -- Flask of Chromatic Resistance
+    petrification = true     -- Flask of Petrification
+  }
+  return flaskKeys[buffKey] == true
+end
+
+-- Helper: Get flask requirements for a specific role from encounter/raid settings
+-- @param raidName string: Name of the raid
+-- @param encounterName string: Name of the encounter
+-- @param roleName string: Role name ("TANKS", "HEALERS", "MELEE", "RANGED")
+-- @return boolean: True if flasks are required for this role
+-- Priority: Encounter settings first, then raid settings as fallback
+local function GetFlaskRequirement(raidName, encounterName, roleName)
+  if not raidName or not encounterName or not roleName then
+    return false
+  end
+  
+  -- Get raid and encounter data
+  local raid = OGRH.FindRaidByName(raidName)
+  if not raid then
+    return false
+  end
+  
+  local encounter = OGRH.FindEncounterByName(raid, encounterName)
+  if not encounter then
+    return false
+  end
+  
+  -- Check encounter settings first (highest priority)
+  if encounter.advancedSettings then
+    local encounterSettings = encounter.advancedSettings.consumeTracking
+    if encounterSettings and encounterSettings.enabled and encounterSettings.flaskRoles then
+      for i = 1, table.getn(encounterSettings.flaskRoles) do
+        if encounterSettings.flaskRoles[i] == roleName then
+          return true
+        end
+      end
+    end
+  end
+  
+  -- Fall back to raid settings if encounter doesn't specify
+  if raid.advancedSettings then
+    local raidSettings = raid.advancedSettings.consumeTracking
+    if raidSettings and raidSettings.enabled and raidSettings.flaskRoles then
+      for i = 1, table.getn(raidSettings.flaskRoles) do
+        if raidSettings.flaskRoles[i] == roleName then
+          return true
+        end
+      end
+    end
+  end
+  
+  return false
+end
+
 -- Calculate score for a single player
-function CT.CalculatePlayerScore(playerName, playerClass, raidData)
+-- @param playerName string: Name of the player
+-- @param playerClass string: Class of the player
+-- @param raidData table: Buff data for all raid members
+-- @param raidName string: (optional) Name of the raid for flask requirement checking
+-- @param encounterName string: (optional) Name of the encounter for flask requirement checking
+function CT.CalculatePlayerScore(playerName, playerClass, raidData, raidName, encounterName)
   -- Get player's role from RolesUI
   local playerRole = OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[playerName]
   if not playerRole then
@@ -1133,6 +1200,12 @@ function CT.CalculatePlayerScore(playerName, playerClass, raidData)
   local roleLetter = GetRoleLetter(playerRole)
   if not roleLetter then
     return nil, "Invalid role"
+  end
+  
+  -- Check if flasks are required for this role in this encounter
+  local flasksRequired = false
+  if raidName and encounterName then
+    flasksRequired = GetFlaskRequirement(raidName, encounterName, playerRole)
   end
   
   -- Get player's buffs
@@ -1152,21 +1225,34 @@ function CT.CalculatePlayerScore(playerName, playerClass, raidData)
   local requiredBuffs = {} -- {buffKey = {bar, profileIndex}}
   for profileIndex, bar in ipairs(profileBars) do
     if bar.buffKey and RAB_Buffs[bar.buffKey] then
-      -- Check if buff applies to player's role
-      if BuffAppliesToRole(bar.label, roleLetter) then
-        -- Check class restrictions
-        local includeForClass = true
-        if bar.classes and bar.classes ~= "" and RAB_ClassShort and RAB_ClassShort[playerClass] then
-          local classCode = RAB_ClassShort[playerClass]
-          includeForClass = string.find(bar.classes, classCode) ~= nil
-        end
-        
-        if includeForClass then
-          -- Store as array to handle multiple entries with same buffKey
-          if not requiredBuffs[bar.buffKey] then
-            requiredBuffs[bar.buffKey] = {}
+      -- Check if this is a flask buff
+      local isFlask = IsFlaskBuff(bar.buffKey)
+      
+      -- Determine if we should include this buff
+      local shouldInclude = true
+      if isFlask then
+        -- For flasks, check if they're required for this role
+        -- We always have raid/encounter context
+        shouldInclude = flasksRequired
+      end
+      
+      if shouldInclude then
+        -- Check if buff applies to player's role
+        if BuffAppliesToRole(bar.label, roleLetter) then
+          -- Check class restrictions
+          local includeForClass = true
+          if bar.classes and bar.classes ~= "" and RAB_ClassShort and RAB_ClassShort[playerClass] then
+            local classCode = RAB_ClassShort[playerClass]
+            includeForClass = string.find(bar.classes, classCode) ~= nil
           end
-          table.insert(requiredBuffs[bar.buffKey], {bar = bar, profileIndex = profileIndex})
+          
+          if includeForClass then
+            -- Store as array to handle multiple entries with same buffKey
+            if not requiredBuffs[bar.buffKey] then
+              requiredBuffs[bar.buffKey] = {}
+            end
+            table.insert(requiredBuffs[bar.buffKey], {bar = bar, profileIndex = profileIndex})
+          end
         end
       end
     end
@@ -1200,6 +1286,8 @@ function CT.CalculatePlayerScore(playerName, playerClass, raidData)
               conflictGroups[conflictId] = {buffKeys = {}, hasAny = false}
             end
             
+            -- CRITICAL: Only add the current buffKey (which is in requiredBuffs)
+            -- DO NOT add other buffs from the conflict data that aren't in requiredBuffs
             table.insert(conflictGroups[conflictId].buffKeys, buffKey)
             
             if playerBuffs[buffKey] then
@@ -1261,21 +1349,38 @@ function CT.CalculatePlayerScore(playerName, playerClass, raidData)
   
   -- Count conflict groups (each group uses the weight of the first buff)
   for conflictId, group in pairs(conflictGroups) do
-    -- Use weight of first buff in group
-    local firstBuff = group.buffKeys[1]
-    local weight = GetBuffWeight(firstBuff)
-    
-    possiblePoints = possiblePoints + weight
-    -- Check if player has any buff from this group (including concoction replacements)
-    local hasGroupBuff = false
-    for _, buffKey in ipairs(group.buffKeys) do
-      if PlayerHasBuff(buffKey) then
-        hasGroupBuff = true
-        break
+    -- Skip empty groups (can happen if all buffs in group were flask buffs that got filtered)
+    if table.getn(group.buffKeys) > 0 then
+      -- Check if this entire group is flask buffs that shouldn't be scored
+      local allFlasks = true
+      for _, buffKey in ipairs(group.buffKeys) do
+        if not IsFlaskBuff(buffKey) then
+          allFlasks = false
+          break
+        end
       end
-    end
-    if hasGroupBuff then
-      actualPoints = actualPoints + weight
+      
+      -- If all buffs in group are flasks and flasks not required, skip this group
+      if allFlasks and not flasksRequired then
+        -- Skip this conflict group entirely
+      else
+        -- Use weight of first buff in group
+        local firstBuff = group.buffKeys[1]
+        local weight = GetBuffWeight(firstBuff)
+        
+        possiblePoints = possiblePoints + weight
+        -- Check if player has any buff from this group (including concoction replacements)
+        local hasGroupBuff = false
+        for _, buffKey in ipairs(group.buffKeys) do
+          if PlayerHasBuff(buffKey) then
+            hasGroupBuff = true
+            break
+          end
+        end
+        if hasGroupBuff then
+          actualPoints = actualPoints + weight
+        end
+      end
     end
   end
   
@@ -1291,7 +1396,11 @@ function CT.CalculatePlayerScore(playerName, playerClass, raidData)
         -- Check if this is one of the 3 concoctions
         local isConcoction = (buffKey == "emeraldmongoose" or buffKey == "dreamwater" or buffKey == "arcanegiants")
         
-        if not isConcoction then
+        -- Check if this is a flask that shouldn't be scored
+        local isFlask = IsFlaskBuff(buffKey)
+        if isFlask and not flasksRequired then
+          -- Skip this flask entirely
+        elseif not isConcoction then
           -- Get configurable weight for this buff
           local buffValue = GetBuffWeight(buffKey)
           
@@ -1317,7 +1426,8 @@ function CT.CalculatePlayerScore(playerName, playerClass, raidData)
     hasBuffs = playerBuffs,
     conflictGroups = conflictGroups,
     requiredBuffs = requiredBuffs,
-    concoctionReplacements = concoctionReplacements
+    concoctionReplacements = concoctionReplacements,
+    flasksRequired = flasksRequired
   }
 end
 
@@ -1347,6 +1457,12 @@ function CT.PollConsumes(editBox, scrollBar, scrollFrame)
   if not profileBars or table.getn(profileBars) == 0 then
     editBox:SetText("|cffff8800Warning:|r OGRH_Consumables profile has no bars configured.")
     return
+  end
+  
+  -- Get raid/encounter selection from main UI (if available)
+  local raid, encounter = nil, nil
+  if OGRH.GetSelectedRaidAndEncounter then
+    raid, encounter = OGRH.GetSelectedRaidAndEncounter()
   end
   
   -- Build raid data structure: {playerName = {class, buffs={buffKey=true}}}
@@ -1382,7 +1498,7 @@ function CT.PollConsumes(editBox, scrollBar, scrollFrame)
   -- Calculate scores for all players
   local playerScores = {} -- {{name, class, score, details}}
   for playerName, data in pairs(raidData) do
-    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData)
+    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData, raid, encounter)
     if score then
       table.insert(playerScores, {
         name = playerName,
@@ -1542,30 +1658,37 @@ function CT.PollConsumes(editBox, scrollBar, scrollFrame)
             local buffName = RAB_Buffs[bar.buffKey].name or bar.buffKey
             local buffKey = bar.buffKey
             
-            -- Check if it's a concoction the player has
-            local isConcoction = (buffKey == "emeraldmongoose" or buffKey == "dreamwater" or buffKey == "arcanegiants")
-            if isConcoction and playerBuffs[buffKey] then
-              -- Calculate how many required buffs this concoction replaces
-              local replacedBuffs = concoctionReplacements[buffKey] or {}
-              local replacedCount = 0
-              for _, replacedKey in ipairs(replacedBuffs) do
-                if requiredBuffs[replacedKey] then
-                  replacedCount = replacedCount + 1
+            -- Check if it's a flask that shouldn't be displayed
+            local isFlask = IsFlaskBuff(buffKey)
+            local flasksRequired = details.flasksRequired or false
+            if isFlask and not flasksRequired then
+              -- Skip this flask entirely - don't display it
+            else
+              -- Check if it's a concoction the player has
+              local isConcoction = (buffKey == "emeraldmongoose" or buffKey == "dreamwater" or buffKey == "arcanegiants")
+              if isConcoction and playerBuffs[buffKey] then
+                -- Calculate how many required buffs this concoction replaces
+                local replacedBuffs = concoctionReplacements[buffKey] or {}
+                local replacedCount = 0
+                for _, replacedKey in ipairs(replacedBuffs) do
+                  if requiredBuffs[replacedKey] then
+                    replacedCount = replacedCount + 1
+                  end
                 end
-              end
-              -- Show concoction with actual contribution
-              if replacedCount > 0 then
-                table.insert(hasList, buffName .. " (+" .. replacedCount .. ")")
-              else
-                table.insert(hasList, buffName)
-              end
-            elseif not isConcoction then
-              -- Regular buff
-              if playerBuffs[buffKey] then
-                table.insert(hasList, buffName)
-              elseif not satisfiedByConcoction[buffKey] then
-                -- Only show as missing if it's not satisfied by a concoction
-                table.insert(missingList, buffName)
+                -- Show concoction with actual contribution
+                if replacedCount > 0 then
+                  table.insert(hasList, buffName .. " (+" .. replacedCount .. ")")
+                else
+                  table.insert(hasList, buffName)
+                end
+              elseif not isConcoction then
+                -- Regular buff
+                if playerBuffs[buffKey] then
+                  table.insert(hasList, buffName)
+                elseif not satisfiedByConcoction[buffKey] then
+                  -- Only show as missing if it's not satisfied by a concoction
+                  table.insert(missingList, buffName)
+                end
               end
             end
           end
@@ -1743,10 +1866,16 @@ function CT.AnnounceConsumes()
     end
   end
   
+  -- Get raid/encounter selection from main UI (if available)
+  local raid, encounter = nil, nil
+  if OGRH.GetSelectedRaidAndEncounter then
+    raid, encounter = OGRH.GetSelectedRaidAndEncounter()
+  end
+  
   -- Calculate scores for all players
   local playerScores = {}
   for playerName, data in pairs(raidData) do
-    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData)
+    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData, raid, encounter)
     if score then
       table.insert(playerScores, {
         name = playerName,
@@ -2002,7 +2131,7 @@ function CT.WriteConsumesToCombatLog(record)
           end
         end
         
-        local score, err, details = CT.CalculatePlayerScore(player.name, player.class, raidData)
+        local score, err, details = CT.CalculatePlayerScore(player.name, player.class, raidData, record.raid, record.encounter)
         if details then
           actualPoints = details.actual or 0
           possiblePoints = details.possible or 0
@@ -2198,7 +2327,7 @@ function CT.CaptureConsumesSnapshot()
   -- Calculate scores for all raid members
   local players = {}
   for playerName, data in pairs(raidData) do
-    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData)
+    local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData, raid, encounter)
     local role = OGRH_SV.roles and OGRH_SV.roles[playerName] or "UNKNOWN"
     
     table.insert(players, {
