@@ -108,6 +108,37 @@ end)
 OGRH.EnsureSV()
 
 -- ========================================
+-- TIMER SYSTEM (for delayed execution)
+-- ========================================
+OGRH.timers = {}
+local timerFrame = CreateFrame("Frame")
+
+timerFrame:SetScript("OnUpdate", function()
+  local now = GetTime()
+  for id, timer in pairs(OGRH.timers) do
+    if now >= timer.when then
+      timer.callback()
+      if timer.repeating then
+        timer.when = now + timer.delay
+      else
+        OGRH.timers[id] = nil
+      end
+    end
+  end
+end)
+
+function OGRH.ScheduleTimer(callback, delay, repeating)
+  local id = GetTime() .. math.random()
+  OGRH.timers[id] = {
+    callback = callback,
+    when = GetTime() + delay,
+    delay = delay,
+    repeating = repeating
+  }
+  return id
+end
+
+-- ========================================
 -- MODULE SYSTEM
 -- ========================================
 OGRH.Modules = OGRH.Modules or {}

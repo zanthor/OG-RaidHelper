@@ -1,0 +1,36 @@
+Consumable,Effect,Duration (minutes),Lasts Through Death
+Cerebral Cortex Compound,,60,No
+Concoction of the Arcane Giant,,120,Yes
+Concoction of the Dreamwater,,120,Yes
+Concoction of the Emerald Mongoose,,120,Yes
+Danonzo's Tel'Abim Delight,,15,No
+Danonzo's Tel'Abim Surprise,,15,No
+Dreamshard Elixir,,60,No
+Dreamtonic,,60,No
+Elixir of Giants,"25 Strength",60,No
+Elixir of Greater Arcane Power,,60,No
+Elixir of Greater Firepower,"40 Fire Spell Damage",60,No
+Elixir of Greater Frost Power,,60,No
+Elixir of Greater Nature Power,,60,No
+Elixir of Shadow Power,"40 Shadow Spell Damage",30,No
+Elixir of Superior Defense,"450 Armor",60,No
+Elixir of the Mongoose,"25 Agility, 2% Crit",60,No
+Flask of Distilled Wisdom,"2000 Mana",120,Yes
+Flask of Supreme Power,"150 Spell Damage",120,Yes
+Flask of the Titans,"400 HP",120,Yes
+Gift of Arthas,,120,No
+Greater Arcane Elixir,"35 Spell Damage",60,No
+Ground Scorpok Assay,"25 Attack Power",60,No
+Hardened Mushroom,,10,No
+Herbal Salad,,10,No
+Juju Might,"40 Attack Power",10,No
+Mageblood Potion (Healers/Melee/Ranged),"12 MP5",60,No
+Mageblood Potion (Tanks),"12 MP5",60,No
+Medivh's Merlot,,15,No
+Medivh's Merlot Blue,,15,No
+Nightfin Soup,"8 MP5",10,No
+Power Mushroom,,10,No
+R.O.I.D.S.,"25 Strength",60,No
+Rumsey Rum Black Label,"15 Stamina",15,No
+Spirit of Zandalar,,120,Yes
+Winterfall Firewater,"35 Attack Power",20,No

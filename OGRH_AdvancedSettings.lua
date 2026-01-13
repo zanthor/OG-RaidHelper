@@ -2,99 +2,72 @@
 -- Advanced settings UI dialogs for raids and encounters
 -- Phase 3: UI Layer Implementation
 
--- BigWigs Encounter Database (organized by zone/raid)
-local BIGWIGS_ENCOUNTERS = {
-  ["Molten Core"] = {
-    {name = "Lucifron", id = "Lucifron"},
-    {name = "Magmadar", id = "Magmadar"},
-    {name = "Gehennas", id = "Gehennas"},
-    {name = "Garr", id = "Garr"},
-    {name = "Shazzrah", id = "Shazzrah"},
-    {name = "Baron Geddon", id = "Baron Geddon"},
-    {name = "Golemagg the Incinerator", id = "Golemagg the Incinerator"},
-    {name = "Sulfuron Harbinger", id = "Sulfuron Harbinger"},
-    {name = "Majordomo Executus", id = "Majordomo Executus"},
-    {name = "Ragnaros", id = "Ragnaros"},
-  },
-  ["Blackwing Lair"] = {
-    {name = "Razorgore the Untamed", id = "Razorgore the Untamed"},
-    {name = "Vaelastrasz the Corrupt", id = "Vaelastrasz the Corrupt"},
-    {name = "Broodlord Lashlayer", id = "Broodlord Lashlayer"},
-    {name = "Firemaw", id = "Firemaw"},
-    {name = "Ebonroc", id = "Ebonroc"},
-    {name = "Flamegor", id = "Flamegor"},
-    {name = "Chromaggus", id = "Chromaggus"},
-    {name = "Nefarian", id = "Nefarian"},
-  },
-  ["Ruins of Ahn'Qiraj"] = {
-    {name = "Kurinnaxx", id = "Kurinnaxx"},
-    {name = "General Rajaxx", id = "General Rajaxx"},
-    {name = "Moam", id = "Moam"},
-    {name = "Buru the Gorger", id = "Buru the Gorger"},
-    {name = "Ayamiss the Hunter", id = "Ayamiss the Hunter"},
-    {name = "Ossirian the Unscarred", id = "Ossirian the Unscarred"},
-  },
-  ["Ahn'Qiraj Temple"] = {
-    {name = "The Prophet Skeram", id = "The Prophet Skeram"},
-    {name = "Silithid Royalty", id = "Silithid Royalty"},
-    {name = "Battleguard Sartura", id = "Battleguard Sartura"},
-    {name = "Fankriss the Unyielding", id = "Fankriss the Unyielding"},
-    {name = "Viscidus", id = "Viscidus"},
-    {name = "Princess Huhuran", id = "Princess Huhuran"},
-    {name = "The Twin Emperors", id = "The Twin Emperors"},
-    {name = "Ouro", id = "Ouro"},
-    {name = "C'Thun", id = "C'Thun"},
-  },
-  ["Naxxramas"] = {
-    {name = "Anub'Rekhan", id = "Anub'Rekhan"},
-    {name = "Grand Widow Faerlina", id = "Grand Widow Faerlina"},
-    {name = "Maexxna", id = "Maexxna"},
-    {name = "Noth the Plaguebringer", id = "Noth the Plaguebringer"},
-    {name = "Heigan the Unclean", id = "Heigan the Unclean"},
-    {name = "Loatheb", id = "Loatheb"},
-    {name = "Instructor Razuvious", id = "Instructor Razuvious"},
-    {name = "Gothik the Harvester", id = "Gothik the Harvester"},
-    {name = "The Four Horsemen", id = "The Four Horsemen"},
-    {name = "Patchwerk", id = "Patchwerk"},
-    {name = "Grobbulus", id = "Grobbulus"},
-    {name = "Gluth", id = "Gluth"},
-    {name = "Thaddius", id = "Thaddius"},
-    {name = "Sapphiron", id = "Sapphiron"},
-    {name = "Kel'Thuzad", id = "Kel'Thuzad"},
-  },
-  ["Zul'Gurub"] = {
-    {name = "High Priestess Jeklik", id = "High Priestess Jeklik"},
-    {name = "High Priest Venoxis", id = "High Priest Venoxis"},
-    {name = "High Priestess Mar'li", id = "High Priestess Mar'li"},
-    {name = "Bloodlord Mandokir", id = "Bloodlord Mandokir"},
-    {name = "Gri'lek", id = "Gri'lek"},
-    {name = "Hazza'arah", id = "Hazza'arah"},
-    {name = "Renataki", id = "Renataki"},
-    {name = "Wushoolay", id = "Wushoolay"},
-    {name = "Gahz'ranka", id = "Gahz'ranka"},
-    {name = "High Priest Thekal", id = "High Priest Thekal"},
-    {name = "High Priestess Arlokk", id = "High Priestess Arlokk"},
-    {name = "Jin'do the Hexxer", id = "Jin'do the Hexxer"},
-    {name = "Hakkar", id = "Hakkar"},
-  },
-  ["Onyxia's Lair"] = {
-    {name = "Onyxia", id = "Onyxia"},
-  },
-  ["World Bosses"] = {
-    {name = "Azuregos", id = "Azuregos"},
-    {name = "Lord Kazzak", id = "Lord Kazzak"},
-    {name = "Emeriss", id = "Emeriss"},
-    {name = "Lethon", id = "Lethon"},
-    {name = "Taerar", id = "Taerar"},
-    {name = "Ysondre", id = "Ysondre"},
-  },
-}
+-- Function to get BigWigs zone and boss data dynamically
+local function GetBigWigsEncounters()
+  -- Check if BigWigs is loaded
+  if not BigWigs then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r BigWigs not loaded, using fallback encounter list.")
+    return {}
+  end
+  
+  -- Build zone -> bosses map from BigWigs modules
+  local encounters = {}
+  
+  -- Iterate through all registered BigWigs modules
+  for name, module in BigWigs:IterateModules() do
+    -- Only process boss modules (skip plugins and other modules)
+    if module.IsBossModule and module:IsBossModule() then
+      -- Get the zone name
+      local zoneName = nil
+      if type(module.zonename) == "string" then
+        zoneName = module.zonename
+      elseif type(module.zonename) == "table" and table.getn(module.zonename) > 0 then
+        -- Some modules have multiple zones, use first one
+        zoneName = module.zonename[1]
+      end
+      
+      -- Get the boss name - use translatedName if available, otherwise module name
+      local bossName = module.translatedName or name
+      
+      -- Add to encounters table if we have both zone and boss
+      if zoneName and bossName and type(bossName) == "string" then
+        if not encounters[zoneName] then
+          encounters[zoneName] = {}
+        end
+        
+        table.insert(encounters[zoneName], {
+          name = bossName,
+          id = bossName  -- Use boss name as ID for BigWigs detection
+        })
+      end
+    end
+  end
+  
+  -- Sort bosses within each zone alphabetically
+  for zoneName, bosses in pairs(encounters) do
+    table.sort(bosses, function(a, b)
+      if type(a.name) == "string" and type(b.name) == "string" then
+        return a.name < b.name
+      end
+      return false
+    end)
+  end
+  
+  return encounters
+end
+
+-- Cache BigWigs encounters (will be populated when dialog is opened)
+local BIGWIGS_ENCOUNTERS = nil
+
+-- Function to refresh BigWigs encounter cache (call this if BigWigs loads new modules)
+function OGRH.RefreshBigWigsEncounters()
+  BIGWIGS_ENCOUNTERS = GetBigWigsEncounters()
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r BigWigs encounter list refreshed.")
+end
 
 -- Show advanced settings dialog for raid or encounter
-function OGRH.ShowAdvancedSettingsDialog()
-  DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff=== ShowAdvancedSettingsDialog called ===|r")
-  DEFAULT_CHAT_FRAME:AddMessage("Dialog exists: " .. tostring(OGRH_AdvancedSettingsFrame ~= nil))
-  
+-- @param forceMode: "raid" to force raid mode, "encounter" to force encounter mode, nil to auto-detect
+function OGRH.ShowAdvancedSettingsDialog(forceMode)
   local frame = OGRH_EncounterFrame
   if not frame then
     OGRH.Msg("Encounter frame not found.")
@@ -102,9 +75,17 @@ function OGRH.ShowAdvancedSettingsDialog()
   end
   
   -- Determine if we're editing raid or encounter
-  local isRaid = not frame.selectedEncounter
+  local isRaid
+  if forceMode == "raid" then
+    isRaid = true
+  elseif forceMode == "encounter" then
+    isRaid = false
+  else
+    -- Auto-detect: raid mode if no encounter selected
+    isRaid = not frame.selectedEncounter
+  end
   local title
-  local windowHeight = 275  -- Base height for raid settings
+  local windowHeight = 330  -- Both raid and encounter include BigWigs section now
   
   if isRaid then
     if not frame.selectedRaid then
@@ -114,7 +95,6 @@ function OGRH.ShowAdvancedSettingsDialog()
     title = "Raid Settings: " .. frame.selectedRaid
   else
     title = "Encounter Settings: " .. frame.selectedEncounter
-    windowHeight = 450  -- Taller for encounter settings (includes BigWigs section)
   end
   
   -- Create or reuse dialog
@@ -127,13 +107,14 @@ function OGRH.ShowAdvancedSettingsDialog()
       title = title,
       closeButton = true,
       escapeCloses = true,
+      closeOnClickOutside = true,
       resizable = false
     })
     
     local content = dialog.contentFrame
     
     -- Calculate panel height based on content type
-    local panelHeight = 200  -- Base height for raid settings (consume tracking only)
+    local panelHeight = 150  -- Base height for raid settings (consume tracking only)
     
     -- Content panel for consume settings (positioned first)
     local consumePanel = OGST.CreateContentPanel(content, {
@@ -163,15 +144,26 @@ function OGRH.ShowAdvancedSettingsDialog()
     dialog.consumeCheck = consumeCheck
     
     -- Ready threshold textbox (to the right of checkbox)
-    local thresholdContainer, thresholdBackdrop, thresholdInput, thresholdLabel = OGST.CreateSingleLineTextBox(consumePanel, 40, 24, {
+    local thresholdContainer, thresholdBackdrop, thresholdInput, thresholdLabel = OGST.CreateSingleLineTextBox(consumePanel, 180, 24, {
       label = "Ready Threshold (%):",
       labelAnchor = "LEFT",
+      labelWidth = 100,
+      textBoxWidth = 40,
       maxLetters = 2,
       numeric = true,
       align = "CENTER"
     })
     OGST.AnchorElement(thresholdContainer, consumeCheckContainer, {position = "right"})
     dialog.thresholdInput = thresholdInput
+    
+    -- Raid threshold info label (only shown in encounter mode)
+    local raidThresholdLabel = OGST.CreateStaticText(consumePanel, {
+      text = "Raid set to: %",
+      width = 110
+    })
+    OGST.AnchorElement(raidThresholdLabel, thresholdContainer, {position = "right", align = "center"})
+    raidThresholdLabel:Hide()  -- Hidden by default, shown in encounter mode
+    dialog.raidThresholdLabel = raidThresholdLabel
     
     -- Flask Requirements label
     local flaskLabel = OGST.CreateStaticText(consumePanel, {
@@ -236,7 +228,7 @@ function OGRH.ShowAdvancedSettingsDialog()
     
     -- BigWigs section (encounter-only, positioned below consume tracking)
     local bigwigsPanel = OGST.CreateContentPanel(content, {
-      height = 120
+      height = 100
     })
     OGST.AnchorElement(bigwigsPanel, consumePanel, {position = "below", fill = "horizontal"})
     bigwigsPanel:SetPoint("RIGHT", content, "RIGHT", 0, 0)
@@ -255,13 +247,76 @@ function OGRH.ShowAdvancedSettingsDialog()
       label = "Enable BigWigs Auto-Select",
       labelAnchor = "RIGHT",
       checked = false,
-      labelWidth = 180
+      labelWidth = 120
     })
     OGST.AnchorElement(bigwigsCheckContainer, bigwigsHeader, {position = "below"})
     dialog.bigwigsCheck = bigwigsCheck
     
-    -- Build menu items for BigWigs encounters
-    local menuItems = {}
+    -- Warning text for encounter mode (shown when raid BigWigs is not enabled)
+    local bigwigsWarning = OGST.CreateStaticText(bigwigsPanel, {
+      text = "(Must enable BigWigs at raid level first)",
+      font = "GameFontHighlightSmall",
+      width = 240,
+      multiline = false
+    })
+    bigwigsWarning:SetTextColor(1, 0.5, 0)  -- Orange warning color
+    OGST.AnchorElement(bigwigsWarning, bigwigsCheckLabel, {position = "right", align = "center"})
+    bigwigsWarning:Hide()  -- Hidden by default, shown only in encounter mode when raid BigWigs is off
+    dialog.bigwigsWarning = bigwigsWarning
+    
+    -- Add onChange handler for BigWigs checkbox (handles both raid and encounter mode)
+    bigwigsCheck:SetScript("OnClick", function()
+      local isChecked = bigwigsCheck:GetChecked()
+      
+      -- Handle raid mode menu button
+      if dialog.raidMenuBtn and dialog.raidMenuBtn.button then
+        if isChecked then
+          -- Enable: allow menu to open, restore previous selection or show None
+          dialog.raidMenuBtn.disabled = nil
+        else
+          -- Disable: prevent menu from opening, show disabled text
+          dialog.raidMenuBtn.disabled = true
+          dialog.raidMenuBtn.button:SetText("<Enable to Set>")
+          dialog.selectedEncounterId = nil
+          dialog.raidMenuBtn.selectedItems = {}
+          if dialog.raidMenuBtn.config then
+            dialog.raidMenuBtn.config.buttonText = "<Enable to Set>"
+          end
+        end
+      end
+      
+      -- Handle encounter mode menu button
+      if dialog.encounterMenuBtn and dialog.encounterMenuBtn.button then
+        if isChecked then
+          -- Enable: allow menu to open, restore previous selection or show None
+          dialog.encounterMenuBtn.disabled = nil
+        else
+          -- Disable: prevent menu from opening, show disabled text
+          dialog.encounterMenuBtn.disabled = true
+          dialog.encounterMenuBtn.button:SetText("<Enable to Set>")
+          dialog.encounterMenuBtn.selectedItems = {}
+          if dialog.encounterMenuBtn.config then
+            dialog.encounterMenuBtn.config.buttonText = "<Enable to Set>"
+          end
+        end
+      end
+    end)
+    
+    -- === RAID MODE MENU BUTTON (flat zone list) ===
+    
+    -- Load BigWigs encounters if not already loaded
+    if not BIGWIGS_ENCOUNTERS then
+      BIGWIGS_ENCOUNTERS = GetBigWigsEncounters()
+      
+      -- If BigWigs isn't loaded or has no encounters, show a warning
+      if not BigWigs then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r BigWigs addon not found. BigWigs integration will not be available.")
+      elseif not BIGWIGS_ENCOUNTERS or not next(BIGWIGS_ENCOUNTERS) then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r No BigWigs boss modules found. Make sure BigWigs raid modules are loaded.")
+      end
+    end
+    
+    local raidMenuItems = {}
     
     -- Sort raid zones alphabetically
     local zoneNames = {}
@@ -270,67 +325,162 @@ function OGRH.ShowAdvancedSettingsDialog()
     end
     table.sort(zoneNames)
     
-    -- Add "Clear Selection" at top
-    table.insert(menuItems, {
-      text = "<Clear Selection>",
+    -- Helper function to update raid menu button text showing selected zone names
+    local function UpdateRaidMenuButtonText(menuBtn)
+      if not menuBtn or not menuBtn.button then return end
+      
+      local selectedCount = table.getn(menuBtn.selectedItems or {})
+      if selectedCount == 0 then
+        menuBtn.button:SetText("<None Selected>")
+      elseif selectedCount == 1 then
+        menuBtn.button:SetText(menuBtn.selectedItems[1].text)
+      else
+        -- Multiple selections: show comma-separated zone names
+        local displayText = ""
+        for i = 1, selectedCount do
+          if i > 1 then displayText = displayText .. ", " end
+          displayText = displayText .. menuBtn.selectedItems[i].text
+        end
+        menuBtn.button:SetText(displayText)
+      end
+    end
+    
+    -- Add zones to raid mode menu
+    table.insert(raidMenuItems, {
+      text = "<None Selected>",
       onClick = function()
-        dialog.selectedEncounterId = nil
-        dialog.encounterMenuBtn.button:SetText("<None Selected>")
+        if dialog.raidMenuBtn then
+          dialog.raidMenuBtn.selectedItems = {}
+          UpdateRaidMenuButtonText(dialog.raidMenuBtn)
+        end
       end
     })
     
-    -- Build hierarchical menu with submenus
     for _, zoneName in ipairs(zoneNames) do
-      local encounters = BIGWIGS_ENCOUNTERS[zoneName]
-      local submenuItems = {}
+      table.insert(raidMenuItems, {
+        text = zoneName,
+        onClick = function()
+          -- OGST handles selection internally, just update button text
+          UpdateRaidMenuButtonText(dialog.raidMenuBtn)
+        end
+      })
+    end
+    
+    -- Store the update function for later use
+    dialog.UpdateRaidMenuButtonText = UpdateRaidMenuButtonText
+    
+    -- Create raid mode menu button
+    local raidMenuBtn = OGST.CreateMenuButton(bigwigsPanel, {
+      label = "BigWigs Raid:",
+      labelAnchor = "LEFT",
+      labelWidth = 130,
+      buttonText = "<None Selected>",
+      buttonWidth = 300,
+      buttonHeight = 24,
+      menuItems = raidMenuItems,
+      singleSelect = false
+    })
+    OGST.AnchorElement(raidMenuBtn, bigwigsCheckContainer, {position = "below"})
+    dialog.raidMenuBtn = raidMenuBtn
+    
+    -- Intercept button click to check disabled state without changing visual appearance
+    local originalOnClick = raidMenuBtn.button:GetScript("OnClick")
+    raidMenuBtn.button:SetScript("OnClick", function()
+      if dialog.raidMenuBtn.disabled then
+        -- Don't show menu when disabled
+        return
+      end
+      -- Call original handler when enabled
+      if originalOnClick then
+        originalOnClick()
+      end
+    end)
+    
+    -- === ENCOUNTER MODE MENU BUTTON (encounters for selected raid zone) ===
+    -- Helper function to update encounter menu button text showing selected encounter names
+    local function UpdateEncounterMenuButtonText(menuBtn)
+      if not menuBtn or not menuBtn.button then return end
       
+      local selectedCount = table.getn(menuBtn.selectedItems or {})
+      if selectedCount == 0 then
+        menuBtn.button:SetText("<None Selected>")
+      elseif selectedCount == 1 then
+        menuBtn.button:SetText(menuBtn.selectedItems[1].text)
+      else
+        -- Multiple selections: show comma-separated encounter names
+        local displayText = ""
+        for i = 1, selectedCount do
+          if i > 1 then displayText = displayText .. ", " end
+          displayText = displayText .. menuBtn.selectedItems[i].text
+        end
+        menuBtn.button:SetText(displayText)
+      end
+    end
+    
+    -- Build all possible encounters upfront (like raid menu)
+    local encounterMenuItems = {
+      {
+        text = "<None Selected>",
+        onClick = function()
+          if dialog.encounterMenuBtn then
+            dialog.encounterMenuBtn.selectedItems = {}
+            UpdateEncounterMenuButtonText(dialog.encounterMenuBtn)
+          end
+        end
+      }
+    }
+    
+    -- Add all encounters from all zones
+    for zoneName, encounters in pairs(BIGWIGS_ENCOUNTERS) do
       for i = 1, table.getn(encounters) do
         local encounter = encounters[i]
-        local encName = encounter.name
-        local encId = encounter.id
+        local capturedName = encounter.name
+        local capturedZone = zoneName
         
-        table.insert(submenuItems, {
-          text = encName,
+        table.insert(encounterMenuItems, {
+          text = capturedName,
+          zone = capturedZone,  -- Store zone for filtering
           onClick = function()
-            dialog.selectedEncounterId = encId
-            dialog.encounterMenuBtn.button:SetText(encName)
+            -- OGST handles selection internally, just update button text
+            UpdateEncounterMenuButtonText(dialog.encounterMenuBtn)
           end
         })
       end
-      
-      table.insert(menuItems, {
-        text = zoneName,
-        submenu = submenuItems
-      })
     end
     
-    -- BigWigs Encounter menu button
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ffAbout to call CreateMenuButton with " .. table.getn(menuItems) .. " items|r")
-    DEFAULT_CHAT_FRAME:AddMessage("bigwigsPanel = " .. tostring(bigwigsPanel))
-    DEFAULT_CHAT_FRAME:AddMessage("bigwigsCheckContainer = " .. tostring(bigwigsCheckContainer))
-    local success, result = pcall(function()
-      return OGST.CreateMenuButton(bigwigsPanel, {
-        label = "BigWigs Encounter:",
-        labelAnchor = "LEFT",
-        labelWidth = 130,
-        buttonText = "<None Selected>",
-        buttonWidth = 300,
-        buttonHeight = 24,
-        menuItems = menuItems,
-        singleSelect = true
-      })
-    end)
+    -- Store the update function for later use
+    dialog.UpdateEncounterMenuButtonText = UpdateEncounterMenuButtonText
     
-    if not success then
-      DEFAULT_CHAT_FRAME:AddMessage("|cffff0000ERROR creating menu button: " .. tostring(result) .. "|r")
-      return
-    end
-    
-    local encounterMenuBtn = result
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ffCreateMenuButton returned successfully|r")
+    -- Create encounter mode menu button
+    local encounterMenuBtn = OGST.CreateMenuButton(bigwigsPanel, {
+      label = "BigWigs Encounter:",
+      labelAnchor = "LEFT",
+      labelWidth = 130,
+      buttonText = "<None Selected>",
+      buttonWidth = 300,
+      buttonHeight = 24,
+      menuItems = encounterMenuItems,
+      singleSelect = false
+    })
     OGST.AnchorElement(encounterMenuBtn, bigwigsCheckContainer, {position = "below"})
+    
+    -- Store all items for filtering
+    encounterMenuBtn.allMenuItems = encounterMenuItems
+    
     dialog.encounterMenuBtn = encounterMenuBtn
-    dialog.selectedEncounterId = nil
+    
+    -- Intercept button click to check disabled state without changing visual appearance
+    local originalEncounterOnClick = encounterMenuBtn.button:GetScript("OnClick")
+    encounterMenuBtn.button:SetScript("OnClick", function()
+      if dialog.encounterMenuBtn.disabled then
+        -- Don't show menu when disabled
+        return
+      end
+      -- Call original handler when enabled
+      if originalEncounterOnClick then
+        originalEncounterOnClick()
+      end
+    end)
     
     -- BigWigs info text
     local bigwigsInfo = OGST.CreateStaticText(bigwigsPanel, {
@@ -368,26 +518,64 @@ function OGRH.ShowAdvancedSettingsDialog()
     dialog = OGRH_AdvancedSettingsFrame
   end
   
-  -- Update title and height
-  dialog.titleText:SetText(title)
-  if isRaid then
-    dialog:SetHeight(275)
-  else
-    dialog:SetHeight(450)
-  end
+  -- Store the mode in the dialog for use by save function
+  dialog.isRaidMode = isRaid
   
-  -- Show/hide BigWigs section based on raid vs encounter
-  if dialog.bigwigsHeader and dialog.bigwigsPanel then
+  -- Update title
+  dialog.titleText:SetText(title)
+  
+  -- Update BigWigs section label and info text based on mode
+  if dialog.bigwigsHeader and dialog.bigwigsInfo then
     if isRaid then
-      dialog.bigwigsHeader:Hide()
-      dialog.bigwigsPanel:Hide()
+      dialog.bigwigsHeader:SetText("BigWigs Raid Selection")
+      dialog.bigwigsInfo:SetText("Select the BigWigs raid zone. Individual encounters can then be configured in their settings.")
+      if dialog.encounterMenuBtn and dialog.encounterMenuBtn.label then
+        dialog.encounterMenuBtn.label:SetText("BigWigs Raid:")
+      end
     else
-      dialog.bigwigsHeader:Show()
-      dialog.bigwigsPanel:Show()
+      dialog.bigwigsHeader:SetText("BigWigs Encounter Detection")
+      dialog.bigwigsInfo:SetText("When BigWigs detects this encounter, OGRH will automatically select this raid/encounter.")
+      if dialog.encounterMenuBtn and dialog.encounterMenuBtn.label then
+        dialog.encounterMenuBtn.label:SetText("BigWigs Encounter:")
+      end
     end
   end
   
-  -- Load current settings
+  -- Get the raid's BigWigs zones for encounter mode (needed for menu and enabling/disabling)
+  local raidBigWigsZones = {}
+  if not isRaid then
+    local raid = OGRH.FindRaidByName(frame.selectedRaid)
+    if raid and raid.advancedSettings and raid.advancedSettings.bigwigs then
+      OGRH.EnsureRaidAdvancedSettings(raid)
+      -- Support both new array format and legacy single zone
+      if raid.advancedSettings.bigwigs.raidZones and table.getn(raid.advancedSettings.bigwigs.raidZones) > 0 then
+        raidBigWigsZones = raid.advancedSettings.bigwigs.raidZones
+      elseif raid.advancedSettings.bigwigs.raidZone and raid.advancedSettings.bigwigs.raidZone ~= "" then
+        raidBigWigsZones = {raid.advancedSettings.bigwigs.raidZone}
+      end
+    end
+  end
+  
+  -- Enable/disable BigWigs section for encounters based on raid zone selection
+  if not isRaid then
+    if not raidBigWigsZones or table.getn(raidBigWigsZones) == 0 then
+      -- Disable BigWigs section (just state, no visual changes)
+      if dialog.bigwigsCheck then dialog.bigwigsCheck:Disable() end
+      if dialog.bigwigsInfo then
+        dialog.bigwigsInfo:SetText("Please select a BigWigs raid zone in the raid settings first.")
+        dialog.bigwigsInfo:SetTextColor(1, 0.5, 0.5)  -- Red tint
+      end
+    else
+      -- Enable BigWigs section
+      if dialog.bigwigsCheck then dialog.bigwigsCheck:Enable() end
+      if dialog.bigwigsInfo then
+        dialog.bigwigsInfo:SetText("When BigWigs detects this encounter, OGRH will automatically select this raid/encounter.")
+        dialog.bigwigsInfo:SetTextColor(1, 1, 1)  -- White
+      end
+    end
+  end
+  
+  -- Load current settings FIRST
   local settings
   if isRaid then
     settings = OGRH.GetCurrentRaidAdvancedSettings()
@@ -395,17 +583,178 @@ function OGRH.ShowAdvancedSettingsDialog()
     settings = OGRH.GetCurrentEncounterAdvancedSettings()
   end
   
-  if settings then
-    -- Load BigWigs settings (encounter only)
-    if not isRaid and settings.bigwigs then
-      dialog.bigwigsCheck:SetChecked(settings.bigwigs.enabled or false)
-      dialog.selectedEncounterId = settings.bigwigs.encounterId
+  -- Reset menu button state before loading new settings
+  if dialog.raidMenuBtn then
+    dialog.raidMenuBtn.selectedItems = {}
+    dialog.raidMenuBtn.config.buttonText = "<None Selected>"
+    OGST.RebuildMenuButton(dialog.raidMenuBtn, dialog.raidMenuBtn.button, dialog.raidMenuBtn.menu, dialog.raidMenuBtn.config)
+  end
+  if dialog.encounterMenuBtn then
+    dialog.encounterMenuBtn.selectedItems = {}
+    dialog.encounterMenuBtn.config.buttonText = "<None Selected>"
+    OGST.RebuildMenuButton(dialog.encounterMenuBtn, dialog.encounterMenuBtn.button, dialog.encounterMenuBtn.menu, dialog.encounterMenuBtn.config)
+  end
+  dialog.selectedEncounterId = nil
+  
+  -- Show/hide appropriate menu button based on mode
+  if dialog.raidMenuBtn and dialog.encounterMenuBtn then
+    if isRaid then
+      -- Raid mode: show raid menu, hide encounter menu
+      dialog.raidMenuBtn:Show()
+      dialog.encounterMenuBtn:Hide()
+    else
+      -- Encounter mode: hide raid menu, show encounter menu
+      dialog.raidMenuBtn:Hide()
+      dialog.encounterMenuBtn:Show()
       
-      -- Update menu button text
-      if settings.bigwigs.encounterId and settings.bigwigs.encounterId ~= "" then
-        dialog.encounterMenuBtn.button:SetText(settings.bigwigs.encounterId)
+        -- Check if raid-level BigWigs is enabled
+        local raidSettings = OGRH.GetCurrentRaidAdvancedSettings()
+        local raidBigWigsEnabled = false
+        if raidSettings and raidSettings.bigwigs and raidSettings.bigwigs.enabled then
+          raidBigWigsEnabled = true
+        end
+        
+        -- Show warning if raid BigWigs is not enabled
+        if dialog.bigwigsWarning then
+          if raidBigWigsEnabled then
+            dialog.bigwigsWarning:Hide()
+          else
+            dialog.bigwigsWarning:Show()
+          end
+        end
+      
+        -- Filter encounter menu to only show bosses from the raid's selected BigWigs zones
+        if dialog.encounterMenuBtn.allMenuItems and raidBigWigsZones and table.getn(raidBigWigsZones) > 0 then
+          -- Filter items: show <None Selected> + items matching any of the raid's selected zones
+          local filteredItems = {}
+          for i = 1, table.getn(dialog.encounterMenuBtn.allMenuItems) do
+            local item = dialog.encounterMenuBtn.allMenuItems[i]
+            -- Include <None Selected> or items matching any selected raid zone
+            if not item.zone then
+              table.insert(filteredItems, item)
+            else
+              -- Check if item's zone is in any of the selected zones
+              for j = 1, table.getn(raidBigWigsZones) do
+                if item.zone == raidBigWigsZones[j] then
+                  table.insert(filteredItems, item)
+                  break
+                end
+              end
+            end
+          end
+          
+          -- Update config with filtered items AND preserve singleSelect
+          dialog.encounterMenuBtn.config.menuItems = filteredItems
+          dialog.encounterMenuBtn.config.singleSelect = false  -- Ensure multi-select is preserved
+          
+          -- Rebuild menu with filtered items
+          OGST.RebuildMenuButton(dialog.encounterMenuBtn, dialog.encounterMenuBtn.button, dialog.encounterMenuBtn.menu, dialog.encounterMenuBtn.config)
+        end
+    end
+  end
+  
+  -- Load BigWigs settings and update button text
+  if settings then
+    if settings.bigwigs then
+      local bigwigsEnabled = settings.bigwigs.enabled or false
+      dialog.bigwigsCheck:SetChecked(bigwigsEnabled)
+      
+      if isRaid then
+        -- Set initial disabled state flag (no visual change to button)
+        if dialog.raidMenuBtn then
+          dialog.raidMenuBtn.disabled = not bigwigsEnabled
+        end
+        
+        -- Raid mode: Load raid zone selection (supports array or legacy single string)
+        local raidZones = settings.bigwigs.raidZones or (settings.bigwigs.raidZone and {settings.bigwigs.raidZone} or {})
+        DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Loading raid zones: " .. table.getn(raidZones) .. " zones")
+        
+        if raidZones and table.getn(raidZones) > 0 then
+          -- Find the matching menu items and mark them as selected
+          if dialog.raidMenuBtn and dialog.raidMenuBtn.config and dialog.raidMenuBtn.config.menuItems then
+            dialog.raidMenuBtn.selectedItems = {}  -- Clear existing selections
+            for i = 1, table.getn(raidZones) do
+              local zoneName = raidZones[i]
+              for _, menuItem in ipairs(dialog.raidMenuBtn.config.menuItems) do
+                if menuItem.text == zoneName then
+                  table.insert(dialog.raidMenuBtn.selectedItems, menuItem)
+                  break
+                end
+              end
+            end
+            
+            -- Use helper function to set button text
+            if dialog.UpdateRaidMenuButtonText then
+              dialog.UpdateRaidMenuButtonText(dialog.raidMenuBtn)
+            end
+            
+            -- Rebuild menu to show selection state
+            OGST.RebuildMenuButton(dialog.raidMenuBtn, dialog.raidMenuBtn.button, dialog.raidMenuBtn.menu, dialog.raidMenuBtn.config)
+          end
+        else
+          if dialog.raidMenuBtn and dialog.raidMenuBtn.config then
+            dialog.raidMenuBtn.selectedItems = {}
+            -- Show different text based on whether BigWigs is enabled
+            local buttonText = bigwigsEnabled and "<None Selected>" or "<Enable to Set>"
+            dialog.raidMenuBtn.config.buttonText = buttonText
+            OGST.RebuildMenuButton(dialog.raidMenuBtn, dialog.raidMenuBtn.button, dialog.raidMenuBtn.menu, dialog.raidMenuBtn.config)
+            if dialog.raidMenuBtn.button then
+              dialog.raidMenuBtn.button:SetText(buttonText)
+            end
+          end
+        end
       else
-        dialog.encounterMenuBtn.button:SetText("<None Selected>")
+        -- Encounter mode: Load encounter IDs (supports array or legacy single string)
+        -- Set initial disabled state flag (no visual change to button)
+        if dialog.encounterMenuBtn then
+          dialog.encounterMenuBtn.disabled = not bigwigsEnabled
+        end
+        
+        local encounterIds = settings.bigwigs.encounterIds or (settings.bigwigs.encounterId and {settings.bigwigs.encounterId} or {})
+        DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Loading encounter IDs: " .. table.getn(encounterIds) .. " encounters")
+        
+        if encounterIds and table.getn(encounterIds) > 0 then
+          -- Find the matching menu items and mark them as selected
+          if dialog.encounterMenuBtn and dialog.encounterMenuBtn.config and dialog.encounterMenuBtn.config.menuItems then
+            dialog.encounterMenuBtn.selectedItems = {}  -- Clear existing selections
+            for i = 1, table.getn(encounterIds) do
+              local encounterId = encounterIds[i]
+              for _, menuItem in ipairs(dialog.encounterMenuBtn.config.menuItems) do
+                if menuItem.text == encounterId then
+                  table.insert(dialog.encounterMenuBtn.selectedItems, menuItem)
+                  break
+                end
+              end
+            end
+            
+            -- Use helper function to set button text
+            if dialog.UpdateEncounterMenuButtonText then
+              dialog.UpdateEncounterMenuButtonText(dialog.encounterMenuBtn)
+            end
+            
+            -- Rebuild menu to show selection state
+            OGST.RebuildMenuButton(dialog.encounterMenuBtn, dialog.encounterMenuBtn.button, dialog.encounterMenuBtn.menu, dialog.encounterMenuBtn.config)
+          end
+        else
+          if dialog.encounterMenuBtn and dialog.encounterMenuBtn.config then
+            dialog.encounterMenuBtn.selectedItems = {}
+            -- Show different text based on whether BigWigs is enabled
+            local buttonText = bigwigsEnabled and "<None Selected>" or "<Enable to Set>"
+            dialog.encounterMenuBtn.config.buttonText = buttonText
+            OGST.RebuildMenuButton(dialog.encounterMenuBtn, dialog.encounterMenuBtn.button, dialog.encounterMenuBtn.menu, dialog.encounterMenuBtn.config)
+            if dialog.encounterMenuBtn.button then
+              dialog.encounterMenuBtn.button:SetText(buttonText)
+            end
+          end
+        end
+      end
+    else
+      -- No bigwigs settings - set default
+      local menuBtn = isRaid and dialog.raidMenuBtn or dialog.encounterMenuBtn
+      if menuBtn and menuBtn.config then
+        menuBtn.selectedItems = {}
+        menuBtn.config.buttonText = "<None Selected>"
+        OGST.RebuildMenuButton(menuBtn, menuBtn.button, menuBtn.menu, menuBtn.config)
       end
     end
     
@@ -413,6 +762,20 @@ function OGRH.ShowAdvancedSettingsDialog()
     if settings.consumeTracking then
       dialog.consumeCheck:SetChecked(settings.consumeTracking.enabled or false)
       dialog.thresholdInput:SetText(tostring(settings.consumeTracking.readyThreshold or 85))
+      
+      -- Show raid threshold label if in encounter mode AND raid has consume tracking enabled
+      if not isRaid and dialog.raidThresholdLabel then
+        local raid = OGRH.FindRaidByName(frame.selectedRaid)
+        if raid and raid.advancedSettings and raid.advancedSettings.consumeTracking and raid.advancedSettings.consumeTracking.enabled then
+          local raidThreshold = raid.advancedSettings.consumeTracking.readyThreshold or 85
+          dialog.raidThresholdLabel:SetText("|cffaaaaaa(Raid set to: " .. raidThreshold .. "%)|r")
+          dialog.raidThresholdLabel:Show()
+        else
+          dialog.raidThresholdLabel:Hide()
+        end
+      elseif dialog.raidThresholdLabel then
+        dialog.raidThresholdLabel:Hide()
+      end
       
       -- Load flask role requirements
       if settings.consumeTracking.requiredFlaskRoles then
@@ -438,7 +801,8 @@ function OGRH.SaveAdvancedSettingsDialog()
   local frame = OGRH_EncounterFrame
   if not frame then return end
   
-  local isRaid = not frame.selectedEncounter
+  -- Use the stored mode from when dialog was opened, not the current frame state
+  local isRaid = dialog.isRaidMode or false
   
   -- Collect consume tracking settings
   local newSettings = {
@@ -465,16 +829,43 @@ function OGRH.SaveAdvancedSettingsDialog()
     end
   end
   
+  -- Collect BigWigs settings
+  newSettings.bigwigs = {
+    enabled = dialog.bigwigsCheck:GetChecked() or false
+  }
+  
+  if isRaid then
+    -- Raid mode: Save raid zone
+    -- Save selected zones as array
+    local selectedZones = {}
+    if dialog.raidMenuBtn and dialog.raidMenuBtn.selectedItems then
+      for i = 1, table.getn(dialog.raidMenuBtn.selectedItems) do
+        table.insert(selectedZones, dialog.raidMenuBtn.selectedItems[i].text)
+      end
+    end
+    newSettings.bigwigs.raidZones = selectedZones
+    -- Keep legacy single value for backward compatibility (use first selected)
+    newSettings.bigwigs.raidZone = (table.getn(selectedZones) > 0) and selectedZones[1] or ""
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Saving " .. table.getn(selectedZones) .. " raid zones")
+  else
+    -- Encounter mode: Save encounter IDs
+    local selectedEncounters = {}
+    if dialog.encounterMenuBtn and dialog.encounterMenuBtn.selectedItems then
+      for i = 1, table.getn(dialog.encounterMenuBtn.selectedItems) do
+        table.insert(selectedEncounters, dialog.encounterMenuBtn.selectedItems[i].text)
+      end
+    end
+    newSettings.bigwigs.encounterIds = selectedEncounters
+    -- Keep legacy single value for backward compatibility (use first selected)
+    newSettings.bigwigs.encounterId = (table.getn(selectedEncounters) > 0) and selectedEncounters[1] or ""
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Saving " .. table.getn(selectedEncounters) .. " encounter IDs")
+  end
+  
   -- Save based on type
   local success = false
   if isRaid then
     success = OGRH.SaveCurrentRaidAdvancedSettings(newSettings)
   else
-    -- For encounters, collect BigWigs settings from dialog
-    newSettings.bigwigs = {
-      enabled = dialog.bigwigsCheck:GetChecked() or false,
-      encounterId = dialog.selectedEncounterId or ""
-    }
     success = OGRH.SaveCurrentEncounterAdvancedSettings(newSettings)
   end
   
@@ -487,5 +878,5 @@ end
 
 -- Raid settings function calls the main one
 function OGRH.ShowRaidSettingsDialog()
-  OGRH.ShowAdvancedSettingsDialog()
+  OGRH.ShowAdvancedSettingsDialog("raid")
 end

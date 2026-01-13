@@ -5051,6 +5051,10 @@ function OGRH.EnsureRaidAdvancedSettings(raid)
   
   if not raid.advancedSettings then
     raid.advancedSettings = {
+      bigwigs = {
+        enabled = false,
+        raidZone = ""
+      },
       consumeTracking = {
         enabled = false,
         readyThreshold = 85,
@@ -5065,6 +5069,13 @@ function OGRH.EnsureRaidAdvancedSettings(raid)
   end
   
   -- Ensure sub-tables exist (for upgrades)
+  if not raid.advancedSettings.bigwigs then
+    raid.advancedSettings.bigwigs = {
+      enabled = false,
+      raidZone = ""
+    }
+  end
+  
   if not raid.advancedSettings.consumeTracking then
     raid.advancedSettings.consumeTracking = {
       enabled = false,
@@ -5130,15 +5141,23 @@ end
 function OGRH.GetCurrentRaidAdvancedSettings()
   local frame = OGRH_EncounterFrame
   if not frame or not frame.selectedRaid then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Load failed: no frame or selectedRaid")
     return nil
   end
   
   local raid = OGRH.FindRaidByName(frame.selectedRaid)
   if not raid then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Load failed: raid not found")
     return nil
   end
   
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Loading from raid: " .. frame.selectedRaid)
   OGRH.EnsureRaidAdvancedSettings(raid)
+  
+  if raid.advancedSettings and raid.advancedSettings.bigwigs then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BigWigs raidZone loaded: " .. tostring(raid.advancedSettings.bigwigs.raidZone))
+  end
+  
   return raid.advancedSettings
 end
 
@@ -5146,12 +5165,19 @@ end
 function OGRH.SaveCurrentRaidAdvancedSettings(settings)
   local frame = OGRH_EncounterFrame
   if not frame or not frame.selectedRaid then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Save failed: no frame or selectedRaid")
     return false
   end
   
   local raid = OGRH.FindRaidByName(frame.selectedRaid)
   if not raid then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Save failed: raid not found")
     return false
+  end
+  
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Saving to raid: " .. frame.selectedRaid)
+  if settings and settings.bigwigs then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BigWigs raidZone being saved: " .. tostring(settings.bigwigs.raidZone))
   end
   
   raid.advancedSettings = settings
