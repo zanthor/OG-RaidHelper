@@ -1365,15 +1365,22 @@ function OGRH.BroadcastEncounterSelection(raidName, encounterName)
   SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
   
   -- After broadcasting the encounter selection, sync the assignments for the new encounter
+  local playerName = UnitName("player")
+  local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin()
+  
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BroadcastEncounterSelection: player=" .. playerName .. ", isAdmin=" .. tostring(isAdmin) .. ", currentLead=" .. tostring(OGRH.RaidLead and OGRH.RaidLead.currentLead or "nil"))
+  
   -- Only the designated raid admin should push assignments
   -- Leaders/Assistants who are not raid admin should request a sync instead
-  if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+  if isAdmin then
     -- This player is the designated raid admin - broadcast full sync
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Admin broadcasting full sync")
     if OGRH.BroadcastFullEncounterSync then
       OGRH.BroadcastFullEncounterSync()
     end
   else
     -- This player is a leader/assistant but not raid admin - request sync from raid admin
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Non-admin requesting sync")
     local requestMsg = "REQUEST_ENCOUNTER_SYNC;" .. raidName .. ";" .. encounterName
     SendAddonMessage(OGRH.ADDON_PREFIX, requestMsg, "RAID")
   end
@@ -1861,6 +1868,8 @@ end
 
 -- Broadcast full encounter assignment sync (assignments only, no structure)
 function OGRH.BroadcastFullEncounterSync()
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BroadcastFullEncounterSync() called")
+  
   if GetNumRaidMembers() == 0 then
     OGRH.Msg("You must be in a raid to sync.")
     return
@@ -1868,10 +1877,13 @@ function OGRH.BroadcastFullEncounterSync()
   
   -- Get current encounter
   if not OGRH.GetCurrentEncounter then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] GetCurrentEncounter not available")
     return
   end
   
   local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Current encounter: " .. tostring(currentRaid) .. " / " .. tostring(currentEncounter))
+  
   if not currentRaid or not currentEncounter then
     OGRH.Msg("No encounter selected to sync.")
     return
@@ -1895,17 +1907,23 @@ function OGRH.BroadcastFullEncounterSync()
     syncData.assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
   end
   
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Attempting to send sync via chunked method")
+  
   -- Use OGRH.Sync.SendChunked to handle automatic chunking
   if OGRH.Sync and OGRH.Sync.SendChunked then
     local success = OGRH.Sync.SendChunked(syncData, OGRH.Sync.MessageType.ENCOUNTER_ASSIGNMENTS, "RAID")
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] SendChunked result: " .. tostring(success))
     if not success then
       OGRH.Msg("Failed to send encounter sync.")
     end
   else
     -- Fallback to old method if Sync module not loaded
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Using fallback sync method")
     local serialized = OGRH.Serialize(syncData)
     SendAddonMessage(OGRH.ADDON_PREFIX, "ENCOUNTER_SYNC;" .. serialized, "RAID")
   end
+  
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BroadcastFullEncounterSync() completed")
 end
 
 -- Wrapper for legacy code that passes raid/encounter parameters
@@ -1922,9 +1940,12 @@ end
 
 -- Handler for receiving encounter assignment syncs (used by OGRH.Sync.RouteMessage)
 function OGRH.HandleAssignmentSync(sender, syncData)
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] HandleAssignmentSync called from: " .. tostring(sender))
+  
   -- Block sync from self
   local playerName = UnitName("player")
   if sender == playerName then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Blocked - from self")
     return
   end
   
@@ -1939,6 +1960,8 @@ function OGRH.HandleAssignmentSync(sender, syncData)
   
   -- Check if sender is raid leader or assistant (or designated raid lead)
   local isAuthorized = isFromRaidLead
+  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] isFromRaidLead: " .. tostring(isFromRaidLead) .. ", currentLead: " .. tostring(OGRH.RaidLead and OGRH.RaidLead.currentLead or "nil"))
+  
   local numRaidMembers = GetNumRaidMembers()
   
   if numRaidMembers > 0 then
@@ -3099,38 +3122,48 @@ addonFrame:SetScript("OnEvent", function()
           end
           
           -- Verify raid and encounter exist locally
-          if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and
-             OGRH_SV.encounterMgmt.encounters[raidName] then
-            
-            -- Check if encounter exists in this raid
-            local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
-            local encounterExists = false
-            for _, enc in ipairs(encounters) do
-              if enc == encounterName then
-                encounterExists = true
+          local raidFound = false
+          local encounterFound = false
+          
+          if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+            -- Loop through raids array to find matching raid name
+            for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+              local raid = OGRH_SV.encounterMgmt.raids[i]
+              if raid.name == raidName then
+                raidFound = true
+                -- Check if encounter exists in this raid - encounters is also an array
+                if raid.encounters then
+                  for j = 1, table.getn(raid.encounters) do
+                    local enc = raid.encounters[j]
+                    if enc.name == encounterName then
+                      encounterFound = true
+                      break
+                    end
+                  end
+                end
                 break
               end
             end
+          end
+          
+          if raidFound and encounterFound then
+            -- Update main UI selection only (don't touch planning window)
+            OGRH.EnsureSV()
+            if not OGRH_SV.ui then OGRH_SV.ui = {} end
+            OGRH_SV.ui.selectedRaid = raidName
+            OGRH_SV.ui.selectedEncounter = encounterName
             
-            if encounterExists then
-              -- Update main UI selection only (don't touch planning window)
-              OGRH.EnsureSV()
-              if not OGRH_SV.ui then OGRH_SV.ui = {} end
-              OGRH_SV.ui.selectedRaid = raidName
-              OGRH_SV.ui.selectedEncounter = encounterName
-              
-              -- Do NOT update planning window frame
-              -- Planning window maintains its own independent selection
-              
-              -- Always update the main UI encounter button (this loads modules)
-              if OGRH.UpdateEncounterNavButton then
-                OGRH.UpdateEncounterNavButton()
-              end
-              
-              -- Update consume monitor
-              if OGRH.ShowConsumeMonitor then
-                OGRH.ShowConsumeMonitor()
-              end
+            -- Do NOT update planning window frame
+            -- Planning window maintains its own independent selection
+            
+            -- Always update the main UI encounter button (this loads modules)
+            if OGRH.UpdateEncounterNavButton then
+              OGRH.UpdateEncounterNavButton()
+            end
+            
+            -- Update consume monitor
+            if OGRH.ShowConsumeMonitor then
+              OGRH.ShowConsumeMonitor()
             end
           end
         end

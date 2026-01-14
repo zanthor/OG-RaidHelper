@@ -252,6 +252,16 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     OGST.AnchorElement(bigwigsCheckContainer, bigwigsHeader, {position = "below"})
     dialog.bigwigsCheck = bigwigsCheck
     
+    -- Auto Announce checkbox (to the right of BigWigs checkbox)
+    local autoAnnounceCheckContainer, autoAnnounceCheck, autoAnnounceCheckLabel = OGST.CreateCheckbox(bigwigsPanel, {
+      label = "Auto Announce on Select",
+      labelAnchor = "RIGHT",
+      checked = false,
+      labelWidth = 140
+    })
+    OGST.AnchorElement(autoAnnounceCheckContainer, bigwigsCheckLabel, {position = "right", align = "center"})
+    dialog.autoAnnounceCheck = autoAnnounceCheck
+    
     -- Warning text for encounter mode (shown when raid BigWigs is not enabled)
     local bigwigsWarning = OGST.CreateStaticText(bigwigsPanel, {
       text = "(Must enable BigWigs at raid level first)",
@@ -435,10 +445,12 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
       for i = 1, table.getn(encounters) do
         local encounter = encounters[i]
         local capturedName = encounter.name
+        local capturedId = encounter.id
         local capturedZone = zoneName
         
         table.insert(encounterMenuItems, {
           text = capturedName,
+          id = capturedId,  -- Store ID for BigWigs matching
           zone = capturedZone,  -- Store zone for filtering
           onClick = function()
             -- OGST handles selection internally, just update button text
@@ -655,6 +667,13 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
   
   -- Load BigWigs settings and update button text
   if settings then
+    -- Load auto-announce setting
+    if settings.bigwigs and settings.bigwigs.autoAnnounce ~= nil then
+      dialog.autoAnnounceCheck:SetChecked(settings.bigwigs.autoAnnounce)
+    else
+      dialog.autoAnnounceCheck:SetChecked(false)
+    end
+    
     if settings.bigwigs then
       local bigwigsEnabled = settings.bigwigs.enabled or false
       dialog.bigwigsCheck:SetChecked(bigwigsEnabled)
@@ -831,7 +850,8 @@ function OGRH.SaveAdvancedSettingsDialog()
   
   -- Collect BigWigs settings
   newSettings.bigwigs = {
-    enabled = dialog.bigwigsCheck:GetChecked() or false
+    enabled = dialog.bigwigsCheck:GetChecked() or false,
+    autoAnnounce = dialog.autoAnnounceCheck:GetChecked() or false
   }
   
   if isRaid then
@@ -846,19 +866,21 @@ function OGRH.SaveAdvancedSettingsDialog()
     newSettings.bigwigs.raidZones = selectedZones
     -- Keep legacy single value for backward compatibility (use first selected)
     newSettings.bigwigs.raidZone = (table.getn(selectedZones) > 0) and selectedZones[1] or ""
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Saving " .. table.getn(selectedZones) .. " raid zones")
   else
-    -- Encounter mode: Save encounter IDs
+    -- Encounter mode: Save encounter IDs (use ID field, not display text)
     local selectedEncounters = {}
     if dialog.encounterMenuBtn and dialog.encounterMenuBtn.selectedItems then
       for i = 1, table.getn(dialog.encounterMenuBtn.selectedItems) do
-        table.insert(selectedEncounters, dialog.encounterMenuBtn.selectedItems[i].text)
+        local item = dialog.encounterMenuBtn.selectedItems[i]
+        -- Use ID field (BigWigs identifier) instead of text (display name)
+        local encounterId = item.id or item.text
+        table.insert(selectedEncounters, encounterId)
+        DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Selected encounter: " .. item.text .. " (ID: " .. encounterId .. ")")
       end
     end
     newSettings.bigwigs.encounterIds = selectedEncounters
     -- Keep legacy single value for backward compatibility (use first selected)
     newSettings.bigwigs.encounterId = (table.getn(selectedEncounters) > 0) and selectedEncounters[1] or ""
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Saving " .. table.getn(selectedEncounters) .. " encounter IDs")
   end
   
   -- Save based on type
