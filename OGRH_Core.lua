@@ -1368,19 +1368,15 @@ function OGRH.BroadcastEncounterSelection(raidName, encounterName)
   local playerName = UnitName("player")
   local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin()
   
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BroadcastEncounterSelection: player=" .. playerName .. ", isAdmin=" .. tostring(isAdmin) .. ", currentLead=" .. tostring(OGRH.RaidLead and OGRH.RaidLead.currentLead or "nil"))
-  
   -- Only the designated raid admin should push assignments
   -- Leaders/Assistants who are not raid admin should request a sync instead
   if isAdmin then
     -- This player is the designated raid admin - broadcast full sync
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Admin broadcasting full sync")
     if OGRH.BroadcastFullEncounterSync then
       OGRH.BroadcastFullEncounterSync()
     end
   else
     -- This player is a leader/assistant but not raid admin - request sync from raid admin
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Non-admin requesting sync")
     local requestMsg = "REQUEST_ENCOUNTER_SYNC;" .. raidName .. ";" .. encounterName
     SendAddonMessage(OGRH.ADDON_PREFIX, requestMsg, "RAID")
   end
@@ -1868,7 +1864,6 @@ end
 
 -- Broadcast full encounter assignment sync (assignments only, no structure)
 function OGRH.BroadcastFullEncounterSync()
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BroadcastFullEncounterSync() called")
   
   if GetNumRaidMembers() == 0 then
     OGRH.Msg("You must be in a raid to sync.")
@@ -1877,12 +1872,10 @@ function OGRH.BroadcastFullEncounterSync()
   
   -- Get current encounter
   if not OGRH.GetCurrentEncounter then
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] GetCurrentEncounter not available")
     return
   end
   
   local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Current encounter: " .. tostring(currentRaid) .. " / " .. tostring(currentEncounter))
   
   if not currentRaid or not currentEncounter then
     OGRH.Msg("No encounter selected to sync.")
@@ -1907,23 +1900,17 @@ function OGRH.BroadcastFullEncounterSync()
     syncData.assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
   end
   
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Attempting to send sync via chunked method")
-  
   -- Use OGRH.Sync.SendChunked to handle automatic chunking
   if OGRH.Sync and OGRH.Sync.SendChunked then
     local success = OGRH.Sync.SendChunked(syncData, OGRH.Sync.MessageType.ENCOUNTER_ASSIGNMENTS, "RAID")
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] SendChunked result: " .. tostring(success))
     if not success then
       OGRH.Msg("Failed to send encounter sync.")
     end
   else
     -- Fallback to old method if Sync module not loaded
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Using fallback sync method")
     local serialized = OGRH.Serialize(syncData)
     SendAddonMessage(OGRH.ADDON_PREFIX, "ENCOUNTER_SYNC;" .. serialized, "RAID")
-  end
-  
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BroadcastFullEncounterSync() completed")
+  end  
 end
 
 -- Wrapper for legacy code that passes raid/encounter parameters
@@ -1940,12 +1927,9 @@ end
 
 -- Handler for receiving encounter assignment syncs (used by OGRH.Sync.RouteMessage)
 function OGRH.HandleAssignmentSync(sender, syncData)
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] HandleAssignmentSync called from: " .. tostring(sender))
-  
   -- Block sync from self
   local playerName = UnitName("player")
   if sender == playerName then
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Blocked - from self")
     return
   end
   
@@ -1954,13 +1938,11 @@ function OGRH.HandleAssignmentSync(sender, syncData)
   local isFromRaidLead = (OGRH.RaidLead and OGRH.RaidLead.currentLead and sender == OGRH.RaidLead.currentLead)
   
   if OGRH_SV.syncLocked and not isFromRaidLead then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r Ignored encounter sync from " .. sender .. " (sync is locked)")
     return
   end
   
   -- Check if sender is raid leader or assistant (or designated raid lead)
   local isAuthorized = isFromRaidLead
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] isFromRaidLead: " .. tostring(isFromRaidLead) .. ", currentLead: " .. tostring(OGRH.RaidLead and OGRH.RaidLead.currentLead or "nil"))
   
   local numRaidMembers = GetNumRaidMembers()
   
@@ -1976,7 +1958,6 @@ function OGRH.HandleAssignmentSync(sender, syncData)
   end
   
   if not isAuthorized then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Ignored encounter sync from " .. sender .. " (not raid leader or assistant)")
     return
   end
   
@@ -4475,26 +4456,69 @@ function OGRH.ImportShareData(dataString, isSingleEncounter)
     -- Merge single encounter data (don't overwrite existing data)
     if importData.encounterMgmt then
       if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {} end
+      if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
       
-      -- Merge encounters for this raid only (preserve existing encounters)
-      if importData.encounterMgmt.encounters then
-        if not OGRH_SV.encounterMgmt.encounters then OGRH_SV.encounterMgmt.encounters = {} end
-        for raidName, encounters in pairs(importData.encounterMgmt.encounters) do
-          if not OGRH_SV.encounterMgmt.encounters[raidName] then
-            OGRH_SV.encounterMgmt.encounters[raidName] = {}
-          end
-          -- Merge encounter names - only add if not already present
-          for i = 1, table.getn(encounters) do
-            local encounterName = encounters[i]
-            local exists = false
-            for j = 1, table.getn(OGRH_SV.encounterMgmt.encounters[raidName]) do
-              if OGRH_SV.encounterMgmt.encounters[raidName][j] == encounterName then
-                exists = true
-                break
-              end
+      -- Merge raids and encounters using new array-based structure
+      if importData.encounterMgmt.raids then
+        for i = 1, table.getn(importData.encounterMgmt.raids) do
+          local importRaid = importData.encounterMgmt.raids[i]
+          local importRaidName = importRaid.name
+          
+          -- Find or create raid in local data
+          local localRaid = nil
+          for j = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+            if OGRH_SV.encounterMgmt.raids[j].name == importRaidName then
+              localRaid = OGRH_SV.encounterMgmt.raids[j]
+              break
             end
-            if not exists then
-              table.insert(OGRH_SV.encounterMgmt.encounters[raidName], encounterName)
+          end
+          
+          -- If raid doesn't exist, create it
+          if not localRaid then
+            localRaid = {
+              name = importRaidName,
+              encounters = {},
+              advancedSettings = importRaid.advancedSettings or {
+                consumeTracking = {
+                  enabled = false,
+                  readyThreshold = 85,
+                  requiredFlaskRoles = {}
+                },
+                bigwigs = {
+                  enabled = false,
+                  raidZones = {},
+                  autoAnnounce = false
+                }
+              }
+            }
+            table.insert(OGRH_SV.encounterMgmt.raids, localRaid)
+          end
+          
+          -- Ensure local raid has encounters array
+          if not localRaid.encounters then
+            localRaid.encounters = {}
+          end
+          
+          -- Merge encounters from import
+          if importRaid.encounters then
+            for k = 1, table.getn(importRaid.encounters) do
+              local importEncounter = importRaid.encounters[k]
+              local encounterExists = false
+              
+              -- Check if encounter already exists
+              for m = 1, table.getn(localRaid.encounters) do
+                if localRaid.encounters[m].name == importEncounter.name then
+                  -- Update existing encounter (overwrite with imported data for single encounter sync)
+                  localRaid.encounters[m] = importEncounter
+                  encounterExists = true
+                  break
+                end
+              end
+              
+              -- Add encounter if it doesn't exist
+              if not encounterExists then
+                table.insert(localRaid.encounters, importEncounter)
+              end
             end
           end
         end

@@ -207,13 +207,33 @@ After fixing each location, verify:
 - [ ] No errors when accessing encounters
 - [ ] Advanced settings are preserved
 
+## Impact Evaluation
+
+### OGRH_EncounterMgmt.lua Lines 55-56 - Migration Function
+**Function:** `OGRH.UpgradeEncounterDataStructure()`
+**Purpose:** One-time migration from old structure to new structure
+**Impact:** This code is INTENTIONALLY accessing the old structure to migrate it to the new structure
+**Action Required:** ✅ **NO FIX NEEDED** - Working as designed. This is migration code that reads old structure and converts it.
+
+### OGRH_Core.lua Lines 4478-4502 - Import/Merge Function
+**Function:** `OGRH.ImportShareData()` - Single Encounter Import Mode
+**Purpose:** Import encounter data shared by another user
+**Impact:** When importing a single encounter from old-format data, this merges it into the old structure
+**Action Required:** ⚠️ **NEEDS FIX** - Must handle both old and new format imports, and merge into new structure
+
+### OGRH_Core.lua Lines 4478-4502 - Import/Merge Function
+**Function:** `OGRH.ImportShareData()` - Single Encounter Import Mode
+**Purpose:** Import encounter data shared by another user
+**Impact:** When importing a single encounter from old-format data, this merges it into the old structure
+**Action Required:** ✅ **FIXED** - Now uses new array-based structure for both full and single encounter imports
+
 ## Status
 
 - [x] **OGRH_Core.lua Line 3078-3180** - ENCOUNTER_SELECT handler - **FIXED**
-- [ ] OGRH_EncounterMgmt.lua Lines 55-56
-- [ ] OGRH_Core.lua Lines 4478-4502
-- [ ] OGRH_EncounterSetup.lua Line 923
-- [ ] OGRH_EncounterSetup.lua Lines 956-970
-- [ ] OGRH_EncounterSetup.lua Lines 1007-1010
-- [ ] OGRH_EncounterSetup.lua Lines 1075-1077
-- [ ] OGRH_EncounterSetup.lua Lines 1176-1177
+- [x] **OGRH_EncounterMgmt.lua Lines 55-56** - Migration Function - **NO FIX NEEDED (BY DESIGN)**
+- [x] **OGRH_Core.lua Lines 4478-4502** - Import/Merge Function - **FIXED**
+- [x] **OGRH_EncounterSetup.lua Line 923** - Delete Raid Function - **FIXED**
+- [x] **OGRH_EncounterSetup.lua Lines 956-970** - Add Encounter Function - **FIXED**
+- [x] **OGRH_EncounterSetup.lua Lines 1007-1010** - Delete Encounter Function - **FIXED**
+- [x] **OGRH_EncounterSetup.lua Lines 1075-1077** - Rename Raid Function - **FIXED**
+- [x] **OGRH_EncounterSetup.lua Lines 1176-1177** - Rename Encounter Function - **FIXED**

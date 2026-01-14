@@ -333,7 +333,7 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
     local priorityList = role.classPriority[slotIdx]
     
     -- Try each class in priority order
-    for _, className in ipairs(priorityList) do
+    for priorityIndex, className in ipairs(priorityList) do
       -- Build list of players with this class
       local classPlayers = {}
       for _, playerData in ipairs(rollForPlayers) do
@@ -354,9 +354,9 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
           if string.upper(playerData.class) == string.upper(className) then
             local roleMatches = false
             
-            -- Check if this slot/class has specific classPriorityRoles configured
-            if role.classPriorityRoles and role.classPriorityRoles[slotIdx] and role.classPriorityRoles[slotIdx][className] then
-              local allowedRoles = role.classPriorityRoles[slotIdx][className]
+            -- Check if this slot/class has specific classPriorityRoles configured (by position index)
+            if role.classPriorityRoles and role.classPriorityRoles[slotIdx] and role.classPriorityRoles[slotIdx][priorityIndex] then
+              local allowedRoles = role.classPriorityRoles[slotIdx][priorityIndex]
               
               -- Check if ANY checkbox is enabled
               local anyRoleEnabled = allowedRoles.Tanks or allowedRoles.Healers or allowedRoles.Melee or allowedRoles.Ranged
@@ -376,7 +376,7 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
                 end
               end
             else
-              -- No classPriorityRoles configured for this class = accept any player of this class
+              -- No classPriorityRoles configured for this position = accept any player of this class
               roleMatches = true
             end
             
@@ -4238,12 +4238,16 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
     local column1 = encounterRoles.column1 or {}
     local column2 = encounterRoles.column2 or {}
     
-    -- Build ordered list of roles
+    -- Build roles array indexed by roleId (not by position)
     for i = 1, table.getn(column1) do
-      table.insert(orderedRoles, column1[i])
+      local role = column1[i]
+      local roleId = role.roleId or i
+      orderedRoles[roleId] = role
     end
     for i = 1, table.getn(column2) do
-      table.insert(orderedRoles, column2[i])
+      local role = column2[i]
+      local roleId = role.roleId or (table.getn(column1) + i)
+      orderedRoles[roleId] = role
     end
   end
   
@@ -5151,12 +5155,7 @@ function OGRH.GetCurrentRaidAdvancedSettings()
     return nil
   end
   
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Loading from raid: " .. frame.selectedRaid)
   OGRH.EnsureRaidAdvancedSettings(raid)
-  
-  if raid.advancedSettings and raid.advancedSettings.bigwigs then
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BigWigs raidZone loaded: " .. tostring(raid.advancedSettings.bigwigs.raidZone))
-  end
   
   return raid.advancedSettings
 end
@@ -5173,11 +5172,6 @@ function OGRH.SaveCurrentRaidAdvancedSettings(settings)
   if not raid then
     DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Save failed: raid not found")
     return false
-  end
-  
-  DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Saving to raid: " .. frame.selectedRaid)
-  if settings and settings.bigwigs then
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] BigWigs raidZone being saved: " .. tostring(settings.bigwigs.raidZone))
   end
   
   raid.advancedSettings = settings

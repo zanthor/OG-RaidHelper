@@ -46,6 +46,48 @@ Add support for line-based announcements in the encounter system.
 
 **Status:** Planned
 
+### Announcement Keybind System
+**Description:**
+Add advanced setting for Announcement Keybind to allow raid admin or leader to announce specific encounter announcement without switching encounter.
+
+**Status:** Planned
+
+### Announcement Linking
+**Description:**
+Add Announcement Linking - if encounter is set to a keybind you can announce more than one at a time.
+
+**Status:** Planned
+
+### Announcement LineCode and Command Syntax
+**Description:**
+Add announcement "LineCode" and `/ogrh announce code` syntax so we can set specific lines to be announced.
+
+**Status:** Planned
+
+### Announcement Queue System
+**Description:**
+Add Announcement Queue to bypass spam limitation and pace communications to not be throttled.
+
+**Status:** Planned
+
+### Advanced Settings - Auto Assign on Encounter Select
+**Description:**
+Add advanced setting feature to automatically assign roles when an encounter is selected.
+
+**Status:** Planned
+
+### Advanced Settings - Activate After Encounter Ends Trigger
+**Description:**
+Add advanced setting to link an encounter to activate when a specific encounter ends. This allows automatic encounter transitions based on boss completion.
+
+**Status:** Planned
+
+### Cooldown Assignment Tag
+**Description:**
+Add "Cooldown Assignment tag" which will add a player to an announcement from a list based on if their cooldown is available. This allows dynamic cooldown rotation announcements.
+
+**Status:** Planned
+
 
 
 ---

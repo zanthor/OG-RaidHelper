@@ -919,9 +919,6 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"] = {
         end
       end
       
-      -- Remove all encounter data associated with this raid
-      OGRH_SV.encounterMgmt.encounters[raidName] = nil
-      
       if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
         OGRH_EncounterSetupFrame.selectedRaid = nil
         OGRH_EncounterSetupFrame.selectedEncounter = nil
@@ -952,22 +949,56 @@ StaticPopupDialogs["OGRH_ADD_ENCOUNTER"] = {
     local raidName = StaticPopupDialogs["OGRH_ADD_ENCOUNTER"].text_arg1
     if encounterName and encounterName ~= "" and raidName then
       OGRH.EnsureSV()
-      -- Ensure raid encounters table exists
-      if not OGRH_SV.encounterMgmt.encounters[raidName] then
-        OGRH_SV.encounterMgmt.encounters[raidName] = {}
+      
+      -- Find the raid in new structure
+      local raidObj = nil
+      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if raid.name == raidName then
+            raidObj = raid
+            break
+          end
+        end
+      end
+      
+      if not raidObj then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid not found")
+        return
+      end
+      
+      -- Ensure encounters array exists
+      if not raidObj.encounters then
+        raidObj.encounters = {}
       end
       
       -- Check if encounter already exists
       local exists = false
-      for _, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
-        if name == encounterName then
+      for i = 1, table.getn(raidObj.encounters) do
+        if raidObj.encounters[i].name == encounterName then
           exists = true
           break
         end
       end
       
       if not exists then
-        table.insert(OGRH_SV.encounterMgmt.encounters[raidName], encounterName)
+        -- Create new encounter with proper structure
+        local newEncounter = {
+          name = encounterName,
+          advancedSettings = {
+            bigwigs = {
+              enabled = false,
+              encounterId = "",
+              autoAnnounce = false
+            },
+            consumeTracking = {
+              enabled = nil,
+              readyThreshold = nil,
+              requiredFlaskRoles = {}
+            }
+          }
+        }
+        table.insert(raidObj.encounters, newEncounter)
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshEncountersList then
           OGRH_EncounterSetupFrame.RefreshEncountersList()
         end
@@ -1003,11 +1034,23 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
     local encounterName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1
     local raidName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg2
     if encounterName and raidName then
-      -- Remove encounter from list
-      if OGRH_SV.encounterMgmt.encounters[raidName] then
-        for i, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
-          if name == encounterName then
-            table.remove(OGRH_SV.encounterMgmt.encounters[raidName], i)
+      -- Find the raid in new structure
+      local raidObj = nil
+      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if raid.name == raidName then
+            raidObj = raid
+            break
+          end
+        end
+      end
+      
+      -- Remove encounter from raid's encounters array
+      if raidObj and raidObj.encounters then
+        for i = 1, table.getn(raidObj.encounters) do
+          if raidObj.encounters[i].name == encounterName then
+            table.remove(raidObj.encounters, i)
             break
           end
         end
@@ -1069,12 +1112,6 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
             end
             break
           end
-        end
-        
-        -- Update encounters data structure
-        if OGRH_SV.encounterMgmt.encounters[oldName] then
-          OGRH_SV.encounterMgmt.encounters[newName] = OGRH_SV.encounterMgmt.encounters[oldName]
-          OGRH_SV.encounterMgmt.encounters[oldName] = nil
         end
         
         -- Update roles data structure
@@ -1171,11 +1208,28 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
     if newName and newName ~= "" and oldName and raidName and newName ~= oldName then
       OGRH.EnsureSV()
       
+      -- Find the raid in new structure
+      local raidObj = nil
+      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if raid.name == raidName then
+            raidObj = raid
+            break
+          end
+        end
+      end
+      
+      if not raidObj then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid not found")
+        return
+      end
+      
       -- Check if new name already exists in this raid
       local exists = false
-      if OGRH_SV.encounterMgmt.encounters[raidName] then
-        for _, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
-          if name == newName then
+      if raidObj.encounters then
+        for i = 1, table.getn(raidObj.encounters) do
+          if raidObj.encounters[i].name == newName then
             exists = true
             break
           end
@@ -1183,11 +1237,11 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
       end
       
       if not exists then
-        -- Update encounter name in encounters list
-        if OGRH_SV.encounterMgmt.encounters[raidName] then
-          for i, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
-            if name == oldName then
-              OGRH_SV.encounterMgmt.encounters[raidName][i] = newName
+        -- Update encounter name in encounters array
+        if raidObj.encounters then
+          for i = 1, table.getn(raidObj.encounters) do
+            if raidObj.encounters[i].name == oldName then
+              raidObj.encounters[i].name = newName
               break
             end
           end

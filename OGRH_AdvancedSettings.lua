@@ -237,7 +237,7 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     local bigwigsHeader = OGST.CreateStaticText(bigwigsPanel, {
       text = "BigWigs Encounter Detection",
       font = "GameFontNormalLarge",
-      width = 460
+      width = 230
     })
     OGST.AnchorElement(bigwigsHeader, bigwigsPanel, {position = "top"})
     dialog.bigwigsHeader = bigwigsHeader
@@ -261,6 +261,7 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     })
     OGST.AnchorElement(autoAnnounceCheckContainer, bigwigsCheckLabel, {position = "right", align = "center"})
     dialog.autoAnnounceCheck = autoAnnounceCheck
+    dialog.autoAnnounceCheckContainer = autoAnnounceCheckContainer
     
     -- Warning text for encounter mode (shown when raid BigWigs is not enabled)
     local bigwigsWarning = OGST.CreateStaticText(bigwigsPanel, {
@@ -270,7 +271,7 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
       multiline = false
     })
     bigwigsWarning:SetTextColor(1, 0.5, 0)  -- Orange warning color
-    OGST.AnchorElement(bigwigsWarning, bigwigsCheckLabel, {position = "right", align = "center"})
+    OGST.AnchorElement(bigwigsWarning, bigwigsHeader, {position = "right", align = "center"})
     bigwigsWarning:Hide()  -- Hidden by default, shown only in encounter mode when raid BigWigs is off
     dialog.bigwigsWarning = bigwigsWarning
     
@@ -335,24 +336,69 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     end
     table.sort(zoneNames)
     
+    -- Helper function to truncate text if it exceeds a certain width
+    local function TruncateText(text, maxWidth)
+      if not text or text == "" then return text end
+      
+      -- Create a temporary fontstring to measure text width
+      local tempFS = UIParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      tempFS:SetText(text)
+      local textWidth = tempFS:GetStringWidth()
+      tempFS:Hide()
+      
+      -- If text fits, return as-is
+      if textWidth <= maxWidth then
+        return text
+      end
+      
+      -- Binary search to find the right truncation point
+      local ellipsis = "..."
+      tempFS:SetText(ellipsis)
+      local ellipsisWidth = tempFS:GetStringWidth()
+      
+      local left = 1
+      local right = string.len(text)
+      local bestFit = ""
+      
+      while left <= right do
+        local mid = math.floor((left + right) / 2)
+        local truncated = string.sub(text, 1, mid) .. ellipsis
+        tempFS:SetText(truncated)
+        local width = tempFS:GetStringWidth()
+        
+        if width <= maxWidth then
+          bestFit = truncated
+          left = mid + 1
+        else
+          right = mid - 1
+        end
+      end
+      
+      return bestFit
+    end
+    
     -- Helper function to update raid menu button text showing selected zone names
     local function UpdateRaidMenuButtonText(menuBtn)
       if not menuBtn or not menuBtn.button then return end
       
       local selectedCount = table.getn(menuBtn.selectedItems or {})
+      local displayText = ""
+      
       if selectedCount == 0 then
-        menuBtn.button:SetText("<None Selected>")
+        displayText = "<None Selected>"
       elseif selectedCount == 1 then
-        menuBtn.button:SetText(menuBtn.selectedItems[1].text)
+        displayText = menuBtn.selectedItems[1].text
       else
         -- Multiple selections: show comma-separated zone names
-        local displayText = ""
         for i = 1, selectedCount do
           if i > 1 then displayText = displayText .. ", " end
           displayText = displayText .. menuBtn.selectedItems[i].text
         end
-        menuBtn.button:SetText(displayText)
       end
+      
+      -- Truncate if necessary (300px button width minus some padding)
+      displayText = TruncateText(displayText, 280)
+      menuBtn.button:SetText(displayText)
     end
     
     -- Add zones to raid mode menu
@@ -412,19 +458,23 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
       if not menuBtn or not menuBtn.button then return end
       
       local selectedCount = table.getn(menuBtn.selectedItems or {})
+      local displayText = ""
+      
       if selectedCount == 0 then
-        menuBtn.button:SetText("<None Selected>")
+        displayText = "<None Selected>"
       elseif selectedCount == 1 then
-        menuBtn.button:SetText(menuBtn.selectedItems[1].text)
+        displayText = menuBtn.selectedItems[1].text
       else
         -- Multiple selections: show comma-separated encounter names
-        local displayText = ""
         for i = 1, selectedCount do
           if i > 1 then displayText = displayText .. ", " end
           displayText = displayText .. menuBtn.selectedItems[i].text
         end
-        menuBtn.button:SetText(displayText)
       end
+      
+      -- Truncate if necessary (300px button width minus some padding)
+      displayText = TruncateText(displayText, 280)
+      menuBtn.button:SetText(displayText)
     end
     
     -- Build all possible encounters upfront (like raid menu)
@@ -667,11 +717,16 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
   
   -- Load BigWigs settings and update button text
   if settings then
-    -- Load auto-announce setting
-    if settings.bigwigs and settings.bigwigs.autoAnnounce ~= nil then
-      dialog.autoAnnounceCheck:SetChecked(settings.bigwigs.autoAnnounce)
+    -- Load auto-announce setting (only for encounters, not raids)
+    if not isRaid then
+      dialog.autoAnnounceCheckContainer:Show()
+      if settings.bigwigs and settings.bigwigs.autoAnnounce ~= nil then
+        dialog.autoAnnounceCheck:SetChecked(settings.bigwigs.autoAnnounce)
+      else
+        dialog.autoAnnounceCheck:SetChecked(false)
+      end
     else
-      dialog.autoAnnounceCheck:SetChecked(false)
+      dialog.autoAnnounceCheckContainer:Hide()
     end
     
     if settings.bigwigs then
@@ -686,7 +741,6 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
         
         -- Raid mode: Load raid zone selection (supports array or legacy single string)
         local raidZones = settings.bigwigs.raidZones or (settings.bigwigs.raidZone and {settings.bigwigs.raidZone} or {})
-        DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Loading raid zones: " .. table.getn(raidZones) .. " zones")
         
         if raidZones and table.getn(raidZones) > 0 then
           -- Find the matching menu items and mark them as selected
@@ -730,7 +784,6 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
         end
         
         local encounterIds = settings.bigwigs.encounterIds or (settings.bigwigs.encounterId and {settings.bigwigs.encounterId} or {})
-        DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Loading encounter IDs: " .. table.getn(encounterIds) .. " encounters")
         
         if encounterIds and table.getn(encounterIds) > 0 then
           -- Find the matching menu items and mark them as selected
@@ -779,7 +832,24 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     
     -- Load consume tracking settings
     if settings.consumeTracking then
-      dialog.consumeCheck:SetChecked(settings.consumeTracking.enabled or false)
+      -- Check if raid has consume tracking enabled (for encounter mode)
+      local raidHasConsumeTracking = false
+      if not isRaid then
+        local raid = OGRH.FindRaidByName(frame.selectedRaid)
+        if raid and raid.advancedSettings and raid.advancedSettings.consumeTracking and raid.advancedSettings.consumeTracking.enabled then
+          raidHasConsumeTracking = true
+        end
+      end
+      
+      -- If raid has consume tracking, show encounter checkbox as checked and disabled
+      if raidHasConsumeTracking then
+        dialog.consumeCheck:SetChecked(true)
+        dialog.consumeCheck:Disable()
+      else
+        dialog.consumeCheck:SetChecked(settings.consumeTracking.enabled or false)
+        dialog.consumeCheck:Enable()
+      end
+      
       dialog.thresholdInput:SetText(tostring(settings.consumeTracking.readyThreshold or 85))
       
       -- Show raid threshold label if in encounter mode AND raid has consume tracking enabled
@@ -875,7 +945,6 @@ function OGRH.SaveAdvancedSettingsDialog()
         -- Use ID field (BigWigs identifier) instead of text (display name)
         local encounterId = item.id or item.text
         table.insert(selectedEncounters, encounterId)
-        DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Selected encounter: " .. item.text .. " (ID: " .. encounterId .. ")")
       end
     end
     newSettings.bigwigs.encounterIds = selectedEncounters
@@ -891,9 +960,7 @@ function OGRH.SaveAdvancedSettingsDialog()
     success = OGRH.SaveCurrentEncounterAdvancedSettings(newSettings)
   end
   
-  if success then
-    OGRH.Msg("Settings saved.")
-  else
+  if not success then
     OGRH.Msg("Failed to save settings.")
   end
 end

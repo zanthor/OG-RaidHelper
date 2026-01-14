@@ -764,13 +764,17 @@ function OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEnco
   local column1 = encounterRoles.column1 or {}
   local column2 = encounterRoles.column2 or {}
   
-  -- Build ordered list of roles for tag replacement
+  -- Build roles array indexed by roleId (not by position)
   local orderedRoles = {}
   for i = 1, table.getn(column1) do
-    table.insert(orderedRoles, column1[i])
+    local role = column1[i]
+    local roleId = role.roleId or i
+    orderedRoles[roleId] = role
   end
   for i = 1, table.getn(column2) do
-    table.insert(orderedRoles, column2[i])
+    local role = column2[i]
+    local roleId = role.roleId or (table.getn(column1) + i)
+    orderedRoles[roleId] = role
   end
   
   -- Get assignments
