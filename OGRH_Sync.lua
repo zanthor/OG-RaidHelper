@@ -1234,6 +1234,7 @@ function OGRH.Sync.ExportData()
   end
   
   -- Collect all encounter management data (same as OGRH.ExportShareData)
+  -- Explicitly include only raids and roles (exclude playerPools, encounterPools, encounterAssignments, poolDefaults)
   local encounterMgmt = {}
   if OGRH_SV.encounterMgmt then
     encounterMgmt.raids = OGRH_SV.encounterMgmt.raids
@@ -1907,8 +1908,15 @@ function OGRH.Sync.StartTransmission(acceptors)
   OGRH.Sync.syncTransmitting = true
   
   -- Build structure data payload
+  -- Explicitly include only raids and roles (exclude playerPools, encounterPools, encounterAssignments, poolDefaults)
+  local encounterMgmt = {}
+  if OGRH_SV.encounterMgmt then
+    encounterMgmt.raids = OGRH_SV.encounterMgmt.raids
+    encounterMgmt.roles = OGRH_SV.encounterMgmt.roles
+  end
+  
   local structureData = {
-    encounterMgmt = OGRH_SV.encounterMgmt,
+    encounterMgmt = encounterMgmt,
     encounterRaidMarks = OGRH_SV.encounterRaidMarks,
     encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers,
     encounterAnnouncements = OGRH_SV.encounterAnnouncements,
