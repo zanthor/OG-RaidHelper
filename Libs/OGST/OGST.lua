@@ -2149,7 +2149,8 @@ function OGST.CreateMenuButton(parent, config)
     
     local item = menu:AddItem({
       text = capturedConfig.text,
-      onClick = capturedConfig._internalOnClick
+      onClick = capturedConfig._internalOnClick,
+      submenu = capturedConfig.submenu
     })
     
     -- Mark initially selected items

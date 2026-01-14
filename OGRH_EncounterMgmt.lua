@@ -11,6 +11,80 @@ OGRH.EncounterMgmt = OGRH.EncounterMgmt or {}
 -- Storage for encounter assignments
 local encounterData = {}
 
+-- Upgrade old data structure to new nested structure
+function OGRH.UpgradeEncounterDataStructure()
+  OGRH.EnsureSV()
+  if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then
+    return false
+  end
+  
+  local raids = OGRH_SV.encounterMgmt.raids
+  if table.getn(raids) == 0 then
+    return false
+  end
+  
+  -- Check if already using new structure
+  local firstRaid = raids[1]
+  if type(firstRaid) == "table" and firstRaid.name then
+    return false -- Already upgraded
+  end
+  
+  -- Upgrade from old structure (array of raid name strings) to new structure (array of raid objects)
+  local newRaids = {}
+  
+  for i = 1, table.getn(raids) do
+    local raidName = raids[i]
+    local raidObj = {
+      name = raidName,
+      encounters = {},
+      advancedSettings = {
+        consumeTracking = {
+          enabled = false,
+          readyThreshold = 85,
+          requiredFlaskRoles = {
+            ["Tanks"] = false,
+            ["Healers"] = false,
+            ["Melee"] = false,
+            ["Ranged"] = false,
+          }
+        }
+      }
+    }
+    
+    -- Migrate encounters for this raid
+    if OGRH_SV.encounterMgmt.encounters and OGRH_SV.encounterMgmt.encounters[raidName] then
+      local encounterNames = OGRH_SV.encounterMgmt.encounters[raidName]
+      for j = 1, table.getn(encounterNames) do
+        local encounterName = encounterNames[j]
+        local encounterObj = {
+          name = encounterName,
+          advancedSettings = {
+            bigwigs = {
+              enabled = false,
+              encounterId = ""
+            },
+            consumeTracking = {
+              enabled = nil,
+              readyThreshold = nil,
+              requiredFlaskRoles = {}
+            }
+          }
+        }
+        table.insert(raidObj.encounters, encounterObj)
+      end
+    end
+    
+    table.insert(newRaids, raidObj)
+  end
+  
+  -- Replace old structure with new
+  OGRH_SV.encounterMgmt.raids = newRaids
+  OGRH_SV.encounterMgmt.encounters = nil  -- Remove old encounters table
+  
+  OGRH.Msg("Encounter data structure upgraded successfully!")
+  return true
+end
+
 -- Auto-assign players from RollFor data
 function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   if not frame or not rollForPlayers then return 0 end
@@ -259,7 +333,7 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
     local priorityList = role.classPriority[slotIdx]
     
     -- Try each class in priority order
-    for _, className in ipairs(priorityList) do
+    for priorityIndex, className in ipairs(priorityList) do
       -- Build list of players with this class
       local classPlayers = {}
       for _, playerData in ipairs(rollForPlayers) do
@@ -280,9 +354,9 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
           if string.upper(playerData.class) == string.upper(className) then
             local roleMatches = false
             
-            -- Check if this slot/class has specific classPriorityRoles configured
-            if role.classPriorityRoles and role.classPriorityRoles[slotIdx] and role.classPriorityRoles[slotIdx][className] then
-              local allowedRoles = role.classPriorityRoles[slotIdx][className]
+            -- Check if this slot/class has specific classPriorityRoles configured (by position index)
+            if role.classPriorityRoles and role.classPriorityRoles[slotIdx] and role.classPriorityRoles[slotIdx][priorityIndex] then
+              local allowedRoles = role.classPriorityRoles[slotIdx][priorityIndex]
               
               -- Check if ANY checkbox is enabled
               local anyRoleEnabled = allowedRoles.Tanks or allowedRoles.Healers or allowedRoles.Melee or allowedRoles.Ranged
@@ -302,7 +376,7 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
                 end
               end
             else
-              -- No classPriorityRoles configured for this class = accept any player of this class
+              -- No classPriorityRoles configured for this position = accept any player of this class
               roleMatches = true
             end
             
@@ -521,11 +595,29 @@ local function InitializeSavedVars()
   MigrateRoleDefaultsToPoolDefaults()
   OGRH.MigrateRolesToStableIDs()
   
+  -- Initialize encounterMgmt if missing
   if not OGRH_SV.encounterMgmt then
     OGRH_SV.encounterMgmt = {
-      raids = {},
-      encounters = {}
+      raids = {}
+      -- Note: No encounters table - new structure has encounters nested in raids
     }
+  end
+  
+  -- Ensure raids array exists
+  if not OGRH_SV.encounterMgmt.raids then
+    OGRH_SV.encounterMgmt.raids = {}
+  end
+  
+  -- Upgrade old structure if found
+  if table.getn(OGRH_SV.encounterMgmt.raids) > 0 then
+    local firstRaid = OGRH_SV.encounterMgmt.raids[1]
+    -- Check if using old structure (string) or incomplete new structure (table without 'name' field)
+    if type(firstRaid) == "string" or (type(firstRaid) == "table" and not firstRaid.name) then
+      OGRH.UpgradeEncounterDataStructure()
+    end
+  elseif OGRH_SV.encounterMgmt.encounters then
+    -- Has old encounters table but no raids - upgrade
+    OGRH.UpgradeEncounterDataStructure()
   end
 end
 
@@ -838,8 +930,9 @@ function OGRH.ShowEncounterWindow(encounterName)
       -- Validate that the selected raid still exists
       if frame.selectedRaid then
         local raidExists = false
-        for _, raidName in ipairs(OGRH_SV.encounterMgmt.raids) do
-          if raidName == frame.selectedRaid then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if raid.name == frame.selectedRaid then
             raidExists = true
             break
           end
@@ -853,8 +946,10 @@ function OGRH.ShowEncounterWindow(encounterName)
       local yOffset = -5
       local scrollChild = frame.raidsScrollChild
       
-      -- Add existing raids
-      for i, raidName in ipairs(OGRH_SV.encounterMgmt.raids) do
+      -- Add existing raids (new structure only)
+      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+        local raid = OGRH_SV.encounterMgmt.raids[i]
+        local raidName = raid.name
         local raidBtn = OGRH.CreateStyledListItem(scrollChild, raidsContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         raidBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
         
@@ -868,8 +963,45 @@ function OGRH.ShowEncounterWindow(encounterName)
         nameText:SetWidth(135)
         nameText:SetJustifyH("LEFT")
         
-        -- Click to select raid
+        -- Settings button (notepad icon, right side)
+        local settingsBtn = CreateFrame("Button", nil, raidBtn)
+        settingsBtn:SetWidth(16)
+        settingsBtn:SetHeight(16)
+        settingsBtn:SetPoint("RIGHT", raidBtn, "RIGHT", -5, 0)
+        settingsBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+        settingsBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+        settingsBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
+        
         local capturedRaidName = raidName
+        settingsBtn:SetScript("OnEnter", function()
+          GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+          GameTooltip:SetText("Raid-Wide Settings")
+          GameTooltip:AddLine("Configure default settings for all encounters", 1, 1, 1, 1)
+          GameTooltip:Show()
+        end)
+        
+        settingsBtn:SetScript("OnLeave", function()
+          GameTooltip:Hide()
+        end)
+        
+        settingsBtn:SetScript("OnClick", function()
+          -- Set this raid as selected first
+          frame.selectedRaid = capturedRaidName
+          RefreshRaidsList()
+          if frame.RefreshEncountersList then
+            frame.RefreshEncountersList()
+          end
+          
+          -- Show raid-wide settings dialog
+          if OGRH.ShowRaidSettingsDialog then
+            OGRH.ShowRaidSettingsDialog()
+          end
+        end)
+        
+        -- Store reference for potential updates
+        raidBtn.settingsBtn = settingsBtn
+        
+        -- Click to select raid
         raidBtn:SetScript("OnClick", function()
           -- Clear encounter selection when switching raids
           if frame.selectedRaid ~= capturedRaidName then
@@ -878,14 +1010,12 @@ function OGRH.ShowEncounterWindow(encounterName)
           frame.selectedRaid = capturedRaidName
           -- DO NOT update main UI state - planning window is independent
           
-          -- Select first encounter if available
+          -- Select first encounter if available (new structure only)
           local firstEncounter = nil
-          if OGRH_SV.encounterMgmt.encounters and 
-             OGRH_SV.encounterMgmt.encounters[capturedRaidName] and
-             table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaidName]) > 0 then
-            firstEncounter = OGRH_SV.encounterMgmt.encounters[capturedRaidName][1]
+          local raid = OGRH.FindRaidByName(capturedRaidName)
+          if raid and raid.encounters and table.getn(raid.encounters) > 0 then
+            firstEncounter = raid.encounters[1].name
             frame.selectedEncounter = firstEncounter
-            -- DO NOT update main UI state - planning window is independent
           end
           
           RefreshRaidsList()
@@ -942,17 +1072,20 @@ function OGRH.ShowEncounterWindow(encounterName)
         return
       end
       
-      -- Ensure encounter storage exists
-      if not OGRH_SV.encounterMgmt.encounters[frame.selectedRaid] then
-        OGRH_SV.encounterMgmt.encounters[frame.selectedRaid] = {}
+      -- Get encounters for selected raid (new structure only)
+      local encounters = {}
+      local raid = OGRH.FindRaidByName(frame.selectedRaid)
+      if raid and raid.encounters then
+        for i = 1, table.getn(raid.encounters) do
+          table.insert(encounters, raid.encounters[i].name)
+        end
       end
       
       -- Validate that the selected encounter still exists
       if frame.selectedEncounter then
         local encounterExists = false
-        local encounters = OGRH_SV.encounterMgmt.encounters[frame.selectedRaid]
-        for _, encounterName in ipairs(encounters) do
-          if encounterName == frame.selectedEncounter then
+        for i = 1, table.getn(encounters) do
+          if encounters[i] == frame.selectedEncounter then
             encounterExists = true
             break
           end
@@ -963,10 +1096,10 @@ function OGRH.ShowEncounterWindow(encounterName)
       end
       
       local yOffset = -5
-      local encounters = OGRH_SV.encounterMgmt.encounters[frame.selectedRaid]
       local selectedIndex = nil
       
-      for i, encounterName in ipairs(encounters) do
+      for i = 1, table.getn(encounters) do
+        local encounterName = encounters[i]
         if encounterName == frame.selectedEncounter then
           selectedIndex = i
         end
@@ -983,8 +1116,49 @@ function OGRH.ShowEncounterWindow(encounterName)
         nameText:SetWidth(135)
         nameText:SetJustifyH("LEFT")
         
-        -- Click to select encounter
+        -- Settings button (notepad icon, right side)
+        local settingsBtn = CreateFrame("Button", nil, encounterBtn)
+        settingsBtn:SetWidth(16)
+        settingsBtn:SetHeight(16)
+        settingsBtn:SetPoint("RIGHT", encounterBtn, "RIGHT", -5, 0)
+        settingsBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+        settingsBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+        settingsBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
+        
         local capturedEncounterName = encounterName
+        settingsBtn:SetScript("OnEnter", function()
+          GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+          GameTooltip:SetText("Encounter Settings")
+          GameTooltip:AddLine("Configure BigWigs detection and consume requirements", 1, 1, 1, 1)
+          GameTooltip:Show()
+        end)
+        
+        settingsBtn:SetScript("OnLeave", function()
+          GameTooltip:Hide()
+        end)
+        
+        settingsBtn:SetScript("OnClick", function()
+          -- Set this encounter as selected first
+          frame.selectedEncounter = capturedEncounterName
+          -- Ensure raid is also selected (should already be, but make sure)
+          if not frame.selectedRaid then
+            frame.selectedRaid = frame.selectedRaid
+          end
+          RefreshEncountersList()
+          if frame.RefreshRoleContainers then
+            frame.RefreshRoleContainers()
+          end
+          
+          -- Show encounter settings dialog
+          if OGRH.ShowAdvancedSettingsDialog then
+            OGRH.ShowAdvancedSettingsDialog()
+          end
+        end)
+        
+        -- Store reference for potential updates
+        encounterBtn.settingsBtn = settingsBtn
+        
+        -- Click to select encounter
         encounterBtn:SetScript("OnClick", function()
           frame.selectedEncounter = capturedEncounterName
           -- DO NOT update main UI state - planning window is independent
@@ -3910,11 +4084,14 @@ function OGRH.UpdateEncounterNavButton()
   end
   
   -- Enable/disable prev/next buttons
-  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and 
-     OGRH_SV.encounterMgmt.encounters[raidName] then
-    local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
-    local currentIndex = nil
+  local raid = OGRH.FindRaidByName(raidName)
+  if raid and raid.encounters then
+    local encounters = {}
+    for i = 1, table.getn(raid.encounters) do
+      table.insert(encounters, raid.encounters[i].name)
+    end
     
+    local currentIndex = nil
     for i = 1, table.getn(encounters) do
       if encounters[i] == encounterName then
         currentIndex = i
@@ -3958,9 +4135,12 @@ function OGRH.NavigateToPreviousEncounter()
     return
   end
   
-  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and 
-     OGRH_SV.encounterMgmt.encounters[raidName] then
-    local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+  local raid = OGRH.FindRaidByName(raidName)
+  if raid and raid.encounters then
+    local encounters = {}
+    for i = 1, table.getn(raid.encounters) do
+      table.insert(encounters, raid.encounters[i].name)
+    end
     
     for i = 1, table.getn(encounters) do
       if encounters[i] == currentEncounter and i > 1 then
@@ -3999,9 +4179,12 @@ function OGRH.NavigateToNextEncounter()
     return
   end
   
-  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and 
-     OGRH_SV.encounterMgmt.encounters[raidName] then
-    local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+  local raid = OGRH.FindRaidByName(raidName)
+  if raid and raid.encounters then
+    local encounters = {}
+    for i = 1, table.getn(raid.encounters) do
+      table.insert(encounters, raid.encounters[i].name)
+    end
     
     for i = 1, table.getn(encounters) do
       if encounters[i] == currentEncounter and i < table.getn(encounters) then
@@ -4055,12 +4238,16 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
     local column1 = encounterRoles.column1 or {}
     local column2 = encounterRoles.column2 or {}
     
-    -- Build ordered list of roles
+    -- Build roles array indexed by roleId (not by position)
     for i = 1, table.getn(column1) do
-      table.insert(orderedRoles, column1[i])
+      local role = column1[i]
+      local roleId = role.roleId or i
+      orderedRoles[roleId] = role
     end
     for i = 1, table.getn(column2) do
-      table.insert(orderedRoles, column2[i])
+      local role = column2[i]
+      local roleId = role.roleId or (table.getn(column1) + i)
+      orderedRoles[roleId] = role
     end
   end
   
@@ -4236,12 +4423,15 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
       local raids = OGRH_SV.encounterMgmt.raids
       
       for i = 1, table.getn(raids) do
-        local raidName = raids[i]
+        local raid = raids[i]
+        local raidName = raid.name
         
-        -- Get encounters for this raid
+        -- Get encounters for this raid (new structure only)
         local encounters = {}
-        if OGRH_SV.encounterMgmt.encounters and OGRH_SV.encounterMgmt.encounters[raidName] then
-          encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+        if raid.encounters then
+          for j = 1, table.getn(raid.encounters) do
+            table.insert(encounters, raid.encounters[j].name)
+          end
         end
         
         -- Build submenu items for encounters
@@ -4465,10 +4655,16 @@ function OGRH.ShowExportRaidWindow(raidName)
   exportData.raidName = raidName
   exportData.encounters = {}
   
-  -- Get encounters for this raid
+  -- Get encounters for this raid (new structure only)
+  local raid = OGRH.FindRaidByName(raidName)
+  if not raid or not raid.encounters then
+    OGRH.Msg("No encounters found for " .. raidName)
+    return
+  end
+  
   local encounters = {}
-  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and OGRH_SV.encounterMgmt.encounters[raidName] then
-    encounters = OGRH_SV.encounterMgmt.encounters[raidName]
+  for i = 1, table.getn(raid.encounters) do
+    table.insert(encounters, raid.encounters[i].name)
   end
   
   -- Process each encounter
@@ -4808,6 +5004,216 @@ function OGRH.ShowExportRaidWindow(raidName)
   
   -- Register ESC key handler after showing to ensure it's closed first
   OGRH.MakeFrameCloseOnEscape(exportFrame, "OGRH_ExportRaidFrame")
+end
+
+-- ========================================
+-- ADVANCED SETTINGS DATA LAYER (Phase 2)
+-- ========================================
+
+-- Helper function to find raid by name (supports new nested structure)
+function OGRH.FindRaidByName(raidName)
+  OGRH.EnsureSV()
+  if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then
+    return nil
+  end
+  
+  -- New structure only: raids are objects with name property
+  for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+    local raid = OGRH_SV.encounterMgmt.raids[i]
+    if raid.name == raidName then
+      return raid
+    end
+  end
+  
+  return nil
+end
+
+-- Helper function to find encounter by name within a raid (new structure only)
+function OGRH.FindEncounterByName(raid, encounterName)
+  if not raid or not encounterName then
+    return nil
+  end
+  
+  -- New structure only: raid has encounters array
+  if raid.encounters and type(raid.encounters) == "table" then
+    for i = 1, table.getn(raid.encounters) do
+      local encounter = raid.encounters[i]
+      if type(encounter) == "table" and encounter.name == encounterName then
+        return encounter
+      end
+    end
+  end
+  
+  return nil
+end
+
+-- Ensure raid has advanced settings structure
+function OGRH.EnsureRaidAdvancedSettings(raid)
+  if not raid then
+    return
+  end
+  
+  if not raid.advancedSettings then
+    raid.advancedSettings = {
+      bigwigs = {
+        enabled = false,
+        raidZone = ""
+      },
+      consumeTracking = {
+        enabled = false,
+        readyThreshold = 85,
+        requiredFlaskRoles = {
+          ["Tanks"] = false,
+          ["Healers"] = false,
+          ["Melee"] = false,
+          ["Ranged"] = false,
+        }
+      }
+    }
+  end
+  
+  -- Ensure sub-tables exist (for upgrades)
+  if not raid.advancedSettings.bigwigs then
+    raid.advancedSettings.bigwigs = {
+      enabled = false,
+      raidZone = ""
+    }
+  end
+  
+  if not raid.advancedSettings.consumeTracking then
+    raid.advancedSettings.consumeTracking = {
+      enabled = false,
+      readyThreshold = 85,
+      requiredFlaskRoles = {
+        ["Tanks"] = false,
+        ["Healers"] = false,
+        ["Melee"] = false,
+        ["Ranged"] = false,
+      }
+    }
+  end
+  
+  -- Ensure requiredFlaskRoles exists
+  if not raid.advancedSettings.consumeTracking.requiredFlaskRoles then
+    raid.advancedSettings.consumeTracking.requiredFlaskRoles = {
+      ["Tanks"] = false,
+      ["Healers"] = false,
+      ["Melee"] = false,
+      ["Ranged"] = false,
+    }
+  end
+end
+
+-- Ensure encounter has advanced settings structure
+function OGRH.EnsureEncounterAdvancedSettings(raid, encounter)
+  if not encounter then
+    return
+  end
+  
+  if not encounter.advancedSettings then
+    encounter.advancedSettings = {
+      bigwigs = {
+        enabled = false,
+        encounterId = ""
+      },
+      consumeTracking = {
+        enabled = nil,  -- nil = inherit from raid
+        readyThreshold = nil,  -- nil = inherit from raid
+        requiredFlaskRoles = {}
+      }
+    }
+  end
+  
+  -- Ensure sub-tables exist (for upgrades)
+  if not encounter.advancedSettings.bigwigs then
+    encounter.advancedSettings.bigwigs = {
+      enabled = false,
+      encounterId = ""
+    }
+  end
+  
+  if not encounter.advancedSettings.consumeTracking then
+    encounter.advancedSettings.consumeTracking = {
+      enabled = nil,
+      readyThreshold = nil,
+      requiredFlaskRoles = {}
+    }
+  end
+end
+
+-- Get advanced settings for currently selected raid
+function OGRH.GetCurrentRaidAdvancedSettings()
+  local frame = OGRH_EncounterFrame
+  if not frame or not frame.selectedRaid then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Load failed: no frame or selectedRaid")
+    return nil
+  end
+  
+  local raid = OGRH.FindRaidByName(frame.selectedRaid)
+  if not raid then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Load failed: raid not found")
+    return nil
+  end
+  
+  OGRH.EnsureRaidAdvancedSettings(raid)
+  
+  return raid.advancedSettings
+end
+
+-- Save advanced settings for currently selected raid
+function OGRH.SaveCurrentRaidAdvancedSettings(settings)
+  local frame = OGRH_EncounterFrame
+  if not frame or not frame.selectedRaid then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Save failed: no frame or selectedRaid")
+    return false
+  end
+  
+  local raid = OGRH.FindRaidByName(frame.selectedRaid)
+  if not raid then
+    DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Save failed: raid not found")
+    return false
+  end
+  
+  raid.advancedSettings = settings
+  return true
+end
+
+-- Get advanced settings for currently selected encounter
+function OGRH.GetCurrentEncounterAdvancedSettings()
+  local frame = OGRH_EncounterFrame
+  if not frame or not frame.selectedRaid or not frame.selectedEncounter then
+    return nil
+  end
+  
+  local raid = OGRH.FindRaidByName(frame.selectedRaid)
+  if not raid then return nil end
+  
+  local encounter = OGRH.FindEncounterByName(raid, frame.selectedEncounter)
+  if not encounter then
+    return nil
+  end
+  
+  OGRH.EnsureEncounterAdvancedSettings(raid, encounter)
+  return encounter.advancedSettings
+end
+
+-- Save advanced settings for currently selected encounter
+function OGRH.SaveCurrentEncounterAdvancedSettings(settings)
+  local frame = OGRH_EncounterFrame
+  if not frame or not frame.selectedRaid or not frame.selectedEncounter then
+    return false
+  end
+  
+  local raid = OGRH.FindRaidByName(frame.selectedRaid)
+  if not raid then return false end
+  
+  local encounter = OGRH.FindEncounterByName(raid, frame.selectedEncounter)
+  if not encounter then
+    return false
+  end
+  
+  encounter.advancedSettings = settings
+  return true
 end
 
 -- Initialize encounter frame on VARIABLES_LOADED to ensure ReplaceTags is available

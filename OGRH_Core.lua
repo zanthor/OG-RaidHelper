@@ -93,6 +93,12 @@ end
 local _svf = CreateFrame("Frame"); _svf:RegisterEvent("VARIABLES_LOADED")
 _svf:SetScript("OnEvent", function() 
   OGRH.EnsureSV()
+  
+  -- Upgrade encounter data structure if needed (must happen early before any UI access)
+  if OGRH.UpgradeEncounterDataStructure then
+    OGRH.UpgradeEncounterDataStructure()
+  end
+  
   -- Load factory defaults on first run if configured
   if OGRH_SV.firstRun ~= false and OGRH.FactoryDefaults and type(OGRH.FactoryDefaults) == "table" and OGRH.FactoryDefaults.version then
     OGRH.LoadFactoryDefaults()
@@ -100,6 +106,37 @@ _svf:SetScript("OnEvent", function()
   end
 end)
 OGRH.EnsureSV()
+
+-- ========================================
+-- TIMER SYSTEM (for delayed execution)
+-- ========================================
+OGRH.timers = {}
+local timerFrame = CreateFrame("Frame")
+
+timerFrame:SetScript("OnUpdate", function()
+  local now = GetTime()
+  for id, timer in pairs(OGRH.timers) do
+    if now >= timer.when then
+      timer.callback()
+      if timer.repeating then
+        timer.when = now + timer.delay
+      else
+        OGRH.timers[id] = nil
+      end
+    end
+  end
+end)
+
+function OGRH.ScheduleTimer(callback, delay, repeating)
+  local id = GetTime() .. math.random()
+  OGRH.timers[id] = {
+    callback = callback,
+    when = GetTime() + delay,
+    delay = delay,
+    repeating = repeating
+  }
+  return id
+end
 
 -- ========================================
 -- MODULE SYSTEM
@@ -1328,9 +1365,12 @@ function OGRH.BroadcastEncounterSelection(raidName, encounterName)
   SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
   
   -- After broadcasting the encounter selection, sync the assignments for the new encounter
+  local playerName = UnitName("player")
+  local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin()
+  
   -- Only the designated raid admin should push assignments
   -- Leaders/Assistants who are not raid admin should request a sync instead
-  if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+  if isAdmin then
     -- This player is the designated raid admin - broadcast full sync
     if OGRH.BroadcastFullEncounterSync then
       OGRH.BroadcastFullEncounterSync()
@@ -1542,24 +1582,100 @@ function OGRH.CalculateAllStructureChecksum()
   local raidCount = 0
   local encounterCount = 0
   
-  -- Hash raids list (from encounterMgmt.raids)
+  -- Hash raids list (new structure only)
   if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
-    for i, raidName in ipairs(OGRH_SV.encounterMgmt.raids) do
+    for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+      local raid = OGRH_SV.encounterMgmt.raids[i]
+      local raidName = raid.name
       raidCount = raidCount + 1
       for j = 1, string.len(raidName) do
         checksum = checksum + string.byte(raidName, j) * i * 50
       end
+      
+      -- Hash raid-level advanced settings
+      if raid.advancedSettings and raid.advancedSettings.consumeTracking then
+        local ct = raid.advancedSettings.consumeTracking
+        -- Raid-level settings are always explicit (never nil)
+        checksum = checksum + (ct.enabled and 1 or 0) * 50000023
+        checksum = checksum + (ct.readyThreshold or 85) * 500029
+        
+        if ct.requiredFlaskRoles then
+          local roleNames = {"Tanks", "Healers", "Melee", "Ranged"}
+          for _, roleName in ipairs(roleNames) do
+            if ct.requiredFlaskRoles[roleName] then
+              for k = 1, string.len(roleName) do
+                checksum = checksum + string.byte(roleName, k) * (k + 311) * 1019
+              end
+            end
+          end
+        end
+      end
     end
   end
   
-  -- Hash encounters list (from encounterMgmt.encounters)
-  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters then
-    for raidName, encounters in pairs(OGRH_SV.encounterMgmt.encounters) do
-      if type(encounters) == "table" then
-        for i, encounterName in ipairs(encounters) do
+  -- Hash encounters list (from new nested structure)
+  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+    for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+      local raid = OGRH_SV.encounterMgmt.raids[i]
+      if raid.encounters then
+        for j = 1, table.getn(raid.encounters) do
+          local encounter = raid.encounters[j]
+          local encounterName = encounter.name
           encounterCount = encounterCount + 1
-          for j = 1, string.len(encounterName) do
-            checksum = checksum + string.byte(encounterName, j) * i * 100
+          for k = 1, string.len(encounterName) do
+            checksum = checksum + string.byte(encounterName, k) * j * 100
+          end
+          
+          -- Hash encounter-level advanced settings
+          if encounter.advancedSettings then
+            -- Hash BigWigs settings
+            if encounter.advancedSettings.bigwigs then
+              local bw = encounter.advancedSettings.bigwigs
+              checksum = checksum + (bw.enabled and 1 or 0) * 10000019
+              
+              if bw.encounterId and bw.encounterId ~= "" then
+                for k = 1, string.len(bw.encounterId) do
+                  checksum = checksum + string.byte(bw.encounterId, k) * (k + 107) * 1009
+                end
+              end
+            end
+            
+            -- Hash consume tracking settings
+            if encounter.advancedSettings.consumeTracking then
+              local ct = encounter.advancedSettings.consumeTracking
+              
+              -- Hash enabled flag (nil=inherit, false=disabled, true=enabled)
+              -- Must distinguish between nil/false/true for proper checksum
+              local enabledValue = 0  -- default for nil
+              if ct.enabled == true then
+                enabledValue = 2
+              elseif ct.enabled == false then
+                enabledValue = 1
+              end
+              checksum = checksum + enabledValue * 100000037
+              
+              -- Hash ready threshold (nil means inherit from raid)
+              if ct.readyThreshold ~= nil then
+                checksum = checksum + ct.readyThreshold * 1000039
+              end
+              
+              -- Hash required flask roles (must be deterministic)
+              if ct.requiredFlaskRoles then
+                local roleNames = {"Tanks", "Healers", "Melee", "Ranged"}
+                for _, roleName in ipairs(roleNames) do
+                  -- Only hash if explicitly set (not nil)
+                  if ct.requiredFlaskRoles[roleName] ~= nil then
+                    -- Hash role name
+                    for k = 1, string.len(roleName) do
+                      checksum = checksum + string.byte(roleName, k) * (k + 211) * 1013
+                    end
+                    -- Hash the boolean value (false=1, true=2)
+                    local roleValue = ct.requiredFlaskRoles[roleName] and 2 or 1
+                    checksum = checksum + roleValue * 1017
+                  end
+                end
+              end
+            end
           end
         end
       end
@@ -1748,6 +1864,7 @@ end
 
 -- Broadcast full encounter assignment sync (assignments only, no structure)
 function OGRH.BroadcastFullEncounterSync()
+  
   if GetNumRaidMembers() == 0 then
     OGRH.Msg("You must be in a raid to sync.")
     return
@@ -1759,6 +1876,7 @@ function OGRH.BroadcastFullEncounterSync()
   end
   
   local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+  
   if not currentRaid or not currentEncounter then
     OGRH.Msg("No encounter selected to sync.")
     return
@@ -1792,7 +1910,7 @@ function OGRH.BroadcastFullEncounterSync()
     -- Fallback to old method if Sync module not loaded
     local serialized = OGRH.Serialize(syncData)
     SendAddonMessage(OGRH.ADDON_PREFIX, "ENCOUNTER_SYNC;" .. serialized, "RAID")
-  end
+  end  
 end
 
 -- Wrapper for legacy code that passes raid/encounter parameters
@@ -1820,12 +1938,12 @@ function OGRH.HandleAssignmentSync(sender, syncData)
   local isFromRaidLead = (OGRH.RaidLead and OGRH.RaidLead.currentLead and sender == OGRH.RaidLead.currentLead)
   
   if OGRH_SV.syncLocked and not isFromRaidLead then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r Ignored encounter sync from " .. sender .. " (sync is locked)")
     return
   end
   
   -- Check if sender is raid leader or assistant (or designated raid lead)
   local isAuthorized = isFromRaidLead
+  
   local numRaidMembers = GetNumRaidMembers()
   
   if numRaidMembers > 0 then
@@ -1840,7 +1958,6 @@ function OGRH.HandleAssignmentSync(sender, syncData)
   end
   
   if not isAuthorized then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Ignored encounter sync from " .. sender .. " (not raid leader or assistant)")
     return
   end
   
@@ -1850,38 +1967,67 @@ function OGRH.HandleAssignmentSync(sender, syncData)
   
   -- Initialize structures
   OGRH.EnsureSV()
-  if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, encounters = {}} end
+  if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}} end
   if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
-  if not OGRH_SV.encounterMgmt.encounters then OGRH_SV.encounterMgmt.encounters = {} end
   if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
   
-  -- Add raid to raids list if it doesn't exist
+  -- Add raid to raids list if it doesn't exist (new structure only)
   local raidExists = false
   for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-    if OGRH_SV.encounterMgmt.raids[i] == syncData.raid then
+    local raid = OGRH_SV.encounterMgmt.raids[i]
+    if raid.name == syncData.raid then
       raidExists = true
       break
     end
   end
   if not raidExists then
-    table.insert(OGRH_SV.encounterMgmt.raids, syncData.raid)
+    table.insert(OGRH_SV.encounterMgmt.raids, {
+      name = syncData.raid,
+      encounters = {},
+      advancedSettings = {
+        consumeTracking = {
+          enabled = false,
+          readyThreshold = 85,
+          requiredFlaskRoles = {
+            ["Tanks"] = false,
+            ["Healers"] = false,
+            ["Melee"] = false,
+            ["Ranged"] = false,
+          }
+        }
+      }
+    })
   end
   
-  -- Initialize encounter list for this raid if needed
-  if not OGRH_SV.encounterMgmt.encounters[syncData.raid] then
-    OGRH_SV.encounterMgmt.encounters[syncData.raid] = {}
+  -- Find the raid object and add encounter if it doesn't exist
+  local raidObj = OGRH.FindRaidByName(syncData.raid)
+  if not raidObj or not raidObj.encounters then
+    return
   end
   
   -- Add encounter to raid's encounter list if it doesn't exist
   local encounterExists = false
-  for i = 1, table.getn(OGRH_SV.encounterMgmt.encounters[syncData.raid]) do
-    if OGRH_SV.encounterMgmt.encounters[syncData.raid][i] == syncData.encounter then
+  for i = 1, table.getn(raidObj.encounters) do
+    if raidObj.encounters[i].name == syncData.encounter then
       encounterExists = true
       break
     end
   end
   if not encounterExists then
-    table.insert(OGRH_SV.encounterMgmt.encounters[syncData.raid], syncData.encounter)
+    table.insert(raidObj.encounters, {
+      name = syncData.encounter,
+      advancedSettings = {
+        bigwigs = {
+          enabled = false,
+          encounterId = ""
+        },
+        consumeTracking = {
+          enabled = nil,
+          readyThreshold = nil,
+          requiredFlaskRoles = {}
+        }
+      }
+    })
   end
   
   -- Initialize assignment storage
@@ -2657,38 +2803,67 @@ addonFrame:SetScript("OnEvent", function()
         if syncData and syncData.raid and syncData.encounter then
           -- Initialize structures
           OGRH.EnsureSV()
-          if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, encounters = {}} end
+          if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}} end
           if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
-          if not OGRH_SV.encounterMgmt.encounters then OGRH_SV.encounterMgmt.encounters = {} end
           if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
           
-          -- Add raid to raids list if it doesn't exist
+          -- Add raid to raids list if it doesn't exist (new structure only)
           local raidExists = false
           for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-            if OGRH_SV.encounterMgmt.raids[i] == syncData.raid then
+            local raid = OGRH_SV.encounterMgmt.raids[i]
+            if raid.name == syncData.raid then
               raidExists = true
               break
             end
           end
           if not raidExists then
-            table.insert(OGRH_SV.encounterMgmt.raids, syncData.raid)
+            table.insert(OGRH_SV.encounterMgmt.raids, {
+              name = syncData.raid,
+              encounters = {},
+              advancedSettings = {
+                consumeTracking = {
+                  enabled = false,
+                  readyThreshold = 85,
+                  requiredFlaskRoles = {
+                    ["Tanks"] = false,
+                    ["Healers"] = false,
+                    ["Melee"] = false,
+                    ["Ranged"] = false,
+                  }
+                }
+              }
+            })
           end
           
-          -- Initialize encounter list for this raid if needed
-          if not OGRH_SV.encounterMgmt.encounters[syncData.raid] then
-            OGRH_SV.encounterMgmt.encounters[syncData.raid] = {}
+          -- Find the raid object and add encounter if it doesn't exist
+          local raidObj = OGRH.FindRaidByName(syncData.raid)
+          if not raidObj or not raidObj.encounters then
+            return
           end
           
           -- Add encounter to raid's encounter list if it doesn't exist
           local encounterExists = false
-          for i = 1, table.getn(OGRH_SV.encounterMgmt.encounters[syncData.raid]) do
-            if OGRH_SV.encounterMgmt.encounters[syncData.raid][i] == syncData.encounter then
+          for i = 1, table.getn(raidObj.encounters) do
+            if raidObj.encounters[i].name == syncData.encounter then
               encounterExists = true
               break
             end
           end
           if not encounterExists then
-            table.insert(OGRH_SV.encounterMgmt.encounters[syncData.raid], syncData.encounter)
+            table.insert(raidObj.encounters, {
+              name = syncData.encounter,
+              advancedSettings = {
+                bigwigs = {
+                  enabled = false,
+                  encounterId = ""
+                },
+                consumeTracking = {
+                  enabled = nil,
+                  readyThreshold = nil,
+                  requiredFlaskRoles = {}
+                }
+              }
+            })
           end
           
           -- Initialize assignment storage
@@ -2928,38 +3103,48 @@ addonFrame:SetScript("OnEvent", function()
           end
           
           -- Verify raid and encounter exist locally
-          if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.encounters and
-             OGRH_SV.encounterMgmt.encounters[raidName] then
-            
-            -- Check if encounter exists in this raid
-            local encounters = OGRH_SV.encounterMgmt.encounters[raidName]
-            local encounterExists = false
-            for _, enc in ipairs(encounters) do
-              if enc == encounterName then
-                encounterExists = true
+          local raidFound = false
+          local encounterFound = false
+          
+          if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+            -- Loop through raids array to find matching raid name
+            for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+              local raid = OGRH_SV.encounterMgmt.raids[i]
+              if raid.name == raidName then
+                raidFound = true
+                -- Check if encounter exists in this raid - encounters is also an array
+                if raid.encounters then
+                  for j = 1, table.getn(raid.encounters) do
+                    local enc = raid.encounters[j]
+                    if enc.name == encounterName then
+                      encounterFound = true
+                      break
+                    end
+                  end
+                end
                 break
               end
             end
+          end
+          
+          if raidFound and encounterFound then
+            -- Update main UI selection only (don't touch planning window)
+            OGRH.EnsureSV()
+            if not OGRH_SV.ui then OGRH_SV.ui = {} end
+            OGRH_SV.ui.selectedRaid = raidName
+            OGRH_SV.ui.selectedEncounter = encounterName
             
-            if encounterExists then
-              -- Update main UI selection only (don't touch planning window)
-              OGRH.EnsureSV()
-              if not OGRH_SV.ui then OGRH_SV.ui = {} end
-              OGRH_SV.ui.selectedRaid = raidName
-              OGRH_SV.ui.selectedEncounter = encounterName
-              
-              -- Do NOT update planning window frame
-              -- Planning window maintains its own independent selection
-              
-              -- Always update the main UI encounter button (this loads modules)
-              if OGRH.UpdateEncounterNavButton then
-                OGRH.UpdateEncounterNavButton()
-              end
-              
-              -- Update consume monitor
-              if OGRH.ShowConsumeMonitor then
-                OGRH.ShowConsumeMonitor()
-              end
+            -- Do NOT update planning window frame
+            -- Planning window maintains its own independent selection
+            
+            -- Always update the main UI encounter button (this loads modules)
+            if OGRH.UpdateEncounterNavButton then
+              OGRH.UpdateEncounterNavButton()
+            end
+            
+            -- Update consume monitor
+            if OGRH.ShowConsumeMonitor then
+              OGRH.ShowConsumeMonitor()
             end
           end
         end
@@ -4156,7 +4341,6 @@ function OGRH.ExportShareData()
   local encounterMgmt = {}
   if OGRH_SV.encounterMgmt then
     encounterMgmt.raids = OGRH_SV.encounterMgmt.raids
-    encounterMgmt.encounters = OGRH_SV.encounterMgmt.encounters
     encounterMgmt.roles = OGRH_SV.encounterMgmt.roles
     -- Explicitly exclude playerPools, encounterPools, encounterAssignments, poolDefaults
   end
@@ -4181,29 +4365,25 @@ end
 function OGRH.ExportEncounterShareData(raidName, encounterName)
   OGRH.EnsureSV()
   
-  -- Collect only the specified encounter's structure data
+  -- Collect only the specified encounter's structure data (new structure only)
   local encounterMgmt = {}
   if OGRH_SV.encounterMgmt then
-    -- Include only the specific raid name (not all raids)
-    encounterMgmt.raids = {}
-    if OGRH_SV.encounterMgmt.raids then
-      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-        if OGRH_SV.encounterMgmt.raids[i] == raidName then
-          table.insert(encounterMgmt.raids, raidName)
-          break
-        end
-      end
-    end
-    
-    -- Include only the specific encounter
-    encounterMgmt.encounters = {}
-    if OGRH_SV.encounterMgmt.encounters and OGRH_SV.encounterMgmt.encounters[raidName] then
-      encounterMgmt.encounters[raidName] = {}
-      for i = 1, table.getn(OGRH_SV.encounterMgmt.encounters[raidName]) do
-        if OGRH_SV.encounterMgmt.encounters[raidName][i] == encounterName then
-          table.insert(encounterMgmt.encounters[raidName], encounterName)
-          break
-        end
+    -- Find the specified raid
+    local sourceRaid = OGRH.FindRaidByName(raidName)
+    if sourceRaid then
+      -- Include only this raid in the export
+      encounterMgmt.raids = {}
+      
+      -- Find the specific encounter within the raid
+      local sourceEncounter = OGRH.FindEncounterByName(sourceRaid, encounterName)
+      if sourceEncounter then
+        -- Create a copy of the raid with only this encounter
+        local exportRaid = {
+          name = raidName,
+          encounters = {sourceEncounter},
+          advancedSettings = sourceRaid.advancedSettings
+        }
+        table.insert(encounterMgmt.raids, exportRaid)
       end
     end
     
@@ -4276,26 +4456,69 @@ function OGRH.ImportShareData(dataString, isSingleEncounter)
     -- Merge single encounter data (don't overwrite existing data)
     if importData.encounterMgmt then
       if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {} end
+      if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
       
-      -- Merge encounters for this raid only (preserve existing encounters)
-      if importData.encounterMgmt.encounters then
-        if not OGRH_SV.encounterMgmt.encounters then OGRH_SV.encounterMgmt.encounters = {} end
-        for raidName, encounters in pairs(importData.encounterMgmt.encounters) do
-          if not OGRH_SV.encounterMgmt.encounters[raidName] then
-            OGRH_SV.encounterMgmt.encounters[raidName] = {}
-          end
-          -- Merge encounter names - only add if not already present
-          for i = 1, table.getn(encounters) do
-            local encounterName = encounters[i]
-            local exists = false
-            for j = 1, table.getn(OGRH_SV.encounterMgmt.encounters[raidName]) do
-              if OGRH_SV.encounterMgmt.encounters[raidName][j] == encounterName then
-                exists = true
-                break
-              end
+      -- Merge raids and encounters using new array-based structure
+      if importData.encounterMgmt.raids then
+        for i = 1, table.getn(importData.encounterMgmt.raids) do
+          local importRaid = importData.encounterMgmt.raids[i]
+          local importRaidName = importRaid.name
+          
+          -- Find or create raid in local data
+          local localRaid = nil
+          for j = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+            if OGRH_SV.encounterMgmt.raids[j].name == importRaidName then
+              localRaid = OGRH_SV.encounterMgmt.raids[j]
+              break
             end
-            if not exists then
-              table.insert(OGRH_SV.encounterMgmt.encounters[raidName], encounterName)
+          end
+          
+          -- If raid doesn't exist, create it
+          if not localRaid then
+            localRaid = {
+              name = importRaidName,
+              encounters = {},
+              advancedSettings = importRaid.advancedSettings or {
+                consumeTracking = {
+                  enabled = false,
+                  readyThreshold = 85,
+                  requiredFlaskRoles = {}
+                },
+                bigwigs = {
+                  enabled = false,
+                  raidZones = {},
+                  autoAnnounce = false
+                }
+              }
+            }
+            table.insert(OGRH_SV.encounterMgmt.raids, localRaid)
+          end
+          
+          -- Ensure local raid has encounters array
+          if not localRaid.encounters then
+            localRaid.encounters = {}
+          end
+          
+          -- Merge encounters from import
+          if importRaid.encounters then
+            for k = 1, table.getn(importRaid.encounters) do
+              local importEncounter = importRaid.encounters[k]
+              local encounterExists = false
+              
+              -- Check if encounter already exists
+              for m = 1, table.getn(localRaid.encounters) do
+                if localRaid.encounters[m].name == importEncounter.name then
+                  -- Update existing encounter (overwrite with imported data for single encounter sync)
+                  localRaid.encounters[m] = importEncounter
+                  encounterExists = true
+                  break
+                end
+              end
+              
+              -- Add encounter if it doesn't exist
+              if not encounterExists then
+                table.insert(localRaid.encounters, importEncounter)
+              end
             end
           end
         end
@@ -4351,6 +4574,24 @@ function OGRH.ImportShareData(dataString, isSingleEncounter)
     -- Full import - overwrite everything
     if importData.encounterMgmt then
       OGRH_SV.encounterMgmt = importData.encounterMgmt
+      
+      -- Ensure advancedSettings exist for all raids and encounters (migration safety)
+      if OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if OGRH.EnsureRaidAdvancedSettings then
+            OGRH.EnsureRaidAdvancedSettings(raid)
+          end
+          if raid.encounters then
+            for j = 1, table.getn(raid.encounters) do
+              local encounter = raid.encounters[j]
+              if OGRH.EnsureEncounterAdvancedSettings then
+                OGRH.EnsureEncounterAdvancedSettings(raid, encounter)
+              end
+            end
+          end
+        end
+      end
     end
     if importData.encounterRaidMarks then
       OGRH_SV.encounterRaidMarks = importData.encounterRaidMarks

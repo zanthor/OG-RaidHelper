@@ -144,18 +144,10 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
     -- Get current priority list
     local priorityList = roleData.classPriority[slotIndex] or {}
     
-    -- Build set of selected classes for quick lookup
-    local selectedClasses = {}
-    for _, className in ipairs(priorityList) do
-      selectedClasses[className] = true
-    end
-    
-    -- Build available classes list
+    -- Build available classes list (allow duplicates, so all classes are always available)
     local availableClasses = {}
     for _, className in ipairs(allClasses) do
-      if not selectedClasses[className] then
-        table.insert(availableClasses, className)
-      end
+      table.insert(availableClasses, className)
     end
     
     -- Render left list (selected classes with up/down/delete)
@@ -182,6 +174,14 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
               local temp = priorityList[capturedIndex]
               priorityList[capturedIndex] = priorityList[capturedIndex - 1]
               priorityList[capturedIndex - 1] = temp
+              
+              -- Also swap role flags if they exist
+              if roleData.classPriorityRoles and roleData.classPriorityRoles[slotIndex] then
+                local tempRoles = roleData.classPriorityRoles[slotIndex][capturedIndex]
+                roleData.classPriorityRoles[slotIndex][capturedIndex] = roleData.classPriorityRoles[slotIndex][capturedIndex - 1]
+                roleData.classPriorityRoles[slotIndex][capturedIndex - 1] = tempRoles
+              end
+              
               RefreshLists()
             end
           end,
@@ -191,12 +191,26 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
               local temp = priorityList[capturedIndex]
               priorityList[capturedIndex] = priorityList[capturedIndex + 1]
               priorityList[capturedIndex + 1] = temp
+              
+              -- Also swap role flags if they exist
+              if roleData.classPriorityRoles and roleData.classPriorityRoles[slotIndex] then
+                local tempRoles = roleData.classPriorityRoles[slotIndex][capturedIndex]
+                roleData.classPriorityRoles[slotIndex][capturedIndex] = roleData.classPriorityRoles[slotIndex][capturedIndex + 1]
+                roleData.classPriorityRoles[slotIndex][capturedIndex + 1] = tempRoles
+              end
+              
               RefreshLists()
             end
           end,
           function()
             -- Delete
             table.remove(priorityList, capturedIndex)
+            
+            -- Also remove role flags for deleted item and shift remaining ones
+            if roleData.classPriorityRoles and roleData.classPriorityRoles[slotIndex] then
+              table.remove(roleData.classPriorityRoles[slotIndex], capturedIndex)
+            end
+            
             RefreshLists()
           end
         )
@@ -239,11 +253,12 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
         if not roleData.classPriorityRoles[slotIndex] then
           roleData.classPriorityRoles[slotIndex] = {}
         end
-        if not roleData.classPriorityRoles[slotIndex][className] then
-          roleData.classPriorityRoles[slotIndex][className] = {}
+        -- Store role flags by position in priority list, not by class name
+        if not roleData.classPriorityRoles[slotIndex][i] then
+          roleData.classPriorityRoles[slotIndex][i] = {}
         end
         
-        local roleFlags = roleData.classPriorityRoles[slotIndex][className]
+        local roleFlags = roleData.classPriorityRoles[slotIndex][i]
         local xOffset = 42  -- Start position for checkboxes
         
         for _, role in ipairs(roles) do
@@ -269,7 +284,7 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
           -- Click handler (capture variables in closure)
           do
             local capturedRole = role
-            local capturedClass = className
+            local capturedIndex = i
             checkBox:SetScript("OnClick", function()
               roleFlags[capturedRole] = this:GetChecked() and true or nil
             end)

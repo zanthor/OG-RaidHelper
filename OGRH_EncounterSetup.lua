@@ -136,8 +136,10 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       local scrollChild = frame.raidsScrollChild
       local contentWidth = scrollChild:GetWidth()
       
-      -- Add existing raids
-      for i, raidName in ipairs(OGRH_SV.encounterMgmt.raids) do
+      -- Add existing raids (new structure only)
+      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+        local raid = OGRH_SV.encounterMgmt.raids[i]
+        local raidName = raid.name
         local raidBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         raidBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
         
@@ -285,9 +287,10 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
         return
       end
       
-      -- Ensure encounter storage exists for this raid
-      if not OGRH_SV.encounterMgmt.encounters[frame.selectedRaid] then
-        OGRH_SV.encounterMgmt.encounters[frame.selectedRaid] = {}
+      -- Get encounters from raid object (new structure only)
+      local raid = OGRH.FindRaidByName(frame.selectedRaid)
+      if not raid or not raid.encounters then
+        return
       end
       
       local yOffset = -5
@@ -295,7 +298,10 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       local contentWidth = scrollChild:GetWidth()
       
       -- Add existing encounters for selected raid
-      local encounters = OGRH_SV.encounterMgmt.encounters[frame.selectedRaid]
+      local encounters = {}
+      for i = 1, table.getn(raid.encounters) do
+        table.insert(encounters, raid.encounters[i].name)
+      end
       for i, encounterName in ipairs(encounters) do
         if encounterName == frame.selectedEncounter then
           selectedIndex = i
@@ -341,20 +347,26 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
         OGRH.AddListItemButtons(
           encounterBtn,
           capturedIndex,
-          table.getn(OGRH_SV.encounterMgmt.encounters[capturedRaid]),
+          table.getn(encounters),
           function()
             -- Move up
-            local temp = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex - 1]
-            OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex - 1] = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex]
-            OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex] = temp
-            RefreshEncountersList()
+            local raidObj = OGRH.FindRaidByName(capturedRaid)
+            if raidObj and raidObj.encounters then
+              local temp = raidObj.encounters[capturedIndex - 1]
+              raidObj.encounters[capturedIndex - 1] = raidObj.encounters[capturedIndex]
+              raidObj.encounters[capturedIndex] = temp
+              RefreshEncountersList()
+            end
           end,
           function()
             -- Move down
-            local temp = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex + 1]
-            OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex + 1] = OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex]
-            OGRH_SV.encounterMgmt.encounters[capturedRaid][capturedIndex] = temp
-            RefreshEncountersList()
+            local raidObj = OGRH.FindRaidByName(capturedRaid)
+            if raidObj and raidObj.encounters then
+              local temp = raidObj.encounters[capturedIndex + 1]
+              raidObj.encounters[capturedIndex + 1] = raidObj.encounters[capturedIndex]
+              raidObj.encounters[capturedIndex] = temp
+              RefreshEncountersList()
+            end
           end,
           function()
             -- Delete
@@ -837,15 +849,32 @@ StaticPopupDialogs["OGRH_ADD_RAID"] = {
       OGRH.EnsureSV()
       -- Check if raid already exists
       local exists = false
-      for _, name in ipairs(OGRH_SV.encounterMgmt.raids) do
-        if name == raidName then
+      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+        local existing = OGRH_SV.encounterMgmt.raids[i]
+        local existingName = type(existing) == "table" and existing.name or existing
+        if existingName == raidName then
           exists = true
           break
         end
       end
       
       if not exists then
-        table.insert(OGRH_SV.encounterMgmt.raids, raidName)
+        table.insert(OGRH_SV.encounterMgmt.raids, {
+          name = raidName,
+          encounters = {},
+          advancedSettings = {
+            consumeTracking = {
+              enabled = false,
+              readyThreshold = 85,
+              requiredFlaskRoles = {
+                ["Tanks"] = false,
+                ["Healers"] = false,
+                ["Melee"] = false,
+                ["Ranged"] = false,
+              }
+            }
+          }
+        })
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
           OGRH_EncounterSetupFrame.RefreshRaidsList()
         end
@@ -881,15 +910,14 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"] = {
     local raidName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"].text_arg1
     if raidName then
       -- Remove raid from list
-      for i, name in ipairs(OGRH_SV.encounterMgmt.raids) do
+      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+        local raid = OGRH_SV.encounterMgmt.raids[i]
+        local name = type(raid) == "table" and raid.name or raid
         if name == raidName then
           table.remove(OGRH_SV.encounterMgmt.raids, i)
           break
         end
       end
-      
-      -- Remove all encounter data associated with this raid
-      OGRH_SV.encounterMgmt.encounters[raidName] = nil
       
       if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
         OGRH_EncounterSetupFrame.selectedRaid = nil
@@ -921,22 +949,56 @@ StaticPopupDialogs["OGRH_ADD_ENCOUNTER"] = {
     local raidName = StaticPopupDialogs["OGRH_ADD_ENCOUNTER"].text_arg1
     if encounterName and encounterName ~= "" and raidName then
       OGRH.EnsureSV()
-      -- Ensure raid encounters table exists
-      if not OGRH_SV.encounterMgmt.encounters[raidName] then
-        OGRH_SV.encounterMgmt.encounters[raidName] = {}
+      
+      -- Find the raid in new structure
+      local raidObj = nil
+      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if raid.name == raidName then
+            raidObj = raid
+            break
+          end
+        end
+      end
+      
+      if not raidObj then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid not found")
+        return
+      end
+      
+      -- Ensure encounters array exists
+      if not raidObj.encounters then
+        raidObj.encounters = {}
       end
       
       -- Check if encounter already exists
       local exists = false
-      for _, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
-        if name == encounterName then
+      for i = 1, table.getn(raidObj.encounters) do
+        if raidObj.encounters[i].name == encounterName then
           exists = true
           break
         end
       end
       
       if not exists then
-        table.insert(OGRH_SV.encounterMgmt.encounters[raidName], encounterName)
+        -- Create new encounter with proper structure
+        local newEncounter = {
+          name = encounterName,
+          advancedSettings = {
+            bigwigs = {
+              enabled = false,
+              encounterId = "",
+              autoAnnounce = false
+            },
+            consumeTracking = {
+              enabled = nil,
+              readyThreshold = nil,
+              requiredFlaskRoles = {}
+            }
+          }
+        }
+        table.insert(raidObj.encounters, newEncounter)
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshEncountersList then
           OGRH_EncounterSetupFrame.RefreshEncountersList()
         end
@@ -972,11 +1034,23 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
     local encounterName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1
     local raidName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg2
     if encounterName and raidName then
-      -- Remove encounter from list
-      if OGRH_SV.encounterMgmt.encounters[raidName] then
-        for i, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
-          if name == encounterName then
-            table.remove(OGRH_SV.encounterMgmt.encounters[raidName], i)
+      -- Find the raid in new structure
+      local raidObj = nil
+      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if raid.name == raidName then
+            raidObj = raid
+            break
+          end
+        end
+      end
+      
+      -- Remove encounter from raid's encounters array
+      if raidObj and raidObj.encounters then
+        for i = 1, table.getn(raidObj.encounters) do
+          if raidObj.encounters[i].name == encounterName then
+            table.remove(raidObj.encounters, i)
             break
           end
         end
@@ -1016,7 +1090,9 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
       
       -- Check if new name already exists
       local exists = false
-      for _, name in ipairs(OGRH_SV.encounterMgmt.raids) do
+      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+        local existing = OGRH_SV.encounterMgmt.raids[i]
+        local name = type(existing) == "table" and existing.name or existing
         if name == newName then
           exists = true
           break
@@ -1025,17 +1101,17 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
       
       if not exists then
         -- Update raid name in raids list
-        for i, name in ipairs(OGRH_SV.encounterMgmt.raids) do
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          local name = type(raid) == "table" and raid.name or raid
           if name == oldName then
-            OGRH_SV.encounterMgmt.raids[i] = newName
+            if type(raid) == "table" then
+              raid.name = newName
+            else
+              OGRH_SV.encounterMgmt.raids[i] = newName
+            end
             break
           end
-        end
-        
-        -- Update encounters data structure
-        if OGRH_SV.encounterMgmt.encounters[oldName] then
-          OGRH_SV.encounterMgmt.encounters[newName] = OGRH_SV.encounterMgmt.encounters[oldName]
-          OGRH_SV.encounterMgmt.encounters[oldName] = nil
         end
         
         -- Update roles data structure
@@ -1132,11 +1208,28 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
     if newName and newName ~= "" and oldName and raidName and newName ~= oldName then
       OGRH.EnsureSV()
       
+      -- Find the raid in new structure
+      local raidObj = nil
+      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+          local raid = OGRH_SV.encounterMgmt.raids[i]
+          if raid.name == raidName then
+            raidObj = raid
+            break
+          end
+        end
+      end
+      
+      if not raidObj then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid not found")
+        return
+      end
+      
       -- Check if new name already exists in this raid
       local exists = false
-      if OGRH_SV.encounterMgmt.encounters[raidName] then
-        for _, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
-          if name == newName then
+      if raidObj.encounters then
+        for i = 1, table.getn(raidObj.encounters) do
+          if raidObj.encounters[i].name == newName then
             exists = true
             break
           end
@@ -1144,11 +1237,11 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
       end
       
       if not exists then
-        -- Update encounter name in encounters list
-        if OGRH_SV.encounterMgmt.encounters[raidName] then
-          for i, name in ipairs(OGRH_SV.encounterMgmt.encounters[raidName]) do
-            if name == oldName then
-              OGRH_SV.encounterMgmt.encounters[raidName][i] = newName
+        -- Update encounter name in encounters array
+        if raidObj.encounters then
+          for i = 1, table.getn(raidObj.encounters) do
+            if raidObj.encounters[i].name == oldName then
+              raidObj.encounters[i].name = newName
               break
             end
           end
