@@ -72,6 +72,9 @@ function OGRH.EnsureRecruitmentSV()
   if not OGRH_SV.recruitment.lastRotationIndex then
     OGRH_SV.recruitment.lastRotationIndex = 0
   end
+  if not OGRH_SV.recruitment.targetTime then
+    OGRH_SV.recruitment.targetTime = ""
+  end
   
   -- Migrate old channels format to new selectedChannel format
   if OGRH_SV.recruitment.channels then
@@ -635,6 +638,43 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   intervalBox:SetText(tostring(math.floor((OGRH_SV.recruitment.interval or 600) / 60)))
   table.insert(detailPanel.content, intervalBox)
   
+  -- Target Time setting
+  local targetTimeLabel = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  targetTimeLabel:SetPoint("LEFT", intervalBox, "RIGHT", 20, 0)
+  targetTimeLabel:SetText("Target Time:")
+  table.insert(detailPanel.content, targetTimeLabel)
+  
+  local targetTimeBox = CreateFrame("EditBox", nil, detailPanel)
+  targetTimeBox:SetPoint("LEFT", targetTimeLabel, "RIGHT", 8, 0)
+  targetTimeBox:SetWidth(60)
+  targetTimeBox:SetHeight(20)
+  targetTimeBox:SetAutoFocus(false)
+  targetTimeBox:SetMaxLetters(4)
+  targetTimeBox:SetFontObject(GameFontHighlight)
+  targetTimeBox:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/ChatFrame/ChatFrameBackground",
+    tile = true, tileSize = 16, edgeSize = 1,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  targetTimeBox:SetBackdropColor(0, 0, 0, 0.5)
+  targetTimeBox:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+  targetTimeBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  targetTimeBox:SetScript("OnTextChanged", function()
+    local text = this:GetText()
+    -- Validate input is numeric and 4 digits or less
+    if text and string.len(text) > 0 then
+      local value = tonumber(text)
+      if value and value >= 0 and value <= 2359 then
+        OGRH_SV.recruitment.targetTime = text
+      end
+    else
+      OGRH_SV.recruitment.targetTime = ""
+    end
+  end)
+  targetTimeBox:SetText(OGRH_SV.recruitment.targetTime or "")
+  table.insert(detailPanel.content, targetTimeBox)
+  
   -- Rotate Message section
   local rotateLabel = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   rotateLabel:SetPoint("TOPLEFT", intervalLabel, "BOTTOMLEFT", 0, -12)
@@ -734,6 +774,37 @@ function OGRH.SendRecruitmentAd()
     messageIndex = OGRH_SV.recruitment.selectedMessageIndex
     message = OGRH_SV.recruitment.messages[messageIndex]
     message2 = OGRH_SV.recruitment.messages2[messageIndex]
+  end
+  
+  -- Replace [TTP] tag with minutes until target time
+  if OGRH_SV.recruitment.targetTime and OGRH_SV.recruitment.targetTime ~= "" then
+    local targetTime = OGRH_SV.recruitment.targetTime
+    local targetHour = math.floor(tonumber(targetTime) / 100)
+    local targetMin = math.mod(tonumber(targetTime), 100)
+    
+    -- Get current local time
+    local currentHour = tonumber(date("%H"))
+    local currentMin = tonumber(date("%M"))
+    
+    -- Calculate target time in minutes from midnight
+    local targetTotalMin = targetHour * 60 + targetMin
+    local currentTotalMin = currentHour * 60 + currentMin
+    
+    -- Calculate difference
+    local diffMin = targetTotalMin - currentTotalMin
+    
+    -- If target is earlier than current time, assume it's tomorrow
+    if diffMin < 0 then
+      diffMin = diffMin + (24 * 60)
+    end
+    
+    -- Replace [TTP] with the calculated minutes
+    if message then
+      message = string.gsub(message, "%[TTP%]", tostring(diffMin))
+    end
+    if message2 and message2 ~= "" then
+      message2 = string.gsub(message2, "%[TTP%]", tostring(diffMin))
+    end
   end
   
   if not message or message == "" then
