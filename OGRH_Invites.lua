@@ -291,16 +291,56 @@ function OGRH.Invites.ParseRaidHelperGroupsJSON(jsonString)
     return nil, "Invalid JSON: Missing 'raidDrop' array"
   end
   
-  -- Extract group assignments
+  -- Extract full player roster
+  local players = {}
   local groupAssignments = {} -- { [playerName] = groupNumber }
   
   for i = 1, table.getn(raidDrop) do
     local slot = raidDrop[i]
-    if slot and slot.name and slot.partyId then
+    if slot and slot.name then
       local playerName = NormalizeName(slot.name)
       local groupNum = tonumber(slot.partyId)
+      local isBenched = (slot.class == "Bench")
       
-      if playerName and groupNum and groupNum >= 1 and groupNum <= 8 then
+      -- Map role_emote to OGRH role format
+      local role = nil
+      if slot.role_emote == "598989638098747403" then
+        role = "TANKS"
+      elseif slot.role_emote == "592438128057253898" then
+        role = "HEALERS"
+      elseif slot.role_emote == "734439523328720913" then
+        role = "MELEE"
+      elseif slot.role_emote == "592446395596931072" then
+        role = "RANGED"
+      end
+      
+      -- Get actual class from cache (for benched players and validation)
+      local actualClass = nil
+      if not isBenched and slot.class and slot.class ~= "Bench" then
+        actualClass = string.upper(slot.class)
+      end
+      
+      -- Try to get class from OGRH cache if not available
+      if not actualClass then
+        actualClass = OGRH.GetPlayerClass(playerName)
+      end
+      
+      -- Create player object
+      local player = {
+        name = playerName,
+        class = actualClass,
+        role = role,
+        group = groupNum,
+        bench = isBenched,
+        absent = false,
+        status = "signed",
+        source = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
+      }
+      
+      table.insert(players, player)
+      
+      -- Store group assignment for non-benched players
+      if not isBenched and groupNum and groupNum >= 1 and groupNum <= 8 then
         groupAssignments[playerName] = groupNum
       end
     end
@@ -310,6 +350,7 @@ function OGRH.Invites.ParseRaidHelperGroupsJSON(jsonString)
   local result = {
     hash = data.hash,
     title = data.title or "Composition",
+    players = players,
     groupAssignments = groupAssignments
   }
   
@@ -1314,20 +1355,16 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
         return
       end
       
-      -- Store groups data
+      -- Replace invites roster data with Groups data
+      OGRH_SV.invites.raidhelperData = {
+        id = parsedData.hash,
+        name = parsedData.title,
+        players = parsedData.players
+      }
       OGRH_SV.invites.raidhelperGroupsData = parsedData
+      OGRH_SV.invites.currentSource = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
       
-      -- Apply group assignments to existing raidhelperData if available
-      if OGRH_SV.invites.raidhelperData and OGRH_SV.invites.raidhelperData.players then
-        OGRH.Invites.ApplyGroupAssignments()
-      end
-      
-      local numAssignments = 0
-      for _ in pairs(parsedData.groupAssignments) do
-        numAssignments = numAssignments + 1
-      end
-      
-      statusText:SetText("|cff00ff00Successfully imported " .. numAssignments .. " group assignments|r")
+      statusText:SetText("|cff00ff00Successfully imported " .. table.getn(parsedData.players) .. " players from Groups|r")
     else
       -- Parse Invites JSON
       parsedData, errorMsg = OGRH.Invites.ParseRaidHelperJSON(jsonText)
@@ -1588,6 +1625,10 @@ function OGRH.Invites.RefreshPlayerList()
       displayRole = "Melee"
     elseif displayRole == "RANGED" then
       displayRole = "Ranged"
+    end
+    -- Append group number if available
+    if playerData.group and playerData.group >= 1 and playerData.group <= 8 then
+      displayRole = displayRole .. " (" .. playerData.group .. ")"
     end
     roleText:SetText(displayRole)
     
