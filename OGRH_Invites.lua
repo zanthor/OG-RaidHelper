@@ -2072,7 +2072,6 @@ function OGRH.Invites.ShowInviteModePanel()
   end
   
   panel:Show()
-  ChatFrame4:AddMessage(string.format("[OGRH] Panel shown. enabled=%s", tostring(OGRH_SV.invites.inviteMode.enabled)), 1, 1, 1)
   
   -- Manually trigger registration and positioning
   if OGRH.RegisterAuxiliaryPanel then
@@ -2115,7 +2114,6 @@ function OGRH.Invites.UpdateInviteModePanel()
   
   -- Auto-stop only when everyone is actually in the raid
   if notInRaidCount == 0 and inviteMode.totalPlayers > 0 then
-    ChatFrame4:AddMessage("[OGRH] All players are now in raid!", 0, 1, 0)
     OGRH.Invites.ToggleInviteMode()
   end
 end
@@ -2360,19 +2358,16 @@ end
 -- Manual organize command (with feedback)
 function OGRH.Invites.OrganizeRaidGroups()
   if OGRH_SV.invites.currentSource ~= OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
-    ChatFrame4:AddMessage("[OGRH] Raid group organization is only available when using Raid-Helper data source.", 1, 0.5, 0)
     return
   end
   
   local raidhelperData = OGRH_SV.invites.raidhelperData
   if not raidhelperData or not raidhelperData.players then
-    ChatFrame4:AddMessage("[OGRH] No Raid-Helper data available.", 1, 0, 0)
     return
   end
   
   -- Check if we're raid leader or assistant
   if not IsRaidLeader() and not IsRaidOfficer() then
-    ChatFrame4:AddMessage("[OGRH] You must be raid leader or assistant to organize groups.", 1, 0, 0)
     return
   end
   
@@ -2397,7 +2392,6 @@ function OGRH.Invites.OrganizeRaidGroups()
             -- Skip if player is in combat
             if IsPlayerInCombat(i) then
               skippedCombat = skippedCombat + 1
-              ChatFrame4:AddMessage("[OGRH] Skipping " .. name .. " (in combat)", 1, 1, 0)
               break
             end
             
@@ -2431,8 +2425,6 @@ function OGRH.Invites.OrganizeRaidGroups()
                 -- Now move our player to the target group
                 SetRaidSubgroup(i, targetGroup)
                 movedCount = movedCount + 1
-              else
-                ChatFrame4:AddMessage("[OGRH] Cannot move " .. name .. " to group " .. targetGroup .. " (full, no swap targets)", 1, 0.5, 0)
               end
             end
             break
@@ -2440,16 +2432,6 @@ function OGRH.Invites.OrganizeRaidGroups()
         end
       end
     end
-  end
-  
-  if movedCount > 0 then
-    ChatFrame4:AddMessage(string.format("[OGRH] Organized %d players into their assigned groups.", movedCount), 0, 1, 0)
-  else
-    ChatFrame4:AddMessage("[OGRH] No players needed to be moved.", 1, 1, 0)
-  end
-  
-  if skippedCombat > 0 then
-    ChatFrame4:AddMessage(string.format("[OGRH] Skipped %d players in combat.", skippedCombat), 1, 1, 0)
   end
 end
 
