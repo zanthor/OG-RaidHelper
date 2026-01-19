@@ -4,11 +4,15 @@
 
 --[[
   CHANGELOG:
+  v1.17.0:
+  - Removed "Sync RollFor" button - role sync now automatic when players join raid during Invite Mode
+  - Added SetPlayerRole API for programmatic role assignment
+  - Role sync now happens automatically via Invites module
+  
   v1.16.0:
   - Added Puppeteer integration: Tank and Healer roles automatically sync to Puppeteer's role system
   - Added pfUI integration: Tank roles automatically sync to pfUI's tankrole system
   - Fixed role priority: Manual role assignments now take precedence over RollFor data
-  - RollFor data only applied on first join or when "Sync RollFor" button is clicked
   - Tank role changes trigger immediate UI updates in both Puppeteer and pfUI
   
   SIMPLIFIED ROLES UI
@@ -38,6 +42,9 @@
 local _G = getfenv(0)
 local OGRH = _G.OGRH
 local L = {}  -- Localization table
+
+-- Initialize RolesUI namespace
+OGRH.RolesUI = OGRH.RolesUI or {}
 
 -- Constants for raid targets (in reverse order 8->1 as requested)
 local RAID_TARGETS = {
@@ -363,21 +370,6 @@ local function CreateRolesFrame()
     -- Set initial button text
     UpdatePollButtonText()
     
-    -- Sync from RollFor button (must be created after UpdatePlayerLists and RefreshColumnDisplays are defined below)
-    local syncBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    syncBtn:SetWidth(95)
-    syncBtn:SetHeight(24)
-    syncBtn:SetPoint("LEFT", pollBtn, "RIGHT", 5, 0)
-    syncBtn:SetText("Sync RollFor")
-    OGRH.StyleButton(syncBtn)
-    frame.syncBtn = syncBtn  -- Store reference for later setup
-    
-    -- Disable button if RollFor not available
-    if not OGRH.ROLLFOR_AVAILABLE then
-        syncBtn:Disable()
-        syncBtn:SetAlpha(0.5)
-    end
-    
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     closeBtn:SetWidth(80)
     closeBtn:SetHeight(24)
@@ -681,55 +673,6 @@ local function CreateRolesFrame()
         UpdatePlayerLists()
     end)
     
-    -- Setup Sync RollFor button click handler (now that functions are defined)
-    if frame.syncBtn then
-        frame.syncBtn:SetScript("OnClick", function()
-            -- Check if RollFor is available
-            if not OGRH.ROLLFOR_AVAILABLE then
-                OGRH.Msg("Sync RollFor requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
-                return
-            end
-            
-            -- Check permissions
-            if not OGRH.CanManageRoles or not OGRH.CanManageRoles() then
-                OGRH.Msg("Only raid leader, assistants, or raid admin can sync RollFor data.")
-                return
-            end
-            
-            -- Only update roles for players who are in RollFor data
-            -- Leave everyone else where they are
-            if OGRH.Invites and OGRH.Invites.GetSoftResPlayers then
-                local softResPlayers = OGRH.Invites.GetSoftResPlayers()
-                local updateCount = 0
-                
-                for _, playerData in ipairs(softResPlayers) do
-                    local playerName = playerData.name
-                    local rollForRole = OGRH.Invites.MapRollForRoleToOGRH(playerData.role)
-                    
-                    if rollForRole then
-                        -- Save the RollFor role
-                        if not OGRH_SV then OGRH_SV = {} end
-                        if not OGRH_SV.roles then OGRH_SV.roles = {} end
-                        OGRH_SV.roles[playerName] = rollForRole
-                        updateCount = updateCount + 1
-                    end
-                end
-                
-                -- Refresh the display
-                UpdatePlayerLists(false)
-                
-                OGRH.Msg("Synced " .. updateCount .. " player(s) from RollFor soft-res data.")
-            else
-                OGRH.Msg("RollFor data not available.")
-            end
-            
-            -- Broadcast to raid
-            if GetNumRaidMembers() > 0 then
-                SendAddonMessage(OGRH.ADDON_PREFIX, "ROLLFOR_SYNC", "RAID")
-            end
-        end)
-    end
-    
     -- Make ROLE_COLUMNS accessible to child frames
     frame.ROLE_COLUMNS = ROLE_COLUMNS
     
@@ -786,6 +729,65 @@ local function CreateRolesFrame()
         frame:Hide()
     end
 
+end
+
+-- API function to set a player's role (used by Invites module for auto-sync)
+function OGRH.RolesUI.SetPlayerRole(playerName, roleBucket)
+  if not playerName or playerName == "" then
+    return false
+  end
+  
+  -- Validate role bucket
+  local validRoles = {TANKS = true, HEALERS = true, MELEE = true, RANGED = true}
+  if not validRoles[roleBucket] then
+    return false
+  end
+  
+  -- Normalize roleBucket to match column names
+  local roleMap = {
+    TANKS = "Tanks",
+    HEALERS = "Healers",
+    MELEE = "Melee",
+    RANGED = "Ranged"
+  }
+  local columnName = roleMap[roleBucket]
+  
+  -- Remove player from all role columns
+  for _, column in ipairs(ROLE_COLUMNS) do
+    for i = table.getn(column.players), 1, -1 do
+      if column.players[i] == playerName then
+        table.remove(column.players, i)
+      end
+    end
+  end
+  
+  -- Add to target column
+  for _, column in ipairs(ROLE_COLUMNS) do
+    if column.name == columnName then
+      table.insert(column.players, playerName)
+      break
+    end
+  end
+  
+  -- Save to SV
+  if not OGRH_SV then OGRH_SV = {} end
+  if not OGRH_SV.roles then OGRH_SV.roles = {} end
+  OGRH_SV.roles[playerName] = roleBucket
+  
+  -- Refresh UI if window is open
+  if OGRH_RolesFrame and OGRH_RolesFrame:IsVisible() and OGRH.RenderRoles then
+    OGRH.RenderRoles()
+  end
+  
+  -- Sync to Puppeteer/pfUI (existing integrations)
+  if roleBucket == "TANKS" or roleBucket == "HEALERS" then
+    -- Trigger Puppeteer/pfUI sync
+    if OGRH.Roles and OGRH.Roles.SyncExternalAddons then
+      OGRH.Roles.SyncExternalAddons(playerName, roleBucket)
+    end
+  end
+  
+  return true
 end
 
 -- Global helper functions for external addon integration (e.g., RABuffs)

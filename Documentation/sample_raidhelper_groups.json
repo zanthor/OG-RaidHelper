@@ -1,0 +1,181 @@
+{
+  "_id": "696e3afe9bc572bcf8db8b46",
+  "hash": "1460991236243456189",
+  "title": "Composition Tool",
+  "partyPerRaid": 8,
+  "slotPerParty": 5,
+  "raidDrop": [
+    {
+      "partyId": 5,
+      "slotId": 1,
+      "class": "Druid",
+      "spec": "Balance",
+      "name": "Royalseedpod",
+      "role_emote": "592446395596931072",
+      "color": "#FF7C0A"
+    },
+    {
+      "partyId": 5,
+      "slotId": 2,
+      "class": "Priest",
+      "spec": "Smite",
+      "name": "Holeefyre",
+      "role_emote": "592446395596931072",
+      "color": "#FFFFFF"
+    },
+    {
+      "partyId": 5,
+      "slotId": 3,
+      "class": "Priest",
+      "spec": "Shadow",
+      "name": "Dezii",
+      "role_emote": "592446395596931072",
+      "color": "#FFFFFF"
+    },
+    {
+      "partyId": 5,
+      "slotId": 4,
+      "class": "Paladin",
+      "spec": "Holy1",
+      "name": "boath",
+      "role_emote": "592438128057253898",
+      "color": "#F48CBA"
+    },
+    {
+      "partyId": 6,
+      "slotId": 1,
+      "class": "Shaman",
+      "spec": "Enhancement",
+      "name": "Lowtides",
+      "role_emote": "734439523328720913",
+      "color": "#0070DD"
+    },
+    {
+      "partyId": 6,
+      "slotId": 2,
+      "class": "Rogue",
+      "spec": "Subtlety",
+      "name": "wickedgrim",
+      "role_emote": "734439523328720913",
+      "color": "#FFF468"
+    },
+    {
+      "partyId": 6,
+      "slotId": 3,
+      "class": "Warrior",
+      "spec": "Fury",
+      "name": "Saspatoon",
+      "role_emote": "734439523328720913",
+      "color": "#C69B6D"
+    },
+    {
+      "partyId": 6,
+      "slotId": 4,
+      "class": "Rogue",
+      "spec": "Assassination",
+      "name": "haethem",
+      "role_emote": "734439523328720913",
+      "color": "#FFF468"
+    },
+    {
+      "partyId": 6,
+      "slotId": 5,
+      "class": "Tank",
+      "spec": "Protection1",
+      "name": "Leolight",
+      "role_emote": "598989638098747403",
+      "color": "#F48CBA"
+    },
+    {
+      "partyId": 7,
+      "slotId": 1,
+      "class": "Warrior",
+      "spec": "Fury",
+      "name": "Shamalaharis",
+      "role_emote": "734439523328720913",
+      "color": "#C69B6D"
+    },
+    {
+      "partyId": 7,
+      "slotId": 2,
+      "class": "Tank",
+      "spec": "Protection1",
+      "name": "Tankmedady",
+      "role_emote": "598989638098747403",
+      "color": "#F48CBA"
+    },
+    {
+      "partyId": 7,
+      "slotId": 3,
+      "class": "Shaman",
+      "spec": "Restoration1",
+      "name": "Mopsis",
+      "role_emote": "592438128057253898",
+      "color": "#0070DD"
+    },
+    {
+      "partyId": 7,
+      "slotId": 4,
+      "class": "Rogue",
+      "spec": "Subtlety",
+      "name": "wickedgrim.",
+      "role_emote": "734439523328720913",
+      "color": "#FFF468"
+    },
+    {
+      "partyId": 7,
+      "slotId": 5,
+      "class": "Warrior",
+      "spec": "Fury",
+      "name": "Voxii",
+      "role_emote": "734439523328720913",
+      "color": "#C69B6D"
+    },
+    {
+      "partyId": 8,
+      "slotId": 1,
+      "class": "Tank",
+      "spec": "Guardian",
+      "name": "Hooliganscha",
+      "role_emote": "598989638098747403",
+      "color": "#FF7C0A"
+    },
+    {
+      "partyId": 8,
+      "slotId": 2,
+      "class": "Warrior",
+      "spec": "Fury",
+      "name": "Tugar",
+      "role_emote": "734439523328720913",
+      "color": "#C69B6D"
+    },
+    {
+      "partyId": 8,
+      "slotId": 3,
+      "class": "Shaman",
+      "spec": "Enhancement",
+      "name": "Ybashfort",
+      "role_emote": "734439523328720913",
+      "color": "#0070DD"
+    },
+    {
+      "partyId": 8,
+      "slotId": 4,
+      "class": "Rogue",
+      "spec": "Assassination",
+      "name": "Thannatos",
+      "role_emote": "734439523328720913",
+      "color": "#FFF468"
+    }
+  ],
+  "partyNames": [
+    "Group 1",
+    "Group 2",
+    "Group 3",
+    "Group 4",
+    "Group 5",
+    "Group 6",
+    "Group 7",
+    "Group 8"
+  ]
+}

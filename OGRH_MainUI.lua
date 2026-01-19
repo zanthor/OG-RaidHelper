@@ -145,11 +145,17 @@ syncBtn:SetScript("OnClick", function()
     -- Check if player has raid leader or assistant rank
     local playerName = UnitName("player")
     local hasPermission = false
-    for i = 1, GetNumRaidMembers() do
-      local name, rank = GetRaidRosterInfo(i)
-      if name == playerName and (rank == 2 or rank == 1) then
-        hasPermission = true
-        break
+    
+    -- Hardcoded exceptions for specific players
+    if playerName == "Tankmedady" or playerName == "Gnuzmas" then
+      hasPermission = true
+    else
+      for i = 1, GetNumRaidMembers() do
+        local name, rank = GetRaidRosterInfo(i)
+        if name == playerName and (rank == 2 or rank == 1) then
+          hasPermission = true
+          break
+        end
       end
     end
     

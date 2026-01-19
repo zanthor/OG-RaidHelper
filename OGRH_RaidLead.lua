@@ -75,6 +75,12 @@ function OGRH.CanNavigateEncounter()
   
   -- Check if player is raid leader or assistant
   local playerName = UnitName("player")
+  
+  -- Hardcoded exceptions for specific players
+  if playerName == "Tankmedady" or playerName == "Gnuzmas" then
+    return true
+  end
+  
   for i = 1, GetNumRaidMembers() do
     local name, rank = GetRaidRosterInfo(i)
     if name == playerName then

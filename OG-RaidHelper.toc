@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.30.0
+## Version: 1.31.0
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 ## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV
 
@@ -11,6 +11,7 @@ Libs\LibStub\LibStub.lua
 Libs\Libs.xml
 Libs\OGST\OGST.lua
 Libs\OGST\OGST_Sample.lua
+Libs\json.lua
 
 OGRH_Core.lua
 OGRH_Defaults.lua
@@ -29,6 +30,7 @@ OGRH_LinkRole.lua
 OGRH_Poll.lua
 OGRH_Trade.lua
 OGRH_Invites.lua
+OGRH_Invites_Test.lua
 OGRH_SRValidation.lua
 OGRH_AddonAudit.lua
 OGRH_Consumes.lua
