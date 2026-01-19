@@ -1234,9 +1234,16 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
     if importType == "groups" then
       dialog.titleText:SetText("Import Raid-Helper Groups")
       dialog.labelText:SetText("Paste Composition Tool JSON data below:")
+      if dialog.raidNameInput then
+        dialog.raidNameInput:SetText("")
+        dialog.raidNameInput:Show()
+      end
     else
       dialog.titleText:SetText("Import Raid-Helper Invites")
-      dialog.labelText:SetText("Paste Raid-Helper signup JSON data below:")
+      dialog.labelText:SetText("Raid-Helper signup JSON data below:")
+      if dialog.raidNameInput then
+        dialog.raidNameInput:Hide()
+      end
     end
     
     dialog.editBox:SetText("")
@@ -1277,14 +1284,45 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
   -- Instruction label
   local label = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   label:SetPoint("TOPLEFT", 15, -45)
-  label:SetText(importType == "groups" and "Paste Composition Tool JSON data below:" or "Paste Raid-Helper signup JSON data below:")
+  label:SetText(importType == "groups" and "Paste Composition Tool JSON data below:" or "Raid-Helper signup JSON data below:")
   dialog.labelText = label
+  
+  -- Raid Name input (only for Groups import)
+  local raidNameInput
+  if importType == "groups" then
+    local raidNameLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    raidNameLabel:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
+    raidNameLabel:SetText("Raid Name:")
+    
+    local raidNameBox = CreateFrame("EditBox", nil, dialog)
+    raidNameBox:SetPoint("LEFT", raidNameLabel, "RIGHT", 5, 0)
+    raidNameBox:SetWidth(280)
+    raidNameBox:SetHeight(20)
+    raidNameBox:SetAutoFocus(false)
+    raidNameBox:SetFontObject(ChatFontNormal)
+    raidNameBox:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      edgeSize = 12,
+      insets = {left = 4, right = 4, top = 4, bottom = 4}
+    })
+    raidNameBox:SetBackdropColor(0, 0, 0, 0.8)
+    raidNameBox:SetTextInsets(5, 5, 0, 0)
+    raidNameBox:SetScript("OnEscapePressed", function() raidNameBox:ClearFocus() end)
+    raidNameInput = raidNameBox
+    dialog.raidNameInput = raidNameInput
+  end
   
   -- JSON input area using ScrollFrame
   local inputBackdrop = CreateFrame("Frame", nil, dialog)
-  inputBackdrop:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
+  if importType == "groups" then
+    inputBackdrop:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -36)
+    inputBackdrop:SetHeight(222)
+  else
+    inputBackdrop:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
+    inputBackdrop:SetHeight(250)
+  end
   inputBackdrop:SetWidth(420)
-  inputBackdrop:SetHeight(250)
   inputBackdrop:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
     edgeFile = "Interface/DialogFrame/UI-DialogBox-Border",
@@ -1355,10 +1393,19 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
         return
       end
       
+      -- Get custom raid name from input
+      local customRaidName = "Raid"
+      if dialog.raidNameInput then
+        local inputName = dialog.raidNameInput:GetText()
+        if inputName and inputName ~= "" then
+          customRaidName = inputName
+        end
+      end
+      
       -- Replace invites roster data with Groups data
       OGRH_SV.invites.raidhelperData = {
         id = parsedData.hash,
-        name = parsedData.title,
+        name = customRaidName,
         players = parsedData.players
       }
       OGRH_SV.invites.raidhelperGroupsData = parsedData
@@ -1891,7 +1938,6 @@ function OGRH.Invites.ToggleInviteMode()
   inviteMode.enabled = not inviteMode.enabled
   
   if inviteMode.enabled then
-    ChatFrame4:AddMessage("[OGRH] Invite Mode started. Inviting every " .. inviteMode.interval .. " seconds...", 0, 1, 0)
     inviteMode.lastInviteTime = 0  -- Force immediate first invite
     inviteMode.invitedCount = 0
     inviteMode.totalPlayers = 0
@@ -1904,13 +1950,29 @@ function OGRH.Invites.ToggleInviteMode()
       end
     end
     
+    -- Get raid name for announcement
+    local raidName = "Raid"
+    local currentSource = OGRH_SV.invites.currentSource
+    if currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
+      if OGRH_SV.invites.raidhelperData and OGRH_SV.invites.raidhelperData.name then
+        raidName = OGRH_SV.invites.raidhelperData.name
+      end
+    elseif currentSource == OGRH.Invites.SOURCE_TYPE.ROLLFOR then
+      local meta = OGRH.Invites.GetMetadata()
+      if meta.instance then
+        raidName = OGRH.Invites.GetInstanceName(meta.instance)
+      end
+    end
+    
+    -- Announce to guild chat
+    SendChatMessage("Starting invites for " .. raidName .. ". Whisper me if you're signed up and need an invite!", "GUILD")
+    
     -- Show auxiliary panel
     OGRH.Invites.ShowInviteModePanel()
     
     -- Do first batch invite immediately
     OGRH.Invites.DoInviteCycle()
   else
-    ChatFrame4:AddMessage("[OGRH] Invite Mode stopped.", 1, 1, 0)
     -- Hide auxiliary panel
     if OGRH_InviteModePanel then
       OGRH_InviteModePanel:Hide()
