@@ -13,12 +13,39 @@ Libs\OGST\OGST.lua
 Libs\OGST\OGST_Sample.lua
 Libs\json.lua
 
+## OGAddonMsg - Embedded Communication Library
+Libs\OGAddonMsg\Core.lua
+Libs\OGAddonMsg\Config.lua
+Libs\OGAddonMsg\Chunker.lua
+Libs\OGAddonMsg\Queue.lua
+Libs\OGAddonMsg\Retry.lua
+Libs\OGAddonMsg\Handlers.lua
+Libs\OGAddonMsg\API.lua
+Libs\OGAddonMsg\StatsPanel.lua
+Libs\OGAddonMsg\Commands.lua
+
+## Phase 1: Infrastructure - Message System Foundation
+OGRH_MessageTypes.lua
+OGRH_Permissions.lua
+OGRH_Versioning.lua
+OGRH_MessageRouter.lua
+
+## Phase 2: Core Sync Replacement (OGAddonMsg)
+OGRH_Sync_v2.lua
+OGRH_DataManagement.lua
+
+## Phase 2+: Sync System Components (Future)
+OGRH_SyncIntegrity.lua
+OGRH_SyncDelta.lua
+OGRH_SyncUI.lua
+
+## Core System
 OGRH_Core.lua
 OGRH_Defaults.lua
 OGRH_ConTrack_Defaults.lua
 OGRH_RaidLead.lua
 OGRH_Announce.lua
-OGRH_Sync.lua
+## OGRH_Sync.lua -- DISABLED: Replaced by OGRH_Sync_v2.lua (Phase 2)
 OGRH_MainUI.lua
 OGRH_RolesUI.lua
 OGRH_EncounterMgmt.lua

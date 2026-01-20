@@ -51,7 +51,8 @@ end
 
 
 local function escape_char(c)
-  return "\\" .. (escape_char_map[c] or string.format("u%04x", c:byte()))
+  -- WoW 1.12 FIX: Lua 5.0 doesn't support %x format, use %04d instead (Unicode escape will be decimal)
+  return "\\" .. (escape_char_map[c] or string.format("u%04d", c:byte()))
 end
 
 
@@ -104,7 +105,8 @@ end
 
 
 local function encode_string(val)
-  return '"' .. val:gsub('[%z\1-\31\\"]', escape_char) .. '"'
+  -- WoW 1.12 FIX: Lua 5.0 character class escape - use %c for control chars (0-31)
+  return '"' .. val:gsub('[%z%c\\"]', escape_char) .. '"'
 end
 
 
@@ -164,17 +166,17 @@ local literals      = create_set("true", "false", "null")
 local literal_map = {
   [ "true"  ] = true,
   [ "false" ] = false,
-  [ "null"  ] = nil,
+  [ "null"  ] = nil
 }
 
 
 local function next_char(str, idx, set, negate)
-  for i = idx, #str do
+  for i = idx, string.len(str) do
     if set[str:sub(i, i)] ~= negate then
       return i
     end
   end
-  return #str + 1
+  return string.len(str) + 1
 end
 
 
@@ -194,18 +196,21 @@ end
 
 local function codepoint_to_utf8(n)
   -- http://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=iws-appendixa
+  -- WoW 1.12 FIX: Use decimal instead of hex (Lua 5.0 doesn't support 0x notation)
+  -- WoW 1.12 FIX: Use math.mod() instead of % operator (Lua 5.0 doesn't have % operator)
   local f = math.floor
-  if n <= 0x7f then
+  if n <= 127 then -- 0x7f
     return string.char(n)
-  elseif n <= 0x7ff then
-    return string.char(f(n / 64) + 192, n % 64 + 128)
-  elseif n <= 0xffff then
-    return string.char(f(n / 4096) + 224, f(n % 4096 / 64) + 128, n % 64 + 128)
-  elseif n <= 0x10ffff then
-    return string.char(f(n / 262144) + 240, f(n % 262144 / 4096) + 128,
-                       f(n % 4096 / 64) + 128, n % 64 + 128)
+  elseif n <= 2047 then -- 0x7ff
+    return string.char(f(n / 64) + 192, math.mod(n, 64) + 128)
+  elseif n <= 65535 then -- 0xffff
+    return string.char(f(n / 4096) + 224, f(math.mod(n, 4096) / 64) + 128, math.mod(n, 64) + 128)
+  elseif n <= 1114111 then -- 0x10ffff
+    return string.char(f(n / 262144) + 240, f(math.mod(n, 262144) / 4096) + 128,
+                       f(math.mod(n, 4096) / 64) + 128, math.mod(n, 64) + 128)
   end
-  error( string.format("invalid unicode codepoint '%x'", n) )
+  -- WoW 1.12 FIX: Lua 5.0 doesn't support %x format specifier
+  error( string.format("invalid unicode codepoint '%d'", n) )
 end
 
 
@@ -213,8 +218,9 @@ local function parse_unicode_escape(s)
   local n1 = tonumber( s:sub(1, 4),  16 )
   local n2 = tonumber( s:sub(7, 10), 16 )
    -- Surrogate pair?
+   -- WoW 1.12 FIX: Use decimal instead of hex
   if n2 then
-    return codepoint_to_utf8((n1 - 0xd800) * 0x400 + (n2 - 0xdc00) + 0x10000)
+    return codepoint_to_utf8((n1 - 55296) * 1024 + (n2 - 56320) + 65536) -- 0xd800, 0x400, 0xdc00, 0x10000
   else
     return codepoint_to_utf8(n1)
   end
@@ -226,7 +232,7 @@ local function parse_string(str, i)
   local j = i + 1
   local k = j
 
-  while j <= #str do
+  while j <= string.len(str) do
     local x = str:byte(j)
 
     if x < 32 then
@@ -237,11 +243,12 @@ local function parse_string(str, i)
       j = j + 1
       local c = str:sub(j, j)
       if c == "u" then
-        local hex = str:match("^[dD][89aAbB]%x%x\\u%x%x%x%x", j + 1)
-                 or str:match("^%x%x%x%x", j + 1)
+        -- WoW 1.12 FIX: Lua 5.0 doesn't support %x pattern, use [0-9a-fA-F] instead
+        local hex = str:match("^[dD][89aAbB][0-9a-fA-F][0-9a-fA-F]\\u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]", j + 1)
+                 or str:match("^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]", j + 1)
                  or decode_error(str, j - 1, "invalid unicode escape in string")
         res = res .. parse_unicode_escape(hex)
-        j = j + #hex
+        j = j + string.len(hex)
       else
         if not escape_chars[c] then
           decode_error(str, j - 1, "invalid escape char '" .. c .. "' in string")
@@ -384,7 +391,7 @@ function json.decode(str)
   end
   local res, idx = parse(str, next_char(str, 1, space_chars, true))
   idx = next_char(str, idx, space_chars, true)
-  if idx <= #str then
+  if idx <= string.len(str) then
     decode_error(str, idx, "trailing garbage")
   end
   return res

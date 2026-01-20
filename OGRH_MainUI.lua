@@ -635,7 +635,66 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
         OGRH.Msg("Current auto-sort speed: 250ms (default)")
       end
     end
-  else OGRH.Msg("Usage: /"..OGRH.CMD.." sand | shuffle [delay_ms] | sortspeed [delay_ms]") end
+  -- Phase 1 Debug Commands
+  elseif sub == "debug messages" or sub == "messages" then
+    if OGRH.DebugPrintMessageTypes then
+      OGRH.DebugPrintMessageTypes()
+    else
+      OGRH.Msg("Message types not loaded.")
+    end
+  elseif sub == "debug permissions" or sub == "permissions" then
+    if OGRH.Permissions and OGRH.Permissions.DebugPrintRaidPermissions then
+      OGRH.Permissions.DebugPrintRaidPermissions()
+    else
+      OGRH.Msg("Permissions system not loaded.")
+    end
+  elseif sub == "debug denials" or sub == "denials" then
+    if OGRH.Permissions and OGRH.Permissions.DebugPrintDenials then
+      OGRH.Permissions.DebugPrintDenials()
+    else
+      OGRH.Msg("Permissions system not loaded.")
+    end
+  elseif sub == "debug version" or sub == "version" then
+    if OGRH.Versioning and OGRH.Versioning.DebugPrintState then
+      OGRH.Versioning.DebugPrintState()
+    else
+      OGRH.Msg("Versioning system not loaded.")
+    end
+  elseif sub == "debug changes" or sub == "changes" then
+    if OGRH.Versioning and OGRH.Versioning.DebugPrintChanges then
+      OGRH.Versioning.DebugPrintChanges()
+    else
+      OGRH.Msg("Versioning system not loaded.")
+    end
+  elseif sub == "debug handlers" or sub == "handlers" then
+    if OGRH.MessageRouter and OGRH.MessageRouter.DebugPrintHandlers then
+      OGRH.MessageRouter.DebugPrintHandlers()
+    else
+      OGRH.Msg("Message router not loaded.")
+    end
+  elseif sub == "admin take" or sub == "takeadmin" then
+    if OGRH.RequestAdminRole then
+      OGRH.RequestAdminRole()
+    else
+      OGRH.Msg("Permission system not loaded.")
+    end
+  elseif sub == "help" or sub == "" then
+    OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
+    OGRH.Msg("Commands:")
+    OGRH.Msg("  sand - Execute sand trade")
+    OGRH.Msg("  shuffle [ms] - Shuffle raid with delay")
+    OGRH.Msg("  sortspeed [ms] - Set/get auto-sort speed")
+    OGRH.Msg("Debug Commands (Phase 1):")
+    OGRH.Msg("  messages - Show all message types")
+    OGRH.Msg("  permissions - Show raid permissions")
+    OGRH.Msg("  denials - Show permission denials")
+    OGRH.Msg("  version - Show version state")
+    OGRH.Msg("  changes - Show recent changes")
+    OGRH.Msg("  handlers - Show message handlers")
+    OGRH.Msg("  takeadmin - Request admin role")
+  else
+    OGRH.Msg("Unknown command. Type /" .. OGRH.CMD .. " help for usage.")
+  end
 end
 _G["SLASH_"..string.upper(OGRH.CMD).."1"] = "/"..OGRH.CMD
 

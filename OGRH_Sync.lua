@@ -72,7 +72,7 @@ end
 -- Serialization Functions
 -------------------------------------------------------------------------------
 
--- Simple table serialization (can be replaced with AceSerializer if needed)
+-- Simple table serialization
 -- Parameters:
 --   tbl: Table to serialize
 -- Returns: String representation of table

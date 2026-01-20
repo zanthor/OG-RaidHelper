@@ -2233,7 +2233,9 @@ inviteEventFrame:SetScript("OnEvent", function()
     -- We'll track this indirectly
   elseif event == "RAID_ROSTER_UPDATE" then
     -- Detect new members and sync their roles during invite mode
-    if OGRH_SV.invites.inviteMode.enabled then
+    -- TODO: Fix nil inviteMode error - need to ensure OGRH_SV.invites.inviteMode exists before accessing
+    -- Error: attempt to index field `inviteMode` (a nil value) at line 2236
+    if OGRH_SV.invites and OGRH_SV.invites.inviteMode and OGRH_SV.invites.inviteMode.enabled then
       -- Track who was in raid before
       if not OGRH.Invites.previousRaidMembers then
         OGRH.Invites.previousRaidMembers = {}

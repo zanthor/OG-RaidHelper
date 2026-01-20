@@ -220,7 +220,190 @@ local item = OGST.CreateStyledListItem(child, width, 20, "Button")
 
 ---
 
-### 4. Code Style & Conventions
+### 4. Chat Communication: ChatThrottleLib (REQUIRED)
+
+**For all visible chat channel announcements (RAID, PARTY, GUILD), use ChatThrottleLib.**
+
+ChatThrottleLib (CTL) is the standard library for throttling chat messages to prevent disconnects. It handles Blizzard's rate limits automatically.
+
+#### When to Use ChatThrottleLib
+
+| Use Case | Library |
+|----------|---------|
+| Addon-to-addon communication | `_OGAddonMsg` (hidden addon channel) |
+| Raid/party announcements | `ChatThrottleLib` (visible channels) |
+| Guild announcements | `ChatThrottleLib` |
+| Whispers | `ChatThrottleLib` |
+| Boss warnings/timers | `ChatThrottleLib` |
+
+#### Embedding ChatThrottleLib
+
+1. **Copy ChatThrottleLib.lua to your addon:**
+   ```
+   OG-RaidHelper/
+   ├── Libs/
+   │   └── ChatThrottleLib.lua
+   ```
+
+2. **Add to TOC before your files:**
+   ```toc
+   ## Load order
+   Libs\ChatThrottleLib.lua
+   Core.lua
+   ...
+   ```
+
+3. **Check if loaded:**
+   ```lua
+   if not ChatThrottleLib then
+       DEFAULT_CHAT_FRAME:AddMessage("Error: ChatThrottleLib not loaded!", 1, 0, 0)
+       return
+   end
+   ```
+
+#### API Reference
+
+**Basic Send:**
+```lua
+ChatThrottleLib:SendChatMessage(priority, prefix, text, channel, target, queueName)
+```
+
+**Parameters:**
+- `priority`: `"ALERT"`, `"NORMAL"`, or `"BULK"`
+  - `ALERT`: Critical messages (boss warnings, combat alerts)
+  - `NORMAL`: Standard announcements (loot, ready checks)
+  - `BULK`: Low priority (statistics, verbose output)
+- `prefix`: Your addon identifier (e.g., `"OGRH"`)
+- `text`: Message text
+- `channel`: `"RAID"`, `"PARTY"`, `"GUILD"`, `"OFFICER"`, `"WHISPER"`, `"SAY"`, `"YELL"`, `"CHANNEL"`
+- `target`: Player name (for WHISPER) or channel number (for CHANNEL)
+- `queueName`: Optional custom queue name (usually nil)
+
+**Examples:**
+
+```lua
+-- Raid warning (high priority)
+ChatThrottleLib:SendChatMessage("ALERT", "OGRH", "Boss at 50%!", "RAID_WARNING")
+
+-- Raid announcement (normal priority)
+ChatThrottleLib:SendChatMessage("NORMAL", "OGRH", "Assignments updated", "RAID")
+
+-- Guild announcement (low priority)
+ChatThrottleLib:SendChatMessage("BULK", "OGRH", "Raid forming in 10 minutes", "GUILD")
+
+-- Whisper
+ChatThrottleLib:SendChatMessage("NORMAL", "OGRH", "You're assigned to group 1", "WHISPER", playerName)
+```
+
+#### Common Patterns for Raid Encounters
+
+**Boss Phase Announcements:**
+```lua
+function OGRH.AnnounceBossPhase(phase, percent)
+    local msg = string.format("Phase %d at %d%%!", phase, percent)
+    ChatThrottleLib:SendChatMessage("ALERT", "OGRH", msg, "RAID_WARNING")
+end
+```
+
+**Assignment Announcements:**
+```lua
+function OGRH.AnnounceAssignments(assignments)
+    -- Use NORMAL priority for multiple messages
+    for role, players in pairs(assignments) do
+        local msg = string.format("%s: %s", role, table.concat(players, ", "))
+        ChatThrottleLib:SendChatMessage("NORMAL", "OGRH", msg, "RAID")
+    end
+    -- CTL automatically queues and throttles
+end
+```
+
+**Cooldown Tracking:**
+```lua
+function OGRH.RequestCooldown(spellName, playerName)
+    local msg = string.format("%s: Use %s!", playerName, spellName)
+    ChatThrottleLib:SendChatMessage("ALERT", "OGRH", msg, "RAID_WARNING")
+end
+```
+
+**Loot Announcements:**
+```lua
+function OGRH.AnnounceLoot(itemLink, winner)
+    local msg = string.format("%s won %s", winner, itemLink)
+    ChatThrottleLib:SendChatMessage("BULK", "OGRH", msg, "RAID")
+end
+```
+
+#### Priority Guidelines
+
+| Priority | Use For | Examples |
+|----------|---------|----------|
+| **ALERT** | Time-sensitive combat info | Boss phase changes, ability warnings, wipe calls |
+| **NORMAL** | Important but not urgent | Ready checks, assignments, loot rolls |
+| **BULK** | Nice-to-have info | Statistics, verbose logs, formation announcements |
+
+#### Best Practices
+
+1. **Always use a priority** - Don't send directly with SendChatMessage()
+2. **Use your addon prefix** - Makes it clear where messages come from
+3. **Batch related messages** - CTL will queue and send smoothly
+4. **Higher priority for combat** - Use ALERT for boss fights
+5. **Test with multiple addons** - Ensure throttling works with other CTL users
+
+#### Channel-Specific Notes
+
+```lua
+-- Raid Warning (requires assist/lead)
+if IsRaidOfficer() or IsRaidLeader() then
+    ChatThrottleLib:SendChatMessage("ALERT", "OGRH", msg, "RAID_WARNING")
+else
+    -- Fallback to RAID if no permissions
+    ChatThrottleLib:SendChatMessage("ALERT", "OGRH", msg, "RAID")
+end
+
+-- Officer Chat (requires officer rank)
+ChatThrottleLib:SendChatMessage("NORMAL", "OGRH", msg, "OFFICER")
+
+-- Custom Channel
+local channelNum = GetChannelName("MyChannel")
+if channelNum > 0 then
+    ChatThrottleLib:SendChatMessage("NORMAL", "OGRH", msg, "CHANNEL", channelNum)
+end
+```
+
+#### Error Handling
+
+```lua
+-- CTL doesn't return errors, but you can wrap it
+local function SafeSend(priority, msg, channel, target)
+    if not ChatThrottleLib then
+        DEFAULT_CHAT_FRAME:AddMessage("OGRH: CTL not loaded!", 1, 0, 0)
+        return false
+    end
+    
+    if not msg or msg == "" then
+        return false
+    end
+    
+    ChatThrottleLib:SendChatMessage(priority, "OGRH", msg, channel, target)
+    return true
+end
+```
+
+#### Debugging
+
+ChatThrottleLib has built-in verbose mode:
+```lua
+-- Enable debug output
+ChatThrottleLib.VERBOSE = true
+
+-- You'll see queue status in chat
+-- Disable for production:
+ChatThrottleLib.VERBOSE = false
+```
+
+---
+
+### 5. Code Style & Conventions
 
 #### Namespace & Structure
 
@@ -286,7 +469,7 @@ Commands.lua      # Last - references everything
 
 ---
 
-### 5. Integration Patterns
+### 6. Integration Patterns
 
 #### SavedVariables
 
@@ -349,7 +532,7 @@ end
 
 ---
 
-### 6. Common WoW 1.12 API Patterns
+### 7. Common WoW 1.12 API Patterns
 
 #### Safe Item Info Fetching
 
@@ -449,7 +632,7 @@ end
 
 ---
 
-### 7. Testing Requirements
+### 8. Testing Requirements
 
 All implementations must be tested in WoW 1.12 client:
 

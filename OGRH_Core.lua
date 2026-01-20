@@ -104,6 +104,37 @@ _svf:SetScript("OnEvent", function()
     OGRH.LoadFactoryDefaults()
     OGRH_SV.firstRun = false
   end
+  
+  -- Initialize Phase 1 infrastructure systems
+  if OGRH.Permissions and OGRH.Permissions.Initialize then
+    OGRH.Permissions.Initialize()
+  end
+  
+  if OGRH.Versioning and OGRH.Versioning.Initialize then
+    OGRH.Versioning.Initialize()
+  end
+  
+  if OGRH.MessageRouter and OGRH.MessageRouter.Initialize then
+    OGRH.MessageRouter.Initialize()
+  end
+  
+  -- Initialize Phase 2 sync system
+  if OGRH.Sync and OGRH.Sync.Initialize then
+    OGRH.Sync.Initialize()
+  end
+  
+  -- Initialize Phase 2+ stub systems (for future implementation)
+  if OGRH.SyncIntegrity and OGRH.SyncIntegrity.Initialize then
+    OGRH.SyncIntegrity.Initialize()
+  end
+  
+  if OGRH.SyncDelta and OGRH.SyncDelta.Initialize then
+    OGRH.SyncDelta.Initialize()
+  end
+  
+  if OGRH.SyncUI and OGRH.SyncUI.Initialize then
+    OGRH.SyncUI.Initialize()
+  end
 end)
 OGRH.EnsureSV()
 
@@ -1916,13 +1947,17 @@ end
 -- Wrapper for legacy code that passes raid/encounter parameters
 -- Sets current encounter then calls BroadcastFullEncounterSync()
 function OGRH.BroadcastFullSync(raid, encounter)
+  DEFAULT_CHAT_FRAME:AddMessage(string.format("[DEBUG] BroadcastFullSync called: %s / %s", raid or "nil", encounter or "nil"))
+  
   -- Set the specified encounter as current
   if OGRH.SetCurrentEncounter then
     OGRH.SetCurrentEncounter(raid, encounter)
+    DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] SetCurrentEncounter called")
   end
   
-  -- Call the new sync function
-  OGRH.BroadcastFullEncounterSync()
+  -- Call the new sync system (Phase 2 - no fallback)
+  DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] Calling OGRH.Sync.BroadcastFullSync")
+  OGRH.Sync.BroadcastFullSync()
 end
 
 -- Handler for receiving encounter assignment syncs (used by OGRH.Sync.RouteMessage)
@@ -2217,12 +2252,6 @@ end
 function OGRH.Serialize(tbl)
   if type(tbl) ~= "table" then return tostring(tbl) end
   
-  -- Use AceSerializer if available, otherwise basic serialization
-  if AceLibrary and AceLibrary:HasInstance("AceSerializer-1.0") then
-    local serializer = AceLibrary("AceSerializer-1.0")
-    return serializer:Serialize(tbl)
-  end
-  
   -- Basic serialization - convert to string
   local result = "{"
   for k, v in pairs(tbl) do
@@ -2245,13 +2274,6 @@ end
 -- Simple table deserialization
 function OGRH.Deserialize(str)
   if not str or str == "" then return nil end
-  
-  -- Use AceSerializer if available
-  if AceLibrary and AceLibrary:HasInstance("AceSerializer-1.0") then
-    local serializer = AceLibrary("AceSerializer-1.0")
-    local success, data = serializer:Deserialize(str)
-    if success then return data end
-  end
   
   -- Basic deserialization - use loadstring
   local func = loadstring("return " .. str)
@@ -2473,6 +2495,20 @@ addonFrame:SetScript("OnEvent", function()
       end
     end
   elseif event == "PLAYER_LOGOUT" then
+    -- Save Phase 1 infrastructure state
+    if OGRH.Permissions and OGRH.Permissions.Save then
+      OGRH.Permissions.Save()
+    end
+    
+    if OGRH.Versioning and OGRH.Versioning.Save then
+      OGRH.Versioning.Save()
+    end
+    
+    -- Save Phase 2 sync state
+    if OGRH.Sync and OGRH.Sync.SaveState then
+      OGRH.Sync.SaveState()
+    end
+    
     -- Clean up modules on logout
     if OGRH.CleanupModules then
       OGRH.CleanupModules()
