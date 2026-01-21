@@ -406,8 +406,8 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     end)
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, function(sender, data, channel)
-        -- Deserialize encounter selection data
-        local encounterData = OGRH.Deserialize(data)
+        -- Data is already deserialized by MessageRouter
+        local encounterData = data
         if not encounterData then return end
         
         -- Update local UI to match encounter selection
@@ -587,6 +587,56 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         if not changeData then return end
         
         -- Placeholder for group assignment feature
+    end)
+
+    -- Item 10: Addon Poll (version/checksum detection for raid lead selection)
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.POLL_VERSION, function(sender, data, channel)
+        -- Don't respond to our own poll (we add ourselves manually in PollAddonUsers)
+        local playerName = UnitName("player")
+        if sender == playerName then
+            return
+        end
+        
+        -- Only respond if in a raid
+        if GetNumRaidMembers() == 0 then
+            return
+        end
+        
+        -- Randomize response delay 0-2 seconds to spread out 40 raid member responses
+        local delay = math.random() * 2
+        OGRH.ScheduleFunc(function()
+            -- Calculate checksum for ALL structure data
+            local checksum = "0"
+            if OGRH.CalculateAllStructureChecksum then
+                checksum = OGRH.CalculateAllStructureChecksum()
+            end
+            
+            -- Send response with version and checksum
+            local response = {
+                version = OGRH.VERSION,
+                checksum = checksum
+            }
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_RESPONSE, OGRH.Serialize(response))
+        end, delay)
+    end)
+
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.POLL_RESPONSE, function(sender, data, channel)
+        if OGRH.HandleAddonPollResponse then
+            local version = data.version or "Unknown"
+            local checksum = data.checksum or "0"
+            OGRH.HandleAddonPollResponse(sender, version, checksum)
+        end
+    end)
+
+    -- Item 11: Raid Admin/Lead Change Notification
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.CHANGE_LEAD, function(sender, data, channel)
+        if OGRH.SetRaidAdmin then
+            local adminName = data.adminName
+            if adminName then
+                -- Pass true to suppress re-broadcast (we're receiving from network)
+                OGRH.SetRaidAdmin(adminName, true)
+            end
+        end
     end)
     
     -- More handlers will be added in future phases

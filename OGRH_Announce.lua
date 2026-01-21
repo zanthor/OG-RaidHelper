@@ -738,11 +738,6 @@ function OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEnco
     return false
   end
   
-  -- Broadcast sync to ReadHelper users
-  if OGRH.SendReadHelperSyncData then
-    OGRH.SendReadHelperSyncData(nil)
-  end
-  
   -- Get announcement text from saved variables
   if not OGRH_SV.encounterAnnouncements or 
      not OGRH_SV.encounterAnnouncements[selectedRaid] or

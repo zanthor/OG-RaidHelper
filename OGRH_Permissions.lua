@@ -131,11 +131,26 @@ end
 ]]
 
 -- Set the current raid admin
-function OGRH.SetRaidAdmin(playerName)
+function OGRH.SetRaidAdmin(playerName, suppressBroadcast)
     if not playerName then return false end
     
     local previousAdmin = OGRH.Permissions.State.currentAdmin
+    
+    -- If admin hasn't changed, don't do anything (prevents broadcast loops)
+    if previousAdmin == playerName then
+        return true
+    end
+    
     OGRH.Permissions.State.currentAdmin = playerName
+    
+    -- Update legacy state for backward compatibility
+    if OGRH.RaidLead then
+        OGRH.RaidLead.currentLead = playerName
+    end
+    
+    -- Save to saved variables
+    OGRH.EnsureSV()
+    OGRH_SV.raidLead = playerName
     
     -- Record in history
     table.insert(OGRH.Permissions.State.adminHistory, {
@@ -159,6 +174,37 @@ function OGRH.SetRaidAdmin(playerName)
         if OGRH.StopIntegrityChecks then
             OGRH.StopIntegrityChecks()
         end
+    end
+    
+    -- Update UI to reflect admin change (sync button color, etc.)
+    if OGRH.UpdateRaidLeadUI then
+        OGRH.UpdateRaidLeadUI()
+    end
+    
+    -- Broadcast the change to all raid members (only if not receiving from network)
+    if not suppressBroadcast and GetNumRaidMembers() > 0 then
+        -- Use MessageRouter for proper tracking and reliability
+        if OGRH.MessageRouter and OGRH.MessageTypes then
+            local adminData = OGRH.Serialize({
+                adminName = playerName,
+                timestamp = GetTime()
+            })
+            OGRH.MessageRouter.Broadcast(
+                OGRH.MessageTypes.STATE.CHANGE_LEAD,
+                adminData,
+                { priority = "HIGH" }
+            )
+        else
+            -- Fallback to old method if MessageRouter not available
+            local message = "RAID_LEAD_SET;" .. playerName
+            SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
+        end
+    end
+    
+    -- Show message to user (unless they're the one becoming admin)
+    local selfName = UnitName("player")
+    if playerName ~= selfName then
+        OGRH.Msg("Raid Admin set to: " .. playerName)
     end
     
     return true

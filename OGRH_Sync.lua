@@ -296,12 +296,6 @@ function OGRH.Sync.RouteMessage(sender, messageType, data)
       OGRH.HandleAssignmentSync(sender, data)
     end
     
-  elseif messageType == OGRH.Sync.MessageType.READHELPER_SYNC then
-    -- Route to ReadHelper sync handler
-    if OGRH.HandleReadHelperSync then
-      OGRH.HandleReadHelperSync(sender, data)
-    end
-    
   elseif messageType == "ROLESUI_SYNC" then
     -- Route to RolesUI sync handler
     if OGRH.HandleRolesUISync then

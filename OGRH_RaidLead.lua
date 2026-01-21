@@ -5,7 +5,7 @@
 
 -- Raid Lead state
 OGRH.RaidLead = {
-  currentLead = nil,           -- Current designated raid lead (player name)
+  currentLead = nil,           -- DEPRECATED: Use OGRH.GetRaidAdmin() instead (kept for backward compatibility)
   addonUsers = {},             -- List of raid members running the addon {name, rank}
   lastPollTime = 0,            -- Timestamp of last poll
   pollResponses = {},          -- Responses to current poll
@@ -15,7 +15,8 @@ OGRH.RaidLead = {
 -- Check if local player is the raid admin
 function OGRH.IsRaidAdmin()
   local playerName = UnitName("player")
-  return OGRH.RaidLead.currentLead == playerName
+  local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+  return currentAdmin == playerName
 end
 
 -- Backward compatibility wrapper
@@ -96,25 +97,13 @@ function OGRH.CanNavigateEncounter()
 end
 
 -- Set the raid lead
+-- DEPRECATED: Use OGRH.SetRaidAdmin() instead
+-- Kept for backward compatibility only
 function OGRH.SetRaidLead(playerName)
-  OGRH.RaidLead.currentLead = playerName
-  
-  -- Save to saved variables
-  OGRH.EnsureSV()
-  OGRH_SV.raidLead = playerName
-  
-  -- Broadcast the change
-  if GetNumRaidMembers() > 0 then
-    local message = "RAID_LEAD_SET;" .. playerName
-    SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
-  end
-  
-  -- Update UI state
-  OGRH.UpdateRaidLeadUI()
-  
-  local selfName = UnitName("player")
-  if playerName ~= selfName then
-    OGRH.Msg("Raid Lead set to: " .. playerName)
+  if OGRH.SetRaidAdmin then
+    OGRH.SetRaidAdmin(playerName)
+  else
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[OGRH]|r ERROR: SetRaidAdmin not available")
   end
 end
 
@@ -147,8 +136,8 @@ function OGRH.PollAddonUsers()
   OGRH.RaidLead.pollInProgress = true
   OGRH.RaidLead.lastPollTime = GetTime()
   
-  -- Send poll request
-  SendAddonMessage(OGRH.ADDON_PREFIX, "ADDON_POLL", "RAID")
+  -- Send poll request via MessageRouter
+  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_VERSION, OGRH.Serialize({}))
   
   -- Add self to responses
   local selfName = UnitName("player")

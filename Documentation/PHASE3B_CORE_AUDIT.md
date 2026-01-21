@@ -148,20 +148,27 @@ SendAddonMessage(OGRH.ADDON_PREFIX, "ROLESUI_CHECK;" .. myChecksum, "RAID")
 
 ---
 
-### 9. ReadHelper Sync Response (Line 2461)
+### 9. ReadHelper Sync Response (Line 2461) ✅ REMOVED
 ```lua
-SendAddonMessage(OGRH.ADDON_PREFIX, "READHELPER_SYNC_RESPONSE;" .. serialized, "RAID")
+-- SendAddonMessage(OGRH.ADDON_PREFIX, "READHELPER_SYNC_RESPONSE;" .. serialized, "RAID")
 ```
-- **Context**: `OGRH.SendReadHelperSyncResponse()` - Respond to ReadHelper module sync request
+- **Context**: `OGRH.SendReadHelperSyncData()` - Respond to ReadHelper module sync request
 - **Message Format**: `READHELPER_SYNC_RESPONSE;{serializedData}`
 - **Current Issues**: Large payload (raids, encounters, roles, consumes), truncation risk
-- **Migration Target**: `OGRH.MessageTypes.READHELPER.SYNC_RESPONSE` with chunking
-- **Priority**: Medium
-- **Enhancement**: Use OGAddonMsg auto-chunking
+- **Action**: **REMOVED** - ReadHelper addon deprecated
+- **Priority**: N/A (obsolete)
+- **Status**: All ReadHelper sync support removed
+  - `OGRH.SendReadHelperSyncData()` function deleted (170 lines)
+  - `READHELPER_POLL_RESPONSE` handler removed
+  - `READHELPER_SYNC_REQUEST` handler removed
+  - Calls from OGRH_MainUI.lua removed
+  - Calls from OGRH_Announce.lua removed
+  - Routing from OGRH_Sync.lua removed
+- **Impact**: None - ReadHelper is separate addon, one-way sync only
 
 ---
 
-### 10. Addon Poll Response (Line 2587)
+### 10. Addon Poll Response (Line 2587) ✅ COMPLETED
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, response, "RAID")  -- "ADDON_POLL_RESPONSE;version;checksum"
 ```
@@ -171,6 +178,12 @@ SendAddonMessage(OGRH.ADDON_PREFIX, response, "RAID")  -- "ADDON_POLL_RESPONSE;v
 - **Migration Target**: `OGRH.MessageTypes.ADMIN.POLL_RESPONSE`
 - **Priority**: Medium
 - **Enhancement**: Add response delay randomization (0-2 seconds) to prevent spam
+- **Status**: 
+  - Migrated to MessageRouter with ADMIN.POLL_VERSION (request) and ADMIN.POLL_RESPONSE (response)
+  - Added 0-2 second randomized delay to spread out 40 raid member responses
+  - Updated PollAddonUsers() to use MessageRouter.SendMessage
+  - Re-enabled right-click on Sync button to trigger poll and show raid lead selection UI
+  - Handlers in OGRH_MessageRouter.lua, removed old code from OGRH_Core.lua
 
 ---
 
@@ -301,7 +314,7 @@ SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")  -- "ENCOUNTER_STRUCTURE_SYNC_C
 - `REQUEST_STRUCTURE_SYNC` → `SYNC.REQUEST_FULL`
 
 **Sync Responses (1 call):**
-- `READHELPER_SYNC_RESPONSE` → `READHELPER.SYNC_RESPONSE` (with chunking)
+- `READHELPER_SYNC_RESPONSE` → REMOVED (ReadHelper deprecated)
 
 **Checksums (1 call):**
 - `ROLESUI_CHECK` → `SYNC.CHECKSUM_STRUCTURE` (may be obsolete)
@@ -402,13 +415,17 @@ After all migrations complete:
 - ✅ **Item 3**: Generic SendAddonMessage wrapper deprecated with warnings
 - ✅ **Item 4**: Broadcast Encounter Selection migrated (5 locations) to STATE.CHANGE_ENCOUNTER
 - ✅ **Item 5**: Request Encounter Sync handler removed (replaced by SYNC.REQUEST_PARTIAL)
-- ✅ **Serialization**: All migrated calls now properly serialize table data to strings
-- ✅ **Cleanup**: Removed orphaned REQUEST_ENCOUNTER_SYNC handler from CHAT_MSG_ADDON
+- ✅ **Item 6**: Assignment Update migrated to delta sync (5 locations in EncounterMgmt.lua)
+- ✅ **Item 7**: Encounter Sync Fallback deleted (unsafe, obsolete with delta sync)
+- ✅ **Item 8**: RolesUI checksum moved to unified SyncIntegrity polling system
+- ✅ **Item 9**: ReadHelper sync removed (addon deprecated, 6 locations cleaned up)
+- ✅ **Item 10**: Addon Poll Response migrated with 0-2s randomization, Sync button right-click restored
 
 ### Next Session
-- Item 6: Assignment Update (use Phase 3A delta sync)
-- Items 7-9: Manual chunking replacements (HIGH PRIORITY)
-- Items 10-18: Remaining migrations per priority order
+- Items 11-18: Remaining migrations per priority order
+  - Item 11: Raid Lead Set Response (only admin/L/A respond)
+  - Items 12, 17, 18: Manual chunking replacements (HIGH PRIORITY - reinventing the wheel)
+  - Items 13-16: Remaining request/response patterns
 
 ---
 

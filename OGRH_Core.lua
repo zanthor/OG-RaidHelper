@@ -1927,7 +1927,8 @@ function OGRH.HandleAssignmentSync(sender, syncData)
   
   -- Check if sync is locked (send only mode) - but allow from designated raid lead
   OGRH.EnsureSV()
-  local isFromRaidLead = (OGRH.RaidLead and OGRH.RaidLead.currentLead and sender == OGRH.RaidLead.currentLead)
+  local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+  local isFromRaidLead = (currentAdmin and sender == currentAdmin)
   
   if OGRH_SV.syncLocked and not isFromRaidLead then
     return
@@ -2207,177 +2208,7 @@ function OGRH.Deserialize(str)
   return nil
 end
 
--- Send sync data to OG-ReadHelper addon user
-function OGRH.SendReadHelperSyncData(requester)
-  OGRH.EnsureSV()
-  
-  -- Get current encounter
-  if not OGRH.GetCurrentEncounter then
-    return
-  end
-  
-  local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
-  if not currentRaid or not currentEncounter then
-    return
-  end
-  
-  -- Get role data (needed for both announcements and consumes)
-  local roles = nil
-  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles then
-    roles = OGRH_SV.encounterMgmt.roles
-  end
-  
-  -- Get announcement text with tags replaced
-  local announcementLines = {}
-  if OGRH_SV.encounterAnnouncements and 
-     OGRH_SV.encounterAnnouncements[currentRaid] and
-     OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter] and
-     OGRH_EncounterFrame and OGRH_EncounterFrame.ReplaceTags then
-    
-    -- Get role data for announcement processing
-    local orderedRoles = {}
-    if roles and roles[currentRaid] and roles[currentRaid][currentEncounter] then
-      local encounterRoles = roles[currentRaid][currentEncounter]
-      local column1 = encounterRoles.column1 or {}
-      local column2 = encounterRoles.column2 or {}
-      for i = 1, table.getn(column1) do
-        table.insert(orderedRoles, column1[i])
-      end
-      for i = 1, table.getn(column2) do
-        table.insert(orderedRoles, column2[i])
-      end
-    end
-    
-    local assignments = {}
-    if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[currentRaid] and 
-       OGRH_SV.encounterAssignments[currentRaid][currentEncounter] then
-      assignments = OGRH_SV.encounterAssignments[currentRaid][currentEncounter]
-    end
-    
-    local raidMarks = {}
-    if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[currentRaid] and 
-       OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter] then
-      raidMarks = OGRH_SV.encounterRaidMarks[currentRaid][currentEncounter]
-    end
-    
-    local assignmentNumbers = {}
-    if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[currentRaid] and 
-       OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter] then
-      assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[currentRaid][currentEncounter]
-    end
-    
-    local announcementData = OGRH_SV.encounterAnnouncements[currentRaid][currentEncounter]
-    for i = 1, 20 do
-      local lineText = announcementData[i]
-      if lineText and lineText ~= "" then
-        local processedText = OGRH_EncounterFrame.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
-        if processedText and processedText ~= "" then
-          table.insert(announcementLines, processedText)
-        end
-      end
-    end
-  end -- end if OGRH_SV.encounterAnnouncements
-  
-  -- Get consume requirements and custom modules for this encounter
-  local consumeList = {}
-  local customModules = nil
-  if roles and roles[currentRaid] and roles[currentRaid][currentEncounter] then
-    local encounterRoles = roles[currentRaid][currentEncounter]
-    local column1 = encounterRoles.column1 or {}
-    local column2 = encounterRoles.column2 or {}
-    
-    -- Find consume check role
-    local consumeRole = nil
-    for i = 1, table.getn(column1) do
-      if column1[i].isConsumeCheck then
-        consumeRole = column1[i]
-        break
-      end
-    end
-    if not consumeRole then
-      for i = 1, table.getn(column2) do
-        if column2[i].isConsumeCheck then
-          consumeRole = column2[i]
-          break
-        end
-      end
-    end
-    
-    -- Find custom module role
-    local customRole = nil
-    for i = 1, table.getn(column1) do
-      if column1[i].isCustomModule then
-        customRole = column1[i]
-        break
-      end
-    end
-    if not customRole then
-      for i = 1, table.getn(column2) do
-        if column2[i].isCustomModule then
-          customRole = column2[i]
-          break
-        end
-      end
-    end
-    
-    -- Get module list from custom role
-    if customRole and customRole.modules then
-      customModules = {}
-      for i, moduleId in ipairs(customRole.modules) do
-        table.insert(customModules, moduleId)
-      end
-    end
-    
-    -- Get consumes from the consume role
-    if consumeRole and consumeRole.consumes then
-      -- Helper function to get spell ID from item ID
-      local function GetSpellIdFromItem(itemId)
-        local itemToSpell = {
-          [13457] = 17543, -- Greater Fire Protection Potion
-          [13456] = 17544, -- Greater Frost Protection Potion  
-          [13458] = 17546, -- Greater Nature Protection Potion
-          [13459] = 17548, -- Greater Shadow Protection Potion
-          [13461] = 17549, -- Greater Arcane Protection Potion
-          [6049] = 7233,   -- Fire Protection Potion
-          [6050] = 7239,   -- Frost Protection Potion
-          [6052] = 7254,   -- Nature Protection Potion
-          [6048] = 10278,  -- Shadow Protection Potion
-        }
-        return itemToSpell[itemId]
-      end
-      
-      for i = 1, (consumeRole.slots or 1) do
-        if consumeRole.consumes[i] then
-          local consumeData = consumeRole.consumes[i]
-          local primarySpellId = GetSpellIdFromItem(consumeData.primaryId)
-          local secondarySpellId = consumeData.allowAlternate and consumeData.secondaryId and GetSpellIdFromItem(consumeData.secondaryId)
-          
-          table.insert(consumeList, {
-            primaryId = consumeData.primaryId,
-            primaryName = consumeData.primaryName,
-            primarySpellId = primarySpellId,
-            secondaryId = consumeData.secondaryId,
-            secondaryName = consumeData.secondaryName,
-            secondarySpellId = secondarySpellId,
-            allowAlternate = consumeData.allowAlternate
-          })
-        end
-      end
-    end
-  end
-  
-  -- Build sync data package
-  local syncData = {
-    encounter = currentEncounter,
-    announcement = announcementLines,
-    consumes = consumeList,
-    modules = customModules
-  }
-  
-  -- Serialize and send
-  local serialized = OGRH.Serialize(syncData)
-  SendAddonMessage(OGRH.ADDON_PREFIX, "READHELPER_SYNC_RESPONSE;" .. serialized, "RAID")
-end
+-- ReadHelper sync support removed - addon deprecated
 
 -- Re-announce stored announcement
 function OGRH.ReAnnounce()
@@ -2466,59 +2297,7 @@ addonFrame:SetScript("OnEvent", function()
             end
           end
         end
-      -- Handle addon poll
-      elseif message == "ADDON_POLL" then
-        -- Don't respond to our own poll (we add ourselves manually in PollAddonUsers)
-        local playerName = UnitName("player")
-        if sender == playerName then
-          return
-        end
-        
-        -- Everyone with the addon should respond
-        local numRaid = GetNumRaidMembers()
-        if numRaid > 0 then
-          -- Calculate checksum for ALL structure data
-          local checksum = "0"
-          if OGRH.CalculateAllStructureChecksum then
-            checksum = OGRH.CalculateAllStructureChecksum()
-          end
-          
-          -- Send: ADDON_POLL_RESPONSE;version;checksum to others
-          local response = "ADDON_POLL_RESPONSE;" .. OGRH.VERSION .. ";" .. checksum
-          SendAddonMessage(OGRH.ADDON_PREFIX, response, "RAID")
-        end
-      -- Handle addon poll response
-      elseif string.sub(message, 1, 19) == "ADDON_POLL_RESPONSE" then
-        if OGRH.HandleAddonPollResponse then
-          -- Parse: ADDON_POLL_RESPONSE;version;checksum
-          local version = "Unknown"
-          local checksum = "0"
-          
-          if string.len(message) > 20 then
-            local data = string.sub(message, 21)  -- Start after "ADDON_POLL_RESPONSE;" (19 + 1 for semicolon)
-            local semicolon = string.find(data, ";")
-            if semicolon then
-              version = string.sub(data, 1, semicolon - 1)
-              checksum = string.sub(data, semicolon + 1)
-            else
-              version = data
-            end
-          end
-          
-          OGRH.HandleAddonPollResponse(sender, version, checksum)
-        end
-      -- Handle ReadHelper poll response
-      elseif string.sub(message, 1, 25) == "READHELPER_POLL_RESPONSE;" then
-        if OGRH.HandleReadHelperPollResponse then
-          -- Parse: READHELPER_POLL_RESPONSE;version
-          local version = "Unknown"
-          
-          if string.len(message) > 26 then
-            version = string.sub(message, 26)
-          end
-          
-          OGRH.HandleReadHelperPollResponse(sender, version)
-        end
+      -- ADDON_POLL and ADDON_POLL_RESPONSE migrated to MessageRouter (Item 10)
       -- Handle role change broadcast
       elseif string.sub(message, 1, 12) == "ROLE_CHANGE;" then
         -- Parse: ROLE_CHANGE;playerName;newRole
@@ -2564,20 +2343,19 @@ addonFrame:SetScript("OnEvent", function()
           
           OGRH.Msg("Roles synced from RollFor by " .. sender)
         end
-      -- Handle raid lead set
+      -- Handle raid lead set (LEGACY - for backward compatibility with old clients)
       elseif string.sub(message, 1, 14) == "RAID_LEAD_SET;" then
         local leadName = string.sub(message, 15)
-        if OGRH.RaidLead then
-          OGRH.RaidLead.currentLead = leadName
-          if OGRH.UpdateRaidLeadUI then
-            OGRH.UpdateRaidLeadUI()
-          end
+        if OGRH.SetRaidAdmin then
+          -- Pass true to suppress re-broadcast (we're receiving from network)
+          OGRH.SetRaidAdmin(leadName, true)
         end
       -- Handle raid lead query (someone asking who the current lead is)
       elseif message == "RAID_LEAD_QUERY" then
         -- Respond with current lead if we know it
-        if OGRH.RaidLead and OGRH.RaidLead.currentLead then
-          SendAddonMessage(OGRH.ADDON_PREFIX, "RAID_LEAD_SET;" .. OGRH.RaidLead.currentLead, "RAID")
+        local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+        if currentAdmin then
+          SendAddonMessage(OGRH.ADDON_PREFIX, "RAID_LEAD_SET;" .. currentAdmin, "RAID")
         end
       -- Handle encounter structure sync request (for single encounter)
       elseif string.sub(message, 1, 33) == "REQUEST_ENCOUNTER_STRUCTURE_SYNC;" then
@@ -2627,14 +2405,6 @@ addonFrame:SetScript("OnEvent", function()
           end
         end
       -- RolesUI checksum check removed - now handled by OGRH_SyncIntegrity.lua unified polling
-      -- Handle ReadHelper sync request (from OG-ReadHelper addon)
-      elseif message == "READHELPER_SYNC_REQUEST" then
-        -- Only respond if we're the raid lead
-        if OGRH.IsRaidLead and OGRH.IsRaidLead() then
-          if OGRH.SendReadHelperSyncData then
-            OGRH.SendReadHelperSyncData(sender)
-          end
-        end
       -- Handle announcement broadcast
       -- DISABLED: Announcement receive handler
       -- This feature is no longer used since we're not staging announcements
@@ -2678,7 +2448,8 @@ addonFrame:SetScript("OnEvent", function()
         
         -- Check if sync is locked (send only mode) - but allow from designated raid lead
         OGRH.EnsureSV()
-        local isFromRaidLead = (OGRH.RaidLead and OGRH.RaidLead.currentLead and sender == OGRH.RaidLead.currentLead)
+        local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+        local isFromRaidLead = (currentAdmin and sender == currentAdmin)
         
         if OGRH_SV.syncLocked and not isFromRaidLead then
           DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r Ignored encounter sync from " .. sender .. " (sync is locked)")
@@ -2989,7 +2760,8 @@ addonFrame:SetScript("OnEvent", function()
           local numRaidMembers = GetNumRaidMembers()
           
           -- Check if sender is the designated raid admin
-          if OGRH.RaidLead and OGRH.RaidLead.currentLead == sender then
+          local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+          if currentAdmin == sender then
             isAuthorized = true
           end
           
@@ -3067,8 +2839,9 @@ addonFrame:SetScript("OnEvent", function()
         
         -- Check if sender is the designated raid lead
         local isAuthorized = false
-        if OGRH.RaidLead and OGRH.RaidLead.currentLead then
-          if sender == OGRH.RaidLead.currentLead then
+        local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+        if currentAdmin then
+          if sender == currentAdmin then
             isAuthorized = true
           end
         end
@@ -3292,8 +3065,9 @@ addonFrame:SetScript("OnEvent", function()
         
         -- Only respond if we're the raid lead
         local isRaidLead = false
-        if OGRH.RaidLead and OGRH.RaidLead.currentLead then
-          if OGRH.RaidLead.currentLead == playerName then
+        local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+        if currentAdmin then
+          if currentAdmin == playerName then
             isRaidLead = true
           end
         end
@@ -3333,8 +3107,9 @@ addonFrame:SetScript("OnEvent", function()
         
         -- Only respond if we're the raid lead
         local isRaidLead = false
-        if OGRH.RaidLead and OGRH.RaidLead.currentLead then
-          if OGRH.RaidLead.currentLead == playerName then
+        local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+        if currentAdmin then
+          if currentAdmin == playerName then
             isRaidLead = true
           end
         end
@@ -4032,9 +3807,10 @@ function OGRH.RequestStructureSync()
   
   -- Check if we're the raid lead
   local isRaidLead = false
-  if OGRH.RaidLead and OGRH.RaidLead.currentLead then
-    local playerName = UnitName("player")
-    if OGRH.RaidLead.currentLead == playerName then
+  local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+  local playerName = UnitName("player")
+  if currentAdmin then
+    if currentAdmin == playerName then
       isRaidLead = true
     end
   end

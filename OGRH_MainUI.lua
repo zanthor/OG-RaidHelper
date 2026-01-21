@@ -128,11 +128,10 @@ syncBtn:SetScript("OnClick", function()
   local btn = arg1 or "LeftButton"
   
   if btn == "RightButton" then
-    -- Right-click: DISABLED (code retained for future use)
-    -- Poll for addon users and select raid lead
-    -- if OGRH.PollAddonUsers then
-    --   OGRH.PollAddonUsers()
-    -- end
+    -- Right-click: Poll for addon users and select raid lead
+    if OGRH.PollAddonUsers then
+      OGRH.PollAddonUsers()
+    end
     return
   end
   
@@ -352,11 +351,6 @@ announceBtn:SetScript("OnClick", function()
     -- Send to raid warning
     for _, line in ipairs(announceLines) do
       SendChatMessage(line, "RAID_WARNING")
-    end
-    
-    -- Broadcast sync to ReadHelper users
-    if OGRH.SendReadHelperSyncData then
-      OGRH.SendReadHelperSyncData(nil)
     end
     
     OGRH.Msg("Consumes announced to raid warning.")
