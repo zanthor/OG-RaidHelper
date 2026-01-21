@@ -426,7 +426,11 @@ end
 - [x] Replace OGRH_Sync.lua chunking with OGAddonMsg
 - [x] Migrate SYNC_REQUEST/SYNC_RESPONSE pattern
 - [x] Implement checksum verification system
-- [x] Add delta sync infrastructure (not integrated yet)
+- [x] Add delta sync infrastructure stubs (integration deferred to Phase 3)
+  - [x] Create `OGRH_SyncDelta.lua` with stub functions
+  - [x] Add `RecordDelta()` and `FlushDeltas()` to OGRH_Sync_v2.lua
+  - [x] Add delta batching state management
+  - [ ] **DEFERRED TO PHASE 3**: Connect delta sync to actual assignment/role operations
 - [x] Test with 2+ client raid environment - **VALIDATED** (710 chunks, ~100KB successfully transmitted)
 - [x] Verify old BroadcastFullSync() calls new system - **COMPLETE** (OGRH_DataManagement.lua created)
 - [x] Fix timeout issues - **RESOLVED** (lastReceived vs firstReceived)
@@ -438,35 +442,110 @@ end
 
 **See `Documentation/PHASE2_TESTING.md` for test results and validation data**
 
-**Phase 3: Message Migration (Week 3-4)**
-- [ ] Migrate `OGRH_Core.lua` messages (18 send locations)
-- [ ] Migrate `OGRH_RaidLead.lua` messages
-- [ ] Migrate `OGRH_RolesUI.lua` messages
-- [ ] Migrate `OGRH_EncounterMgmt.lua` messages
-- [ ] Consolidate duplicate message handlers
+**Phase 3A: Delta Sync Integration (Week 3)**
+- [ ] **Connect delta sync stubs to actual operations**
+  - [ ] Implement delta sync for player assignments
+    - [ ] Create `OGRH.AssignPlayerWithDelta(player, role, group)` function
+    - [ ] Wire to RolesUI assignment buttons
+    - [ ] Test batching during rapid clicks
+  - [ ] Implement delta message types
+    - [ ] Add `ASSIGN_DELTA_PLAYER` message handler
+    - [ ] Add `ASSIGN_DELTA_ROLE` message handler
+    - [ ] Add `ASSIGN_DELTA_GROUP` message handler
+  - [ ] Test delta batch flushing
+    - [ ] Verify 2-second batching delay works
+    - [ ] Test flush on single change
+    - [ ] Test flush on rapid changes (10+ in 2 seconds)
+    - [ ] Verify delta application on receiving client
+  - [ ] Smart sync triggers
+    - [ ] Block delta sync during combat
+    - [ ] Block delta sync while zoning
+    - [ ] Queue changes for after combat/zone
+  - [ ] Replace full structure pushes with delta for small changes
+    - [ ] Identify operations that currently do full sync
+    - [ ] Replace with delta sync where appropriate
+    - [ ] Keep full sync only for major structure changes
 
-**Phase 4: Permission Enforcement (Week 5)**
+**Phase 3B: OGRH_Core.lua Migration (Week 4)**
+- [ ] Audit all SendAddonMessage calls in OGRH_Core.lua (18 locations)
+- [ ] Migrate ready check system
+  - [ ] Replace `READYCHECK_REQUEST` with OGAddonMsg
+  - [ ] Replace `READYCHECK_COMPLETE` with OGAddonMsg
+  - [ ] Test ready check flow end-to-end
+- [ ] Migrate autopromote system
+  - [ ] Replace `AUTOPROMOTE_REQUEST:{name}` with permission-aware version
+  - [ ] Add permission check before processing request
+  - [ ] Test promote flow
+- [ ] Migrate addon polling
+  - [ ] Replace `ADDON_POLL` with OGAddonMsg version
+  - [ ] Replace `ADDON_POLL_RESPONSE` with OGAddonMsg version
+  - [ ] Add deduplication for poll responses
+- [ ] Migrate assignment updates
+  - [ ] Replace `ASSIGNMENT_UPDATE` with delta sync calls (from Phase 3A)
+  - [ ] Verify delta batching works
+- [ ] Migrate encounter sync
+  - [ ] Replace `ENCOUNTER_SYNC` with chunked OGAddonMsg version
+  - [ ] Use OGAddonMsg auto-chunking
+  - [ ] Test large encounter data
+- [ ] Migrate remaining Core messages
+  - [ ] `ROLESUI_CHECK` with integrity system
+  - [ ] `READHELPER_SYNC_RESPONSE` with chunking
+  - [ ] `RAID_LEAD_SET` with state management
+  - [ ] `REQUEST_*` messages with pull model
+- [ ] Remove old SendAddonMessage calls from Core
+- [ ] Test all Core functionality end-to-end
+
+**Phase 3C: Remaining Module Migration (Week 5)**
+- [ ] Migrate `OGRH_RaidLead.lua` messages
+  - [ ] Remove duplicate `ADDON_POLL` (use Core version)
+  - [ ] Remove duplicate `SYNC_REQUEST` (use Sync_v2 version)
+  - [ ] Replace `RAID_LEAD_QUERY` with OGAddonMsg
+  - [ ] Test raid lead detection
+- [ ] Migrate `OGRH_RolesUI.lua` messages
+  - [ ] Replace direct SendAddonMessage with delta sync (from Phase 3A)
+  - [ ] Test UI-driven assignment changes use delta
+  - [ ] Verify batch flushing on rapid UI clicks
+- [ ] Migrate `OGRH_EncounterMgmt.lua` messages
+  - [ ] Standardize encounter update messages
+  - [ ] Use MessageRouter for all sends
+  - [ ] Test encounter creation/modification/deletion
+- [ ] Migrate `OGRH_Promotes.lua`
+  - [ ] Remove duplicate `AUTOPROMOTE_REQUEST` (use Core version)
+- [ ] Migrate `OGRH_ConsumesTracking.lua`
+  - [ ] Document current message format
+  - [ ] Migrate to OGAddonMsg
+  - [ ] Test consumes sync
+- [ ] Consolidate all duplicate message handlers
+  - [ ] Create single authoritative handler for each message type
+  - [ ] Remove redundant handlers
+  - [ ] Add warnings for deprecated message formats
+- [ ] Final cleanup
+  - [ ] Grep for any remaining SendAddonMessage calls
+  - [ ] Verify all handlers use MessageRouter
+  - [ ] Remove unused message handler code
+
+**Phase 4: Permission Enforcement (Week 6)**
 - [ ] Add permission checks to all modify operations
 - [ ] Implement admin UI for permission management
 - [ ] Add permission denial notifications
 - [ ] Test permission escalation/demotion flows
 - [ ] Add audit logging for permission changes
 
-**Phase 5: Conflict Resolution (Week 6)**
+**Phase 5: Conflict Resolution (Week 7)**
 - [ ] Implement version vector tracking
 - [ ] Create merge conflict UI (OGST-styled)
 - [ ] Add manual conflict resolution for admins
 - [ ] Test concurrent edit scenarios
 - [ ] Add rollback capability for bad merges
 
-**Phase 6: Testing & Optimization (Week 7-8)**
+**Phase 6: Testing & Optimization (Week 8-9)**
 - [ ] Load test with 40-player raids
 - [ ] Test zone transitions during sync
 - [ ] Test /reload during large transfers
 - [ ] Optimize message frequency
 - [ ] Add telemetry for sync performance
 
-**Phase 7: Polish & Documentation (Week 9)**
+**Phase 7: Polish & Documentation (Week 10)**
 - [ ] Update all documentation
 - [ ] Add user-facing sync status UI
 - [ ] Create troubleshooting guide
@@ -842,7 +921,12 @@ OG-RaidHelper/
 
 This migration represents a fundamental improvement to OG-RaidHelper's reliability and usability. By leveraging `_OGAddonMsg` for robust message delivery and implementing proper permissions and versioning, we eliminate the primary sources of desync issues while enabling collaborative raid planning.
 
-The estimated effort is **9 weeks** for a single developer, or **5-6 weeks** with two developers working in parallel on infrastructure and migration tasks.
+The estimated effort is **10 weeks** for a single developer, or **6-7 weeks** with two developers working in parallel on infrastructure and migration tasks.
+
+**Phase Breakdown:**
+- Phases 1-2: Infrastructure (2 weeks) ✅ COMPLETE
+- Phase 3A-C: Delta sync + message migration (3 weeks) ← **NEXT**
+- Phases 4-7: Permissions, conflicts, testing, polish (5 weeks)
 
 **Next Steps:**
 1. Review and approve this design document
