@@ -185,13 +185,12 @@ function OGRH.SetRaidAdmin(playerName, suppressBroadcast)
     if not suppressBroadcast and GetNumRaidMembers() > 0 then
         -- Use MessageRouter for proper tracking and reliability
         if OGRH.MessageRouter and OGRH.MessageTypes then
-            local adminData = OGRH.Serialize({
-                adminName = playerName,
-                timestamp = GetTime()
-            })
             OGRH.MessageRouter.Broadcast(
                 OGRH.MessageTypes.STATE.CHANGE_LEAD,
-                adminData,
+                {
+                    adminName = playerName,
+                    timestamp = GetTime()
+                },
                 { priority = "HIGH" }
             )
         else
@@ -225,17 +224,14 @@ function OGRH.RequestAdminRole()
     end
     
     -- Broadcast admin takeover via MessageRouter
-    if OGRH.MessageRouter and OGRH.MessageTypes and OGRH.Serialize then
-        -- Serialize the data table before sending
-        local adminData = OGRH.Serialize({
-            newAdmin = playerName,
-            timestamp = GetTime(),
-            version = OGRH.IncrementDataVersion and OGRH.IncrementDataVersion() or 1
-        })
-        
+    if OGRH.MessageRouter and OGRH.MessageTypes then
         OGRH.MessageRouter.Broadcast(
             OGRH.MessageTypes.ADMIN.TAKEOVER,
-            adminData,
+            {
+                newAdmin = playerName,
+                timestamp = GetTime(),
+                version = OGRH.IncrementDataVersion and OGRH.IncrementDataVersion() or 1
+            },
             {
                 priority = "HIGH",
                 onSuccess = function()

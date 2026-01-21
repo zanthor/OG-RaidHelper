@@ -137,7 +137,7 @@ function OGRH.PollAddonUsers()
   OGRH.RaidLead.lastPollTime = GetTime()
   
   -- Send poll request via MessageRouter
-  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_VERSION, OGRH.Serialize({}))
+  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_VERSION, {})
   
   -- Add self to responses
   local selfName = UnitName("player")

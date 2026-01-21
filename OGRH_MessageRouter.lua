@@ -54,22 +54,14 @@ end
 ]]
 
 -- Send a message via OGAddonMsg with automatic permission checking
--- CRITICAL: 'data' parameter MUST be a pre-serialized string!
---           Use OGRH.Serialize(table) before calling this function.
---           DO NOT pass raw Lua tables - OGAddonMsg expects strings only.
+-- Accepts both tables and strings (OGAddonMsg auto-serializes tables)
 -- @param messageType string - Message type from OGRH.MessageTypes
--- @param data string - PRE-SERIALIZED data (use OGRH.Serialize for tables)
+-- @param data table or string - Data to send (tables auto-serialized by OGAddonMsg)
 -- @param options table - Optional {priority, target, channel, onSuccess, onFailure}
 -- @return messageId or nil
 function OGRH.MessageRouter.Send(messageType, data, options)
     if not messageType then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-MessageRouter]|r No message type specified")
-        return nil
-    end
-    
-    -- VALIDATION: Ensure data is a string (common mistake: passing tables)
-    if type(data) ~= "string" then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-MessageRouter]|r ERROR: data must be a STRING, got %s. Use OGRH.Serialize() first!", type(data)))
         return nil
     end
     
@@ -207,14 +199,8 @@ function OGRH.MessageRouter.OnMessageReceived(sender, messageType, data, channel
     -- Use the actual message type (without target suffix)
     messageType = actualMessageType
     
-    -- Deserialize data if it's a string (handles both serialized tables and raw strings)
-    local deserializedData = data
-    if type(data) == "string" and OGRH.Deserialize then
-        local success, result = pcall(OGRH.Deserialize, data)
-        if success and result then
-            deserializedData = result
-        end
-    end
+    -- OGAddonMsg auto-deserializes tables, so data is already in original form
+    -- (table if sender sent table, string if sender sent string)
     
     -- Get handler for this message type
     local handler = OGRH.MessageRouter.GetHandler(messageType)
@@ -224,8 +210,8 @@ function OGRH.MessageRouter.OnMessageReceived(sender, messageType, data, channel
         return
     end
     
-    -- Call the handler with deserialized data
-    local success, err = pcall(handler, sender, deserializedData, channel)
+    -- Call the handler with data (already deserialized by OGAddonMsg)
+    local success, err = pcall(handler, sender, data, channel)
     
     if not success then
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-MessageRouter]|r Handler error for %s: %s", messageType, tostring(err)))
@@ -344,12 +330,11 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         if OGRH.GetRaidAdmin then
             local currentAdmin = OGRH.GetRaidAdmin()
             if currentAdmin then
-                local responseData = OGRH.Serialize({
+                OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.ADMIN.RESPONSE, {
                     currentAdmin = currentAdmin,
                     timestamp = GetTime(),
                     version = OGRH.VERSION
-                })
-                OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.ADMIN.RESPONSE, responseData, {priority = "HIGH"})
+                }, {priority = "HIGH"})
             end
         end
     end)
@@ -399,8 +384,9 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         -- Respond with current raid lead
         local currentLead = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin() or "Unknown"
         
-        local responseData = OGRH.Serialize({lead = currentLead})
-        OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.STATE.RESPONSE_LEAD, responseData, {
+        OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.STATE.RESPONSE_LEAD, {
+            lead = currentLead
+        }, {
             priority = "LOW"
         })
     end)
@@ -434,8 +420,8 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             return
         end
         
-        -- Deserialize request data
-        local requestData = OGRH.Deserialize(data)
+        -- Data already deserialized by OGAddonMsg
+        local requestData = data
         if not requestData then return end
         
         -- If data contains raidName and encounterName, sync that specific encounter
@@ -554,7 +540,8 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ASSIGN.DELTA_PLAYER, function(sender, data, channel)
         -- Handle individual player assignment delta (for backwards compatibility)
-        local changeData = OGRH.Deserialize(data)
+        -- Data already deserialized by OGAddonMsg
+        local changeData = data
         if not changeData then return end
         
         OGRH.SetPlayerAssignment(changeData.player, {
@@ -565,7 +552,8 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ASSIGN.DELTA_ROLE, function(sender, data, channel)
         -- Handle individual role delta (modern format only)
-        local changeData = OGRH.Deserialize(data)
+        -- Data already deserialized by OGAddonMsg
+        local changeData = data
         
         if not changeData or not changeData.player or not changeData.newValue then
             return
@@ -583,7 +571,8 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ASSIGN.DELTA_GROUP, function(sender, data, channel)
         -- Handle individual group delta
-        local changeData = OGRH.Deserialize(data)
+        -- Data already deserialized by OGAddonMsg
+        local changeData = data
         if not changeData then return end
         
         -- Placeholder for group assignment feature
@@ -616,7 +605,7 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                 version = OGRH.VERSION,
                 checksum = checksum
             }
-            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_RESPONSE, OGRH.Serialize(response))
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_RESPONSE, response)
         end, delay)
     end)
 

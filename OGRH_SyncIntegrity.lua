@@ -85,14 +85,11 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
         timestamp = GetTime()
     }
     
-    -- Serialize checksums before sending (MessageRouter requires pre-serialized data)
-    local serializedChecksums = OGRH.Serialize(checksums)
-    
-    -- Broadcast via MessageRouter
+    -- Broadcast via MessageRouter (auto-serializes tables)
     if OGRH.MessageRouter and OGRH.MessageTypes then
         OGRH.MessageRouter.Broadcast(
             OGRH.MessageTypes.SYNC.CHECKSUM_POLL,
-            serializedChecksums,
+            checksums,
             {
                 priority = "LOW",  -- Background traffic
                 onSuccess = function()
@@ -179,9 +176,6 @@ function OGRH.SyncIntegrity.OnRolesUISyncRequest(requester)
         roles = OGRH_SV.roles or {},
         timestamp = GetTime()
     }
-    
-    -- Serialize data before sending (MessageRouter requires strings)
-    local serializedData = OGRH.Serialize(syncData)
     
     -- Send to requester (or broadcast to all if requester not specified)
     if OGRH.MessageRouter and OGRH.MessageTypes then

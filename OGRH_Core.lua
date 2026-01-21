@@ -3078,8 +3078,10 @@ addonFrame:SetScript("OnEvent", function()
           if currentRaid and currentEncounter then
             -- Broadcast encounter selection using MessageRouter
             if GetNumRaidMembers() > 0 then
-              local encounterData = OGRH.Serialize({raidName = currentRaid, encounterName = currentEncounter})
-              OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+              OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, {
+                raidName = currentRaid,
+                encounterName = currentEncounter
+              }, {
                 priority = "NORMAL"
               })
               
@@ -3089,8 +3091,10 @@ addonFrame:SetScript("OnEvent", function()
                   OGRH.BroadcastFullEncounterSync()
                 end
               else
-                local requestData = OGRH.Serialize({raidName = currentRaid, encounterName = currentEncounter})
-                OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+                OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, {
+                  raidName = currentRaid,
+                  encounterName = currentEncounter
+                }, {
                   priority = "NORMAL"
                 })
               end

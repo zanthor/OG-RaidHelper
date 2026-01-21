@@ -4181,8 +4181,10 @@ function OGRH.NavigateToPreviousEncounter()
         
         -- Broadcast encounter change using MessageRouter
         if GetNumRaidMembers() > 0 and OGRH.MessageRouter then
-          local encounterData = OGRH.Serialize({raidName = raidName, encounterName = encounters[i - 1]})
-          OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+          OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, {
+            raidName = raidName,
+            encounterName = encounters[i - 1]
+          }, {
             priority = "NORMAL"
           })
           
@@ -4192,8 +4194,10 @@ function OGRH.NavigateToPreviousEncounter()
               OGRH.BroadcastFullEncounterSync()
             end
           else
-            local requestData = OGRH.Serialize({raidName = raidName, encounterName = encounters[i - 1]})
-            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, {
+              raidName = raidName,
+              encounterName = encounters[i - 1]
+            }, {
               priority = "NORMAL"
             })
           end
@@ -4242,8 +4246,10 @@ function OGRH.NavigateToNextEncounter()
         
         -- Broadcast encounter change using MessageRouter
         if GetNumRaidMembers() > 0 and OGRH.MessageRouter then
-          local encounterData = OGRH.Serialize({raidName = raidName, encounterName = encounters[i + 1]})
-          OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+          OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, {
+            raidName = raidName,
+            encounterName = encounters[i + 1]
+          }, {
             priority = "NORMAL"
           })
           
@@ -4253,8 +4259,10 @@ function OGRH.NavigateToNextEncounter()
               OGRH.BroadcastFullEncounterSync()
             end
           else
-            local requestData = OGRH.Serialize({raidName = raidName, encounterName = encounters[i + 1]})
-            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, {
+              raidName = raidName,
+              encounterName = encounters[i + 1]
+            }, {
               priority = "NORMAL"
             })
           end
@@ -4513,8 +4521,10 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
               
               -- Broadcast encounter change to raid using MessageRouter
               if GetNumRaidMembers() > 0 and OGRH.MessageRouter then
-                local encounterData = OGRH.Serialize({raidName = capturedRaid, encounterName = capturedEncounter})
-                OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+                OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, {
+                  raidName = capturedRaid,
+                  encounterName = capturedEncounter
+                }, {
                   priority = "NORMAL"
                 })
                 
@@ -4524,8 +4534,10 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
                     OGRH.BroadcastFullEncounterSync()
                   end
                 else
-                  local requestData = OGRH.Serialize({raidName = capturedRaid, encounterName = capturedEncounter})
-                  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+                  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, {
+                    raidName = capturedRaid,
+                    encounterName = capturedEncounter
+                  }, {
                     priority = "NORMAL"
                   })
                 end

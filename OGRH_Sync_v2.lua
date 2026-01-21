@@ -254,9 +254,7 @@ function OGRH.Sync.SendFullSyncTo(targetPlayer)
         timestamp = GetTime()
     }
     
-    local syncDataString = OGRH.Serialize(syncData)
-    
-    OGRH.MessageRouter.SendTo(targetPlayer, OGRH.MessageTypes.SYNC.RESPONSE_FULL, syncDataString, {
+    OGRH.MessageRouter.SendTo(targetPlayer, OGRH.MessageTypes.SYNC.RESPONSE_FULL, syncData, {
         priority = "BULK",
         onSuccess = function()
             DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] Sent full sync to %s", targetPlayer))
@@ -369,9 +367,15 @@ function OGRH.Sync.BroadcastFullSync()
         sender = UnitName("player")
     }
     
-    local syncDataString = OGRH.Serialize(syncData)
-    
-    if not syncDataString or syncDataString == "" then
+    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.RESPONSE_FULL, syncData, {
+        priority = "BULK"
+    })
+end
+
+-- DEPRECATED: Old function signature compatibility
+function OGRH.Sync.BroadcastStructureSync()
+    -- Check if data exists
+    if not OGRH_SV or not OGRH_SV.encounterMgmt then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[OGRH]|r Failed to serialize sync data")
         return
     end
@@ -441,9 +445,7 @@ function OGRH.Sync.FlushDeltas()
         checksum = OGRH.Sync.ComputeCurrentChecksum()
     }
     
-    local deltaDataString = OGRH.Serialize(deltaData)
-    
-    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.DELTA, deltaDataString, {
+    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.DELTA, deltaData, {
         priority = "NORMAL"
     })
     

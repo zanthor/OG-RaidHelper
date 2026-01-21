@@ -238,16 +238,9 @@ function OGRH.SyncDelta.FlushChangeBatch()
         author = UnitName("player")
     }
     
-    -- Serialize for transmission (OGAddonMsg expects string)
-    local serialized = OGRH.Serialize(deltaData)
-    if not serialized then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncDelta]|r Failed to serialize delta batch")
-        return
-    end
-    
-    -- Send via MessageRouter (pass serialized string)
+    -- Send via MessageRouter (auto-serializes tables)
     if OGRH.MessageRouter and OGRH.MessageRouter.Broadcast then
-        OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ASSIGN.DELTA_BATCH, serialized, {
+        OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ASSIGN.DELTA_BATCH, deltaData, {
             priority = "NORMAL"
         })
     end
