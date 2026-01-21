@@ -594,27 +594,363 @@ end
 
 **Problem:** Current sync is all-or-nothing. Need ability to sync specific raids/encounters without affecting others.
 
-**Solution:** Granular sync with backup/rollback support
+**Solution:** Granular sync with hierarchical checksum validation and surgical repair
 
-#### 5.1: Per-Encounter Sync
+#### 5.1: Hierarchical Checksum Validation
+
+**Data Structure:**
+
+Based on actual structure in OGRH_SV:
 ```lua
--- Sync only specific raid/encounter structure
-OGRH.SyncIntegrity.SyncEncounterStructure(raidName, encounterName, targetPlayer)
+-- Top-level saved variables (what gets synced)
+OGRH_SV = {
+  encounterMgmt = {                    -- Raid/encounter structure
+    raids = {                          -- Array of raid objects
+      {
+        name = "BWL",
+        encounters = {...},            -- Array of encounter objects
+        advancedSettings = {...}       -- Raid-level settings
+      }
+    },
+    roles = {                          -- [raidName][encounterName] = {column1, column2}
+      ["BWL"] = {
+        ["Razorgore"] = {
+          column1 = {...},             -- Array of role objects
+          column2 = {...}
+        }
+      }
+    }
+  },
+  encounterAssignments = {             -- [raidName][encounterName][roleIndex][slotIndex] = playerName
+    ["BWL"] = {
+      ["Razorgore"] = {
+        [1] = {[1] = "PlayerA", [2] = "PlayerB"},  -- Role 1 assignments
+        [2] = {[1] = "PlayerC"}                     -- Role 2 assignments
+      }
+    }
+  },
+  encounterRaidMarks = {               -- [raidName][encounterName][roleIndex][slotIndex] = markIndex
+    ["BWL"] = {
+      ["Razorgore"] = {
+        [1] = {[1] = 8, [2] = 7}       -- Skull, Cross
+      }
+    }
+  },
+  encounterAssignmentNumbers = {       -- [raidName][encounterName][roleIndex][slotIndex] = numberValue
+    ["BWL"] = {
+      ["Razorgore"] = {
+        [1] = {[1] = 1, [2] = 2}       -- Tank 1, Tank 2
+      }
+    }
+  },
+  encounterAnnouncements = {           -- [raidName][encounterName] = array of strings
+    ["BWL"] = {
+      ["Razorgore"] = {"Line 1", "Line 2"}
+    }
+  },
+  tradeItems = {...},                  -- Trade window configurations
+  consumes = {...},                    -- Consumable definitions
+  rgo = {...}                          -- Raid Group Organizer data
+}
+```
 
--- Sync only specific raid/encounter assignments
-OGRH.SyncIntegrity.SyncEncounterAssignments(raidName, encounterName, targetPlayer)
+**Checksum Hierarchy:**
 
--- Example: Pull only current encounter from admin
-OGRH.SyncIntegrity.RequestCurrentEncounterSync()
+When a structure mismatch is detected, validate checksums at multiple levels to identify the exact corrupted component:
+
+```lua
+-- Level 1: Overall Structure Checksum (current implementation)
+OverallChecksum = ComputeAllStructureChecksum()
+
+-- If mismatch detected, drill down to Level 2: Per-Raid Checksums
+RaidChecksums = {
+  ["BWL"] = ComputeRaidChecksum("BWL"),
+  ["MC"] = ComputeRaidChecksum("MC"),
+  ["AQ40"] = ComputeRaidChecksum("AQ40")
+}
+
+-- If raid mismatch detected, drill down to Level 3: Per-Encounter Checksums
+EncounterChecksums["BWL"] = {
+  ["Razorgore"] = ComputeEncounterChecksum("BWL", "Razorgore"),
+  ["Vaelastrasz"] = ComputeEncounterChecksum("BWL", "Vaelastrasz"),
+  ["Broodlord"] = ComputeEncounterChecksum("BWL", "Broodlord")
+}
+
+-- If encounter mismatch detected, drill down to Level 4: Component Checksums
+ComponentChecksums["BWL"]["Razorgore"] = {
+  -- Encounter metadata (advancedSettings on encounter object)
+  encounterSettings = ComputeChecksum(encounters["Razorgore"].advancedSettings),
+  
+  -- Role structure (from encounterMgmt.roles)
+  roles = ComputeChecksum(encounterMgmt.roles["BWL"]["Razorgore"]),
+  
+  -- Player assignments (from encounterAssignments)
+  playerAssignments = ComputeChecksum(encounterAssignments["BWL"]["Razorgore"]),
+  
+  -- Raid marks (from encounterRaidMarks)
+  raidMarks = ComputeChecksum(encounterRaidMarks["BWL"]["Razorgore"]),
+  
+  -- Assignment numbers (from encounterAssignmentNumbers)
+  assignmentNumbers = ComputeChecksum(encounterAssignmentNumbers["BWL"]["Razorgore"]),
+  
+  -- Announcements (from encounterAnnouncements)
+  announcements = ComputeChecksum(encounterAnnouncements["BWL"]["Razorgore"])
+}
+
+-- Additionally, raid-level components
+RaidLevelComponents = {
+  ["BWL"] = {
+    -- Raid metadata (advancedSettings on raid object)
+    raidSettings = ComputeChecksum(raid.advancedSettings),
+    
+    -- Encounter list (raid.encounters array)
+    encounterList = ComputeChecksum(raid.encounters)
+  }
+}
+
+-- Global components (not tied to specific raid/encounter)
+GlobalComponents = {
+  tradeItems = ComputeChecksum(OGRH_SV.tradeItems),
+  consumes = ComputeChecksum(OGRH_SV.consumes),
+  rgo = ComputeChecksum(OGRH_SV.rgo)
+}
+```
+
+**Validation Components:**
+
+Based on the actual data structure, we have 3 granularity levels with different component types at each:
+
+**1. Global-Level Components:**
+- `tradeItems` - Trade window configurations (not encounter-specific)
+- `consumes` - Consumable definitions (global list)
+- `rgo` - Raid Group Organizer data (player role buckets)
+
+**2. Raid-Level Components:**
+- `raidMetadata` - Raid object itself (name, advancedSettings)
+- `encounterList` - Array of encounter objects in this raid
+
+**3. Encounter-Level Components:**
+- `encounterMetadata` - Encounter advancedSettings (BigWigs integration, consume tracking)
+- `roles` - Role structure definitions (from encounterMgmt.roles[raid][encounter])
+- `playerAssignments` - Specific players assigned to role slots (encounterAssignments)
+- `raidMarks` - Raid target marks per role slot (encounterRaidMarks)
+- `assignmentNumbers` - Assignment numbers per role slot (encounterAssignmentNumbers)
+- `announcements` - Announcement text array (encounterAnnouncements)
+
+**Validation Flow:**
+
+When overall checksum mismatch is detected:
+
+1. **Compare Global Components** - Check tradeItems, consumes, rgo checksums
+2. **Compare Per-Raid Checksums** - Identify which raid(s) have mismatches
+3. **For Each Mismatched Raid:**
+   - Compare raid-level components (raidMetadata, encounterList)
+   - Compare per-encounter checksums for all encounters in this raid
+4. **For Each Mismatched Encounter:**
+   - Compare all 6 encounter-level components
+   - Identify exact corrupted component(s)
+
+**Sync Granularity:**
+
+After identifying corrupted components via hierarchical validation, sync at the appropriate level:
+
+1. **Global Component Sync** - Sync tradeItems, consumes, or rgo (entire table)
+2. **Raid-Level Sync** - Sync entire raid object (all encounters + metadata)
+3. **Encounter-Level Sync** - Sync entire encounter (all 6 components)
+4. **Component-Level Sync** (finest) - Sync only corrupted component
+
+**Component-Level Sync Examples:**
+```lua
+-- Sync only player assignments for Razorgore
+SyncComponent("BWL", "Razorgore", "playerAssignments")
+  -> Only updates encounterAssignments["BWL"]["Razorgore"]
+  -> Leaves roles, marks, announcements untouched
+
+-- Sync only announcements for Vaelastrasz
+SyncComponent("BWL", "Vaelastrasz", "announcements")
+  -> Only updates encounterAnnouncements["BWL"]["Vaelastrasz"]
+  -> Everything else unchanged
+
+-- Sync entire encounter (all 6 components)
+SyncEncounter("BWL", "Razorgore")
+  -> Updates all 6 components for this encounter
+  -> Other encounters in BWL untouched
+
+-- Sync entire raid (all encounters)
+SyncRaid("BWL")
+  -> Updates all encounters + raid metadata
+  -> Other raids (MC, AQ40) untouched
+
+-- Sync global component
+SyncGlobalComponent("rgo")
+  -> Only updates OGRH_SV.rgo
+  -> Raids/encounters untouched
+```
+
+**Benefits of Hierarchical Validation:**
+
+- **Surgical Sync**: Only sync the corrupted component, not entire encounter/raid
+- **Performance**: Dramatic reduction in sync time through component-level targeting
+- **Bandwidth**: Only transmit corrupted data, not entire structure
+- **User Experience**: Faster repairs, less disruption during active raid
+- **Diagnostics**: Exact location of corruption identified (e.g., "BWL > Razorgore > playerAssignments")
+
+**Performance Analysis (Based on Network Constraints):**
+
+Given OGAddonMsg network library constraints:
+- MAX_CHUNK_SIZE: 200 bytes per message
+- Header overhead: 39 bytes per chunk
+- Effective payload: ~161 bytes per chunk (with short prefix)
+- Max rate: 8 messages/second
+- **Effective throughput: 1,288 bytes/second**
+
+Performance projections based on default data (OGRH_Defaults.lua = 98,598 bytes):
+
+| Sync Level | Estimated Size | Sync Time | Improvement |
+|------------|---------------|-----------|-------------|
+| Full Structure (all raids, defaults) | ~98,600 bytes | **76.5 seconds (1.3 min)** | Baseline |
+| Single Raid (e.g., BWL with all encounters) | ~15,000 bytes | **11.6 seconds** | 85% reduction |
+| Single Encounter (roles + assignments + marks + announcements) | ~5,000 bytes | **3.9 seconds** | 95% reduction |
+| Single Component (e.g., just playerAssignments for one encounter) | ~500 bytes | **<1 second** | 99% reduction |
+| RolesUI (40-player role buckets) | ~2,000 bytes | **1.6 seconds** | 98% reduction |
+| Single Role Bucket (e.g., just TANKS) | ~500 bytes | **<1 second** | 99% reduction |
+
+**Key Insights:**
+- Current "full sync" takes **~76 seconds** for fresh defaults (heavily customized configs may take longer)
+- Component-level sync (typical corruption case) takes **<5 seconds** (93%+ reduction)
+- Per-role sync for RolesUI takes **<2 seconds** (98% reduction from full sync)
+- Hierarchical validation prevents sending 98KB when only 500 bytes corrupted
+
+**Validation Flow:**
+
+```lua
+-- Step 1: Detect overall mismatch
+if OverallChecksum ~= AdminChecksum then
+  
+  -- Step 2: Check global components first
+  for component, localChecksum in pairs(GlobalComponentChecksums) do
+    if localChecksum ~= AdminGlobalChecksums[component] then
+      RequestGlobalComponentSync(component)  -- Sync tradeItems/consumes/rgo
+    end
+  end
+  
+  -- Step 3: Identify corrupted raid(s)
+  for raidName, localChecksum in pairs(RaidChecksums) do
+    if localChecksum ~= AdminRaidChecksums[raidName] then
+      
+      -- Step 3a: Check raid-level components
+      if RaidMetadataChecksum[raidName] ~= AdminRaidMetadataChecksum[raidName] then
+        RequestRaidMetadataSync(raidName)  -- Sync raid.advancedSettings
+      end
+      if EncounterListChecksum[raidName] ~= AdminEncounterListChecksum[raidName] then
+        RequestEncounterListSync(raidName)  -- Sync raid.encounters array structure
+      end
+      
+      -- Step 4: Identify corrupted encounter(s)
+      for encounterName, encounterChecksum in pairs(EncounterChecksums[raidName]) do
+        if encounterChecksum ~= AdminEncounterChecksums[raidName][encounterName] then
+          
+          -- Step 5: Identify corrupted component(s)
+          for component, componentChecksum in pairs(ComponentChecksums[raidName][encounterName]) do
+            if componentChecksum ~= AdminComponentChecksums[raidName][encounterName][component] then
+              
+              -- Request sync for ONLY this component
+              RequestComponentSync(raidName, encounterName, component)
+            end
+          end
+        end
+      end
+    end
+  end
+end
+```
+
+**Implementation Strategy:**
+
+- **Phase 5A**: Implement checksum hierarchy computation
+- **Phase 5B**: Add component-level sync request/response
+- **Phase 5C**: Update auto-repair to use hierarchical validation
+- **Phase 5D**: Optimize RolesUI with same pattern (per-role checksums)
+
+#### 5.2: Component-Level Sync Operations
+
+**Sync API:**
+```lua
+-- Sync specific component of an encounter
+OGRH.Sync.RequestComponentSync(raidName, encounterName, component)
+  component: "encounterMetadata" | "roles" | "playerAssignments" | 
+             "raidMarks" | "assignmentNumbers" | "announcements"
+
+-- Sync entire encounter (all 6 components)
+OGRH.Sync.RequestEncounterSync(raidName, encounterName)
+
+-- Sync entire raid (all encounters + metadata)
+OGRH.Sync.RequestRaidSync(raidName)
+
+-- Sync global component
+OGRH.Sync.RequestGlobalComponentSync(component)
+  component: "tradeItems" | "consumes" | "rgo"
+```
+
+**Message Payloads:**
+```lua
+-- REQUEST_COMPONENT message
+{
+  raidName = "BWL",
+  encounterName = "Razorgore",
+  component = "playerAssignments",
+  requester = "PlayerName"
+}
+
+-- RESPONSE_COMPONENT message
+{
+  raidName = "BWL",
+  encounterName = "Razorgore",
+  component = "playerAssignments",
+  data = {
+    [1] = {[1] = "TankA", [2] = "TankB"},
+    [2] = {[1] = "HealerA", [2] = "HealerB", [3] = "HealerC"}
+  },
+  checksum = "abc123",
+  timestamp = GetTime()
+}
+```
+
+**Component Data Extraction:**
+```lua
+-- Extract specific component data
+function GetComponentData(raidName, encounterName, component)
+  if component == "encounterMetadata" then
+    -- Get encounter.advancedSettings from raid object
+    local raid = FindRaidByName(raidName)
+    local encounter = FindEncounterInRaid(raid, encounterName)
+    return encounter.advancedSettings
+    
+  elseif component == "roles" then
+    return OGRH_SV.encounterMgmt.roles[raidName][encounterName]
+    
+  elseif component == "playerAssignments" then
+    return OGRH_SV.encounterAssignments[raidName][encounterName]
+    
+  elseif component == "raidMarks" then
+    return OGRH_SV.encounterRaidMarks[raidName][encounterName]
+    
+  elseif component == "assignmentNumbers" then
+    return OGRH_SV.encounterAssignmentNumbers[raidName][encounterName]
+    
+  elseif component == "announcements" then
+    return OGRH_SV.encounterAnnouncements[raidName][encounterName]
+  end
+end
 ```
 
 **Benefits:**
-- Faster sync (only what you need)
-- Less network traffic
-- No risk of overwriting other encounters
-- Surgical repairs for specific data corruption
+- **Fastest sync**: Single component <1 second (vs 76 seconds full structure)
+- **Minimal disruption**: Other components untouched
+- **Bandwidth efficient**: 93%+ reduction for typical corruption scenario
+- **Precise repairs**: Fix only what's broken
 
-#### 5.2: Backup & Rollback System
+#### 5.3: Backup & Rollback System
 
 **Backup Naming Convention:** `_RaidName` prefix for backup data
 
@@ -688,17 +1024,63 @@ OGRH.Backup.MergeWithBackup(raidName, strategy)
 #### 5.4: RolesUI Auto-Repair (Phase 3B Complete)
 
 **Current Implementation:**
-- Admin broadcasts checksums every 30 seconds
+- Admin broadcasts single checksum every 30 seconds (covers all roles)
 - Client detects RolesUI mismatch
-- Client auto-requests RolesUI sync
-- Admin immediately pushes RolesUI data
+- Client auto-requests full RolesUI sync
+- Admin immediately pushes all RolesUI data (~10KB, 40 players)
 - Client applies and refreshes UI
+- **Sync time**: ~7 seconds for 40-player raid (full dataset)
 
 **Why Auto-Repair for RolesUI:**
 - Foundational data (affects invites, assignments, class buckets)
-- Small payload (~10KB typical)
 - Low risk of data loss (bucket assignments rarely user-customized)
 - Corruption quickly disrupts raid operations
+
+**Performance Issue Identified:**
+- Full 40-player sync takes ~7 seconds (all 4 role buckets)
+- Most mismatches affect only 1 role bucket (e.g., tank reassigned)
+- Current system sends all roles even if only 1 role corrupted
+
+**Optimization Opportunity - Per-Role Granular Sync:**
+
+The RolesUI data is already structured by role buckets:
+```lua
+OGRH_SV.roles = {
+  ["PlayerA"] = "TANKS",
+  ["PlayerB"] = "HEALERS",
+  ["PlayerC"] = "MELEE",
+  ["PlayerD"] = "RANGED"
+}
+
+-- Can be checksummed per-role:
+Checksums = {
+  TANKS = ComputeRoleChecksum("TANKS"),     -- Only tanks
+  HEALERS = ComputeRoleChecksum("HEALERS"), -- Only healers
+  MELEE = ComputeRoleChecksum("MELEE"),     -- Only melee
+  RANGED = ComputeRoleChecksum("RANGED")    -- Only ranged
+}
+```
+
+**Proposed Granular Sync:**
+1. Admin broadcasts **4 checksums** (one per role bucket)
+2. Client compares each checksum independently
+3. Client requests sync **only for mismatched roles**
+4. Admin sends only the affected role bucket's players
+5. Client applies only the affected role bucket
+
+**Benefits:**
+- **75% bandwidth reduction** if only 1 role mismatched (typical case)
+- **Sync time reduced**: ~12 minutes → ~30 seconds for full RolesUI, or ~2 seconds for single role
+- **Same reliability**: Still detects all corruption
+- **Backward compatible**: Can fall back to full sync if needed
+
+**Implementation Complexity:**
+- Low - data already bucketed by role
+- Checksum function needs 4 calls instead of 1
+- Sync request/response needs role parameter
+- Auto-repair handler needs role-specific apply
+
+**Recommendation:** Implement in Phase 5E after component-level structure sync established
 
 #### 5.5: Structure & Assignment Sync (Future)
 
@@ -762,9 +1144,19 @@ OGRH.MessageTypes.SYNC = {
     REQUEST_FULL = "OGRH_SYNC_REQUEST_FULL",
     RESPONSE_FULL = "OGRH_SYNC_RESPONSE_FULL",
     
-    -- New: Granular sync
-    REQUEST_ENCOUNTER = "OGRH_SYNC_REQUEST_ENCOUNTER",      -- Request specific encounter
-    RESPONSE_ENCOUNTER = "OGRH_SYNC_RESPONSE_ENCOUNTER",    -- Send specific encounter
+    -- New: Hierarchical validation
+    REQUEST_CHECKSUMS = "OGRH_SYNC_REQUEST_CHECKSUMS",     -- Request full checksum tree
+    RESPONSE_CHECKSUMS = "OGRH_SYNC_RESPONSE_CHECKSUMS",   -- Send checksum hierarchy
+    
+    -- New: Component-level sync
+    REQUEST_COMPONENT = "OGRH_SYNC_REQUEST_COMPONENT",     -- Request specific component
+    RESPONSE_COMPONENT = "OGRH_SYNC_RESPONSE_COMPONENT",   -- Send specific component
+    
+    -- New: Encounter-level sync
+    REQUEST_ENCOUNTER = "OGRH_SYNC_REQUEST_ENCOUNTER",      -- Request entire encounter
+    RESPONSE_ENCOUNTER = "OGRH_SYNC_RESPONSE_ENCOUNTER",    -- Send entire encounter
+    
+    -- New: Raid-level sync
     REQUEST_RAID = "OGRH_SYNC_REQUEST_RAID",                -- Request entire raid
     RESPONSE_RAID = "OGRH_SYNC_RESPONSE_RAID",              -- Send entire raid
     
@@ -775,54 +1167,100 @@ OGRH.MessageTypes.SYNC = {
 }
 ```
 
+**Message Payload Examples:**
+
+```lua
+-- Request component sync
+{
+  raidName = "BWL",
+  encounterName = "Razorgore",
+  component = "playerAssignments",  -- One of 8 component types
+  requester = "PlayerName"
+}
+
+-- Response component sync
+{
+  raidName = "BWL",
+  encounterName = "Razorgore",
+  component = "playerAssignments",
+  data = {...},  -- Only this component's data
+  checksum = "abc123",
+  timestamp = GetTime()
+}
+```
+
 #### 5.8: Implementation Phases
 
 **Phase 5A: Backup System**
 - Implement `_RaidName` backup storage
+**Phase 5A: Hierarchical Checksum Computation**
+- Implement checksum functions for all 3 granularity levels:
+  - Global components (tradeItems, consumes, rgo)
+  - Raid-level components (raidMetadata, encounterList)
+  - Encounter-level components (6 component types)
+- Add checksum caching to avoid redundant computation
+- Test checksum stability and collision resistance
+- Update SYNC_CHECKSUM broadcast to include hierarchy
+
+**Phase 5B: Component-Level Sync Implementation**
+- Add message types: REQUEST_CHECKSUMS, RESPONSE_CHECKSUMS
+- Add message types: REQUEST_COMPONENT, RESPONSE_COMPONENT
+- Add message types: REQUEST_GLOBAL_COMPONENT, RESPONSE_GLOBAL_COMPONENT
+- Implement component-level serialization/deserialization
+- Add validation to ensure only requested component is synced
+- Test component sync for all 6 encounter-level types
+- Test global component sync (tradeItems, consumes, rgo)
+
+**Phase 5C: Hierarchical Validation & Auto-Repair**
+- Update auto-repair to use hierarchical validation flow
+- Implement component-level sync request logic
+- Add fallback to full sync if component sync fails
+- Test auto-repair with component-level corruption scenarios
+- Measure performance improvement (target: 90%+ reduction)
+
+**Phase 5D: Backup & Merge System**
+- Implement backup system with `_RaidName` naming
 - Create backup before any sync operation
-- Add backup list UI
-- Test backup/restore flow
+- Add backup list UI in Data Management window
+- Implement three merge strategies (PREFER_LOCAL, PREFER_BACKUP, MANUAL)
+- Test backup/restore/merge flows
 
-**Phase 5B: Granular Sync**
-- Implement per-encounter request/response
-- Implement per-raid request/response  
-- Update Data Management UI with granular options
-- Test selective sync
+**Phase 5E: RolesUI Per-Role Optimization**
+- Implement per-role checksums (4 checksums: TANKS, HEALERS, MELEE, RANGED)
+- Add role-specific sync request/response messages
+- Update RolesUI auto-repair to sync only mismatched roles
+- Test single-role corruption scenarios
+- Validate performance improvement: ~12 min → ~2 seconds (99%+ reduction)
 
-**Phase 5C: Merge System**
-- Implement three merge strategies
-- Create merge UI for manual conflict resolution
-- Test merge scenarios (local wins, backup wins, manual)
+**Phase 5F: Data Management UI Enhancements**
+- Add "Pull Current Encounter" button (sync only current encounter)
+- Add "Pull Entire Raid" button (sync all encounters for current raid)
+- Keep "Pull All Data" button (full sync - nuclear option)
+- Add "View Backups" button (show backup list)
+- Add "Restore Backup" button (rollback to backup)
+- Add "Merge with Backup" button (three-way merge UI)
 
-**Phase 5D: Auto-Repair Expansion** (Future Consideration)
-- Evaluate extending auto-repair to assignments
-- Consider auto-repair for structure (risky - user customization)
-- Implement opt-in auto-repair settings
+**Phase 5G: Auto-Repair Expansion** (Future Consideration)
+- Evaluate extending auto-repair to assignments (lower priority)
+- Consider auto-repair for structure (high risk - user customization)
+- Implement opt-in auto-repair settings UI
 
 ---
 
 ### Design Principles for Granular Sync
 
-1. **Backup Before Modify** - Always create backup before applying remote data
-2. **Surgical Precision** - Sync only what's needed, leave rest untouched
-3. **User Control** - Default to manual sync, opt-in to auto-repair
-4. **Safe Rollback** - Always provide way to undo sync operation
-5. **Merge Support** - Handle conflicts gracefully with merge strategies
-6. **Performance** - Granular sync reduces network traffic and sync time
-7. **Data Safety** - Backups live outside sync scope, can't be overwritten remotely
+1. **Hierarchical Validation** - Drill down from overall → global → raid → encounter → component
+2. **Surgical Precision** - Sync only corrupted components, leave rest untouched
+3. **Backup Before Modify** - Always create backup before applying remote data
+4. **User Control** - Default to manual sync, opt-in to auto-repair
+5. **Safe Rollback** - Always provide way to undo sync operation
+6. **Merge Support** - Handle conflicts gracefully with merge strategies
+7. **Performance** - Component-level sync reduces sync time from 76 seconds (full structure) to <5 seconds (93%+ reduction)
+8. **Data Safety** - Backups live outside sync scope, can't be overwritten remotely
 
 ---
 
-- [ ] Add audit logging for permission changes
-
-**Phase 5: Conflict Resolution (Week 7)**
-- [ ] Implement version vector tracking
-- [ ] Create merge conflict UI (OGST-styled)
-- [ ] Add manual conflict resolution for admins
-- [ ] Test concurrent edit scenarios
-- [ ] Add rollback capability for bad merges
-
-**Phase 6: Testing & Optimization (Week 8-9)**
+**Phase 6: Testing & Optimization (Future)**
 - [ ] Load test with 40-player raids
 - [ ] Test zone transitions during sync
 - [ ] Test /reload during large transfers

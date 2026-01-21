@@ -220,15 +220,62 @@ end
 function OGRH.DataManagement.StartPushStructurePoll()
   if not OGRH_DataManagementFrame then return end
   
-  -- Broadcast checksum request using new system
-  if OGRH.Sync and OGRH.Sync.BroadcastChecksum then
-    OGRH.Sync.BroadcastChecksum()
+  if GetNumRaidMembers() == 0 then
+    OGRH.DataManagement.RefreshPushStructureList()
+    return
   end
+  
+  -- Reset poll state
+  OGRH.DataManagement.pushPollResponses = {}
+  OGRH.DataManagement.pushPollInProgress = true
+  OGRH.DataManagement.lastPushPollTime = GetTime()
+  
+  -- Send poll request via MessageRouter
+  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_VERSION, "")
+  
+  -- Add self to responses
+  local selfName = UnitName("player")
+  local myChecksum = OGRH.DataManagement.GetCurrentChecksum()
+  
+  table.insert(OGRH.DataManagement.pushPollResponses, {
+    name = selfName,
+    version = OGRH.VERSION or "Unknown",
+    checksum = myChecksum
+  })
   
   -- Refresh the list after a short delay to collect responses
   OGRH.ScheduleFunc(function()
+    OGRH.DataManagement.pushPollInProgress = false
     OGRH.DataManagement.RefreshPushStructureList()
   end, 2)
+end
+
+-- Handle poll responses for push structure
+function OGRH.DataManagement.HandlePushPollResponse(sender, version, checksum)
+  if not OGRH.DataManagement.pushPollInProgress then
+    return
+  end
+  
+  -- Check if already recorded
+  if OGRH.DataManagement.pushPollResponses then
+    for i = 1, table.getn(OGRH.DataManagement.pushPollResponses) do
+      if OGRH.DataManagement.pushPollResponses[i].name == sender then
+        return -- Already recorded
+      end
+    end
+  end
+  
+  -- Add to responses
+  table.insert(OGRH.DataManagement.pushPollResponses, {
+    name = sender,
+    version = version,
+    checksum = checksum
+  })
+  
+  -- Auto-refresh UI if window is visible
+  if OGRH_DataManagementFrame and OGRH_DataManagementFrame:IsVisible() then
+    OGRH.DataManagement.RefreshPushStructureList()
+  end
 end
 
 function OGRH.DataManagement.RefreshPushStructureList()
@@ -264,14 +311,32 @@ function OGRH.DataManagement.RefreshPushStructureList()
     return
   end
   
+  -- Use poll responses if available, otherwise show message
+  if not OGRH.DataManagement.pushPollResponses or table.getn(OGRH.DataManagement.pushPollResponses) == 0 then
+    local infoText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    infoText:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 10, -10)
+    infoText:SetText("Click Refresh to poll for addon users...")
+    infoText:SetTextColor(1, 0.82, 0)
+    table.insert(scrollChild.rows, infoText)
+    
+    -- Disable push button
+    if OGRH_DataManagementFrame.pushStructureBtn then
+      OGRH_DataManagementFrame.pushStructureBtn:Disable()
+    end
+    return
+  end
+  
   local myChecksum = OGRH.DataManagement.GetCurrentChecksum()
   local yOffset = -5
   local rowHeight = 20
   local hasTargets = false
   
-  for i = 1, numRaid do
-    local name, rank = GetRaidRosterInfo(i)
-    if name and name ~= UnitName("player") then
+  -- Display poll responses (only addon users)
+  for i = 1, table.getn(OGRH.DataManagement.pushPollResponses) do
+    local response = OGRH.DataManagement.pushPollResponses[i]
+    
+    -- Skip self
+    if response.name ~= UnitName("player") then
       local row = CreateFrame("Frame", nil, scrollChild)
       row:SetWidth(scrollChild:GetWidth() - 10)
       row:SetHeight(rowHeight)
@@ -279,14 +344,20 @@ function OGRH.DataManagement.RefreshPushStructureList()
       
       local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
       nameText:SetPoint("LEFT", row, "LEFT", 5, 0)
-      nameText:SetText(name)
+      nameText:SetText(response.name)
       
-      -- For now, assume everyone needs sync (we'd need to track checksums to be accurate)
-      local statusText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-      statusText:SetPoint("RIGHT", row, "RIGHT", -5, 0)
-      statusText:SetText("Ready")
-      statusText:SetTextColor(0, 1, 0)
-      hasTargets = true
+      -- Show checksum and sync status
+      local checksumText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      checksumText:SetPoint("RIGHT", row, "RIGHT", -5, 0)
+      
+      if response.checksum == myChecksum then
+        checksumText:SetText("Synced (" .. response.checksum .. ")")
+        checksumText:SetTextColor(0, 1, 0)  -- Green
+      else
+        checksumText:SetText("Out of sync (" .. response.checksum .. ")")
+        checksumText:SetTextColor(1, 0.65, 0)  -- Orange
+        hasTargets = true
+      end
       
       table.insert(scrollChild.rows, row)
       yOffset = yOffset - rowHeight
@@ -762,6 +833,7 @@ if OGRH.Sync then
   OGRH.Sync.RefreshDataManagementList = OGRH.DataManagement.RefreshActionList
   OGRH.Sync.InitiatePushStructure = OGRH.DataManagement.InitiatePushStructure
   OGRH.Sync.StartPushStructurePoll = OGRH.DataManagement.StartPushStructurePoll
+  OGRH.Sync.HandlePushPollResponse = OGRH.DataManagement.HandlePushPollResponse
   OGRH.Sync.GetCurrentChecksum = OGRH.DataManagement.GetCurrentChecksum
   OGRH.Sync.GetDefaultsChecksum = OGRH.DataManagement.GetDefaultsChecksum
 end

@@ -255,7 +255,7 @@ function OGRH.Sync.SendFullSyncTo(targetPlayer)
     }
     
     OGRH.MessageRouter.SendTo(targetPlayer, OGRH.MessageTypes.SYNC.RESPONSE_FULL, syncData, {
-        priority = "BULK",
+        priority = "LOW",
         onSuccess = function()
             DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] Sent full sync to %s", targetPlayer))
         end,
@@ -266,19 +266,14 @@ function OGRH.Sync.SendFullSyncTo(targetPlayer)
 end
 
 -- Handle full sync response
-function OGRH.Sync.OnFullSyncResponse(sender, dataString)
+function OGRH.Sync.OnFullSyncResponse(sender, data, channel)
     -- Ignore our own broadcasts
     if sender == UnitName("player") then
         return
     end
     
-    if not dataString or dataString == "" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[OGRH]|r Invalid full sync data received")
-        return
-    end
-    
-    local data = OGRH.Deserialize(dataString)
-    if not data or not data.encounterMgmt then
+    -- Data is already deserialized by OGAddonMsg
+    if not data or type(data) ~= "table" or not data.encounterMgmt then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[OGRH]|r Invalid full sync data received")
         return
     end
@@ -368,27 +363,27 @@ function OGRH.Sync.BroadcastFullSync()
     }
     
     OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.RESPONSE_FULL, syncData, {
-        priority = "BULK"
+        priority = "LOW"
     })
 end
 
 -- DEPRECATED: Old function signature compatibility
 function OGRH.Sync.BroadcastStructureSync()
+    -- Just call the new function
+    OGRH.Sync.BroadcastFullSync()
+end
+
+-- DEPRECATED: Old broadcast function (redirects to new system)
+function OGRH.Sync.OldBroadcastStructureSync()
     -- Check if data exists
     if not OGRH_SV or not OGRH_SV.encounterMgmt then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[OGRH]|r Failed to serialize sync data")
         return
     end
     
-    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.RESPONSE_FULL, syncDataString, {
-        priority = "LOW",
-        onSuccess = function()
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Structure broadcast complete")
-        end,
-        onFailure = function(reason)
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[OGRH]|r Broadcast failed: %s", reason))
-        end
-    })
+    -- Note: syncDataString doesn't exist here - this was a bug
+    -- Now redirects to BroadcastFullSync (which handles its own callbacks)
+    OGRH.Sync.BroadcastFullSync()
 end
 
 --[[
