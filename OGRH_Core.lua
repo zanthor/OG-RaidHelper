@@ -143,6 +143,14 @@ _svf:SetScript("OnEvent", function()
   end
   
   elseif event == "PLAYER_ENTERING_WORLD" then
+    -- Start integrity checks if we're the current admin (after login/reload)
+    if OGRH.GetRaidAdmin and OGRH.StartIntegrityChecks then
+      local currentAdmin = OGRH.GetRaidAdmin()
+      if currentAdmin == UnitName("player") then
+        OGRH.StartIntegrityChecks()
+      end
+    end
+    
     -- Poll for admin when entering world (login, reload, zone)
     if UnitInRaid("player") and OGRH.PollForRaidAdmin then
       OGRH.PollForRaidAdmin()
@@ -2274,29 +2282,13 @@ addonFrame:SetScript("OnEvent", function()
     local prefix, message, distribution, sender = arg1, arg2, arg3, arg4
     
     if prefix == OGRH.ADDON_PREFIX then
-      -- Handle ready check complete broadcast
+      -- Handle ready check complete broadcast (MIGRATED TO MessageRouter)
+      -- Legacy handler kept for backward compatibility during migration
       if message == "READYCHECK_COMPLETE" then
         -- Hide timer when raid leader reports results
         OGRH.HideReadyCheckTimer()
       -- Handle ready check request from assistant (MIGRATED TO MessageRouter)
-      -- Handle auto-promote request from assistant
-      elseif string.find(message, "^AUTOPROMOTE_REQUEST:") then
-        -- Only process if we are the raid leader
-        if IsRaidLeader and IsRaidLeader() == 1 then
-          local playerToPromote = string.gsub(message, "^AUTOPROMOTE_REQUEST:", "")
-          if playerToPromote and playerToPromote ~= "" then
-            -- Find the player in the raid and promote them
-            local numRaid = GetNumRaidMembers()
-            for i = 1, numRaid do
-              local name, rank = GetRaidRosterInfo(i)
-              if name == playerToPromote and rank == 0 then
-                PromoteToAssistant(playerToPromote)
-                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Auto-promoted " .. playerToPromote .. " to assistant (requested by " .. sender .. ").")
-                break
-              end
-            end
-          end
-        end
+      -- AUTOPROMOTE_REQUEST migrated to MessageRouter (ADMIN.PROMOTE_REQUEST)
       -- ADDON_POLL and ADDON_POLL_RESPONSE migrated to MessageRouter (Item 10)
       -- Handle role change broadcast
       elseif string.sub(message, 1, 12) == "ROLE_CHANGE;" then
@@ -2343,20 +2335,6 @@ addonFrame:SetScript("OnEvent", function()
           
           OGRH.Msg("Roles synced from RollFor by " .. sender)
         end
-      -- Handle raid lead set (LEGACY - for backward compatibility with old clients)
-      elseif string.sub(message, 1, 14) == "RAID_LEAD_SET;" then
-        local leadName = string.sub(message, 15)
-        if OGRH.SetRaidAdmin then
-          -- Pass true to suppress re-broadcast (we're receiving from network)
-          OGRH.SetRaidAdmin(leadName, true)
-        end
-      -- Handle raid lead query (someone asking who the current lead is)
-      elseif message == "RAID_LEAD_QUERY" then
-        -- Respond with current lead if we know it
-        local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
-        if currentAdmin then
-          SendAddonMessage(OGRH.ADDON_PREFIX, "RAID_LEAD_SET;" .. currentAdmin, "RAID")
-        end
       -- Handle encounter structure sync request (for single encounter)
       elseif string.sub(message, 1, 33) == "REQUEST_ENCOUNTER_STRUCTURE_SYNC;" then
         -- Parse: raid;encounter;requester
@@ -2379,13 +2357,13 @@ addonFrame:SetScript("OnEvent", function()
           local encounterName = parts[2]
           local requester = parts[3]
           
-          -- Only respond if we're the raid lead
-          local isRaidLead = false
-          if OGRH.IsRaidLead and OGRH.IsRaidLead() then
-            isRaidLead = true
+          -- Only respond if we're the raid admin
+          local isRaidAdmin = false
+          if OGRH.IsRaidAdmin then
+            isRaidAdmin = OGRH.IsRaidAdmin(UnitName("player"))
           end
           
-          if isRaidLead then
+          if isRaidAdmin then
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Structure sync requested by " .. requester .. " for " .. encounterName)
             if OGRH.BroadcastEncounterStructureSync then
               OGRH.BroadcastEncounterStructureSync(raidName, encounterName, requester)
@@ -2394,8 +2372,8 @@ addonFrame:SetScript("OnEvent", function()
         end
       -- Handle sync request from non-lead
       elseif message == "SYNC_REQUEST" then
-        -- Only respond if we're the raid lead
-        if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+        -- Only respond if we're the raid admin
+        if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
           -- Send current encounter sync
           if OGRH.GetCurrentEncounter then
             local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
@@ -3431,7 +3409,13 @@ function OGRH.ReportReadyCheckResults()
   OGRH.HideReadyCheckTimer()
   
   -- Broadcast to other addon users to hide their timers
-  SendAddonMessage(OGRH.ADDON_PREFIX, "READYCHECK_COMPLETE", "RAID")
+  if OGRH.MessageRouter and OGRH.MessageTypes then
+    OGRH.MessageRouter.Broadcast(
+      OGRH.MessageTypes.ADMIN.READY_COMPLETE,
+      "",
+      {priority = "HIGH"}
+    )
+  end
   
   -- Build lookup table of raid members with class and online status
   local raidInfo = {}

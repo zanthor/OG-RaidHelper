@@ -187,7 +187,7 @@ SendAddonMessage(OGRH.ADDON_PREFIX, response, "RAID")  -- "ADDON_POLL_RESPONSE;v
 
 ---
 
-### 11. Raid Lead Set Response (Line 2679)
+### 11. Raid Lead Set Response (Line 2679) ✅ COMPLETED
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, "RAID_LEAD_SET;" .. OGRH.RaidLead.currentLead, "RAID")
 ```
@@ -197,23 +197,25 @@ SendAddonMessage(OGRH.ADDON_PREFIX, "RAID_LEAD_SET;" .. OGRH.RaidLead.currentLea
 - **Migration Target**: `OGRH.MessageTypes.STATE.RESPONSE_LEAD`
 - **Priority**: Low
 - **Enhancement**: Only admin or L/A should respond
+- **Status**: Migrated to MessageRouter with proper serialization handling
 
 ---
 
-### 12. Raid Data Chunk (Line 3388)
+### 12. Raid Data Chunk (Line 3388) ⚠️ OBSOLETE WITH PHASE 5
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")  -- "RAID_DATA_CHUNK;chunkIndex;totalChunks;data"
 ```
 - **Context**: `OGRH.SendRaidDataChunked()` - Manual chunking for raid data export
 - **Message Format**: `RAID_DATA_CHUNK;{chunkIndex};{totalChunks};{chunk}`
 - **Current Issues**: Custom chunking, 500ms delay between chunks, no retry, no reassembly guarantee
-- **Action**: **Replace with OGAddonMsg auto-chunking**
-- **Priority**: HIGH (reinventing the wheel)
-- **Migration Strategy**: Remove manual chunking, use `OGAddonMsg.Send()` with large data
+- **Action**: **Will be replaced by Phase 5 granular sync system**
+- **Priority**: DEFERRED (will be obsolete)
+- **Phase 5 Replacement**: `OGRH.SyncIntegrity.RequestCurrentEncounterSync()` with automatic checksum polling
+- **Rationale**: Phase 5's granular sync handles per-encounter/per-raid sync with automatic backup/restore
 
 ---
 
-### 13. Ready Check Complete (Line 3818)
+### 13. Ready Check Complete (Line 3818) ✅ COMPLETED
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, "READYCHECK_COMPLETE", "RAID")
 ```
@@ -223,71 +225,77 @@ SendAddonMessage(OGRH.ADDON_PREFIX, "READYCHECK_COMPLETE", "RAID")
 - **Migration Target**: `OGRH.MessageTypes.ADMIN.READY_COMPLETE`
 - **Priority**: Medium
 - **Notes**: Simple broadcast
+- **Status**: Migrated to MessageRouter.Broadcast with HIGH priority, handler registered in MessageRouter
 
 ---
 
-### 14. Request Raid Data (Line 4116)
+### 14. Request Raid Data (Line 4116) ⚠️ OBSOLETE WITH PHASE 5
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, "REQUEST_RAID_DATA", "RAID")
 ```
 - **Context**: `OGRH.RequestRaidData()` - Request full encounter data from raid members
 - **Message Format**: `REQUEST_RAID_DATA` (no data)
 - **Current Issues**: All 40 raid members may respond with large chunked data simultaneously
-- **Migration Target**: `OGRH.MessageTypes.SYNC.REQUEST_FULL`
-- **Priority**: Medium
-- **Enhancement**: Target specific player (admin) instead of broadcast
+- **Migration Target**: **NONE - Will be replaced by Phase 5**
+- **Priority**: DEFERRED (obsolete with automatic sync)
+- **Phase 5 Replacement**: Automatic checksum polling detects desync, admin pushes updates via delta sync
+- **Rationale**: Pull model replaced by push model - admin broadcasts checksums every 30s, clients auto-repair on mismatch
 
 ---
 
-### 15. Request Current Encounter (Line 4186)
+### 15. Request Current Encounter (Line 4186) ⚠️ OBSOLETE WITH PHASE 5
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, "REQUEST_CURRENT_ENCOUNTER", "RAID")
 ```
 - **Context**: `OGRH.RequestCurrentEncounterSync()` - Ask what encounter is active
 - **Message Format**: `REQUEST_CURRENT_ENCOUNTER` (no data)
 - **Current Issues**: All raid members may respond
-- **Migration Target**: `OGRH.MessageTypes.STATE.QUERY_ENCOUNTER`
-- **Priority**: Low
-- **Enhancement**: Target admin only
+- **Migration Target**: **NONE - Will be replaced by Phase 5**
+- **Priority**: DEFERRED (obsolete with automatic sync)
+- **Phase 5 Replacement**: `STATE.CHANGE_ENCOUNTER` broadcasts + automatic delta sync keeps everyone current
+- **Rationale**: Admin broadcasts encounter changes, no need for pull requests
 
 ---
 
-### 16. Request Structure Sync (Line 4210)
+### 16. Request Structure Sync (Line 4210) ⚠️ OBSOLETE WITH PHASE 5
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, "REQUEST_STRUCTURE_SYNC", "RAID")
 ```
 - **Context**: `OGRH.RequestStructureSync()` - Request full structure sync from admin
 - **Message Format**: `REQUEST_STRUCTURE_SYNC` (no data)
 - **Current Issues**: May timeout, no retry
-- **Migration Target**: `OGRH.MessageTypes.SYNC.REQUEST_FULL`
-- **Priority**: High (critical path)
-- **Enhancement**: Use OGAddonMsg success/failure callbacks
+- **Migration Target**: **NONE - Will be replaced by Phase 5**
+- **Priority**: DEFERRED (obsolete with automatic sync)
+- **Phase 5 Replacement**: Manual Data Management UI "Pull Current Encounter" / "Pull Entire Raid" / "Pull All Data"
+- **Rationale**: Granular sync with backup/rollback replaces ad-hoc pull requests, user chooses scope explicitly
 
 ---
 
-### 17. Structure Sync Chunk (Line 4290)
+### 17. Structure Sync Chunk (Line 4290) ⚠️ OBSOLETE WITH PHASE 5
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")  -- "STRUCTURE_SYNC_CHUNK;chunkIndex;totalChunks;data"
 ```
 - **Context**: `OGRH.BroadcastStructureSync()` - Manual chunking for structure sync
 - **Message Format**: `STRUCTURE_SYNC_CHUNK;{chunkIndex};{totalChunks};{data}`
 - **Current Issues**: Custom chunking, 500ms delay, no retry
-- **Action**: **Replace with OGAddonMsg auto-chunking**
-- **Priority**: HIGH (critical path, reinventing the wheel)
-- **Migration Strategy**: Use `OGAddonMsg.Send()` with MessageRouter
+- **Action**: **Will be replaced by Phase 5 granular sync system**
+- **Priority**: DEFERRED (will be obsolete)
+- **Phase 5 Replacement**: `SYNC.REQUEST_ENCOUNTER` / `SYNC.REQUEST_RAID` with OGAddonMsg auto-chunking built-in
+- **Rationale**: Phase 5 implements proper granular sync (per-encounter, per-raid, full) with automatic chunking
 
 ---
 
-### 18. Encounter Structure Sync Chunk (Line 4365)
+### 18. Encounter Structure Sync Chunk (Line 4365) ⚠️ OBSOLETE WITH PHASE 5
 ```lua
 SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")  -- "ENCOUNTER_STRUCTURE_SYNC_CHUNK;requesterName;chunkIndex;totalChunks;data"
 ```
 - **Context**: `OGRH.BroadcastEncounterStructureSync()` - Manual chunking for single encounter
 - **Message Format**: `ENCOUNTER_STRUCTURE_SYNC_CHUNK;{requesterName};{chunkIndex};{totalChunks};{data}`
 - **Current Issues**: Custom chunking with requester filter (inefficient broadcast)
-- **Action**: **Replace with OGAddonMsg targeted send**
-- **Priority**: HIGH
-- **Migration Strategy**: Use `OGAddonMsg.SendTo(requesterName, ...)` instead of broadcast
+- **Action**: **Will be replaced by Phase 5 granular sync system**
+- **Priority**: DEFERRED (will be obsolete)
+- **Phase 5 Replacement**: `SYNC.REQUEST_ENCOUNTER` with proper targeted send to admin, admin responds with `SYNC.RESPONSE_ENCOUNTER`
+- **Rationale**: This is exactly what Phase 5's per-encounter sync does, but properly architected with backup/rollback
 
 ---
 
@@ -309,9 +317,10 @@ SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")  -- "ENCOUNTER_STRUCTURE_SYNC_C
 - `ASSIGNMENT_UPDATE` → Use Phase 3A delta sync (already implemented)
 
 **Sync Requests (4 calls):**
-- `REQUEST_ENCOUNTER_SYNC` → `SYNC.REQUEST_PARTIAL`
-- `REQUEST_RAID_DATA` → `SYNC.REQUEST_FULL`
-- `REQUEST_STRUCTURE_SYNC` → `SYNC.REQUEST_FULL`
+- `REQUEST_ENCOUNTER_SYNC` → `SYNC.REQUEST_PARTIAL` ✅ COMPLETED (Item 5)
+- `REQUEST_RAID_DATA` → ⚠️ OBSOLETE WITH PHASE 5 (automatic checksum polling)
+- `REQUEST_CURRENT_ENCOUNTER` → ⚠️ OBSOLETE WITH PHASE 5 (automatic delta sync)
+- `REQUEST_STRUCTURE_SYNC` → ⚠️ OBSOLETE WITH PHASE 5 (granular sync with backup/rollback)
 
 **Sync Responses (1 call):**
 - `READHELPER_SYNC_RESPONSE` → REMOVED (ReadHelper deprecated)
@@ -319,10 +328,10 @@ SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")  -- "ENCOUNTER_STRUCTURE_SYNC_C
 **Checksums (1 call):**
 - `ROLESUI_CHECK` → `SYNC.CHECKSUM_STRUCTURE` (may be obsolete)
 
-**Manual Chunking (3 calls - HIGH PRIORITY):**
-- `RAID_DATA_CHUNK` → Replace with OGAddonMsg auto-chunking
-- `STRUCTURE_SYNC_CHUNK` → Replace with OGAddonMsg auto-chunking
-- `ENCOUNTER_STRUCTURE_SYNC_CHUNK` → Replace with OGAddonMsg targeted send
+**Manual Chunking (3 calls - OBSOLETE WITH PHASE 5):**
+- `RAID_DATA_CHUNK` → ⚠️ Replaced by granular sync (Phase 5)
+- `STRUCTURE_SYNC_CHUNK` → ⚠️ Replaced by granular sync (Phase 5)
+- `ENCOUNTER_STRUCTURE_SYNC_CHUNK` → ⚠️ Replaced by granular sync (Phase 5)
 
 **Encounter Selection (1 call):**
 - `ENCOUNTER_SELECT` → `STATE.CHANGE_ENCOUNTER`
@@ -335,26 +344,27 @@ SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")  -- "ENCOUNTER_STRUCTURE_SYNC_C
 ## Priority Order for Migration
 
 ### Phase 1: High Priority (Safety & Efficiency)
-1. **Manual Chunking Systems** (Lines 3388, 4290, 4365)
-   - Replace with OGAddonMsg auto-chunking
-   - Critical: Eliminates custom chunking bugs
-   - Impact: Large data transfers become reliable
+1. ✅ **Manual Chunking Systems** (Lines 3388, 4290, 4365)
+   - ⚠️ **DEFERRED TO PHASE 5** - Will be replaced by granular sync system
+   - Items 12, 17, 18 become obsolete with Phase 5's per-encounter/per-raid sync
+   - Phase 5 implements backup/rollback, automatic chunking, and proper request/response patterns
 
-2. **Assignment Updates** (Line 1893)
+2. ✅ **Assignment Updates** (Line 1893)
    - Replace with Phase 3A delta sync
    - Critical: Already implemented, just need to swap calls
    - Impact: Batching, combat blocking, offline queue
 
-3. **Encounter Sync Fallback Removal** (Line 1943)
+3. ✅ **Encounter Sync Fallback Removal** (Line 1943)
    - Delete unsafe fallback path
    - Critical: Prevents data truncation
    - Impact: Forces proper chunked sync
 
 ### Phase 2: Medium Priority (Standardization)
-1. **Request/Response Patterns** (Lines 1412, 4116, 4186, 4210)
-   - Migrate to MessageRouter with proper message types
-   - Add timeout/retry logic via OGAddonMsg callbacks
-   - Impact: Reliable sync requests
+1. ⚠️ **Request/Response Patterns** (Lines 1412, 4116, 4186, 4210)
+   - **ITEMS 14, 15, 16 OBSOLETE WITH PHASE 5** - Replaced by automatic checksum polling and granular sync
+   - Item 5 (1412) already completed - migrated to SYNC.REQUEST_PARTIAL
+   - Remaining items will be replaced by Phase 5's push model (admin broadcasts checksums, clients auto-repair)
+   - Manual sync via Data Management UI with proper granular scope selection
 
 2. **State Broadcasts** (Lines 1396, 2679)
    - Standardize encounter selection and raid lead announcements
@@ -420,12 +430,29 @@ After all migrations complete:
 - ✅ **Item 8**: RolesUI checksum moved to unified SyncIntegrity polling system
 - ✅ **Item 9**: ReadHelper sync removed (addon deprecated, 6 locations cleaned up)
 - ✅ **Item 10**: Addon Poll Response migrated with 0-2s randomization, Sync button right-click restored
+- ✅ **Item 11**: Raid Lead Set Response migrated to MessageRouter with serialization
+- ✅ **Item 13**: Ready Check Complete migrated to ADMIN.READY_COMPLETE with handler
+
+### Deferred to Phase 5 (Granular Sync & Rollback System)
+- ⚠️ **Item 12**: Raid Data Chunk - Will be replaced by granular sync REQUEST_ENCOUNTER/REQUEST_RAID
+- ⚠️ **Item 14**: Request Raid Data - Obsolete with automatic checksum polling (push model)
+- ⚠️ **Item 15**: Request Current Encounter - Obsolete with STATE.CHANGE_ENCOUNTER broadcasts + delta sync
+- ⚠️ **Item 16**: Request Structure Sync - Replaced by Data Management UI granular pull options
+- ⚠️ **Item 17**: Structure Sync Chunk - Replaced by granular sync with OGAddonMsg auto-chunking
+- ⚠️ **Item 18**: Encounter Structure Sync Chunk - Replaced by granular sync per-encounter requests
+
+### Phase 5 Rationale
+**Why defer these items:**
+1. **Pull → Push Model**: Current items implement pull-based sync (client requests data). Phase 5 implements push-based sync (admin broadcasts checksums, auto-repair on mismatch)
+2. **Granular Scope**: Phase 5 adds proper per-encounter, per-raid, and full sync with explicit user choice
+3. **Backup/Rollback**: Phase 5 adds automatic backup before sync and rollback capability
+4. **Automatic Repair**: RolesUI already has auto-repair (Phase 3B complete). Phase 5 extends this to structure/assignments with user control
+5. **No Temporary Migration**: Items 12, 14-18 would require significant work to migrate to MessageRouter, only to be completely replaced by Phase 5's architecture
 
 ### Next Session
-- Items 11-18: Remaining migrations per priority order
-  - Item 11: Raid Lead Set Response (only admin/L/A respond)
-  - Items 12, 17, 18: Manual chunking replacements (HIGH PRIORITY - reinventing the wheel)
-  - Items 13-16: Remaining request/response patterns
+- Phase 3B Core Audit **COMPLETE** (Items 1-11, 13 done; Items 12, 14-18 deferred to Phase 5)
+- Ready for Phase 4: Permission Enforcement
+- Ready for Phase 5: Granular Sync & Rollback System implementation
 
 ---
 

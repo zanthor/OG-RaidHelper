@@ -13,20 +13,12 @@ OGRH.Permissions.OFFICER = "OFFICER"  -- Raid Lead + Assists
 OGRH.Permissions.MEMBER = "MEMBER"    -- Everyone else
 
 --[[
-    Hardcoded Admin Users
-    These users can always take admin and are treated as minimum Raid Assist
-]]
-OGRH.Permissions.HARDCODED_ADMINS = {
-    ["Tankmedady"] = true,
-    ["Gnuzmas"] = true
-}
-
---[[
     Permission State
     Stored in SavedVariables for persistence
 ]]
 OGRH.Permissions.State = {
     currentAdmin = nil,           -- Current raid admin name
+    sessionAdmin = nil,           -- Session-only admin (set via /ogrh sa)
     adminHistory = {},            -- History of admin changes
     permissionDenials = {}        -- Log of permission denials
 }
@@ -35,18 +27,18 @@ OGRH.Permissions.State = {
     Core Permission Functions
 ]]
 
--- Check if player is a hardcoded admin
-function OGRH.Permissions.IsHardcodedAdmin(playerName)
+-- Check if player is session admin (temporary, set via /ogrh sa command)
+function OGRH.Permissions.IsSessionAdmin(playerName)
     if not playerName then return false end
-    return OGRH.Permissions.HARDCODED_ADMINS[playerName] == true
+    return OGRH.Permissions.State.sessionAdmin == playerName
 end
 
 -- Check if player is raid admin (stored in structure data)
 function OGRH.IsRaidAdmin(playerName)
     if not playerName then return false end
     
-    -- Check hardcoded admins first
-    if OGRH.Permissions.IsHardcodedAdmin(playerName) then
+    -- Check session admin first (temporary admin via /ogrh sa)
+    if OGRH.Permissions.IsSessionAdmin(playerName) then
         return true
     end
     
@@ -62,8 +54,8 @@ end
 function OGRH.IsRaidOfficer(playerName)
     if not playerName then return false end
     
-    -- Hardcoded admins are always treated as minimum Raid Assist
-    if OGRH.Permissions.IsHardcodedAdmin(playerName) then
+    -- Session admins are always treated as minimum Raid Assist
+    if OGRH.Permissions.IsSessionAdmin(playerName) then
         return true
     end
     
@@ -90,8 +82,8 @@ end
 function OGRH.GetPermissionLevel(playerName)
     if not playerName then return OGRH.Permissions.MEMBER end
     
-    -- Hardcoded admin override
-    if OGRH.Permissions.IsHardcodedAdmin(playerName) then
+    -- Session admin override (temporary via /ogrh sa)
+    if OGRH.Permissions.IsSessionAdmin(playerName) then
         return OGRH.Permissions.ADMIN
     end
     
@@ -143,6 +135,9 @@ function OGRH.SetRaidAdmin(playerName, suppressBroadcast)
     
     OGRH.Permissions.State.currentAdmin = playerName
     
+    -- Clear session admin when normal admin changes
+    OGRH.Permissions.State.sessionAdmin = nil
+    
     -- Update legacy state for backward compatibility
     if OGRH.RaidLead then
         OGRH.RaidLead.currentLead = playerName
@@ -193,10 +188,6 @@ function OGRH.SetRaidAdmin(playerName, suppressBroadcast)
                 },
                 { priority = "HIGH" }
             )
-        else
-            -- Fallback to old method if MessageRouter not available
-            local message = "RAID_LEAD_SET;" .. playerName
-            SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
         end
     end
     
@@ -218,7 +209,7 @@ end
 function OGRH.RequestAdminRole()
     local playerName = UnitName("player")
     
-    if not OGRH.IsRaidOfficer(playerName) and not OGRH.Permissions.IsHardcodedAdmin(playerName) then
+    if not OGRH.IsRaidOfficer(playerName) and not OGRH.Permissions.IsSessionAdmin(playerName) then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH]|r Only Raid Lead or Assist can request admin role")
         return false
     end
@@ -265,6 +256,32 @@ function OGRH.PollForRaidAdmin()
     })
 end
 
+-- Set session admin (temporary, for current session only)
+function OGRH.SetSessionAdmin(playerName)
+    if not playerName then
+        playerName = UnitName("player")
+    end
+    
+    OGRH.Permissions.State.sessionAdmin = playerName
+    
+    -- Start integrity checks if we're becoming admin
+    if playerName == UnitName("player") then
+        if OGRH.StartIntegrityChecks then
+            OGRH.StartIntegrityChecks()
+        end
+    end
+    
+    -- Update UI to reflect session admin
+    if OGRH.UpdateRaidLeadUI then
+        OGRH.UpdateRaidLeadUI()
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[OGRH]|r %s granted session admin (temporary)", playerName))
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[OGRH]|r Session admin will be cleared when another admin is selected")
+    
+    return true
+end
+
 -- Assign admin role to another player (current admin or L/A can assign to another L/A)
 function OGRH.AssignAdminRole(targetPlayer)
     local playerName = UnitName("player")
@@ -274,7 +291,7 @@ function OGRH.AssignAdminRole(targetPlayer)
         return false
     end
     
-    if not OGRH.IsRaidOfficer(targetPlayer) and not OGRH.Permissions.IsHardcodedAdmin(targetPlayer) then
+    if not OGRH.IsRaidOfficer(targetPlayer) and not OGRH.Permissions.IsSessionAdmin(targetPlayer) then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH]|r Can only assign admin to Raid Lead or Assist")
         return false
     end

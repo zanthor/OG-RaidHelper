@@ -379,6 +379,11 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         end
     end)
     
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.READY_COMPLETE, function(sender, data, channel)
+        -- Hide timer when raid leader reports results
+        OGRH.HideReadyCheckTimer()
+    end)
+    
     -- STATE messages
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.QUERY_LEAD, function(sender, data, channel)
         -- Respond with current raid lead
@@ -624,6 +629,30 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             if adminName then
                 -- Pass true to suppress re-broadcast (we're receiving from network)
                 OGRH.SetRaidAdmin(adminName, true)
+            end
+        end
+    end)
+    
+    -- Auto-Promote Request Handler
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.PROMOTE_REQUEST, function(sender, data, channel)
+        -- Only process if we are the raid leader
+        if not IsRaidLeader or IsRaidLeader() ~= 1 then
+            return
+        end
+        
+        local playerToPromote = data.playerName
+        if not playerToPromote or playerToPromote == "" then
+            return
+        end
+        
+        -- Find the player in the raid and promote them
+        local numRaid = GetNumRaidMembers()
+        for i = 1, numRaid do
+            local name, rank = GetRaidRosterInfo(i)
+            if name == playerToPromote and rank == 0 then
+                PromoteToAssistant(playerToPromote)
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00OGRH:|r Auto-promoted %s to assistant (requested by %s).", playerToPromote, sender))
+                break
             end
         end
     end)

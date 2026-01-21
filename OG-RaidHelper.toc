@@ -28,6 +28,7 @@ Libs\OGAddonMsg\Commands.lua
 OGRH_MessageTypes.lua
 OGRH_Permissions.lua
 OGRH_Versioning.lua
+OGRH_Utilities.lua
 OGRH_MessageRouter.lua
 
 ## Phase 2: Core Sync Replacement (OGAddonMsg)
@@ -43,7 +44,7 @@ OGRH_SyncUI.lua
 OGRH_Core.lua
 OGRH_Defaults.lua
 OGRH_ConTrack_Defaults.lua
-OGRH_RaidLead.lua
+OGRH_AdminSelection.lua
 OGRH_Announce.lua
 ## OGRH_Sync.lua -- DISABLED: Replaced by OGRH_Sync_v2.lua (Phase 2)
 OGRH_MainUI.lua

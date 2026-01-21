@@ -740,10 +740,10 @@ function OGRH.ShowEncounterWindow(encounterName)
       GameTooltip:SetOwner(this, "ANCHOR_TOP")
       GameTooltip:SetText("Encounter Sync", 1, 1, 1)
       
-      if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
         GameTooltip:AddLine("Broadcast player assignments for the selected encounter to all raid members.", 0.8, 0.8, 0.8, 1)
       else
-        GameTooltip:AddLine("Only the raid lead can broadcast player assignments.", 0.8, 0.8, 0.8, 1)
+        GameTooltip:AddLine("Only the raid admin can broadcast player assignments.", 0.8, 0.8, 0.8, 1)
       end
       
       GameTooltip:Show()
@@ -761,7 +761,7 @@ function OGRH.ShowEncounterWindow(encounterName)
         return
       end
       
-      if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
         -- Broadcast encounter assignments
         if frame.ShowStatus then
           frame.ShowStatus("Broadcasting player assignments for " .. selectedEncounter .. "...", 10)
@@ -828,12 +828,12 @@ function OGRH.ShowEncounterWindow(encounterName)
       GameTooltip:SetOwner(this, "ANCHOR_TOP")
       GameTooltip:SetText("Structure Sync", 1, 1, 1)
       
-      if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
         GameTooltip:AddLine("Broadcast the structure (roles, marks, numbers, announcements) for the selected encounter to all raid members.", 0.8, 0.8, 0.8, 1)
         GameTooltip:AddLine(" ", 1, 1, 1)
         GameTooltip:AddLine("This does NOT include player assignments.", 0.6, 0.6, 0.6, 1)
       else
-        GameTooltip:AddLine("Only the raid lead can broadcast structure sync.", 0.8, 0.8, 0.8, 1)
+        GameTooltip:AddLine("Only the raid admin can broadcast structure sync.", 0.8, 0.8, 0.8, 1)
       end
       
       GameTooltip:Show()
@@ -851,7 +851,7 @@ function OGRH.ShowEncounterWindow(encounterName)
         return
       end
       
-      if OGRH.IsRaidLead and OGRH.IsRaidLead() then
+      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
         -- Broadcast structure for selected encounter only
         if OGRH.BroadcastEncounterStructureSync then
           OGRH.BroadcastEncounterStructureSync(selectedRaid, selectedEncounter)

@@ -98,9 +98,15 @@ local function CheckAndPromotePlayers()
               promotedThisSession[name] = true
               OGRH.Msg("Auto-promoted " .. name .. " to assistant.")
             elseif isAssistant then
-              -- Assistant sends request to leader
-              SendAddonMessage(OGRH.ADDON_PREFIX, "AUTOPROMOTE_REQUEST:" .. name, "RAID")
-              promotedThisSession[name] = true  -- Mark as promoted to avoid spam
+              -- Assistant sends request to leader via MessageRouter
+              if OGRH.MessageRouter and OGRH.MessageTypes then
+                OGRH.MessageRouter.Broadcast(
+                  OGRH.MessageTypes.ADMIN.PROMOTE_REQUEST,
+                  { playerName = name },
+                  { priority = "HIGH" }
+                )
+                promotedThisSession[name] = true  -- Mark as promoted to avoid spam
+              end
             end
             break
           end

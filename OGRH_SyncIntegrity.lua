@@ -183,13 +183,13 @@ function OGRH.SyncIntegrity.OnRolesUISyncRequest(requester)
             OGRH.MessageRouter.SendTo(
                 requester,
                 OGRH.MessageTypes.ROLESUI.SYNC_PUSH,
-                serializedData,
+                syncData,
                 {priority = "HIGH"}
             )
         else
             OGRH.MessageRouter.Broadcast(
                 OGRH.MessageTypes.ROLESUI.SYNC_PUSH,
-                serializedData,
+                syncData,
                 {priority = "HIGH"}
             )
         end

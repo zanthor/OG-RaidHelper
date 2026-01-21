@@ -62,81 +62,67 @@ end)
 -- ReadyCheck button
 local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(33); readyCheck:SetHeight(20); readyCheck:SetText("Rdy"); readyCheck:SetPoint("LEFT", rhBtn, "RIGHT", 2, 0); OGRH.StyleButton(readyCheck)
 
--- Sync button (S) - Send encounter configuration to raid
-local syncBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); syncBtn:SetWidth(35); syncBtn:SetHeight(20); syncBtn:SetText("Sync"); syncBtn:SetPoint("LEFT", readyCheck, "RIGHT", 2, 0); OGRH.StyleButton(syncBtn)
+-- Admin button - Manage raid admin and poll
+local adminBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); adminBtn:SetWidth(45); adminBtn:SetHeight(20); adminBtn:SetText("Admin"); adminBtn:SetPoint("LEFT", readyCheck, "RIGHT", 2, 0); OGRH.StyleButton(adminBtn)
 
 -- Lock button
 local btnLock = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); btnLock:SetWidth(20); btnLock:SetHeight(20); btnLock:SetPoint("RIGHT", H, "RIGHT", -4, 0); OGRH.StyleButton(btnLock)
 
--- Roles button (fills remaining space between Sync and Lock)
+-- Roles button (fills remaining space between Admin and Lock)
 local btnRoles = CreateFrame("Button", nil, H, "UIPanelButtonTemplate")
 btnRoles:SetHeight(20)
-btnRoles:SetPoint("LEFT", syncBtn, "RIGHT", 2, 0)
+btnRoles:SetPoint("LEFT", adminBtn, "RIGHT", 2, 0)
 btnRoles:SetPoint("RIGHT", btnLock, "LEFT", -2, 0)
 btnRoles:SetText("Roles")
 OGRH.StyleButton(btnRoles)
 OGRH.MainUI_RolesBtn = btnRoles  -- Store reference for menu access
-syncBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+adminBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
--- Function to update sync button color based on lock state
-local function UpdateSyncButtonColor()
+-- Function to update admin button color based on admin status
+local function UpdateAdminButtonColor()
   OGRH.EnsureSV()
-  if OGRH_SV.syncLocked then
-    syncBtn:SetText("|cff00ff00Sync|r")  -- Bright green when locked
+  local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin() or nil
+  local isCurrentAdmin = (currentAdmin == UnitName("player"))
+  
+  if isCurrentAdmin then
+    adminBtn:SetText("|cff00ff00Admin|r")  -- Bright green when you are admin
   else
-    syncBtn:SetText("|cffffff00Sync|r")  -- Yellow when unlocked
+    adminBtn:SetText("|cffffff00Admin|r")  -- Yellow when not admin
   end
 end
 
 -- Store globally for access from other files
-OGRH.UpdateSyncButtonColor = UpdateSyncButtonColor
+OGRH.UpdateAdminButtonColor = UpdateAdminButtonColor
+-- Backward compatibility alias
+OGRH.UpdateSyncButtonColor = UpdateAdminButtonColor
 
--- Add tooltip to show current raid lead
-syncBtn:SetScript("OnEnter", function()
-  local leadName = "None"
-  if OGRH.RaidLead and OGRH.RaidLead.currentLead then
-    leadName = OGRH.RaidLead.currentLead
+-- Add tooltip to show current raid admin
+adminBtn:SetScript("OnEnter", function()
+  local adminName = "None"
+  if OGRH.GetRaidAdmin then
+    adminName = OGRH.GetRaidAdmin() or "None"
   end
   
-  local isRaidLead = OGRH.IsRaidLead and OGRH.IsRaidLead()
+  local isRaidAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player"))
   
   GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-  GameTooltip:SetText("Encounter Sync", 1, 1, 1)
-  GameTooltip:AddLine("Current Raid Lead: " .. leadName, 1, 0.82, 0)
+  GameTooltip:SetText("Raid Admin", 1, 1, 1)
+  GameTooltip:AddLine("Current Raid Admin: " .. adminName, 1, 0.82, 0)
   GameTooltip:AddLine(" ", 1, 1, 1)
-  
-  if isRaidLead then
-    GameTooltip:AddLine("Left-click: Broadcast current encounter", 0.7, 0.7, 0.7)
-    GameTooltip:AddLine("  (Syncs player assignments only)", 0.5, 0.5, 0.5)
-  else
-    GameTooltip:AddLine("Left-click: Request current encounter", 0.7, 0.7, 0.7)
-    GameTooltip:AddLine("  (Request assignments from raid lead)", 0.5, 0.5, 0.5)
-  end
-  
-  GameTooltip:AddLine("Right-click: Select raid lead", 0.7, 0.7, 0.7)
-  GameTooltip:AddLine("Shift+Left-click: Take over as raid lead", 0.7, 0.7, 0.7)
-  GameTooltip:AddLine(" ", 1, 1, 1)
-  GameTooltip:AddLine("Structure sync moved to Encounter Planning", 0.5, 0.5, 0.5)
+  GameTooltip:AddLine("Left-click: Open admin poll interface", 0.7, 0.7, 0.7)
+  GameTooltip:AddLine("Right-click: Take over as raid admin", 0.7, 0.7, 0.7)
   GameTooltip:Show()
 end)
 
-syncBtn:SetScript("OnLeave", function()
+adminBtn:SetScript("OnLeave", function()
   GameTooltip:Hide()
 end)
 
-syncBtn:SetScript("OnClick", function()
+adminBtn:SetScript("OnClick", function()
   local btn = arg1 or "LeftButton"
   
   if btn == "RightButton" then
-    -- Right-click: Poll for addon users and select raid lead
-    if OGRH.PollAddonUsers then
-      OGRH.PollAddonUsers()
-    end
-    return
-  end
-  
-  -- Shift+Left-click: Take over as raid admin
-  if IsShiftKeyDown() then
+    -- Right-click: Take over as raid admin
     if GetNumRaidMembers() == 0 then
       OGRH.Msg("You must be in a raid to take over as raid admin.")
       return
@@ -151,8 +137,10 @@ syncBtn:SetScript("OnClick", function()
     return
   end
   
-  -- Left-click: DISABLED
-  -- (Previous code: send/request sync)
+  -- Left-click: Open admin poll interface
+  if OGRH.PollAddonUsers then
+    OGRH.PollAddonUsers()
+  end
 end)
 
 -- ReadyCheck button click handlers
@@ -519,7 +507,9 @@ readyCheck:SetScript("OnClick", function()
 end)
 
 -- Expose sync button for external access
-OGRH.syncButton = syncBtn
+OGRH.adminButton = adminBtn
+-- Backward compatibility alias
+OGRH.syncButton = adminBtn
 
 local function restoreMain()
   ensureSV()
@@ -632,6 +622,12 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Permission system not loaded.")
     end
+  elseif sub == "sa" then
+    if OGRH.SetSessionAdmin then
+      OGRH.SetSessionAdmin()
+    else
+      OGRH.Msg("Permission system not loaded.")
+    end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
     OGRH.Msg("Commands:")
@@ -646,6 +642,7 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     OGRH.Msg("  changes - Show recent changes")
     OGRH.Msg("  handlers - Show message handlers")
     OGRH.Msg("  takeadmin - Request admin role")
+    OGRH.Msg("  sa - Set session admin (temporary)")
   else
     OGRH.Msg("Unknown command. Type /" .. OGRH.CMD .. " help for usage.")
   end

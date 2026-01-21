@@ -1,9 +1,12 @@
 --[[
-  OGRH_RaidLead.lua
-  Raid Lead management system for coordinated encounter planning
+  OGRH_AdminSelection.lua
+  Admin selection UI and polling system for OG-RaidHelper
+  
+  Manages the admin selection process, version polling, and permission wrappers.
+  Note: Core permission logic lives in OGRH_Permissions.lua
 ]]--
 
--- Raid Lead state
+-- Raid Lead state (legacy name kept for compatibility with SavedVariables)
 OGRH.RaidLead = {
   currentLead = nil,           -- DEPRECATED: Use OGRH.GetRaidAdmin() instead (kept for backward compatibility)
   addonUsers = {},             -- List of raid members running the addon {name, rank}
@@ -12,18 +15,6 @@ OGRH.RaidLead = {
   pollInProgress = false       -- Whether a poll is active
 }
 
--- Check if local player is the raid admin
-function OGRH.IsRaidAdmin()
-  local playerName = UnitName("player")
-  local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
-  return currentAdmin == playerName
-end
-
--- Backward compatibility wrapper
-function OGRH.IsRaidLead()
-  return OGRH.IsRaidAdmin()
-end
-
 -- Check if local player can edit (is raid lead, or not in raid)
 function OGRH.CanEdit()
   -- If not in a raid, allow editing
@@ -31,8 +22,8 @@ function OGRH.CanEdit()
     return true
   end
   
-  -- If in a raid, must be the designated raid lead
-  return OGRH.IsRaidLead()
+  -- If in a raid, must be the designated raid admin
+  return OGRH.IsRaidAdmin(UnitName("player"))
 end
 
 -- Check if local player can navigate encounters (change Main UI selection)
@@ -44,7 +35,7 @@ function OGRH.CanManageRoles()
   end
   
   -- Check if player is the designated raid admin
-  if OGRH.IsRaidLead() then
+  if OGRH.IsRaidAdmin(UnitName("player")) then
     return true
   end
   
@@ -70,7 +61,7 @@ function OGRH.CanNavigateEncounter()
   end
   
   -- Check if player is the designated raid admin
-  if OGRH.IsRaidLead() then
+  if OGRH.IsRaidAdmin(UnitName("player")) then
     return true
   end
   
@@ -96,16 +87,6 @@ function OGRH.CanNavigateEncounter()
   return false
 end
 
--- Set the raid lead
--- DEPRECATED: Use OGRH.SetRaidAdmin() instead
--- Kept for backward compatibility only
-function OGRH.SetRaidLead(playerName)
-  if OGRH.SetRaidAdmin then
-    OGRH.SetRaidAdmin(playerName)
-  else
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[OGRH]|r ERROR: SetRaidAdmin not available")
-  end
-end
 
 -- Poll for addon users in raid
 function OGRH.PollAddonUsers()
@@ -136,8 +117,8 @@ function OGRH.PollAddonUsers()
   OGRH.RaidLead.pollInProgress = true
   OGRH.RaidLead.lastPollTime = GetTime()
   
-  -- Send poll request via MessageRouter
-  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_VERSION, {})
+  -- Send poll request via MessageRouter (empty string, not empty table)
+  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_VERSION, "")
   
   -- Add self to responses
   local selfName = UnitName("player")
@@ -580,7 +561,7 @@ function OGRH.ShowRaidLeadSelectionUI()
         
         -- Click handler (only for Button types with checksum - RaidHelper users)
         btn:SetScript("OnClick", function()
-          OGRH.SetRaidLead(response.name)
+          OGRH.SetRaidAdmin(response.name)
           frame:Hide()
         end)
       end
@@ -682,21 +663,27 @@ end
 -- Update UI elements based on raid lead status
 function OGRH.UpdateRaidLeadUI()
   local canEdit = OGRH.CanEdit()
-  local isRaidLead = OGRH.IsRaidLead()
   
-  -- Update sync button text
-  if OGRH.syncButton then
-    if isRaidLead then
-      OGRH.syncButton:SetText("|cff00ff00Sync|r")
+  -- Check if player is the ACTUAL current admin (not just a session admin)
+  local currentAdmin = OGRH.GetRaidAdmin()
+  local isCurrentAdmin = (currentAdmin == UnitName("player"))
+  
+  -- Update admin button text (green only for actual current admin)
+  if OGRH.adminButton then
+    if isCurrentAdmin then
+      OGRH.adminButton:SetText("|cff00ff00Admin|r")
     else
-      OGRH.syncButton:SetText("|cffffff00Sync|r")
+      OGRH.adminButton:SetText("|cffffff00Admin|r")
     end
   end
   
   -- Enable/disable Structure Sync and Encounter Sync buttons
+  -- These check full permissions (hardcoded admins can sync even if not current admin)
+  local canSync = OGRH.IsRaidAdmin(UnitName("player"))
+  
   if OGRH_EncounterFrame then
     if OGRH_EncounterFrame.structureSyncBtn then
-      if isRaidLead then
+      if canSync then
         OGRH_EncounterFrame.structureSyncBtn:Enable()
         OGRH_EncounterFrame.structureSyncBtn:SetAlpha(1.0)
       else
@@ -706,7 +693,7 @@ function OGRH.UpdateRaidLeadUI()
     end
     
     if OGRH_EncounterFrame.encounterSyncBtn then
-      if isRaidLead then
+      if canSync then
         OGRH_EncounterFrame.encounterSyncBtn:Enable()
         OGRH_EncounterFrame.encounterSyncBtn:SetAlpha(1.0)
       else
@@ -725,10 +712,11 @@ function OGRH.UpdateRaidLeadUI()
   end
 end
 
--- Request sync from raid lead
-function OGRH.RequestSyncFromLead()
-  if not OGRH.RaidLead.currentLead then
-    OGRH.Msg("No raid lead is currently set.")
+-- Request full sync from admin (using Phase 2 sync system)
+function OGRH.RequestSyncFromAdmin()
+  local currentAdmin = OGRH.GetRaidAdmin()
+  if not currentAdmin then
+    OGRH.Msg("No raid admin set - cannot request sync")
     return
   end
   
@@ -737,38 +725,40 @@ function OGRH.RequestSyncFromLead()
     return
   end
   
-  -- Send request
-  SendAddonMessage(OGRH.ADDON_PREFIX, "SYNC_REQUEST", "RAID")
-  OGRH.Msg("Requesting encounter sync from raid lead...")
+  -- Use Phase 2 sync system for reliable sync request
+  if OGRH.Sync and OGRH.Sync.RequestFullSync then
+    OGRH.Sync.RequestFullSync(currentAdmin)
+    OGRH.Msg("Requesting encounter sync from raid admin...")
+  else
+    OGRH.Msg("|cffff0000[OGRH]|r Phase 2 sync system not available")
+  end
 end
 
--- Schedule a function to run after delay (seconds)
-function OGRH.ScheduleFunc(func, delay)
-  local frame = CreateFrame("Frame")
-  local elapsed = 0
-  frame:SetScript("OnUpdate", function()
-    elapsed = elapsed + arg1
-    if elapsed >= delay then
-      frame:SetScript("OnUpdate", nil)
-      func()
-    end
-  end)
+-- Legacy function for backward compatibility
+function OGRH.RequestSyncFromLead()
+  OGRH.RequestSyncFromAdmin()
 end
 
--- Query raid for current lead
-function OGRH.QueryRaidLead()
+-- Query raid for current admin
+function OGRH.QueryRaidAdmin()
   if GetNumRaidMembers() == 0 then
     return
   end
   
-  SendAddonMessage(OGRH.ADDON_PREFIX, "RAID_LEAD_QUERY", "RAID")
+  -- Use MessageRouter for proper admin query
+  if OGRH.MessageRouter and OGRH.MessageTypes then
+    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.QUERY, "", {
+      priority = "HIGH"
+    })
+  end
 end
 
--- Initialize raid lead from saved variables
+-- Initialize raid admin from saved variables
 function OGRH.InitRaidLead()
   OGRH.EnsureSV()
   if OGRH_SV.raidLead then
-    OGRH.RaidLead.currentLead = OGRH_SV.raidLead
+    -- Use SetRaidAdmin for proper initialization (suppress broadcast on reload)
+    OGRH.SetRaidAdmin(OGRH_SV.raidLead, true)
   end
   
   -- Set up event handler for raid roster changes
@@ -782,18 +772,20 @@ function OGRH.InitRaidLead()
       
       -- If we just left the raid (went from > 0 to 0)
       if frame.lastRaidSize > 0 and currentSize == 0 then
-        -- Clear raid lead
-        OGRH.RaidLead.currentLead = nil
+        -- Clear raid admin using Permissions state
+        if OGRH.Permissions and OGRH.Permissions.State then
+          OGRH.Permissions.State.currentAdmin = nil
+        end
         OGRH_SV.raidLead = nil
         if OGRH.UpdateRaidLeadUI then
           OGRH.UpdateRaidLeadUI()
         end
       -- If we just joined a raid (went from 0 to > 0)
       elseif frame.lastRaidSize == 0 and currentSize > 0 then
-        -- Query for current raid lead after a short delay
+        -- Query for current raid admin after a short delay
         OGRH.ScheduleFunc(function()
           if GetNumRaidMembers() > 0 then
-            OGRH.QueryRaidLead()
+            OGRH.QueryRaidAdmin()
           end
         end, 1)
       end
@@ -804,11 +796,11 @@ function OGRH.InitRaidLead()
     OGRH.RaidLeadEventFrame = frame
   end
   
-  -- If already in raid, query for current lead
+  -- If already in raid, query for current admin
   if GetNumRaidMembers() > 0 then
     OGRH.ScheduleFunc(function()
       if GetNumRaidMembers() > 0 then
-        OGRH.QueryRaidLead()
+        OGRH.QueryRaidAdmin()
       end
     end, 1)
   end

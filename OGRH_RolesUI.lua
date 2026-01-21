@@ -1,6 +1,6 @@
 -- OG-RaidHelper Roles UI
 -- Author: Will + ChatGPT
--- Version: 1.16.0
+-- Version: 1.17.0
 
 --[[
   CHANGELOG:
@@ -8,6 +8,8 @@
   - Removed "Sync RollFor" button - role sync now automatic when players join raid during Invite Mode
   - Added SetPlayerRole API for programmatic role assignment
   - Role sync now happens automatically via Invites module
+  - Role data now sourced from all invite systems: RollFor, Raid Helper (Invites), and Raid Helper (Groups)
+  - Unified role sync using OGRH.Invites.GetRosterPlayers() for all data sources
   
   v1.16.0:
   - Added Puppeteer integration: Tank and Healer roles automatically sync to Puppeteer's role system
@@ -520,7 +522,7 @@ local function CreateRolesFrame()
                         -- Mark player as known
                         knownPlayers[name] = true
                         
-                        -- Priority 1: Use manually saved role assignment (if exists and not forcing RollFor sync)
+                        -- Priority 1: Use manually saved role assignment (if exists and not forcing sync)
                         if not forceSyncRollFor and OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
                             local savedRole = OGRH_SV.roles[name]
                             if savedRole == "TANKS" then roleIndex = 1
@@ -528,33 +530,33 @@ local function CreateRolesFrame()
                             elseif savedRole == "MELEE" then roleIndex = 3
                             elseif savedRole == "RANGED" then roleIndex = 4
                             end
-                        -- Priority 2: Try to get role from RollFor soft-res data (only on first join or forced sync)
-                        elseif (isNewPlayer or forceSyncRollFor) and OGRH.Invites and OGRH.Invites.GetSoftResPlayers then
-                            local rollForRole = nil
-                            local softResPlayers = OGRH.Invites.GetSoftResPlayers()
-                            for _, playerData in ipairs(softResPlayers) do
+                        -- Priority 2: Try to get role from Invites roster data (only on first join during invite mode, or forced sync)
+                        elseif (isNewPlayer or forceSyncRollFor) and OGRH.Invites and OGRH.Invites.GetRosterPlayers and OGRH.Invites.IsInviteModeActive and (forceSyncRollFor or OGRH.Invites.IsInviteModeActive()) then
+                            local inviteRole = nil
+                            local rosterPlayers = OGRH.Invites.GetRosterPlayers()
+                            for _, playerData in ipairs(rosterPlayers) do
                                 if playerData.name == name then
-                                    rollForRole = OGRH.Invites.MapRollForRoleToOGRH(playerData.role)
+                                    inviteRole = playerData.role  -- Already in OGRH format (TANKS, HEALERS, MELEE, RANGED)
                                     break
                                 end
                             end
                             
-                            if rollForRole then
-                                -- Use RollFor role and save it
-                                if rollForRole == "TANKS" then roleIndex = 1
-                                elseif rollForRole == "HEALERS" then roleIndex = 2
-                                elseif rollForRole == "MELEE" then roleIndex = 3
-                                elseif rollForRole == "RANGED" then roleIndex = 4
+                            if inviteRole then
+                                -- Use invite role and save it
+                                if inviteRole == "TANKS" then roleIndex = 1
+                                elseif inviteRole == "HEALERS" then roleIndex = 2
+                                elseif inviteRole == "MELEE" then roleIndex = 3
+                                elseif inviteRole == "RANGED" then roleIndex = 4
                                 end
                                 
-                                -- Save the RollFor role so it persists
+                                -- Save the invite role so it persists
                                 if not OGRH_SV then OGRH_SV = {} end
                                 if not OGRH_SV.roles then OGRH_SV.roles = {} end
-                                OGRH_SV.roles[name] = rollForRole
+                                OGRH_SV.roles[name] = inviteRole
                             else
-                                -- No RollFor data for this player
+                                -- No invite data for this player
                                 if forceSyncRollFor then
-                                    -- Forced sync but player not in RollFor - do nothing, keep current position
+                                    -- Forced sync but player not in invite roster - do nothing, keep current position
                                     -- Check if they have a saved role assignment to preserve
                                     if OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
                                         local savedRole = OGRH_SV.roles[name]
@@ -564,7 +566,7 @@ local function CreateRolesFrame()
                                         elseif savedRole == "RANGED" then roleIndex = 4
                                         end
                                     else
-                                        -- No saved role and not in RollFor - fall back to class defaults
+                                        -- No saved role and not in invite roster - fall back to class defaults
                                         if class == "WARRIOR" then
                                             roleIndex = 1  -- Tanks
                                         elseif class == "PRIEST" or (class == "PALADIN") or (class == "DRUID") then
@@ -579,7 +581,7 @@ local function CreateRolesFrame()
                                         OGRH_SV.roles[name] = roleNames[roleIndex]
                                     end
                                 else
-                                    -- First join and not in RollFor - fall back to class defaults
+                                    -- First join and not in invite roster - fall back to class defaults
                                     if class == "WARRIOR" then
                                         roleIndex = 1  -- Tanks
                                     elseif class == "PRIEST" or (class == "PALADIN") or (class == "DRUID") then
