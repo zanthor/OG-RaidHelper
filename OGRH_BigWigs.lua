@@ -95,8 +95,23 @@ function OGRH.BigWigs.OnEncounterDetected(moduleName)
     end
     
     -- Broadcast encounter selection to raid (so everyone switches)
-    if OGRH.BroadcastEncounterSelection then
-      OGRH.BroadcastEncounterSelection(raidName, encounterName)
+    if GetNumRaidMembers() > 0 and OGRH.MessageRouter then
+      local encounterData = OGRH.Serialize({raidName = raidName, encounterName = encounterName})
+      OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+        priority = "NORMAL"
+      })
+      
+      -- Broadcast full sync if admin, request sync if not
+      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin() then
+        if OGRH.BroadcastFullEncounterSync then
+          OGRH.BroadcastFullEncounterSync()
+        end
+      else
+        local requestData = OGRH.Serialize({raidName = raidName, encounterName = encounterName})
+        OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+          priority = "NORMAL"
+        })
+      end
     end
     
     -- Notify user

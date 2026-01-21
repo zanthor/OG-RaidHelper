@@ -54,15 +54,34 @@ end
 ]]
 
 -- Send a message via OGAddonMsg with automatic permission checking
+-- CRITICAL: 'data' parameter MUST be a pre-serialized string!
+--           Use OGRH.Serialize(table) before calling this function.
+--           DO NOT pass raw Lua tables - OGAddonMsg expects strings only.
+-- @param messageType string - Message type from OGRH.MessageTypes
+-- @param data string - PRE-SERIALIZED data (use OGRH.Serialize for tables)
+-- @param options table - Optional {priority, target, channel, onSuccess, onFailure}
+-- @return messageId or nil
 function OGRH.MessageRouter.Send(messageType, data, options)
     if not messageType then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-MessageRouter]|r No message type specified")
         return nil
     end
     
-    -- Validate message type
-    if not OGRH.IsValidMessageType(messageType) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff8800[RH-MessageRouter]|r Sending unknown message type: %s", messageType))
+    -- VALIDATION: Ensure data is a string (common mistake: passing tables)
+    if type(data) ~= "string" then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-MessageRouter]|r ERROR: data must be a STRING, got %s. Use OGRH.Serialize() first!", type(data)))
+        return nil
+    end
+    
+    -- Validate message type (strip @target suffix if present for validation)
+    local baseMessageType = messageType
+    local atPos = string.find(messageType, "@")
+    if atPos then
+        baseMessageType = string.sub(messageType, 1, atPos - 1)
+    end
+    
+    if not OGRH.IsValidMessageType(baseMessageType) then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff8800[RH-MessageRouter]|r Sending unknown message type: %s", baseMessageType))
     end
     
     -- Check permissions based on message category
@@ -108,12 +127,17 @@ function OGRH.MessageRouter.Send(messageType, data, options)
 end
 
 -- Send a targeted message to a specific player
+-- NOTE: WoW 1.12 does not support WHISPER for addon messages in raids
+-- We broadcast to RAID with target prefix, receiver filters by target
 function OGRH.MessageRouter.SendTo(targetPlayer, messageType, data, options)
     options = options or {}
     options.target = targetPlayer
-    options.channel = "WHISPER"
+    options.channel = nil  -- Use auto-detect (will use RAID)
     
-    return OGRH.MessageRouter.Send(messageType, data, options)
+    -- Prepend target to message type for filtering on receive
+    local targetedMessageType = messageType .. "@" .. targetPlayer
+    
+    return OGRH.MessageRouter.Send(targetedMessageType, data, options)
 end
 
 -- Broadcast a message to all raid/party members
@@ -163,14 +187,33 @@ function OGRH.MessageRouter.OnMessageReceived(sender, messageType, data, channel
     
     -- Validate message type
     if not messageType then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[RH-MessageRouter]|r Received message with no type")
         return
     end
     
-    -- Check for legacy message format and translate
-    local translatedType = OGRH.TranslateLegacyMessage(messageType)
-    if translatedType then
-        messageType = translatedType
+    -- Check for targeted message (messageType@targetPlayer format)
+    local actualMessageType = messageType
+    local targetPlayer = nil
+    local atPos = string.find(messageType, "@")
+    if atPos then
+        actualMessageType = string.sub(messageType, 1, atPos - 1)
+        targetPlayer = string.sub(messageType, atPos + 1)
+        
+        -- Filter: only process if we're the target
+        if targetPlayer ~= UnitName("player") then
+            return
+        end
+    end
+    
+    -- Use the actual message type (without target suffix)
+    messageType = actualMessageType
+    
+    -- Deserialize data if it's a string (handles both serialized tables and raw strings)
+    local deserializedData = data
+    if type(data) == "string" and OGRH.Deserialize then
+        local success, result = pcall(OGRH.Deserialize, data)
+        if success and result then
+            deserializedData = result
+        end
     end
     
     -- Get handler for this message type
@@ -178,12 +221,11 @@ function OGRH.MessageRouter.OnMessageReceived(sender, messageType, data, channel
     
     if not handler then
         -- No handler registered - this is normal for some message types
-        -- OGRH.Debug(string.format("MessageRouter: No handler for %s", messageType))
         return
     end
     
-    -- Call the handler
-    local success, err = pcall(handler, sender, data, channel)
+    -- Call the handler with deserialized data
+    local success, err = pcall(handler, sender, deserializedData, channel)
     
     if not success then
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-MessageRouter]|r Handler error for %s: %s", messageType, tostring(err)))
@@ -297,6 +339,29 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         end
     end)
     
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.QUERY, function(sender, data, channel)
+        -- Respond to admin query with current admin info
+        if OGRH.GetRaidAdmin then
+            local currentAdmin = OGRH.GetRaidAdmin()
+            if currentAdmin then
+                local responseData = OGRH.Serialize({
+                    currentAdmin = currentAdmin,
+                    timestamp = GetTime(),
+                    version = OGRH.VERSION
+                })
+                OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.ADMIN.RESPONSE, responseData, {priority = "HIGH"})
+            end
+        end
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.RESPONSE, function(sender, data, channel)
+        -- Receive admin info from query response
+        if data and data.currentAdmin then
+            OGRH.SetRaidAdmin(data.currentAdmin)
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH]|r Raid admin is %s", data.currentAdmin))
+        end
+    end)
+    
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.POLL_VERSION, function(sender, data, channel)
         -- Respond to version poll
         OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.ADMIN.POLL_RESPONSE, {
@@ -308,16 +373,220 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         })
     end)
     
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.READY_REQUEST, function(sender, data, channel)
+        -- Only process if we are the raid leader
+        if IsRaidLeader and IsRaidLeader() == 1 then
+            -- Check if remote ready checks are allowed
+            OGRH.EnsureSV()
+            if OGRH_SV.allowRemoteReadyCheck then
+                -- Set flag to capture ready check responses
+                OGRH.readyCheckInProgress = true
+                OGRH.readyCheckResponses = {
+                    notReady = {},
+                    afk = {}
+                }
+                -- Show timer
+                OGRH.ShowReadyCheckTimer()
+                DoReadyCheck()
+            else
+                OGRH.Msg("Remote ready checks are disabled in settings.")
+            end
+        end
+    end)
+    
     -- STATE messages
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.QUERY_LEAD, function(sender, data, channel)
         -- Respond with current raid lead
         local currentLead = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin() or "Unknown"
         
-        OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.STATE.RESPONSE_LEAD, {
-            lead = currentLead
-        }, {
+        local responseData = OGRH.Serialize({lead = currentLead})
+        OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.STATE.RESPONSE_LEAD, responseData, {
             priority = "LOW"
         })
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, function(sender, data, channel)
+        -- Deserialize encounter selection data
+        local encounterData = OGRH.Deserialize(data)
+        if not encounterData then return end
+        
+        -- Update local UI to match encounter selection
+        if encounterData.raidName and encounterData.encounterName then
+            OGRH.EnsureSV()
+            OGRH_SV.ui.selectedRaid = encounterData.raidName
+            OGRH_SV.ui.selectedEncounter = encounterData.encounterName
+            
+            -- Update UI button if available
+            if OGRH.UpdateEncounterNavButton then
+                OGRH.UpdateEncounterNavButton()
+            end
+            
+            -- Update consume monitor if available
+            if OGRH.ShowConsumeMonitor then
+                OGRH.ShowConsumeMonitor()
+            end
+        end
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, function(sender, data, channel)
+        -- Only admin should respond to partial sync requests
+        if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin() then
+            return
+        end
+        
+        -- Deserialize request data
+        local requestData = OGRH.Deserialize(data)
+        if not requestData then return end
+        
+        -- If data contains raidName and encounterName, sync that specific encounter
+        if requestData.raidName and requestData.encounterName then
+            if OGRH.BroadcastFullEncounterSync then
+                OGRH.BroadcastFullEncounterSync()
+            end
+        end
+    end)
+    
+    -- ASSIGN delta messages (Phase 3A)
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ASSIGN.DELTA_BATCH, function(sender, data, channel)
+        -- MessageRouter auto-deserializes, so data is already a table
+        local deltaData = data
+        
+        if not deltaData or type(deltaData) ~= "table" or not deltaData.changes then
+            return
+        end
+        
+        -- Apply each change
+        for i = 1, table.getn(deltaData.changes) do
+            local change = deltaData.changes[i]
+            
+            if change.type == "SWAP" then
+                -- Handle atomic swap operation
+                if change.assignData1 and change.assignData2 then
+                    local data1 = change.assignData1
+                    local data2 = change.assignData2
+                    
+                    -- Validate both have required fields
+                    if data1.raid and data1.encounter and data1.roleIndex and data1.slotIndex and
+                       data2.raid and data2.encounter and data2.roleIndex and data2.slotIndex then
+                        
+                        -- Initialize nested tables
+                        if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
+                        if not OGRH_SV.encounterAssignments[data1.raid] then 
+                            OGRH_SV.encounterAssignments[data1.raid] = {} 
+                        end
+                        if not OGRH_SV.encounterAssignments[data1.raid][data1.encounter] then 
+                            OGRH_SV.encounterAssignments[data1.raid][data1.encounter] = {} 
+                        end
+                        if not OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data1.roleIndex] then 
+                            OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data1.roleIndex] = {} 
+                        end
+                        if not OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data2.roleIndex] then 
+                            OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data2.roleIndex] = {} 
+                        end
+                        
+                        -- Apply BOTH assignments atomically (no UI refresh between)
+                        OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data1.roleIndex][data1.slotIndex] = change.player1
+                        OGRH_SV.encounterAssignments[data2.raid][data2.encounter][data2.roleIndex][data2.slotIndex] = change.player2  -- nil for empty slot
+                    end
+                end
+                
+            elseif change.type == "ROLE" then
+                -- Apply role change (RolesUI bucket assignments)
+                if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                OGRH_SV.roles[change.player] = change.newValue
+                
+            elseif change.type == "ASSIGNMENT" then
+                -- Apply encounter assignment change
+                if change.assignmentType == "ENCOUNTER_ROLE" then
+                    -- Extract encounter assignment data from newValue table
+                    local assignData = change.newValue
+                    if type(assignData) == "table" and assignData.raid and assignData.encounter and 
+                       assignData.roleIndex and assignData.slotIndex then
+                        
+                        -- Initialize nested tables
+                        if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
+                        if not OGRH_SV.encounterAssignments[assignData.raid] then 
+                            OGRH_SV.encounterAssignments[assignData.raid] = {} 
+                        end
+                        if not OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter] then 
+                            OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter] = {} 
+                        end
+                        if not OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex] then 
+                            OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
+                        end
+                        
+                        -- Apply the assignment
+                        OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = assignData.playerName
+                    end
+                else
+                    -- Generic assignment (fallback for other types)
+                    if OGRH.SetPlayerAssignment then
+                        OGRH.SetPlayerAssignment(change.player, {
+                            type = change.assignmentType,
+                            value = change.newValue
+                        })
+                    end
+                end
+                
+            elseif change.type == "GROUP" then
+                -- Apply group change (if group assignment system exists)
+                -- (Implementation pending)
+            end
+        end
+        
+        -- Update Encounter Planning UI if open (must be done after all changes applied)
+        local encounterFrame = OGRH_EncounterFrame or _G["OGRH_EncounterFrame"]
+        if encounterFrame and encounterFrame:IsShown() and encounterFrame.RefreshRoleContainers then
+            encounterFrame.RefreshRoleContainers()
+        end
+        
+        -- Update RolesUI if open
+        local rolesFrame = OGRH.rolesFrame or _G["OGRH_RolesFrame"]
+        if rolesFrame and rolesFrame:IsShown() and rolesFrame.UpdatePlayerLists then
+            rolesFrame.UpdatePlayerLists()
+        end
+        
+        -- Update data version if provided
+        if deltaData.version and OGRH.Versioning and OGRH.Versioning.UpdateDataVersion then
+            OGRH.Versioning.UpdateDataVersion("SYNC", deltaData.version)
+        end
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ASSIGN.DELTA_PLAYER, function(sender, data, channel)
+        -- Handle individual player assignment delta (for backwards compatibility)
+        local changeData = OGRH.Deserialize(data)
+        if not changeData then return end
+        
+        OGRH.SetPlayerAssignment(changeData.player, {
+            type = changeData.assignmentType,
+            value = changeData.newValue
+        })
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ASSIGN.DELTA_ROLE, function(sender, data, channel)
+        -- Handle individual role delta (modern format only)
+        local changeData = OGRH.Deserialize(data)
+        
+        if not changeData or not changeData.player or not changeData.newValue then
+            return
+        end
+        
+        if not OGRH_SV.roles then OGRH_SV.roles = {} end
+        OGRH_SV.roles[changeData.player] = changeData.newValue
+        
+        -- Update UI if open
+        local frame = OGRH.rolesFrame or _G["OGRH_RolesFrame"]
+        if frame and frame:IsShown() and frame.RefreshColumnDisplays then
+            frame.RefreshColumnDisplays()
+        end
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ASSIGN.DELTA_GROUP, function(sender, data, channel)
+        -- Handle individual group delta
+        local changeData = OGRH.Deserialize(data)
+        if not changeData then return end
+        
+        -- Placeholder for group assignment feature
     end)
     
     -- More handlers will be added in future phases

@@ -152,8 +152,11 @@ local function CreateRolesFrame()
                     dragText:SetText(nameText:GetText())
                     
                     nameButton:SetScript("OnDragStart", function()
-                        -- Check permissions
-                        if not OGRH.CanManageRoles or not OGRH.CanManageRoles() then
+                        -- Check permissions (must match MessageRouter permission check)
+                        local playerName = UnitName("player")
+                        if not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName) then
+                            -- Show why drag is blocked
+                            DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[RH]|r You don't have permission to modify role assignments (requires OFFICER or ADMIN)")
                             return
                         end
                         
@@ -168,6 +171,12 @@ local function CreateRolesFrame()
                     nameButton:SetScript("OnDragStop", function()
                         dragFrame:Hide()
                         dragFrame:SetScript("OnUpdate", nil)
+                        
+                        -- Check permissions before processing drop
+                        local playerName = UnitName("player")
+                        if not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName) then
+                            return  -- Silently ignore drop if no permission
+                        end
                         
                         -- Find which column we're over
                         local x, y = GetCursorPosition()
@@ -199,12 +208,17 @@ local function CreateRolesFrame()
                                     elseif colIndex == 3 then newRole = "MELEE"
                                     else newRole = "RANGED" end
                                     
+                                    -- Store old role for delta sync
+                                    local oldRole = OGRH_SV.roles[draggedName]
+                                    
                                     OGRH_SV.roles[draggedName] = newRole
                                     
-                                    -- Broadcast role change to raid
-                                    if GetNumRaidMembers() > 0 then
-                                        local msg = "ROLE_CHANGE;" .. draggedName .. ";" .. newRole
-                                        SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
+                                    -- Use delta sync for role change (Phase 3A)
+                                    if OGRH.SyncDelta and OGRH.SyncDelta.RecordRoleChange then
+                                        OGRH.SyncDelta.RecordRoleChange(draggedName, newRole, oldRole)
+                                    else
+                                        -- Delta sync not available - this indicates addon load order problem
+                                        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[OGRH-Error]|r Delta sync system not loaded! Role change not synced.")
                                     end
                                     
                                     -- Sync tank and healer status to Puppeteer and pfUI
@@ -234,8 +248,11 @@ local function CreateRolesFrame()
                                         end
                                     end
                                     
-                                    -- Refresh display
-                                    RefreshColumnDisplays()
+                                    -- Refresh display (use UpdatePlayerLists to rebuild and sort columns)
+                                    local rolesFrame = OGRH.rolesFrame or _G["OGRH_RolesFrame"]
+                                    if rolesFrame and rolesFrame.UpdatePlayerLists then
+                                        rolesFrame.UpdatePlayerLists()
+                                    end
                                 end
                                 break
                             end

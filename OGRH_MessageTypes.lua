@@ -53,6 +53,9 @@ OGRH.MessageTypes.ASSIGN = {
     
     -- Delta operations (incremental changes)
     DELTA_PLAYER = "OGRH_ASSIGN_DELTA_PLAYER",
+    DELTA_ROLE = "OGRH_ASSIGN_DELTA_ROLE",
+    DELTA_GROUP = "OGRH_ASSIGN_DELTA_GROUP",
+    DELTA_BATCH = "OGRH_ASSIGN_DELTA_BATCH", -- Batched delta changes
     
     -- Request/Response
     REQUEST_ASSIGNMENTS = "OGRH_ASSIGN_REQUEST_ASSIGNMENTS",
@@ -78,6 +81,7 @@ OGRH.MessageTypes.SYNC = {
     CHECKSUM_STRUCTURE = "OGRH_SYNC_CHECKSUM_STRUCTURE",
     CHECKSUM_ASSIGNMENTS = "OGRH_SYNC_CHECKSUM_ASSIGNMENTS",
     CHECKSUM_MISMATCH = "OGRH_SYNC_CHECKSUM_MISMATCH",
+    CHECKSUM_POLL = "OGRH_SYNC_CHECKSUM_POLL",  -- Unified checksum broadcast (admin every 30s)
     
     -- Repair operations
     REPAIR_REQUEST = "OGRH_SYNC_REPAIR_REQUEST",
@@ -106,6 +110,8 @@ OGRH.MessageTypes.ADMIN = {
     -- Permission operations
     TAKEOVER = "OGRH_ADMIN_TAKEOVER",
     ASSIGN = "OGRH_ADMIN_ASSIGN",
+    QUERY = "OGRH_ADMIN_QUERY",
+    RESPONSE = "OGRH_ADMIN_RESPONSE",
     PERMISSION_DENIED = "OGRH_ADMIN_PERMISSION_DENIED",
     
     -- Promotion operations
@@ -138,29 +144,15 @@ OGRH.MessageTypes.READHELPER = {
     UPDATE = "OGRH_RH_UPDATE"
 }
 
--- Legacy message type mapping (for backward compatibility during migration)
--- Maps old message format to new MessageTypes enum
-OGRH.MessageTypes.Legacy = {
-    ["READYCHECK_REQUEST"] = OGRH.MessageTypes.ADMIN.READY_REQUEST,
-    ["READYCHECK_COMPLETE"] = OGRH.MessageTypes.ADMIN.READY_COMPLETE,
-    ["AUTOPROMOTE_REQUEST"] = OGRH.MessageTypes.ADMIN.PROMOTE_REQUEST,
-    ["ADDON_POLL"] = OGRH.MessageTypes.ADMIN.POLL_VERSION,
-    ["ADDON_POLL_RESPONSE"] = OGRH.MessageTypes.ADMIN.POLL_RESPONSE,
-    ["ASSIGNMENT_UPDATE"] = OGRH.MessageTypes.ASSIGN.BATCH_UPDATE,
-    ["ENCOUNTER_SYNC"] = OGRH.MessageTypes.SYNC.RESPONSE_FULL,
-    ["ROLESUI_CHECK"] = OGRH.MessageTypes.SYNC.CHECKSUM_STRUCTURE,
-    ["READHELPER_SYNC_RESPONSE"] = OGRH.MessageTypes.READHELPER.SYNC_RESPONSE,
-    ["RAID_LEAD_SET"] = OGRH.MessageTypes.STATE.CHANGE_LEAD,
-    ["REQUEST_RAID_DATA"] = OGRH.MessageTypes.SYNC.REQUEST_FULL,
-    ["REQUEST_CURRENT_ENCOUNTER"] = OGRH.MessageTypes.STATE.QUERY_ENCOUNTER,
-    ["REQUEST_STRUCTURE_SYNC"] = OGRH.MessageTypes.SYNC.REQUEST_FULL,
-    ["SYNC_REQUEST"] = OGRH.MessageTypes.SYNC.REQUEST_FULL,
-    ["SYNC_RESPONSE"] = OGRH.MessageTypes.SYNC.RESPONSE_FULL,
-    ["SYNC_CANCEL"] = OGRH.MessageTypes.SYNC.CANCEL,
-    ["SYNC_DATA_START"] = OGRH.MessageTypes.SYNC.RESPONSE_PARTIAL,
-    ["SYNC_DATA_CHUNK"] = OGRH.MessageTypes.SYNC.RESPONSE_PARTIAL,
-    ["SYNC_DATA_END"] = OGRH.MessageTypes.SYNC.COMPLETE,
-    ["RAID_LEAD_QUERY"] = OGRH.MessageTypes.STATE.QUERY_LEAD
+-- ROLESUI: RolesUI bucket assignment messages (Tanks, Healers, Melee, Ranged)
+OGRH.MessageTypes.ROLESUI = {
+    -- Sync operations (auto-repair on checksum mismatch)
+    SYNC_REQUEST = "OGRH_ROLESUI_SYNC_REQUEST",  -- Client requests RolesUI data
+    SYNC_PUSH = "OGRH_ROLESUI_SYNC_PUSH",        -- Admin pushes RolesUI data (auto-repair)
+    
+    -- Manual operations
+    UPDATE = "OGRH_ROLESUI_UPDATE",              -- Single bucket update
+    BATCH_UPDATE = "OGRH_ROLESUI_BATCH_UPDATE"   -- Multiple bucket updates
 }
 
 --[[
@@ -184,34 +176,14 @@ function OGRH.IsValidMessageType(messageType)
     
     -- Check all categories
     for categoryName, category in pairs(OGRH.MessageTypes) do
-        if categoryName ~= "Legacy" then
-            for _, msgType in pairs(category) do
-                if msgType == messageType then
-                    return true
-                end
+        for _, msgType in pairs(category) do
+            if msgType == messageType then
+                return true
             end
         end
     end
     
     return false
-end
-
--- Get new message type from legacy message format
-function OGRH.TranslateLegacyMessage(legacyMessage)
-    if not legacyMessage then return nil end
-    
-    -- Extract base message type (before any colons or semicolons)
-    local baseMessage = legacyMessage
-    local colonPos = string.find(legacyMessage, ":")
-    local semicolonPos = string.find(legacyMessage, ";")
-    
-    if colonPos then
-        baseMessage = string.sub(legacyMessage, 1, colonPos - 1)
-    elseif semicolonPos then
-        baseMessage = string.sub(legacyMessage, 1, semicolonPos - 1)
-    end
-    
-    return OGRH.MessageTypes.Legacy[baseMessage]
 end
 
 -- Debug: Print all message types

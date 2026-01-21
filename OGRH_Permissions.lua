@@ -149,6 +149,18 @@ function OGRH.SetRaidAdmin(playerName)
         table.remove(OGRH.Permissions.State.adminHistory, 1)
     end
     
+    -- If we're the new admin, start integrity checks
+    if playerName == UnitName("player") then
+        if OGRH.StartIntegrityChecks then
+            OGRH.StartIntegrityChecks()
+        end
+    else
+        -- If we're no longer admin, stop integrity checks
+        if OGRH.StopIntegrityChecks then
+            OGRH.StopIntegrityChecks()
+        end
+    end
+    
     return true
 end
 
@@ -166,26 +178,49 @@ function OGRH.RequestAdminRole()
         return false
     end
     
-    -- Broadcast admin takeover via OGAddonMsg
-    if OGAddonMsg and OGAddonMsg.Send then
-        OGAddonMsg.Send(nil, nil, OGRH.MessageTypes.ADMIN.TAKEOVER, {
+    -- Broadcast admin takeover via MessageRouter
+    if OGRH.MessageRouter and OGRH.MessageTypes and OGRH.Serialize then
+        -- Serialize the data table before sending
+        local adminData = OGRH.Serialize({
             newAdmin = playerName,
             timestamp = GetTime(),
             version = OGRH.IncrementDataVersion and OGRH.IncrementDataVersion() or 1
-        }, {
-            priority = "HIGH",
-            onSuccess = function()
-                OGRH.SetRaidAdmin(playerName)
-                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r You are now the raid admin")
-            end
         })
+        
+        OGRH.MessageRouter.Broadcast(
+            OGRH.MessageTypes.ADMIN.TAKEOVER,
+            adminData,
+            {
+                priority = "HIGH",
+                onSuccess = function()
+                    OGRH.SetRaidAdmin(playerName)
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r You are now the raid admin")
+                end
+            }
+        )
     else
-        -- Fallback if OGAddonMsg not available
+        -- Fallback if MessageRouter not available
         OGRH.SetRaidAdmin(playerName)
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH]|r You are now the raid admin")
     end
     
     return true
+end
+
+-- Poll raid to discover current admin (called on reload, raid join, login)
+function OGRH.PollForRaidAdmin()
+    if not UnitInRaid("player") then
+        return  -- Not in a raid
+    end
+    
+    if not OGRH.MessageRouter or not OGRH.MessageTypes then
+        return  -- MessageRouter not initialized yet
+    end
+    
+    -- Broadcast query to all raid members
+    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.QUERY, "", {
+        priority = "HIGH"
+    })
 end
 
 -- Assign admin role to another player (current admin or L/A can assign to another L/A)

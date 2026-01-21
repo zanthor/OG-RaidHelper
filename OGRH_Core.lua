@@ -90,8 +90,14 @@ function OGRH.EnsureSV()
     OGRH_SV._assignmentsMigrated = true
   end
 end
-local _svf = CreateFrame("Frame"); _svf:RegisterEvent("VARIABLES_LOADED")
+local _svf = CreateFrame("Frame")
+_svf:RegisterEvent("VARIABLES_LOADED")
+_svf:RegisterEvent("PLAYER_ENTERING_WORLD")
+_svf:RegisterEvent("RAID_ROSTER_UPDATE")
+local hasPolledOnce = false
+
 _svf:SetScript("OnEvent", function() 
+  if event == "VARIABLES_LOADED" then 
   OGRH.EnsureSV()
   
   -- Upgrade encounter data structure if needed (must happen early before any UI access)
@@ -134,6 +140,23 @@ _svf:SetScript("OnEvent", function()
   
   if OGRH.SyncUI and OGRH.SyncUI.Initialize then
     OGRH.SyncUI.Initialize()
+  end
+  
+  elseif event == "PLAYER_ENTERING_WORLD" then
+    -- Poll for admin when entering world (login, reload, zone)
+    if UnitInRaid("player") and OGRH.PollForRaidAdmin then
+      OGRH.PollForRaidAdmin()
+      hasPolledOnce = true
+    end
+    
+  elseif event == "RAID_ROSTER_UPDATE" then
+    -- Poll for admin when joining a raid (only once per raid session)
+    if UnitInRaid("player") and not hasPolledOnce and OGRH.PollForRaidAdmin then
+      OGRH.PollForRaidAdmin()
+      hasPolledOnce = true
+    elseif not UnitInRaid("player") then
+      hasPolledOnce = false  -- Reset flag when leaving raid
+    end
   end
 end)
 OGRH.EnsureSV()
@@ -1316,52 +1339,19 @@ function OGRH.DoReadyCheck()
   -- Check if player is raid assistant
   elseif IsRaidOfficer and IsRaidOfficer() == 1 then
     -- Send addon message to raid asking leader to start ready check
-    SendAddonMessage(OGRH.ADDON_PREFIX, "READYCHECK_REQUEST", "RAID")
+    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.READY_REQUEST, "", {
+      priority = "HIGH"
+    })
     OGRH.Msg("Ready check request sent to raid leader.")
   else
     OGRH.Msg("You must be raid leader or assistant to start a ready check.")
   end
 end
 
--- Announcement storage and re-announce functionality
-OGRH.storedAnnouncement = nil  -- Stores {lines = {...}, timestamp = time()}
-
--- Store announcement lines and broadcast to raid
-function OGRH.StoreAndBroadcastAnnouncement(lines)
-  if not lines or table.getn(lines) == 0 then return end
-  
-  -- Store locally (with single pipes for color codes)
-  OGRH.storedAnnouncement = {
-    lines = lines,
-    timestamp = time()
-  }
-  
-  -- DISABLED: Announcement broadcasting via addon channel
-  -- This feature is no longer used since we're not staging announcements
-  -- Also, SendAddonMessage cannot handle item links with pipe characters
-  --[[
-  local hasItemLinks = false
-  for _, line in ipairs(lines) do
-    if string.find(line, "|H", 1, true) then
-      hasItemLinks = true
-      break
-    end
-  end
-  
-  if not hasItemLinks then
-    local message = "ANNOUNCE;" .. table.concat(lines, ";")
-    SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
-  end
-  --]]
-end
-
--- Helper function: Send announcement lines and store for re-announce
+-- Helper function: Send announcement lines to raid chat
 -- This is the recommended way to send announcements from any module
 function OGRH.SendAnnouncement(lines, testMode)
   if not lines or table.getn(lines) == 0 then return end
-  
-  -- Store and broadcast for re-announce functionality
-  OGRH.StoreAndBroadcastAnnouncement(lines)
   
   -- Send each line to chat
   local canRW = OGRH.CanRW()
@@ -1380,37 +1370,22 @@ function OGRH.SendAnnouncement(lines, testMode)
   end
 end
 
--- Send addon message with prefix
+-- Send addon message with prefix (DEPRECATED - Use OGRH.MessageRouter instead)
 function OGRH.SendAddonMessage(msgType, data)
-  local message = msgType .. ";" .. data
-  SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
+  -- This function is deprecated and should not be used
+  -- All code should use OGRH.MessageRouter.Broadcast() or OGRH.MessageRouter.SendTo()
+  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-DEPRECATED]|r OGRH.SendAddonMessage() called with msgType: " .. tostring(msgType))
+  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-DEPRECATED]|r This function is disabled. Please update caller to use MessageRouter.")
+  -- SendAddonMessage call deliberately removed - do not re-add
 end
 
--- Broadcast encounter selection to raid (does not sync settings, just UI state)
+-- Broadcast encounter selection to raid (DEPRECATED - Use MessageRouter directly)
 function OGRH.BroadcastEncounterSelection(raidName, encounterName)
-  if GetNumRaidMembers() == 0 then
-    return -- Not in a raid, don't broadcast
-  end
-  
-  local message = "ENCOUNTER_SELECT;" .. raidName .. ";" .. encounterName
-  SendAddonMessage(OGRH.ADDON_PREFIX, message, "RAID")
-  
-  -- After broadcasting the encounter selection, sync the assignments for the new encounter
-  local playerName = UnitName("player")
-  local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin()
-  
-  -- Only the designated raid admin should push assignments
-  -- Leaders/Assistants who are not raid admin should request a sync instead
-  if isAdmin then
-    -- This player is the designated raid admin - broadcast full sync
-    if OGRH.BroadcastFullEncounterSync then
-      OGRH.BroadcastFullEncounterSync()
-    end
-  else
-    -- This player is a leader/assistant but not raid admin - request sync from raid admin
-    local requestMsg = "REQUEST_ENCOUNTER_SYNC;" .. raidName .. ";" .. encounterName
-    SendAddonMessage(OGRH.ADDON_PREFIX, requestMsg, "RAID")
-  end
+  -- This function is deprecated and should not be used
+  -- All code should use MessageRouter with OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER
+  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-DEPRECATED]|r OGRH.BroadcastEncounterSelection() called")
+  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-DEPRECATED]|r This function is disabled. Please update caller to use MessageRouter.")
+  -- SendAddonMessage calls deliberately removed - do not re-add
 end
 
 -- Helper function to hash a role's complete settings (used by checksum calculations)
@@ -1877,22 +1852,6 @@ function OGRH.CalculateAssignmentChecksum(raid, encounter)
   return tostring(checksum)
 end
 
--- Broadcast assignment update (minimal data)
-function OGRH.BroadcastAssignmentUpdate(raid, encounter, roleIndex, slotIndex, playerName)
-  if GetNumRaidMembers() == 0 then
-    return
-  end
-  
-  -- Only send if we're the designated raid lead
-  if not OGRH.IsRaidLead or not OGRH.IsRaidLead() then
-    return
-  end
-  
-  local structureChecksum = OGRH.CalculateStructureChecksum(raid, encounter)
-  local data = raid .. ";" .. encounter .. ";" .. roleIndex .. ";" .. slotIndex .. ";" .. (playerName or "") .. ";" .. structureChecksum
-  SendAddonMessage(OGRH.ADDON_PREFIX, "ASSIGNMENT_UPDATE;" .. data, "RAID")
-end
-
 -- Broadcast full encounter assignment sync (assignments only, no structure)
 function OGRH.BroadcastFullEncounterSync()
   
@@ -1938,10 +1897,8 @@ function OGRH.BroadcastFullEncounterSync()
       OGRH.Msg("Failed to send encounter sync.")
     end
   else
-    -- Fallback to old method if Sync module not loaded
-    local serialized = OGRH.Serialize(syncData)
-    SendAddonMessage(OGRH.ADDON_PREFIX, "ENCOUNTER_SYNC;" .. serialized, "RAID")
-  end  
+    OGRH.Msg("ERROR: Sync module not loaded - cannot send encounter sync.")
+  end
 end
 
 -- Wrapper for legacy code that passes raid/encounter parameters
@@ -2187,42 +2144,8 @@ function OGRH.CalculateRolesUIChecksum()
   return tostring(checksum)
 end
 
--- Request RolesUI sync check from raid admin (called when player opens RolesUI)
-function OGRH.RequestRolesUISync()
-  if GetNumRaidMembers() == 0 then
-    return  -- Not in raid, no sync needed
-  end
-  
-  -- Don't send check if we're the raid admin (we're the source of truth)
-  if OGRH.IsRaidLead and OGRH.IsRaidLead() then
-    return
-  end
-  
-  local myChecksum = OGRH.CalculateRolesUIChecksum()
-  
-  -- Send checksum to raid admin
-  SendAddonMessage(OGRH.ADDON_PREFIX, "ROLESUI_CHECK;" .. myChecksum, "RAID")
-end
-
--- Broadcast full RolesUI data to raid (called by admin if checksum mismatch)
-function OGRH.BroadcastRolesUISync()
-  if GetNumRaidMembers() == 0 then
-    return
-  end
-  
-  OGRH.EnsureSV()
-  
-  -- Build sync data package
-  local syncData = {
-    roles = OGRH_SV.roles or {}
-  }
-  
-  -- Use OGRH.Sync.SendChunked to handle automatic chunking
-  local success = OGRH.Sync.SendChunked(syncData, "ROLESUI_SYNC", "RAID")
-  if not success then
-    OGRH.Msg("Failed to send RolesUI sync.")
-  end
-end
+-- RolesUI sync functions removed - now handled by OGRH_SyncIntegrity.lua
+-- See unified checksum polling system for RolesUI integrity checks
 
 -- Handler for receiving RolesUI sync (used by OGRH.Sync.RouteMessage and direct messages)
 function OGRH.HandleRolesUISync(sender, syncData)
@@ -2524,24 +2447,7 @@ addonFrame:SetScript("OnEvent", function()
       if message == "READYCHECK_COMPLETE" then
         -- Hide timer when raid leader reports results
         OGRH.HideReadyCheckTimer()
-      -- Handle ready check request from assistant
-      elseif message == "READYCHECK_REQUEST" then
-        -- Only process if we are the raid leader
-        if IsRaidLeader and IsRaidLeader() == 1 then
-          -- Check if remote ready checks are allowed
-          OGRH.EnsureSV()
-          if OGRH_SV.allowRemoteReadyCheck then
-            -- Set flag to capture ready check responses
-            OGRH.readyCheckInProgress = true
-            OGRH.readyCheckResponses = {
-              notReady = {},
-              afk = {}
-            }
-            -- Show timer
-            OGRH.ShowReadyCheckTimer()
-            DoReadyCheck()
-          end
-        end
+      -- Handle ready check request from assistant (MIGRATED TO MessageRouter)
       -- Handle auto-promote request from assistant
       elseif string.find(message, "^AUTOPROMOTE_REQUEST:") then
         -- Only process if we are the raid leader
@@ -2720,41 +2626,7 @@ addonFrame:SetScript("OnEvent", function()
             end
           end
         end
-      -- Handle RolesUI checksum check
-      elseif string.sub(message, 1, 14) == "ROLESUI_CHECK;" then
-        -- Block check from self (raid admin shouldn't respond to their own check)
-        local playerName = UnitName("player")
-        if sender == playerName then
-          return
-        end
-        
-        -- Only respond if we're the raid lead or assistant
-        local isAuthorized = false
-        if OGRH.IsRaidLead and OGRH.IsRaidLead() then
-          isAuthorized = true
-        else
-          -- Check if we're an assistant
-          local numRaid = GetNumRaidMembers()
-          if numRaid > 0 then
-            for i = 1, numRaid do
-              local name, rank = GetRaidRosterInfo(i)
-              if name == UnitName("player") and rank == 1 then
-                isAuthorized = true
-                break
-              end
-            end
-          end
-        end
-        
-        if isAuthorized then
-          local theirChecksum = string.sub(message, 15)
-          local myChecksum = OGRH.CalculateRolesUIChecksum()
-          
-          -- If checksums don't match, broadcast full sync
-          if tostring(theirChecksum) ~= tostring(myChecksum) then
-            OGRH.BroadcastRolesUISync()
-          end
-        end
+      -- RolesUI checksum check removed - now handled by OGRH_SyncIntegrity.lua unified polling
       -- Handle ReadHelper sync request (from OG-ReadHelper addon)
       elseif message == "READHELPER_SYNC_REQUEST" then
         -- Only respond if we're the raid lead
@@ -3184,46 +3056,7 @@ addonFrame:SetScript("OnEvent", function()
             end
           end
         end
-      -- Handle request for encounter sync (from leaders/assistants who aren't raid admin)
-      elseif string.sub(message, 1, 23) == "REQUEST_ENCOUNTER_SYNC;" then
-        -- Only the raid admin should respond to sync requests
-        if not OGRH.IsRaidLead or not OGRH.IsRaidLead() then
-          return
-        end
-        
-        -- Parse raid and encounter names from request
-        local content = string.sub(message, 24)
-        local semicolonPos = string.find(content, ";", 1, true)
-        
-        if semicolonPos then
-          local requestedRaid = string.sub(content, 1, semicolonPos - 1)
-          local requestedEncounter = string.sub(content, semicolonPos + 1)
-          
-          -- Get current selection to see if we need to update
-          local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
-          
-          -- Update to the requested encounter if different
-          if currentRaid ~= requestedRaid or currentEncounter ~= requestedEncounter then
-            OGRH.EnsureSV()
-            if not OGRH_SV.ui then OGRH_SV.ui = {} end
-            OGRH_SV.ui.selectedRaid = requestedRaid
-            OGRH_SV.ui.selectedEncounter = requestedEncounter
-            
-            -- Update UI
-            if OGRH.UpdateEncounterNavButton then
-              OGRH.UpdateEncounterNavButton()
-            end
-            
-            if OGRH.ShowConsumeMonitor then
-              OGRH.ShowConsumeMonitor()
-            end
-          end
-          
-          -- Broadcast the full encounter sync for this encounter
-          if OGRH.BroadcastFullEncounterSync then
-            OGRH.BroadcastFullEncounterSync()
-          end
-        end
+      -- Handle request for encounter sync (MIGRATED TO MessageRouter - SYNC.REQUEST_PARTIAL)
       -- Handle assignment update
       elseif string.sub(message, 1, 18) == "ASSIGNMENT_UPDATE;" then
         -- Block from self
@@ -3469,13 +3302,24 @@ addonFrame:SetScript("OnEvent", function()
           -- Get current encounter from Main UI
           local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
           if currentRaid and currentEncounter then
-            -- Broadcast encounter selection
-            if OGRH.BroadcastEncounterSelection then
-              OGRH.BroadcastEncounterSelection(currentRaid, currentEncounter)
-            end
-            -- Broadcast assignment sync for current encounter
-            if OGRH.BroadcastFullEncounterSync then
-              OGRH.BroadcastFullEncounterSync()
+            -- Broadcast encounter selection using MessageRouter
+            if GetNumRaidMembers() > 0 then
+              local encounterData = OGRH.Serialize({raidName = currentRaid, encounterName = currentEncounter})
+              OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+                priority = "NORMAL"
+              })
+              
+              -- Broadcast full sync if admin, request sync if not
+              if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin() then
+                if OGRH.BroadcastFullEncounterSync then
+                  OGRH.BroadcastFullEncounterSync()
+                end
+              else
+                local requestData = OGRH.Serialize({raidName = currentRaid, encounterName = currentEncounter})
+                OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+                  priority = "NORMAL"
+                })
+              end
             end
           end
         end

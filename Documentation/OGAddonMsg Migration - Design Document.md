@@ -442,29 +442,38 @@ end
 
 **See `Documentation/PHASE2_TESTING.md` for test results and validation data**
 
-**Phase 3A: Delta Sync Integration (Week 3)**
-- [ ] **Connect delta sync stubs to actual operations**
-  - [ ] Implement delta sync for player assignments
-    - [ ] Create `OGRH.AssignPlayerWithDelta(player, role, group)` function
-    - [ ] Wire to RolesUI assignment buttons
-    - [ ] Test batching during rapid clicks
-  - [ ] Implement delta message types
-    - [ ] Add `ASSIGN_DELTA_PLAYER` message handler
-    - [ ] Add `ASSIGN_DELTA_ROLE` message handler
-    - [ ] Add `ASSIGN_DELTA_GROUP` message handler
-  - [ ] Test delta batch flushing
-    - [ ] Verify 2-second batching delay works
-    - [ ] Test flush on single change
-    - [ ] Test flush on rapid changes (10+ in 2 seconds)
-    - [ ] Verify delta application on receiving client
-  - [ ] Smart sync triggers
-    - [ ] Block delta sync during combat
-    - [ ] Block delta sync while zoning
-    - [ ] Queue changes for after combat/zone
-  - [ ] Replace full structure pushes with delta for small changes
-    - [ ] Identify operations that currently do full sync
-    - [ ] Replace with delta sync where appropriate
-    - [ ] Keep full sync only for major structure changes
+**Phase 3A: Delta Sync Integration (Week 3)** ✅ COMPLETE
+- [x] **Connect delta sync stubs to actual operations**
+  - [x] Implement delta sync for player assignments
+    - [x] Create record functions for role/assignment/group changes
+    - [x] Wire to RolesUI drag-drop functionality
+    - [x] Test batching during rapid clicks - **READY FOR TESTING**
+  - [x] Implement delta message types
+    - [x] Add `ASSIGN_DELTA_PLAYER` message handler
+    - [x] Add `ASSIGN_DELTA_ROLE` message handler (with legacy ROLE_CHANGE support)
+    - [x] Add `ASSIGN_DELTA_GROUP` message handler (placeholder)
+    - [x] Add `ASSIGN_DELTA_BATCH` message handler
+  - [x] Implement delta batch flushing
+    - [x] 2-second batching delay implemented
+    - [x] Automatic flush on delay expiration
+    - [x] Manual ForceFlush() for testing
+  - [x] Smart sync triggers
+    - [x] Block delta sync during combat
+    - [x] Block delta sync while zoning
+    - [x] Queue changes for after combat/zone with automatic flush
+  - [x] Event handlers for queue management
+    - [x] PLAYER_ENTERING_WORLD - flush offline queue
+    - [x] PLAYER_LEAVING_WORLD - set zoning flag
+    - [x] RAID_ROSTER_UPDATE - flush on raid join
+- [ ] **TESTING REQUIRED** (See `Documentation/PHASE3A_IMPLEMENTATION.md`)
+  - [x] Test 1: Single role change with 2-second batch
+  - [x] Test 2: Rapid changes (10+ in 2 seconds)
+  - [x] Test 3: Combat blocking and auto-flush
+  - [ ] Test 4: Zoning queue behavior
+  - [NA] Test 5: Offline queue and raid join flush
+  - [NA] Test 6: Legacy ROLE_CHANGE compatibility
+
+**See `Documentation/PHASE3A_IMPLEMENTATION.md` for implementation details and test procedures**
 
 **Phase 3B: OGRH_Core.lua Migration (Week 4)**
 - [ ] Audit all SendAddonMessage calls in OGRH_Core.lua (18 locations)
@@ -529,6 +538,232 @@ end
 - [ ] Implement admin UI for permission management
 - [ ] Add permission denial notifications
 - [ ] Test permission escalation/demotion flows
+
+**Phase 5: Granular Sync & Rollback System**
+
+### Granular Sync Architecture
+
+**Problem:** Current sync is all-or-nothing. Need ability to sync specific raids/encounters without affecting others.
+
+**Solution:** Granular sync with backup/rollback support
+
+#### 5.1: Per-Encounter Sync
+```lua
+-- Sync only specific raid/encounter structure
+OGRH.SyncIntegrity.SyncEncounterStructure(raidName, encounterName, targetPlayer)
+
+-- Sync only specific raid/encounter assignments
+OGRH.SyncIntegrity.SyncEncounterAssignments(raidName, encounterName, targetPlayer)
+
+-- Example: Pull only current encounter from admin
+OGRH.SyncIntegrity.RequestCurrentEncounterSync()
+```
+
+**Benefits:**
+- Faster sync (only what you need)
+- Less network traffic
+- No risk of overwriting other encounters
+- Surgical repairs for specific data corruption
+
+#### 5.2: Backup & Rollback System
+
+**Backup Naming Convention:** `_RaidName` prefix for backup data
+
+```lua
+-- Backup structure
+OGRH_SV.encounterMgmt.raids = {
+  {name = "BWL", encounters = {...}},      -- Active data
+  {name = "_BWL", encounters = {...}}      -- Backup (rollback point)
+}
+
+-- Backup assignments
+OGRH_SV.encounterAssignments = {
+  ["BWL"] = {...},      -- Active assignments
+  ["_BWL"] = {...}      -- Backup assignments
+}
+```
+
+**Operations:**
+```lua
+-- Create backup before pull
+OGRH.Backup.CreateRaidBackup(raidName)
+  -> Copies "BWL" to "_BWL"
+
+-- Restore from backup (rollback)
+OGRH.Backup.RestoreRaidBackup(raidName)
+  -> Copies "_BWL" back to "BWL"
+
+-- Merge with backup (keep both)
+OGRH.Backup.MergeWithBackup(raidName, strategy)
+  -> strategy: "PREFER_LOCAL" | "PREFER_BACKUP" | "MANUAL"
+```
+
+**Auto-Backup Triggers:**
+- Before pulling structure from admin
+- Before auto-applying RolesUI sync
+- Before restoring from export/import
+- Manual backup via Data Management UI
+
+#### 5.3: Merge Strategies
+
+**Three-way merge for conflicts:**
+
+1. **PREFER_LOCAL** - Keep local changes, only add missing data
+   ```lua
+   if localHasValue and backupHasValue then
+       keep local
+   elseif backupHasValue then
+       use backup
+   end
+   ```
+
+2. **PREFER_BACKUP** - Use backup data, only keep local if backup missing
+   ```lua
+   if backupHasValue then
+       use backup
+   elseif localHasValue then
+       keep local
+   end
+   ```
+
+3. **MANUAL** - Show merge UI with side-by-side comparison
+   ```lua
+   -- Display:
+   [Local]              [Backup]
+   Role 1: Tank (5)     Role 1: Tank (4)
+   Role 2: Healer (6)   Role 2: Healer (7)
+   
+   [Use Local] [Use Backup] [Keep Both]
+   ```
+
+#### 5.4: RolesUI Auto-Repair (Phase 3B Complete)
+
+**Current Implementation:**
+- Admin broadcasts checksums every 30 seconds
+- Client detects RolesUI mismatch
+- Client auto-requests RolesUI sync
+- Admin immediately pushes RolesUI data
+- Client applies and refreshes UI
+
+**Why Auto-Repair for RolesUI:**
+- Foundational data (affects invites, assignments, class buckets)
+- Small payload (~10KB typical)
+- Low risk of data loss (bucket assignments rarely user-customized)
+- Corruption quickly disrupts raid operations
+
+#### 5.5: Structure & Assignment Sync (Future)
+
+**Manual Sync (Current):**
+- User opens Data Management window
+- User clicks "Pull Structure from Admin"
+- Creates backup, pulls data, applies
+
+**Planned Granular Sync:**
+```lua
+-- Pull only current encounter
+OGRH.DataManagement.PullCurrentEncounter()
+  1. Create backup (_RaidName)
+  2. Request structure for current raid/encounter
+  3. Request assignments for current raid/encounter
+  4. Apply only to current encounter
+  5. Leave other encounters untouched
+
+-- Pull entire raid (all encounters)
+OGRH.DataManagement.PullEntireRaid(raidName)
+  1. Create backup (_RaidName)
+  2. Request all encounters for raid
+  3. Request all assignments for raid
+  4. Apply to entire raid
+  5. Leave other raids untouched
+
+-- Pull everything (nuclear option)
+OGRH.DataManagement.PullAllData()
+  1. Create full backup (all raids to _RaidName)
+  2. Request all structure data
+  3. Request all assignment data
+  4. Replace everything
+```
+
+#### 5.6: Data Management UI Enhancements
+
+**New Buttons:**
+- "Pull Current Encounter" - Sync only current encounter
+- "Pull Entire Raid" - Sync all encounters for current raid
+- "Pull All Data" - Full sync (current behavior)
+- "View Backups" - Show list of available backups
+- "Restore Backup" - Rollback to backup
+- "Merge with Backup" - Three-way merge UI
+
+**Backup List View:**
+```
+Backups Available:
+[_BWL]     2026-01-21 14:30:00   (15 minutes ago)
+[_MC]      2026-01-21 13:45:00   (60 minutes ago)
+[_AQ40]    2026-01-20 20:15:00   (18 hours ago)
+
+[Restore] [Delete] [Export]
+```
+
+#### 5.7: Message Types for Granular Sync
+
+**New Message Types:**
+```lua
+OGRH.MessageTypes.SYNC = {
+    -- Existing
+    REQUEST_FULL = "OGRH_SYNC_REQUEST_FULL",
+    RESPONSE_FULL = "OGRH_SYNC_RESPONSE_FULL",
+    
+    -- New: Granular sync
+    REQUEST_ENCOUNTER = "OGRH_SYNC_REQUEST_ENCOUNTER",      -- Request specific encounter
+    RESPONSE_ENCOUNTER = "OGRH_SYNC_RESPONSE_ENCOUNTER",    -- Send specific encounter
+    REQUEST_RAID = "OGRH_SYNC_REQUEST_RAID",                -- Request entire raid
+    RESPONSE_RAID = "OGRH_SYNC_RESPONSE_RAID",              -- Send entire raid
+    
+    -- Backup operations
+    CREATE_BACKUP = "OGRH_SYNC_CREATE_BACKUP",
+    RESTORE_BACKUP = "OGRH_SYNC_RESTORE_BACKUP",
+    LIST_BACKUPS = "OGRH_SYNC_LIST_BACKUPS"
+}
+```
+
+#### 5.8: Implementation Phases
+
+**Phase 5A: Backup System**
+- Implement `_RaidName` backup storage
+- Create backup before any sync operation
+- Add backup list UI
+- Test backup/restore flow
+
+**Phase 5B: Granular Sync**
+- Implement per-encounter request/response
+- Implement per-raid request/response  
+- Update Data Management UI with granular options
+- Test selective sync
+
+**Phase 5C: Merge System**
+- Implement three merge strategies
+- Create merge UI for manual conflict resolution
+- Test merge scenarios (local wins, backup wins, manual)
+
+**Phase 5D: Auto-Repair Expansion** (Future Consideration)
+- Evaluate extending auto-repair to assignments
+- Consider auto-repair for structure (risky - user customization)
+- Implement opt-in auto-repair settings
+
+---
+
+### Design Principles for Granular Sync
+
+1. **Backup Before Modify** - Always create backup before applying remote data
+2. **Surgical Precision** - Sync only what's needed, leave rest untouched
+3. **User Control** - Default to manual sync, opt-in to auto-repair
+4. **Safe Rollback** - Always provide way to undo sync operation
+5. **Merge Support** - Handle conflicts gracefully with merge strategies
+6. **Performance** - Granular sync reduces network traffic and sync time
+7. **Data Safety** - Backups live outside sync scope, can't be overwritten remotely
+
+---
+
 - [ ] Add audit logging for permission changes
 
 **Phase 5: Conflict Resolution (Week 7)**

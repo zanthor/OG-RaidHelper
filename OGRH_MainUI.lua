@@ -128,72 +128,32 @@ syncBtn:SetScript("OnClick", function()
   local btn = arg1 or "LeftButton"
   
   if btn == "RightButton" then
-    -- Right-click: Poll for addon users and select raid lead
-    if OGRH.PollAddonUsers then
-      OGRH.PollAddonUsers()
-    end
+    -- Right-click: DISABLED (code retained for future use)
+    -- Poll for addon users and select raid lead
+    -- if OGRH.PollAddonUsers then
+    --   OGRH.PollAddonUsers()
+    -- end
     return
   end
   
-  -- Shift+Left-click: Take over as raid lead
+  -- Shift+Left-click: Take over as raid admin
   if IsShiftKeyDown() then
     if GetNumRaidMembers() == 0 then
-      OGRH.Msg("You must be in a raid to take over as raid lead.")
+      OGRH.Msg("You must be in a raid to take over as raid admin.")
       return
     end
     
-    -- Check if player has raid leader or assistant rank
-    local playerName = UnitName("player")
-    local hasPermission = false
-    
-    -- Hardcoded exceptions for specific players
-    if playerName == "Tankmedady" or playerName == "Gnuzmas" then
-      hasPermission = true
+    -- Use Permissions system to request admin role
+    if OGRH.RequestAdminRole then
+      OGRH.RequestAdminRole()
     else
-      for i = 1, GetNumRaidMembers() do
-        local name, rank = GetRaidRosterInfo(i)
-        if name == playerName and (rank == 2 or rank == 1) then
-          hasPermission = true
-          break
-        end
-      end
-    end
-    
-    if not hasPermission then
-      OGRH.Msg("Only raid leaders or assistants can take over as raid lead.")
-      return
-    end
-    
-    -- Set self as raid lead and broadcast
-    if OGRH.SetRaidLead then
-      OGRH.SetRaidLead(playerName)
+      OGRH.Msg("ERROR: Permissions system not loaded.")
     end
     return
   end
   
-  -- Left-click: Send sync or request sync
-  if OGRH.IsRaidLead and OGRH.IsRaidLead() then
-    -- Raid lead: Send current encounter assignments to all players
-    if not OGRH.GetCurrentEncounter then
-      OGRH.Msg("Encounter management not loaded.")
-      return
-    end
-    
-    local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
-    if not currentRaid or not currentEncounter then
-      OGRH.Msg("No encounter selected. Navigate to an encounter using < > buttons first.")
-      return
-    end
-    
-    -- Broadcast full encounter sync (assignments only, not structure)
-    OGRH.BroadcastFullEncounterSync()
-    OGRH.Msg("Broadcasting player assignments for " .. currentEncounter .. "...")
-  else
-    -- Non-raid lead: Request current encounter sync from raid lead
-    if OGRH.RequestSyncFromLead then
-      OGRH.RequestSyncFromLead()
-    end
-  end
+  -- Left-click: DISABLED
+  -- (Previous code: send/request sync)
 end)
 
 -- ReadyCheck button click handlers

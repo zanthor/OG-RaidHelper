@@ -2472,16 +2472,25 @@ function OGRH.ShowEncounterWindow(encounterName)
                 OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex] = {}
               end
               
+              -- Get old player at target for delta tracking
+              local oldPlayerAtTarget = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex] and
+                                        OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex]
+              
               OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex] = frame.draggedPlayerName
               
-              -- Broadcast assignment update (minimal sync)
-              if OGRH.BroadcastAssignmentUpdate then
-                OGRH.BroadcastAssignmentUpdate(
-                  frame.selectedRaid,
-                  frame.selectedEncounter,
-                  targetRoleIndex,
-                  targetSlotIndex,
-                  frame.draggedPlayerName
+              -- Record assignment change for delta sync
+              if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
+                OGRH.SyncDelta.RecordAssignmentChange(
+                  frame.draggedPlayerName,
+                  "ENCOUNTER_ROLE",
+                  {
+                    raid = frame.selectedRaid,
+                    encounter = frame.selectedEncounter,
+                    roleIndex = targetRoleIndex,
+                    slotIndex = targetSlotIndex,
+                    playerName = frame.draggedPlayerName
+                  },
+                  oldPlayerAtTarget
                 )
               end
               
@@ -3327,42 +3336,46 @@ function OGRH.ShowEncounterWindow(encounterName)
                   -- Swap: put target player in source position
                   OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][frame.draggedFromRole][frame.draggedFromSlot] = targetPlayer
                   
-                  -- Broadcast swap: update both positions
-                  if OGRH.BroadcastAssignmentUpdate then
-                    OGRH.BroadcastAssignmentUpdate(
-                      frame.selectedRaid,
-                      frame.selectedEncounter,
-                      targetRoleIndex,
-                      targetSlotIndex,
-                      frame.draggedPlayer
-                    )
-                    OGRH.BroadcastAssignmentUpdate(
-                      frame.selectedRaid,
-                      frame.selectedEncounter,
-                      frame.draggedFromRole,
-                      frame.draggedFromSlot,
-                      targetPlayer
+                  -- Record swap as atomic transaction
+                  if OGRH.SyncDelta and OGRH.SyncDelta.RecordSwapChange then
+                    OGRH.SyncDelta.RecordSwapChange(
+                      frame.draggedPlayer,  -- player1 (being dragged)
+                      targetPlayer,         -- player2 (at target position)
+                      {  -- assignData1: where player1 ends up
+                        raid = frame.selectedRaid,
+                        encounter = frame.selectedEncounter,
+                        roleIndex = targetRoleIndex,
+                        slotIndex = targetSlotIndex
+                      },
+                      {  -- assignData2: where player2 ends up
+                        raid = frame.selectedRaid,
+                        encounter = frame.selectedEncounter,
+                        roleIndex = frame.draggedFromRole,
+                        slotIndex = frame.draggedFromSlot
+                      }
                     )
                   end
                 else
-                  -- Just move: clear source position
+                  -- Just move: clear source position (treat as swap with empty for immediate sync)
                   OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][frame.draggedFromRole][frame.draggedFromSlot] = nil
                   
-                  -- Broadcast move: update target and clear source
-                  if OGRH.BroadcastAssignmentUpdate then
-                    OGRH.BroadcastAssignmentUpdate(
-                      frame.selectedRaid,
-                      frame.selectedEncounter,
-                      targetRoleIndex,
-                      targetSlotIndex,
-                      frame.draggedPlayer
-                    )
-                    OGRH.BroadcastAssignmentUpdate(
-                      frame.selectedRaid,
-                      frame.selectedEncounter,
-                      frame.draggedFromRole,
-                      frame.draggedFromSlot,
-                      nil
+                  -- Record move as atomic swap (player to target, empty to source) for immediate sync
+                  if OGRH.SyncDelta and OGRH.SyncDelta.RecordSwapChange then
+                    OGRH.SyncDelta.RecordSwapChange(
+                      frame.draggedPlayer,  -- player1 (being moved)
+                      nil,                  -- player2 (empty slot)
+                      {  -- assignData1: where player goes
+                        raid = frame.selectedRaid,
+                        encounter = frame.selectedEncounter,
+                        roleIndex = targetRoleIndex,
+                        slotIndex = targetSlotIndex
+                      },
+                      {  -- assignData2: source becomes empty
+                        raid = frame.selectedRaid,
+                        encounter = frame.selectedEncounter,
+                        roleIndex = frame.draggedFromRole,
+                        slotIndex = frame.draggedFromSlot
+                      }
                     )
                   end
                 end
@@ -3411,16 +3424,25 @@ function OGRH.ShowEncounterWindow(encounterName)
                  OGRH_SV.encounterAssignments[frame.selectedRaid] and
                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] and
                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][slotRoleIndex] then
+                
+                -- Get old player name for delta tracking
+                local oldPlayerName = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][slotRoleIndex][slotSlotIndex]
+                
                 OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][slotRoleIndex][slotSlotIndex] = nil
                 
-                -- Broadcast removal
-                if OGRH.BroadcastAssignmentUpdate then
-                  OGRH.BroadcastAssignmentUpdate(
-                    frame.selectedRaid,
-                    frame.selectedEncounter,
-                    slotRoleIndex,
-                    slotSlotIndex,
-                    nil
+                -- Record removal with delta sync
+                if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
+                  OGRH.SyncDelta.RecordAssignmentChange(
+                    "",  -- Empty player name for clear
+                    "ENCOUNTER_ROLE",
+                    {
+                      raid = frame.selectedRaid,
+                      encounter = frame.selectedEncounter,
+                      roleIndex = slotRoleIndex,
+                      slotIndex = slotSlotIndex,
+                      playerName = nil  -- Clearing slot
+                    },
+                    oldPlayerName  -- Old value
                   )
                 end
                 
@@ -4157,8 +4179,25 @@ function OGRH.NavigateToPreviousEncounter()
           OGRH.ShowConsumeMonitor()
         end
         
-        -- Broadcast encounter change
-        OGRH.BroadcastEncounterSelection(raidName, encounters[i - 1])
+        -- Broadcast encounter change using MessageRouter
+        if GetNumRaidMembers() > 0 and OGRH.MessageRouter then
+          local encounterData = OGRH.Serialize({raidName = raidName, encounterName = encounters[i - 1]})
+          OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+            priority = "NORMAL"
+          })
+          
+          -- Broadcast full sync if admin, request sync if not
+          if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin() then
+            if OGRH.BroadcastFullEncounterSync then
+              OGRH.BroadcastFullEncounterSync()
+            end
+          else
+            local requestData = OGRH.Serialize({raidName = raidName, encounterName = encounters[i - 1]})
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+              priority = "NORMAL"
+            })
+          end
+        end
         break
       end
     end
@@ -4201,8 +4240,25 @@ function OGRH.NavigateToNextEncounter()
           OGRH.ShowConsumeMonitor()
         end
         
-        -- Broadcast encounter change
-        OGRH.BroadcastEncounterSelection(raidName, encounters[i + 1])
+        -- Broadcast encounter change using MessageRouter
+        if GetNumRaidMembers() > 0 and OGRH.MessageRouter then
+          local encounterData = OGRH.Serialize({raidName = raidName, encounterName = encounters[i + 1]})
+          OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+            priority = "NORMAL"
+          })
+          
+          -- Broadcast full sync if admin, request sync if not
+          if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin() then
+            if OGRH.BroadcastFullEncounterSync then
+              OGRH.BroadcastFullEncounterSync()
+            end
+          else
+            local requestData = OGRH.Serialize({raidName = raidName, encounterName = encounters[i + 1]})
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+              priority = "NORMAL"
+            })
+          end
+        end
         break
       end
     end
@@ -4455,8 +4511,25 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
               OGRH_SV.ui.selectedRaid = capturedRaid
               OGRH_SV.ui.selectedEncounter = capturedEncounter
               
-              -- Broadcast encounter change to raid
-              OGRH.BroadcastEncounterSelection(capturedRaid, capturedEncounter)
+              -- Broadcast encounter change to raid using MessageRouter
+              if GetNumRaidMembers() > 0 and OGRH.MessageRouter then
+                local encounterData = OGRH.Serialize({raidName = capturedRaid, encounterName = capturedEncounter})
+                OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, encounterData, {
+                  priority = "NORMAL"
+                })
+                
+                -- Broadcast full sync if admin, request sync if not
+                if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin() then
+                  if OGRH.BroadcastFullEncounterSync then
+                    OGRH.BroadcastFullEncounterSync()
+                  end
+                else
+                  local requestData = OGRH.Serialize({raidName = capturedRaid, encounterName = capturedEncounter})
+                  OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, requestData, {
+                    priority = "NORMAL"
+                  })
+                end
+              end
               
               -- Update navigation button and consume monitor
               OGRH.UpdateEncounterNavButton()

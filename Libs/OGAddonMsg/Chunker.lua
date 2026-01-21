@@ -212,15 +212,6 @@ function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, 
         entry.receivedCount = entry.receivedCount + 1
         entry.lastReceived = GetTime()
         
-        -- Debug completion check
-        if entry.receivedCount == entry.totalChunks then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("[DEBUG] All %d chunks received for %s, calling CompleteMessage",
-                    entry.totalChunks, msgId),
-                0, 1, 1
-            )
-        end
-        
         if OGAddonMsg_Config.debug then
             DEFAULT_CHAT_FRAME:AddMessage(
                 string.format("OGAddonMsg: Chunk %d/%d for %s", chunkNum, totalChunks, msgId),
@@ -229,22 +220,9 @@ function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, 
         end
     end
     
-    -- Debug before completion check
-    DEFAULT_CHAT_FRAME:AddMessage(
-        string.format("[DEBUG] OnChunkReceived END: msgId=%s, receivedCount=%d, totalChunks=%d",
-            msgId, entry.receivedCount, entry.totalChunks),
-        1, 1, 0
-    )
-    
     -- Check if complete
     if entry.receivedCount == entry.totalChunks then
-        DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] CALLING CompleteMessage", 0, 1, 0)
         OGAddonMsg.CompleteMessage(msgId, entry)
-    else
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("[DEBUG] NOT COMPLETE: %d/%d chunks", entry.receivedCount, entry.totalChunks),
-            1, 0.5, 0
-        )
     end
 end
 
