@@ -727,62 +727,11 @@ function OGRH.ShowEncounterWindow(encounterName)
     OGRH.StyleButton(closeBtn)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
     
-    -- Encounter Sync button (to the left of Close button)
-    local encounterSyncBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    encounterSyncBtn:SetWidth(100)
-    encounterSyncBtn:SetHeight(24)
-    encounterSyncBtn:SetPoint("RIGHT", closeBtn, "LEFT", -5, 0)
-    encounterSyncBtn:SetText("Encounter Sync")
-    OGRH.StyleButton(encounterSyncBtn)
-    frame.encounterSyncBtn = encounterSyncBtn
-    
-    encounterSyncBtn:SetScript("OnEnter", function()
-      GameTooltip:SetOwner(this, "ANCHOR_TOP")
-      GameTooltip:SetText("Encounter Sync", 1, 1, 1)
-      
-      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
-        GameTooltip:AddLine("Broadcast player assignments for the selected encounter to all raid members.", 0.8, 0.8, 0.8, 1)
-      else
-        GameTooltip:AddLine("Only the raid admin can broadcast player assignments.", 0.8, 0.8, 0.8, 1)
-      end
-      
-      GameTooltip:Show()
-    end)
-    encounterSyncBtn:SetScript("OnLeave", function()
-      GameTooltip:Hide()
-    end)
-    
-    encounterSyncBtn:SetScript("OnClick", function()
-      local selectedRaid = frame.selectedRaid
-      local selectedEncounter = frame.selectedEncounter
-      
-      if not selectedRaid or not selectedEncounter then
-        OGRH.Msg("Select an encounter first.")
-        return
-      end
-      
-      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
-        -- Broadcast encounter assignments
-        if frame.ShowStatus then
-          frame.ShowStatus("Broadcasting player assignments for " .. selectedEncounter .. "...", 10)
-        end
-        OGRH.BroadcastFullSync(selectedRaid, selectedEncounter)
-      else
-        -- Request encounter assignments
-        if frame.ShowStatus then
-          frame.ShowStatus("Requesting encounter sync from raid lead...", 10)
-        end
-        if OGRH.RequestCurrentEncounterSync then
-          OGRH.RequestCurrentEncounterSync()
-        end
-      end
-    end)
-    
-    -- Edit Structure button (to the left of Structure Sync button)
+    -- Edit Structure button (to the left of Close button)
     local editStructureBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     editStructureBtn:SetWidth(95)
     editStructureBtn:SetHeight(24)
-    editStructureBtn:SetPoint("RIGHT", encounterSyncBtn, "LEFT", -110, 0)
+    editStructureBtn:SetPoint("RIGHT", closeBtn, "LEFT", -5, 0)
     editStructureBtn:SetText("Edit Structure")
     OGRH.StyleButton(editStructureBtn)
     frame.editStructureBtn = editStructureBtn
@@ -812,65 +761,6 @@ function OGRH.ShowEncounterWindow(encounterName)
       -- Open Encounter Setup with the selected raid and encounter
       if OGRH.ShowEncounterSetup then
         OGRH.ShowEncounterSetup(selectedRaid, selectedEncounter)
-      end
-    end)
-    
-    -- Structure Sync button (to the left of Encounter Sync button)
-    local structureSyncBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    structureSyncBtn:SetWidth(100)
-    structureSyncBtn:SetHeight(24)
-    structureSyncBtn:SetPoint("RIGHT", encounterSyncBtn, "LEFT", -5, 0)
-    structureSyncBtn:SetText("Structure Sync")
-    OGRH.StyleButton(structureSyncBtn)
-    frame.structureSyncBtn = structureSyncBtn
-    
-    structureSyncBtn:SetScript("OnEnter", function()
-      GameTooltip:SetOwner(this, "ANCHOR_TOP")
-      GameTooltip:SetText("Structure Sync", 1, 1, 1)
-      
-      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
-        GameTooltip:AddLine("Broadcast the structure (roles, marks, numbers, announcements) for the selected encounter to all raid members.", 0.8, 0.8, 0.8, 1)
-        GameTooltip:AddLine(" ", 1, 1, 1)
-        GameTooltip:AddLine("This does NOT include player assignments.", 0.6, 0.6, 0.6, 1)
-      else
-        GameTooltip:AddLine("Only the raid admin can broadcast structure sync.", 0.8, 0.8, 0.8, 1)
-      end
-      
-      GameTooltip:Show()
-    end)
-    structureSyncBtn:SetScript("OnLeave", function()
-      GameTooltip:Hide()
-    end)
-    
-    structureSyncBtn:SetScript("OnClick", function()
-      local selectedRaid = frame.selectedRaid
-      local selectedEncounter = frame.selectedEncounter
-      
-      if not selectedRaid or not selectedEncounter then
-        OGRH.Msg("Select an encounter first.")
-        return
-      end
-      
-      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
-        -- Broadcast structure for selected encounter only
-        if OGRH.BroadcastEncounterStructureSync then
-          OGRH.BroadcastEncounterStructureSync(selectedRaid, selectedEncounter)
-        else
-          if frame.ShowStatus then
-            frame.ShowStatus("Structure sync function not available yet.", 10)
-          end
-        end
-      else
-        -- Non-raid-lead requests structure sync
-        if GetNumRaidMembers() == 0 then
-          OGRH.Msg("You must be in a raid.")
-          return
-        end
-        
-        OGRH.Msg("Requesting structure sync for " .. selectedEncounter .. " from raid lead...")
-        local playerName = UnitName("player")
-        local msg = "REQUEST_ENCOUNTER_STRUCTURE_SYNC;" .. selectedRaid .. ";" .. selectedEncounter .. ";" .. playerName
-        SendAddonMessage(OGRH.ADDON_PREFIX, msg, "RAID")
       end
     end)
     
