@@ -342,6 +342,16 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
   -- Save button handler
   frame.saveBtn:SetScript("OnClick", function()
     -- Data is already saved in roleData.classPriority[slotIndex]
+    
+    -- Record delta sync for class priority change
+    if OGRH.SyncDelta and OGRH.SyncDelta.RecordClassPriorityChange then
+      local priorityData = {
+        classPriority = roleData.classPriority[slotIndex] or {},
+        classPriorityRoles = (roleData.classPriorityRoles and roleData.classPriorityRoles[slotIndex]) or {}
+      }
+      OGRH.SyncDelta.RecordClassPriorityChange(raidName, encounterName, roleIndex, slotIndex, priorityData)
+    end
+    
     frame:Hide()
     
     -- Refresh parent if callback provided

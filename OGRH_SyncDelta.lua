@@ -226,6 +226,32 @@ function OGRH.SyncDelta.RecordSettingsChange(raidName, encounterName, settingsDa
     -- If blocked (combat/zoning), changes stay queued until conditions clear
 end
 
+-- Record a class priority change for delta sync
+function OGRH.SyncDelta.RecordClassPriorityChange(raidName, encounterName, roleIndex, slotIndex, priorityData)
+    local changeData = {
+        type = "CLASSPRIORITY",
+        raidName = raidName,
+        encounterName = encounterName,
+        roleIndex = roleIndex,
+        slotIndex = slotIndex,
+        classPriority = priorityData.classPriority,  -- Array of class names in priority order
+        classPriorityRoles = priorityData.classPriorityRoles,  -- Role flags for hybrid classes
+        timestamp = GetTime(),
+        author = UnitName("player")
+    }
+    
+    -- Add to pending batch
+    table.insert(OGRH.SyncDelta.State.pendingChanges, changeData)
+    
+    -- Check if we can sync now (not in combat/zoning)
+    local canSync, reason = OGRH.CanSyncNow()
+    if canSync then
+        -- Schedule flush with batching delay
+        OGRH.SyncDelta.ScheduleFlush()
+    end
+    -- If blocked (combat/zoning), changes stay queued until conditions clear
+end
+
 --[[
     Batch Flushing
 ]]

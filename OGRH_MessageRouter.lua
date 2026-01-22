@@ -1070,9 +1070,94 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         encounterObj.advancedSettings = change.settings
                     end
                 end
+            
+            elseif change.type == "CLASSPRIORITY" then
+                -- Apply class priority changes (slot-level class priority and role flags)
+                OGRH.EnsureSV()
+                if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.roles then return end
+                
+                if not change.raidName or not change.encounterName or not change.roleIndex or not change.slotIndex then
+                    return
+                end
+                
+                -- Find role in encounterMgmt.roles structure
+                if not OGRH_SV.encounterMgmt.roles[change.raidName] then return end
+                if not OGRH_SV.encounterMgmt.roles[change.raidName][change.encounterName] then return end
+                
+                local encounterRoles = OGRH_SV.encounterMgmt.roles[change.raidName][change.encounterName]
+                local column1 = encounterRoles.column1 or {}
+                local column2 = encounterRoles.column2 or {}
+                
+                -- Build complete roles list using stable roleId
+                local allRoles = {}
+                for i = 1, table.getn(column1) do
+                    table.insert(allRoles, column1[i])
+                end
+                for i = 1, table.getn(column2) do
+                    table.insert(allRoles, column2[i])
+                end
+                
+                -- Find the role by roleIndex (using stable roleId)
+                local targetRole = nil
+                for i = 1, table.getn(allRoles) do
+                    if allRoles[i].roleId == change.roleIndex then
+                        targetRole = allRoles[i]
+                        break
+                    end
+                end
+                
+                if not targetRole then return end
+                
+                -- Initialize classPriority structure if needed
+                if not targetRole.classPriority then
+                    targetRole.classPriority = {}
+                end
+                
+                -- Apply class priority array
+                targetRole.classPriority[change.slotIndex] = change.classPriority or {}
+                
+                -- Apply class priority roles (hybrid class role flags)
+                if change.classPriorityRoles then
+                    if not targetRole.classPriorityRoles then
+                        targetRole.classPriorityRoles = {}
+                    end
+                    targetRole.classPriorityRoles[change.slotIndex] = change.classPriorityRoles
+                end
             end
         end
     
+        -- Update Class Priority dialog if open (must be done after all changes applied)
+        local classPriorityDialog = OGRH_ClassPriorityFrame
+        if classPriorityDialog and classPriorityDialog:IsShown() then
+            -- Check if any CLASSPRIORITY changes occurred for the currently viewed role/slot
+            local needsClassPriorityRefresh = false
+            for i = 1, table.getn(deltaData.changes) do
+                local change = deltaData.changes[i]
+                if change.type == "CLASSPRIORITY" then
+                    -- Check if this change is for the currently viewed role/slot
+                    if change.raidName == classPriorityDialog.raidName and
+                       change.encounterName == classPriorityDialog.encounterName and
+                       change.roleIndex == classPriorityDialog.roleIndex and
+                       change.slotIndex == classPriorityDialog.slotIndex then
+                        needsClassPriorityRefresh = true
+                        break
+                    end
+                end
+            end
+            
+            if needsClassPriorityRefresh and OGRH.ShowClassPriorityDialog then
+                -- Refresh the dialog by calling ShowClassPriorityDialog with current context
+                OGRH.ShowClassPriorityDialog(
+                    classPriorityDialog.raidName,
+                    classPriorityDialog.encounterName,
+                    classPriorityDialog.roleIndex,
+                    classPriorityDialog.slotIndex,
+                    classPriorityDialog.roleData,
+                    classPriorityDialog.refreshCallback
+                )
+            end
+        end
+        
         -- Update Advanced Settings dialog if open (must be done after all changes applied)
         local advancedDialog = OGRH_AdvancedSettingsFrame
         if advancedDialog and advancedDialog:IsShown() then

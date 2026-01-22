@@ -681,11 +681,25 @@ end
 - Or extend existing system to handle settings
 - Track old values before applying changes (needed for oldValue parameter)
 
+#### 5.4: OGRH_ClassPriority.lua - Class Priority Changes
+
+**Update Points Needing Delta Sync:**
+
+1. **OGRH.ShowClassPriorityDialog()** save button handler (~line 345):
+   - Class priority order changes: `roleData.classPriority[slotIndex]` (array of class names)
+   - Role flags for hybrid classes: `roleData.classPriorityRoles[slotIndex][priorityIndex]` (tanks/healers/melee/ranged checkboxes)
+   - Context: raidName, encounterName, roleIndex, slotIndex
+
+**Recommended Approach:**
+- Extend existing assignment delta sync or create new function like `RecordClassPriorityChange(raidName, encounterName, roleIndex, slotIndex, priorityData)`
+- Include both priority order array and role flags in single sync message
+- Coordinate with role editor changes (role structure modifications should trigger class priority updates)
+
 ### Implementation Tasks
 
 **Phase 5A: Extend Delta Sync System** (if needed)
 1. Review existing delta sync message types
-2. Determine if new record functions needed for marks/numbers/announcements/consumes/structure/settings
+2. Determine if new record functions needed for marks/numbers/announcements/consumes/structure/settings/classpriority
 3. Add new functions to OGRH_SyncDelta.lua if necessary
 4. Ensure compatibility with existing batch system and offline queue
 
@@ -696,7 +710,6 @@ end
 4. Add delta sync calls for consume selection (dialog OK button)
 5. Test all update points trigger sync correctly
 
-**Phase 5C: Integrate EncounterSetup**
 **Phase 5C: Integrate EncounterSetup**
 1. Add delta sync calls to all StaticPopupDialog OnAccept handlers
 2. Add delta sync calls to role editor save handler
@@ -709,7 +722,13 @@ end
 3. Test settings changes trigger sync correctly
 4. Verify changes sync to other raid members
 
-**Phase 5E: Testing & Validation**
+**Phase 5E: Integrate ClassPriority**
+1. Add delta sync calls to class priority dialog save handler
+2. Include both priority order and role flags in sync message
+3. Test class priority changes trigger sync correctly
+4. Verify changes sync to other raid members and persist
+
+**Phase 5F: Testing & Validation**
 1. Test all UI operations record changes correctly
 2. Verify batch system groups rapid changes (2 second window)
 3. Verify offline queue works when not in raid
