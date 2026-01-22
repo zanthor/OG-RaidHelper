@@ -88,6 +88,12 @@ Add "Cooldown Assignment tag" which will add a player to an announcement from a 
 
 **Status:** Planned
 
+### Update Auto-Assign Right-Click for Invite Method
+**Description:**
+Update the auto-assign right-click functionality to respect the current invite method (RollFor, Raid Roster, or other sources) when assigning players to roles.
+
+**Status:** Planned
+
 
 
 ---

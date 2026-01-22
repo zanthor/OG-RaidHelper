@@ -139,6 +139,18 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
   if not OGRH_SV.encounterAssignments[frame.selectedRaid] then OGRH_SV.encounterAssignments[frame.selectedRaid] = {} end
   
+  -- Save old assignments for delta sync (to detect clears)
+  local oldAssignments = {}
+  if OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] then
+    local old = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter]
+    for roleIdx, roleAssignments in pairs(old) do
+      oldAssignments[roleIdx] = {}
+      for slotIdx, playerName in pairs(roleAssignments) do
+        oldAssignments[roleIdx][slotIdx] = playerName
+      end
+    end
+  end
+  
   -- Clear existing assignments for this encounter
   OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = {}
   
@@ -295,9 +307,61 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
     end
   end
   
-  -- Broadcast sync
-  if OGRH.BroadcastFullSync then
-    OGRH.BroadcastFullSync(frame.selectedRaid, frame.selectedEncounter)
+  -- Record delta changes for all assignments (both cleared and newly assigned)
+  -- First, record clears for any slots that had assignments but now don't
+  for roleIdx, roleAssignments in pairs(oldAssignments) do
+    for slotIdx, oldPlayerName in pairs(roleAssignments) do
+      local newPlayerName = assignments[roleIdx] and assignments[roleIdx][slotIdx]
+      if newPlayerName ~= oldPlayerName then
+        -- Assignment changed or cleared
+        if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
+          local assignData = {
+            raid = frame.selectedRaid,
+            encounter = frame.selectedEncounter,
+            roleIndex = roleIdx,
+            slotIndex = slotIdx,
+            playerName = newPlayerName  -- nil if cleared
+          }
+          OGRH.SyncDelta.RecordAssignmentChange(
+            newPlayerName,
+            "ENCOUNTER_ROLE",
+            assignData,
+            {
+              raid = frame.selectedRaid,
+              encounter = frame.selectedEncounter,
+              roleIndex = roleIdx,
+              slotIndex = slotIdx,
+              playerName = oldPlayerName
+            }
+          )
+        end
+      end
+    end
+  end
+  
+  -- Then, record any NEW assignments (slots that didn't exist before)
+  for roleIdx, roleAssignments in pairs(assignments) do
+    for slotIdx, newPlayerName in pairs(roleAssignments) do
+      local hadOldAssignment = oldAssignments[roleIdx] and oldAssignments[roleIdx][slotIdx]
+      if not hadOldAssignment then
+        -- This is a new assignment
+        if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
+          local assignData = {
+            raid = frame.selectedRaid,
+            encounter = frame.selectedEncounter,
+            roleIndex = roleIdx,
+            slotIndex = slotIdx,
+            playerName = newPlayerName
+          }
+          OGRH.SyncDelta.RecordAssignmentChange(
+            newPlayerName,
+            "ENCOUNTER_ROLE",
+            assignData,
+            nil  -- No old value for new assignments
+          )
+        end
+      end
+    end
   end
   
   -- Refresh display
@@ -1953,9 +2017,9 @@ function OGRH.ShowEncounterWindow(encounterName)
         end
       end)
       
-      -- Save text changes to SavedVariables
+      -- Save text changes to SavedVariables on focus lost (not every keystroke)
       local capturedIndex = i
-      editBox:SetScript("OnTextChanged", function()
+      editBox:SetScript("OnEditFocusLost", function()
         if frame.selectedRaid and frame.selectedEncounter then
           if not OGRH_SV.encounterAnnouncements then
             OGRH_SV.encounterAnnouncements = {}
@@ -1967,7 +2031,24 @@ function OGRH.ShowEncounterWindow(encounterName)
             OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter] = {}
           end
           
-          OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter][capturedIndex] = this:GetText()
+          local oldText = OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter][capturedIndex] or ""
+          local newText = this:GetText()
+          OGRH_SV.encounterAnnouncements[frame.selectedRaid][frame.selectedEncounter][capturedIndex] = newText
+          
+          -- Delta sync for announcement change (only if text actually changed)
+          if newText ~= oldText and OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
+            local announcementData = {
+              raid = frame.selectedRaid,
+              encounter = frame.selectedEncounter,
+              lineIndex = capturedIndex
+            }
+            OGRH.SyncDelta.RecordAssignmentChange(
+              nil,  -- playerName (not applicable for announcements)
+              "ANNOUNCEMENT",
+              {text = newText, announcementData = announcementData},
+              {text = oldText, announcementData = announcementData}
+            )
+          end
         end
       end)
       
@@ -2888,7 +2969,24 @@ function OGRH.ShowEncounterWindow(encounterName)
                   OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] = {}
                 end
                 
+                local oldMark = OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex][capturedSlotIndex] or 0
                 OGRH_SV.encounterRaidMarks[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex][capturedSlotIndex] = currentIndex
+                
+                -- Delta sync for raid mark change
+                if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
+                  local assignData = {
+                    raid = frame.selectedRaid,
+                    encounter = frame.selectedEncounter,
+                    roleIndex = capturedRoleIndex,
+                    slotIndex = capturedSlotIndex
+                  }
+                  OGRH.SyncDelta.RecordAssignmentChange(
+                    nil,  -- playerName (not applicable for marks)
+                    "RAID_MARK",
+                    {mark = currentIndex, assignData = assignData},
+                    {mark = oldMark, assignData = assignData}
+                  )
+                end
               end
               
               if currentIndex == 0 then
@@ -3020,7 +3118,24 @@ function OGRH.ShowEncounterWindow(encounterName)
                   OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex] = {}
                 end
                 
+                local oldNumber = OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex][capturedSlotIndex] or 0
                 OGRH_SV.encounterAssignmentNumbers[frame.selectedRaid][frame.selectedEncounter][capturedRoleIndex][capturedSlotIndex] = currentIndex
+                
+                -- Delta sync for assignment number change
+                if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
+                  local assignData = {
+                    raid = frame.selectedRaid,
+                    encounter = frame.selectedEncounter,
+                    roleIndex = capturedRoleIndex,
+                    slotIndex = capturedSlotIndex
+                  }
+                  OGRH.SyncDelta.RecordAssignmentChange(
+                    nil,  -- playerName (not applicable for numbers)
+                    "ASSIGNMENT_NUMBER",
+                    {number = currentIndex, assignData = assignData},
+                    {number = oldNumber, assignData = assignData}
+                  )
+                end
               end
               
               -- Update display
@@ -3811,6 +3926,9 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
       role.consumes = {}
     end
     
+    -- Save old consume data for delta sync
+    local oldConsume = role.consumes[dialog.slotIndex]
+    
     -- Save consume selection
     local allowAlt = dialog.allowAltCheckbox:GetChecked()
     local checkCombat = dialog.combatCheckbox:GetChecked()
@@ -3822,6 +3940,22 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
       allowAlternate = allowAlt,
       checkDuringCombat = checkCombat
     }
+    
+    -- Delta sync for consume selection change
+    if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
+      local consumeData = {
+        raid = dialog.raidName,
+        encounter = dialog.encounterName,
+        roleIndex = dialog.roleIndex,
+        slotIndex = dialog.slotIndex
+      }
+      OGRH.SyncDelta.RecordAssignmentChange(
+        nil,  -- playerName (not applicable for consume selection)
+        "CONSUME_SELECTION",
+        {consume = role.consumes[dialog.slotIndex], consumeData = consumeData},
+        {consume = oldConsume, consumeData = consumeData}
+      )
+    end
     
     -- Refresh the Encounter Planning UI
     if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then

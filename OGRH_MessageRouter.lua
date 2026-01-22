@@ -487,8 +487,115 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                 OGRH_SV.roles[change.player] = change.newValue
                 
             elseif change.type == "ASSIGNMENT" then
-                -- Apply encounter assignment change
-                if change.assignmentType == "ENCOUNTER_ROLE" then
+                -- Apply assignment changes (check assignmentType to determine what kind)
+                
+                if change.assignmentType == "RAID_MARK" then
+                    -- Apply raid mark change
+                    if change.newValue and type(change.newValue) == "table" and change.newValue.assignData then
+                        local assignData = change.newValue.assignData
+                        if assignData.raid and assignData.encounter and assignData.roleIndex and assignData.slotIndex then
+                            -- Initialize nested tables
+                            if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
+                            if not OGRH_SV.encounterRaidMarks[assignData.raid] then 
+                                OGRH_SV.encounterRaidMarks[assignData.raid] = {} 
+                            end
+                            if not OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter] then 
+                                OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter] = {} 
+                            end
+                            if not OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex] then 
+                                OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
+                            end
+                            
+                            -- Apply the mark
+                            local markValue = change.newValue.mark or 0
+                            OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = markValue
+                        end
+                    end
+                    
+                elseif change.assignmentType == "ASSIGNMENT_NUMBER" then
+                    -- Apply assignment number change
+                    if change.newValue and type(change.newValue) == "table" and change.newValue.assignData then
+                        local assignData = change.newValue.assignData
+                        if assignData.raid and assignData.encounter and assignData.roleIndex and assignData.slotIndex then
+                            -- Initialize nested tables
+                            if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
+                            if not OGRH_SV.encounterAssignmentNumbers[assignData.raid] then 
+                                OGRH_SV.encounterAssignmentNumbers[assignData.raid] = {} 
+                            end
+                            if not OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter] then 
+                                OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter] = {} 
+                            end
+                            if not OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex] then 
+                                OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
+                            end
+                            
+                            -- Apply the number
+                            local numberValue = change.newValue.number or 0
+                            OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = numberValue
+                        end
+                    end
+                    
+                elseif change.assignmentType == "ANNOUNCEMENT" then
+                    -- Apply announcement change
+                    if change.newValue and type(change.newValue) == "table" and change.newValue.announcementData then
+                        local announcementData = change.newValue.announcementData
+                        if announcementData.raid and announcementData.encounter and announcementData.lineIndex then
+                            -- Initialize nested tables
+                            if not OGRH_SV.encounterAnnouncements then OGRH_SV.encounterAnnouncements = {} end
+                            if not OGRH_SV.encounterAnnouncements[announcementData.raid] then 
+                                OGRH_SV.encounterAnnouncements[announcementData.raid] = {} 
+                            end
+                            if not OGRH_SV.encounterAnnouncements[announcementData.raid][announcementData.encounter] then 
+                                OGRH_SV.encounterAnnouncements[announcementData.raid][announcementData.encounter] = {} 
+                            end
+                            
+                            -- Apply the announcement text
+                            local textValue = change.newValue.text or ""
+                            OGRH_SV.encounterAnnouncements[announcementData.raid][announcementData.encounter][announcementData.lineIndex] = textValue
+                        end
+                    end
+                    
+                elseif change.assignmentType == "CONSUME_SELECTION" then
+                    -- Apply consume selection change
+                    if change.newValue and type(change.newValue) == "table" and change.newValue.consumeData then
+                        local consumeData = change.newValue.consumeData
+                        if consumeData.raid and consumeData.encounter and consumeData.roleIndex and consumeData.slotIndex then
+                            -- Get the role from encounterMgmt.roles
+                            OGRH.EnsureSV()
+                            if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, roles = {}} end
+                            if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
+                            if not OGRH_SV.encounterMgmt.roles[consumeData.raid] then 
+                                OGRH_SV.encounterMgmt.roles[consumeData.raid] = {} 
+                            end
+                            if not OGRH_SV.encounterMgmt.roles[consumeData.raid][consumeData.encounter] then 
+                                OGRH_SV.encounterMgmt.roles[consumeData.raid][consumeData.encounter] = {column1 = {}, column2 = {}} 
+                            end
+                            
+                            local encounterRoles = OGRH_SV.encounterMgmt.roles[consumeData.raid][consumeData.encounter]
+                            local column1 = encounterRoles.column1 or {}
+                            local column2 = encounterRoles.column2 or {}
+                            
+                            -- Find the role based on roleIndex (1-based across both columns)
+                            local role = nil
+                            if consumeData.roleIndex <= table.getn(column1) then
+                                role = column1[consumeData.roleIndex]
+                            else
+                                role = column2[consumeData.roleIndex - table.getn(column1)]
+                            end
+                            
+                            if role then
+                                -- Initialize consumes array if needed
+                                if not role.consumes then
+                                    role.consumes = {}
+                                end
+                                
+                                -- Apply the consume selection
+                                role.consumes[consumeData.slotIndex] = change.newValue.consume
+                            end
+                        end
+                    end
+                
+                elseif change.assignmentType == "ENCOUNTER_ROLE" then
                     -- Extract encounter assignment data from newValue table
                     local assignData = change.newValue
                     if type(assignData) == "table" and assignData.raid and assignData.encounter and 
@@ -527,8 +634,29 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         
         -- Update Encounter Planning UI if open (must be done after all changes applied)
         local encounterFrame = OGRH_EncounterFrame or _G["OGRH_EncounterFrame"]
-        if encounterFrame and encounterFrame:IsShown() and encounterFrame.RefreshRoleContainers then
-            encounterFrame.RefreshRoleContainers()
+        if encounterFrame and encounterFrame:IsShown() then
+            -- Refresh role containers (includes assignments, marks, numbers, and announcements)
+            if encounterFrame.RefreshRoleContainers then
+                encounterFrame.RefreshRoleContainers()
+            end
+            
+            -- Also refresh announcement EditBoxes specifically if they exist and the change affects current selection
+            if encounterFrame.announcementLines and encounterFrame.selectedRaid and encounterFrame.selectedEncounter then
+                for i = 1, table.getn(deltaData.changes) do
+                    local change = deltaData.changes[i]
+                    if change.type == "ANNOUNCEMENT" and change.newValue and change.newValue.announcementData then
+                        local announcementData = change.newValue.announcementData
+                        -- Only update if this announcement is for the currently selected encounter
+                        if announcementData.raid == encounterFrame.selectedRaid and 
+                           announcementData.encounter == encounterFrame.selectedEncounter then
+                            local lineIndex = announcementData.lineIndex
+                            if lineIndex and lineIndex >= 1 and lineIndex <= table.getn(encounterFrame.announcementLines) then
+                                encounterFrame.announcementLines[lineIndex]:SetText(change.newValue.text or "")
+                            end
+                        end
+                    end
+                end
+            end
         end
         
         -- Update RolesUI if open
