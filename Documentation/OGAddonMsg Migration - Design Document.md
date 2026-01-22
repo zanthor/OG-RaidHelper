@@ -588,7 +588,155 @@ end
 - ✅ Admin transfer mechanisms validated
 - **Result**: Phase 4 COMPLETE - Permission system fully operational
 
-**Phase 5: Granular Sync & Rollback System** ⏳ NOT STARTED
+**Phase 5: Delta Sync Integration for Missing UI Components** ⏳ NOT STARTED
+
+### Overview
+
+**Problem:** Delta sync system exists in `OGRH_SyncDelta.lua` and is working in RolesUI and EncounterMgmt, but EncounterSetup and AdvancedSettings are not integrated.
+
+**Existing Delta Sync System:**
+- Located in `OGRH_SyncDelta.lua` (loaded between OGRH_DataManagement.lua and OGRH_SyncIntegrity.lua)
+- Provides 4 record functions:
+  - `RecordRoleChange(playerName, newRole, oldRole)` - For role bucket changes
+  - `RecordSwapChange(player1, player2, assignData1, assignData2)` - For player position swaps
+  - `RecordAssignmentChange(playerName, assignmentType, assignmentValue, oldValue)` - For assignment changes
+  - `RecordGroupChange(playerName, newGroup, oldGroup)` - For group changes
+- Includes batch system (2 second delay to group rapid changes)
+- Includes offline queue for changes made when not in raid
+- Smart sync triggers (checks combat/zoning before flushing)
+
+**Current Integration Status:**
+
+| File | Integration Status | Record Functions Used |
+|------|-------------------|----------------------|
+| OGRH_RolesUI.lua | ✅ Integrated | RecordRoleChange |
+| OGRH_EncounterMgmt.lua | ⚠️ Partially Integrated | RecordAssignmentChange, RecordSwapChange |
+| OGRH_EncounterSetup.lua | ❌ NOT Integrated | (none) |
+| OGRH_AdvancedSettings.lua | ❌ NOT Integrated | (none) |
+
+**Note:** EncounterMgmt has player assignments and swaps integrated, but missing: Raid Marks, Assignment Numbers, Announcements, Consume Roles
+
+### Gap Analysis & Integration Plan
+
+#### 5.1: OGRH_EncounterMgmt.lua - Missing Update Points
+
+**Update Points Needing Delta Sync:**
+
+1. **Raid Marks** - Click raid mark button to cycle marks:
+   - Location: Raid mark button OnClick handler
+   - Saves to: `OGRH_SV.encounterRaidMarks[raid][encounter][roleIndex][slotIndex]`
+   - Needs: Delta sync call after mark change
+
+2. **Assignment Numbers** - Click assignment number button to cycle numbers:
+   - Location: Assignment number button OnClick handler
+   - Saves to: `OGRH_SV.encounterAssignmentNumbers[raid][encounter][roleIndex][slotIndex]`
+   - Needs: Delta sync call after number change
+
+3. **Announcements** - Edit announcement text in EditBox:
+   - Location: Announcement EditBox OnEditFocusLost handler
+   - Saves to: `OGRH_SV.encounterAnnouncements[raid][encounter][lineIndex]`
+   - Needs: Delta sync call after text change (don't sync every keystroke, only on focus lost)
+
+4. **Consume Roles** - Select consumes via dialog:
+   - Location: Consume selection dialog "OK" button handler
+   - Saves to: Role object's consumes array
+   - Needs: Delta sync call after consume selection changes
+
+**Recommended Approach:**
+- Extend existing `RecordAssignmentChange` to handle marks, numbers, announcements
+- Or create specific functions for each type
+- Use OnEditFocusLost for announcements (not OnTextChanged) to avoid spamming
+
+#### 5.2: OGRH_EncounterSetup.lua - Structure CRUD Operations
+
+**Update Points Needing Delta Sync:**
+
+1. **Raid CRUD** - StaticPopupDialogs OnAccept handlers:
+   - `OGRH_ADD_RAID` - After adding new raid
+   - `OGRH_CONFIRM_DELETE_RAID` - After deleting raid
+   - `OGRH_RENAME_RAID` - After renaming raid
+
+2. **Encounter CRUD** - StaticPopupDialogs OnAccept handlers:
+   - `OGRH_ADD_ENCOUNTER` - After adding new encounter
+   - `OGRH_CONFIRM_DELETE_ENCOUNTER` - After deleting encounter
+   - `OGRH_RENAME_ENCOUNTER` - After renaming encounter
+
+3. **Role Editor** - `OGRH.ShowEditRoleDialog` save button:
+   - Role name, slot count, class restrictions, default roles, role type, module selection changes
+
+#### 5.2: OGRH_EncounterSetup.lua - Structure CRUD Operations
+
+**Update Points Needing Delta Sync:**
+
+1. **Raid CRUD** - StaticPopupDialogs OnAccept handlers:
+   - `OGRH_ADD_RAID` - After adding new raid
+   - `OGRH_CONFIRM_DELETE_RAID` - After deleting raid
+   - `OGRH_RENAME_RAID` - After renaming raid
+
+2. **Encounter CRUD** - StaticPopupDialogs OnAccept handlers:
+   - `OGRH_ADD_ENCOUNTER` - After adding new encounter
+   - `OGRH_CONFIRM_DELETE_ENCOUNTER` - After deleting encounter
+   - `OGRH_RENAME_ENCOUNTER` - After renaming encounter
+
+3. **Role Editor** - `OGRH.ShowEditRoleDialog` save button:
+   - Role name, slot count, class restrictions, default roles, role type, module selection changes
+
+**Recommended Approach:**
+- May need new delta sync function like `RecordStructureChange(changeType, raidName, encounterName, details)`
+- Or extend existing system to handle structure changes
+- Must coordinate with existing sync to avoid conflicts
+
+#### 5.3: OGRH_AdvancedSettings.lua - Settings Changes
+
+**Update Points Needing Delta Sync:**
+
+1. **OGRH.SaveAdvancedSettingsDialog()** function:
+   - Consume tracking: enable/disable, ready threshold, flask role requirements
+   - BigWigs integration: enable/disable, raid zone selection, encounter ID selection
+
+**Recommended Approach:**
+- New function like `RecordSettingsChange(raidName, encounterName, settingType, newValue, oldValue)`
+- Or extend existing system to handle settings
+- Track old values before applying changes (needed for oldValue parameter)
+
+### Implementation Tasks
+
+**Phase 5A: Extend Delta Sync System** (if needed)
+1. Review existing delta sync message types
+2. Determine if new record functions needed for marks/numbers/announcements/consumes/structure/settings
+3. Add new functions to OGRH_SyncDelta.lua if necessary
+4. Ensure compatibility with existing batch system and offline queue
+
+**Phase 5B: Complete EncounterMgmt Integration**
+1. Add delta sync calls for raid marks (mark button OnClick)
+2. Add delta sync calls for assignment numbers (number button OnClick)
+3. Add delta sync calls for announcements (EditBox OnEditFocusLost, not OnTextChanged)
+4. Add delta sync calls for consume selection (dialog OK button)
+5. Test all update points trigger sync correctly
+
+**Phase 5C: Integrate EncounterSetup**
+**Phase 5C: Integrate EncounterSetup**
+1. Add delta sync calls to all StaticPopupDialog OnAccept handlers
+2. Add delta sync calls to role editor save handler
+3. Test CRUD operations trigger sync correctly
+4. Verify batch system groups rapid changes
+
+**Phase 5D: Integrate AdvancedSettings**
+1. Add delta sync calls to SaveAdvancedSettingsDialog function
+2. Track old values before applying changes (for oldValue parameter)
+3. Test settings changes trigger sync correctly
+4. Verify changes sync to other raid members
+
+**Phase 5E: Testing & Validation**
+1. Test all UI operations record changes correctly
+2. Verify batch system groups rapid changes (2 second window)
+3. Verify offline queue works when not in raid
+4. Verify changes sync to raid members and persist
+5. Test combat/zoning blocks work as expected
+
+---
+
+**Phase 6: Granular Sync & Rollback System** ⏳ NOT STARTED
 
 ### Granular Sync Architecture
 
@@ -1777,6 +1925,40 @@ OG-RaidHelper/
 
 5. **Conflict UI**: How complex should merge interface be?
    - **✅ RESOLVED**: Simple "Keep Mine" vs "Keep Theirs" for MVP. No complex merge UI needed.
+
+---
+
+## Future Feature Backlog
+
+Features identified for future implementation beyond the current migration phases:
+
+### Role-Based Announcements
+**Priority:** Medium  
+**Description:** Enhanced announcement system allowing targeted instructions to specific roles or role slots.
+
+**Features:**
+- Announcements can target specific roles (e.g., "R1" for all of Role 1)
+- Announcements can target specific slots (e.g., "R1.P1" for Role 1, Player 1)
+- Multiple targets supported (e.g., "R1.P2,R2.P2" for Player 2 in Roles 1 and 2)
+- Players in targeted roles/slots see role-specific instructions
+- Exposed via OG-RaidHelper UI for easy configuration
+
+**Use Cases:**
+- Tank-specific positioning instructions ("R1: Stand at north pillar")
+- Healer assignments ("R2.P1,R2.P2: Focus heal MT")
+- DPS rotation coordination ("R3: Burn adds when they spawn")
+- Individual player callouts ("R1.P1: Taunt at 3 stacks")
+
+**Implementation Notes:**
+- Requires announcement text field + target selector UI
+- Parse target syntax: `R{roleIndex}` or `R{roleIndex}.P{slotIndex}`
+- Filter announcements shown to players based on their current role assignment
+- Sync role-based announcements via delta sync system
+
+**Dependencies:**
+- Phase 5 delta sync integration (announcements)
+- OGST UI components for target selector
+- Role assignment system must be stable
 
 ---
 
