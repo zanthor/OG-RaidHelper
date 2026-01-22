@@ -5,7 +5,10 @@
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 ## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV
 
-OGRH_Backport.lua
+## ===================================================================
+## Phase 0: Compatibility & External Libraries
+## ===================================================================
+Core\Backport.lua
 
 Libs\LibStub\LibStub.lua
 Libs\Libs.xml
@@ -24,49 +27,67 @@ Libs\OGAddonMsg\API.lua
 Libs\OGAddonMsg\StatsPanel.lua
 Libs\OGAddonMsg\Commands.lua
 
-## Phase 1: Infrastructure - Message System Foundation
-OGRH_MessageTypes.lua
-OGRH_Permissions.lua
-OGRH_Versioning.lua
-OGRH_Utilities.lua
-OGRH_MessageRouter.lua
+## ===================================================================
+## Phase 1: Core System - Namespace & Utilities
+## ===================================================================
+Core\Core.lua
+Core\Utilities.lua
+Core\Defaults.lua
+Core\ConTrack_Defaults.lua
 
-## Phase 2: Core Sync Replacement (OGAddonMsg)
-OGRH_Sync_v2.lua
-OGRH_DataManagement.lua
+## ===================================================================
+## Phase 2: Infrastructure - Communication & Sync
+## ===================================================================
+Infrastructure\MessageTypes.lua
+Infrastructure\Permissions.lua
+Infrastructure\Versioning.lua
+Infrastructure\MessageRouter.lua
+Infrastructure\Sync_v2.lua
+Infrastructure\DataManagement.lua
+Infrastructure\SyncIntegrity.lua
+Infrastructure\SyncDelta.lua
+Infrastructure\SyncUI.lua
 
-## Phase 2+: Sync System Components (Future)
-OGRH_SyncIntegrity.lua
-OGRH_SyncDelta.lua
-OGRH_SyncUI.lua
+## ===================================================================
+## Phase 3: Configuration - Roster & Consumables
+## ===================================================================
+Configuration\Invites.lua
+Configuration\Invites_Test.lua
+Configuration\Roster.lua
+Configuration\Promotes.lua
+Configuration\Consumes.lua
+Configuration\ConsumesTracking.lua
 
-## Core System
-OGRH_Core.lua
-OGRH_Defaults.lua
-OGRH_ConTrack_Defaults.lua
-OGRH_AdminSelection.lua
-OGRH_Announce.lua
-## OGRH_Sync.lua -- DISABLED: Replaced by OGRH_Sync_v2.lua (Phase 2)
-OGRH_MainUI.lua
-OGRH_RolesUI.lua
-OGRH_EncounterMgmt.lua
-OGRH_EncounterSetup.lua
-OGRH_AdvancedSettings.lua
-OGRH_BigWigs.lua
-OGRH_ClassPriority.lua
-OGRH_LinkRole.lua
-OGRH_Poll.lua
-OGRH_Trade.lua
-OGRH_Invites.lua
-OGRH_Invites_Test.lua
-OGRH_SRValidation.lua
-OGRH_AddonAudit.lua
-OGRH_Consumes.lua
-OGRH_ConsumesTracking.lua
-OGRH_Promotes.lua
-OGRH_Recruitment.lua
-## OGRH_RGO.lua -- DEPRECATED: Raid Group Organizer (use Roster Management instead)
-OGRH_Roster.lua
+## ===================================================================
+## Phase 4: Raid - Encounters & Roles
+## ===================================================================
+Raid\EncounterMgmt.lua
+Raid\EncounterSetup.lua
+Raid\RolesUI.lua
+Raid\ClassPriority.lua
+Raid\LinkRole.lua
+Raid\Poll.lua
+Raid\Announce.lua
+Raid\AdvancedSettings.lua
+Raid\BigWigs.lua
+Raid\Trade.lua
+
+## ===================================================================
+## Phase 5: Administration - Guild & Validation
+## ===================================================================
+Administration\AdminSelection.lua
+Administration\Recruitment.lua
+Administration\SRValidation.lua
+Administration\AddonAudit.lua
+
+## ===================================================================
+## Phase 6: UI - Main Interface
+## ===================================================================
+UI\MainUI.lua
+
+## ===================================================================
+## Phase 7: Modules - Encounter-Specific
+## ===================================================================
 
 Modules\cthun.lua
 Modules\OGRH-ConsumeHelperDefaults.lua
