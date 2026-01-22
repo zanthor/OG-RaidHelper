@@ -203,6 +203,29 @@ function OGRH.SyncDelta.RecordStructureChange(structureType, operation, details)
     -- If blocked (combat/zoning), changes stay queued until conditions clear
 end
 
+-- Record a settings change (advanced settings for raids/encounters) for delta sync
+function OGRH.SyncDelta.RecordSettingsChange(raidName, encounterName, settingsData)
+    local changeData = {
+        type = "SETTINGS",
+        raidName = raidName,
+        encounterName = encounterName,  -- nil for raid-level settings
+        settings = settingsData,  -- Complete settings object (consumeTracking and bigwigs)
+        timestamp = GetTime(),
+        author = UnitName("player")
+    }
+    
+    -- Add to pending batch
+    table.insert(OGRH.SyncDelta.State.pendingChanges, changeData)
+    
+    -- Check if we can sync now (not in combat/zoning)
+    local canSync, reason = OGRH.CanSyncNow()
+    if canSync then
+        -- Schedule flush with batching delay
+        OGRH.SyncDelta.ScheduleFlush()
+    end
+    -- If blocked (combat/zoning), changes stay queued until conditions clear
+end
+
 --[[
     Batch Flushing
 ]]

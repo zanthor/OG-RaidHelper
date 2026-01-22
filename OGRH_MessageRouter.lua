@@ -1028,6 +1028,84 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         end
                     end
                 end
+            
+            elseif change.type == "SETTINGS" then
+                -- Apply settings changes (raid or encounter advanced settings)
+                OGRH.EnsureSV()
+                if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then return end
+                
+                if not change.raidName or not change.settings then
+                    return
+                end
+                
+                -- Find raid
+                local raidObj = nil
+                for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                    if OGRH_SV.encounterMgmt.raids[i].name == change.raidName then
+                        raidObj = OGRH_SV.encounterMgmt.raids[i]
+                        break
+                    end
+                end
+                
+                if not raidObj then return end
+                
+                if not change.encounterName then
+                    -- Raid-level settings
+                    OGRH.EnsureRaidAdvancedSettings(raidObj)
+                    raidObj.advancedSettings = change.settings
+                else
+                    -- Encounter-level settings
+                    local encounterObj = nil
+                    if raidObj.encounters then
+                        for i = 1, table.getn(raidObj.encounters) do
+                            if raidObj.encounters[i].name == change.encounterName then
+                                encounterObj = raidObj.encounters[i]
+                                break
+                            end
+                        end
+                    end
+                    
+                    if encounterObj then
+                        OGRH.EnsureEncounterAdvancedSettings(raidObj, encounterObj)
+                        encounterObj.advancedSettings = change.settings
+                    end
+                end
+            end
+        end
+    
+        -- Update Advanced Settings dialog if open (must be done after all changes applied)
+        local advancedDialog = OGRH_AdvancedSettingsFrame
+        if advancedDialog and advancedDialog:IsShown() then
+            -- Check if any SETTINGS changes occurred for the currently viewed raid/encounter
+            local needsAdvancedRefresh = false
+            local encounterFrame = OGRH_EncounterFrame
+            if encounterFrame then
+                for i = 1, table.getn(deltaData.changes) do
+                    local change = deltaData.changes[i]
+                    if change.type == "SETTINGS" then
+                        -- Check if this SETTINGS change is for the currently viewed raid/encounter
+                        if advancedDialog.isRaidMode then
+                            -- Raid mode: refresh if change is for selected raid and no encounter specified
+                            if change.raidName == encounterFrame.selectedRaid and not change.encounterName then
+                                needsAdvancedRefresh = true
+                                break
+                            end
+                        else
+                            -- Encounter mode: refresh if change is for selected raid+encounter
+                            if change.raidName == encounterFrame.selectedRaid and 
+                               change.encounterName == encounterFrame.selectedEncounter then
+                                needsAdvancedRefresh = true
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if needsAdvancedRefresh and OGRH.ShowAdvancedSettingsDialog then
+                -- Refresh the dialog by calling ShowAdvancedSettingsDialog with the current mode
+                local mode = advancedDialog.isRaidMode and "raid" or "encounter"
+                OGRH.ShowAdvancedSettingsDialog(mode)
             end
         end
         
