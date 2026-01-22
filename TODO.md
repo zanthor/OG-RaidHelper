@@ -13,6 +13,17 @@
 
 ## Discovered Issues
 
+### [Issue] Interface Security Review Needed
+**Description:**
+Review all interface elements and define security restrictions:
+- Determine which UI elements should be locked based on permission levels (ADMIN/OFFICER/MEMBER)
+- Define what actions require ADMIN vs OFFICER vs MEMBER permissions
+- Ensure all modification operations have appropriate permission checks
+- Document security model for each interface component
+
+**Status:** Open
+**Priority:** High
+
 ### [Issue] Roles list doesn't clear when selecting different raid
 **Description:** 
 In the Encounter Setup interface the roles lists do not clear when you select a different raid.
