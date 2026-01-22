@@ -65,8 +65,8 @@ OGRH_Consumes.lua
 OGRH_ConsumesTracking.lua
 OGRH_Promotes.lua
 OGRH_Recruitment.lua
-OGRH_RGO.lua
-OGRH_RGO_Roster.lua
+## OGRH_RGO.lua -- DEPRECATED: Raid Group Organizer (use Roster Management instead)
+OGRH_Roster.lua
 
 Modules\cthun.lua
 Modules\OGRH-ConsumeHelperDefaults.lua

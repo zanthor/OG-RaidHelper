@@ -89,7 +89,7 @@ function OGRH.Sync.ComputeCurrentChecksum()
         encounterAnnouncements = OGRH_SV.encounterAnnouncements,
         tradeItems = OGRH_SV.tradeItems,
         consumes = OGRH_SV.consumes,
-        rgo = OGRH_SV.rgo
+        rgo = OGRH_SV.rgo  -- DEPRECATED: Will be nil after migration
     }
     
     return OGRH.Versioning.ComputeChecksum(currentData)

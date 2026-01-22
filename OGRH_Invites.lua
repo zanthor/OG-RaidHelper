@@ -1102,11 +1102,11 @@ function OGRH.Invites.ShowWindow()
   UpdateInviteModeButton()
   
   -- Initialize auto-sort state (default off)
-  if not OGRH_SV.rgo then
-    OGRH_SV.rgo = {}
+  if not OGRH_SV.invites then
+    OGRH_SV.invites = {}
   end
-  if OGRH_SV.rgo.autoSortEnabled == nil then
-    OGRH_SV.rgo.autoSortEnabled = false
+  if OGRH_SV.invites.autoSortEnabled == nil then
+    OGRH_SV.invites.autoSortEnabled = false
   end
   
   -- Refresh button (row 2, right side)

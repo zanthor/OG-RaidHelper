@@ -1,4 +1,4 @@
--- OGRH_RGO_Roster.lua - Roster Management Feature
+-- OGRH_Roster.lua - Roster Management System
 -- Provides interface to manage raid roster with role assignments and rankings
 
 OGRH = OGRH or {}

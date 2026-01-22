@@ -99,6 +99,7 @@ local hasPolledOnce = false
 _svf:SetScript("OnEvent", function() 
   if event == "VARIABLES_LOADED" then 
   OGRH.EnsureSV()
+  OGRH.MigrateRGOSettings()  -- Migrate and clean up deprecated RGO settings
   
   -- Upgrade encounter data structure if needed (must happen early before any UI access)
   if OGRH.UpgradeEncounterDataStructure then
@@ -168,6 +169,35 @@ _svf:SetScript("OnEvent", function()
   end
 end)
 OGRH.EnsureSV()
+
+-- ========================================
+-- RGO SETTINGS MIGRATION
+-- ========================================
+-- Migrate deprecated RGO settings to new locations and clean up
+function OGRH.MigrateRGOSettings()
+  if not OGRH_SV.rgo then return end  -- Already cleaned up
+  
+  -- Migrate autoSortEnabled to invites namespace
+  if OGRH_SV.rgo.autoSortEnabled ~= nil then
+    if not OGRH_SV.invites then OGRH_SV.invites = {} end
+    if OGRH_SV.invites.autoSortEnabled == nil then
+      OGRH_SV.invites.autoSortEnabled = OGRH_SV.rgo.autoSortEnabled
+    end
+  end
+  
+  -- Migrate sortSpeed to sorting namespace
+  if OGRH_SV.rgo.sortSpeed then
+    if not OGRH_SV.sorting then OGRH_SV.sorting = {} end
+    if OGRH_SV.sorting.speed == nil then
+      OGRH_SV.sorting.speed = OGRH_SV.rgo.sortSpeed
+    end
+  end
+  
+  -- Remove entire RGO saved variables
+  OGRH_SV.rgo = nil
+  
+  OGRH.Msg("|cff00ff00[Migration]|r Cleaned up deprecated RGO settings")
+end
 
 -- ========================================
 -- TIMER SYSTEM (for delayed execution)
@@ -4956,24 +4986,8 @@ local function CreateMinimapButton()
                 OGRH.Msg("Invites module not loaded.")
               end
             end
-          },
-          {
-            text = "Sort Raid",
-            onClick = function()
-              -- Check if sort is already running
-              if OGRH.activeAutoSortFrame then
-                DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[RaidHelper]|r Auto-sort is already in progress!")
-                return
-              end
-              
-              -- Clear completed groups and run the sort
-              if not OGRH_SV.rgo then OGRH_SV.rgo = {} end
-              OGRH_SV.rgo.completedGroups = {}
-              
-              DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Starting raid auto-sort...")
-              OGRH.PerformAutoSort()
-            end
           }
+          -- DEPRECATED: "Sort Raid" removed - was RGO-dependent
         }
       })
       
@@ -5124,16 +5138,17 @@ local function CreateMinimapButton()
               end
             end
           },
-          {
-            text = "Raid Group Organization",
-            onClick = function()
-              if OGRH.ShowRGOWindow then
-                OGRH.ShowRGOWindow()
-              else
-                OGRH.Msg("Raid Group Organization module not loaded.")
-              end
-            end
-          },
+          -- DEPRECATED: RGO feature has been removed. Use Roster Management instead.
+          -- {
+          --   text = "Raid Group Organization",
+          --   onClick = function()
+          --     if OGRH.ShowRGOWindow then
+          --       OGRH.ShowRGOWindow()
+          --     else
+          --       OGRH.Msg("Raid Group Organization module not loaded.")
+          --     end
+          --   end
+          -- },
           {
             text = "Roster Management",
             onClick = function()

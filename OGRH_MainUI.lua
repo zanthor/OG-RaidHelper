@@ -569,12 +569,12 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     local _, _, numStr = string.find(fullMsg, "^%s*%a+%s+(%d+)")
     local speedMs = tonumber(numStr)
     if speedMs then
-      if not OGRH_SV.rgo then OGRH_SV.rgo = {} end
-      OGRH_SV.rgo.sortSpeed = speedMs
+      if not OGRH_SV.sorting then OGRH_SV.sorting = {} end
+      OGRH_SV.sorting.speed = speedMs
       OGRH.Msg("Auto-sort speed set to " .. speedMs .. "ms between moves")
     else
-      if OGRH_SV.rgo and OGRH_SV.rgo.sortSpeed then
-        OGRH.Msg("Current auto-sort speed: " .. OGRH_SV.rgo.sortSpeed .. "ms")
+      if OGRH_SV.sorting and OGRH_SV.sorting.speed then
+        OGRH.Msg("Current auto-sort speed: " .. OGRH_SV.sorting.speed .. "ms")
       else
         OGRH.Msg("Current auto-sort speed: 250ms (default)")
       end
