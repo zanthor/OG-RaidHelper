@@ -1482,7 +1482,7 @@ OGRH.MessageTypes.SYNC = {
 
 #### 6.9: Implementation Phases
 
-**Phase 5A: Backup System & Hierarchical Checksum Computation**
+**Phase 6A: Backup System & Hierarchical Checksum Computation**
 - Implement backup storage in separate `OGRH_Backups` SavedVariable
 - **CRITICAL**: Exclude `OGRH_Backups` from ALL checksum computations
 - Add `OGRH_Backups` to TOC SavedVariables declaration
@@ -1496,7 +1496,7 @@ OGRH.MessageTypes.SYNC = {
 - Test that backup creation/restoration does NOT trigger sync operations
 - Update SYNC_CHECKSUM broadcast to include hierarchy
 
-**Phase 5B: Component-Level Sync Implementation**
+**Phase 6B: Component-Level Sync Implementation**
 - Add message types: REQUEST_CHECKSUMS, RESPONSE_CHECKSUMS
 - Add message types: REQUEST_COMPONENT, RESPONSE_COMPONENT
 - Add message types: REQUEST_GLOBAL_COMPONENT, RESPONSE_GLOBAL_COMPONENT
@@ -1505,14 +1505,14 @@ OGRH.MessageTypes.SYNC = {
 - Test component sync for all 6 encounter-level types
 - Test global component sync (tradeItems, consumes, rgo)
 
-**Phase 5C: Hierarchical Validation & Auto-Repair**
+**Phase 6C: Hierarchical Validation & Auto-Repair**
 - Update auto-repair to use hierarchical validation flow
 - Implement component-level sync request logic
 - Add fallback to full sync if component sync fails
 - Test auto-repair with component-level corruption scenarios
 - Measure performance improvement (target: 90%+ reduction)
 
-**Phase 5D: Backup & Merge System**
+**Phase 6D: Backup & Merge System**
 - Implement backup system with `_RaidName` naming in separate SavedVariable
 - **CRITICAL**: Store backups in `OGRH_Backups` (separate from `OGRH_SV`)
   - `OGRH_Backups` is NEVER included in checksums or sync operations
@@ -1523,14 +1523,14 @@ OGRH.MessageTypes.SYNC = {
 - Implement three merge strategies (PREFER_LOCAL, PREFER_BACKUP, MANUAL)
 - Test backup/restore/merge flows
 
-**Phase 5E: RolesUI Per-Role Optimization**
+**Phase 6E: RolesUI Per-Role Optimization**
 - Implement per-role checksums (4 checksums: TANKS, HEALERS, MELEE, RANGED)
 - Add role-specific sync request/response messages
 - Update RolesUI auto-repair to sync only mismatched roles
 - Test single-role corruption scenarios
 - Validate performance improvement: ~12 min → ~2 seconds (99%+ reduction)
 
-**Phase 5F: Data Management UI Enhancements**
+**Phase 6F: Data Management UI Enhancements**
 - Add "Pull Current Encounter" button (sync only current encounter)
 - Add "Pull Entire Raid" button (sync all encounters for current raid)
 - Keep "Pull All Data" button (full sync - nuclear option)
@@ -1538,7 +1538,7 @@ OGRH.MessageTypes.SYNC = {
 - Add "Restore Backup" button (rollback to backup)
 - Add "Merge with Backup" button (three-way merge UI)
 
-**Phase 5G: Auto-Repair Expansion** (Future Consideration)
+**Phase 6G: Auto-Repair Expansion** (Future Consideration)
 - Evaluate extending auto-repair to assignments (lower priority)
 - Consider auto-repair for structure (high risk - user customization)
 - Implement opt-in auto-repair settings UI

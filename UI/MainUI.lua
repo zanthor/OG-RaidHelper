@@ -628,6 +628,14 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Permission system not loaded.")
     end
+  -- Phase 6.1 Test Commands
+  elseif string.find(sub, "^test") then
+    local _, _, testName = string.find(fullMsg, "^%s*test%s+(%S+)")
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.RunTests then
+      OGRH.SyncIntegrity.RunTests(testName)
+    else
+      OGRH.Msg("SyncIntegrity tests not loaded.")
+    end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
     OGRH.Msg("Commands:")
