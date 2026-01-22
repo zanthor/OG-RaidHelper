@@ -180,6 +180,29 @@ function OGRH.SyncDelta.RecordGroupChange(playerName, newGroup, oldGroup)
     -- If blocked (combat/zoning), changes stay queued until conditions clear
 end
 
+-- Record a structure change (raid/encounter/role CRUD operations) for delta sync
+function OGRH.SyncDelta.RecordStructureChange(structureType, operation, details)
+    local changeData = {
+        type = "STRUCTURE",
+        structureType = structureType,  -- "RAID", "ENCOUNTER", "ROLE"
+        operation = operation,  -- "ADD", "DELETE", "RENAME", "REORDER"
+        details = details,  -- Table with operation-specific details (names, old/new values, positions, etc.)
+        timestamp = GetTime(),
+        author = UnitName("player")
+    }
+    
+    -- Add to pending batch
+    table.insert(OGRH.SyncDelta.State.pendingChanges, changeData)
+    
+    -- Check if we can sync now (not in combat/zoning)
+    local canSync, reason = OGRH.CanSyncNow()
+    if canSync then
+        -- Schedule flush with batching delay
+        OGRH.SyncDelta.ScheduleFlush()
+    end
+    -- If blocked (combat/zoning), changes stay queued until conditions clear
+end
+
 --[[
     Batch Flushing
 ]]

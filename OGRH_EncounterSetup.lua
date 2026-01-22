@@ -185,6 +185,16 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
             local temp = OGRH_SV.encounterMgmt.raids[capturedIndex - 1]
             OGRH_SV.encounterMgmt.raids[capturedIndex - 1] = OGRH_SV.encounterMgmt.raids[capturedIndex]
             OGRH_SV.encounterMgmt.raids[capturedIndex] = temp
+            
+            -- Record structure change for delta sync
+            if OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+              OGRH.SyncDelta.RecordStructureChange("RAID", "REORDER", {
+                raidName = capturedRaidName,
+                oldPosition = capturedIndex,
+                newPosition = capturedIndex - 1
+              })
+            end
+            
             RefreshRaidsList()
           end,
           function()
@@ -192,6 +202,16 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
             local temp = OGRH_SV.encounterMgmt.raids[capturedIndex + 1]
             OGRH_SV.encounterMgmt.raids[capturedIndex + 1] = OGRH_SV.encounterMgmt.raids[capturedIndex]
             OGRH_SV.encounterMgmt.raids[capturedIndex] = temp
+            
+            -- Record structure change for delta sync
+            if OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+              OGRH.SyncDelta.RecordStructureChange("RAID", "REORDER", {
+                raidName = capturedRaidName,
+                oldPosition = capturedIndex,
+                newPosition = capturedIndex + 1
+              })
+            end
+            
             RefreshRaidsList()
           end,
           function()
@@ -355,6 +375,17 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
               local temp = raidObj.encounters[capturedIndex - 1]
               raidObj.encounters[capturedIndex - 1] = raidObj.encounters[capturedIndex]
               raidObj.encounters[capturedIndex] = temp
+              
+              -- Record structure change for delta sync
+              if OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+                OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "REORDER", {
+                  raidName = capturedRaid,
+                  encounterName = capturedEncounterName,
+                  oldPosition = capturedIndex,
+                  newPosition = capturedIndex - 1
+                })
+              end
+              
               RefreshEncountersList()
             end
           end,
@@ -365,6 +396,17 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
               local temp = raidObj.encounters[capturedIndex + 1]
               raidObj.encounters[capturedIndex + 1] = raidObj.encounters[capturedIndex]
               raidObj.encounters[capturedIndex] = temp
+              
+              -- Record structure change for delta sync
+              if OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+                OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "REORDER", {
+                  raidName = capturedRaid,
+                  encounterName = capturedEncounterName,
+                  oldPosition = capturedIndex,
+                  newPosition = capturedIndex + 1
+                })
+              end
+              
               RefreshEncountersList()
             end
           end,
@@ -677,8 +719,22 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           if MouseIsOver(targetScrollFrame) then
             -- Move role to other column
             local role = sourceColumnRoles[this.roleIndex]
+            local fromColumn = this.isColumn2 and 2 or 1
+            local toColumn = this.isColumn2 and 1 or 2
+            
             table.remove(sourceColumnRoles, this.roleIndex)
             table.insert(targetColumnRoles, role)
+            
+            -- Record delta sync for column transfer
+            if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+              OGRH.SyncDelta.RecordStructureChange("ROLE", "MOVE_COLUMN", {
+                raidName = frame.selectedRaid,
+                encounterName = frame.selectedEncounter,
+                roleId = role.roleId,
+                fromColumn = fromColumn,
+                toColumn = toColumn
+              })
+            end
             
             RefreshRolesList()
           else
@@ -698,21 +754,62 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           table.getn(capturedRoles),
           function()
             -- Move up
+            if capturedIdx <= 1 then return end
             local temp = capturedRoles[capturedIdx - 1]
             capturedRoles[capturedIdx - 1] = capturedRoles[capturedIdx]
             capturedRoles[capturedIdx] = temp
+            
+            -- Record delta sync for structure change
+            if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+              OGRH.SyncDelta.RecordStructureChange("ROLE", "REORDER", {
+                raidName = frame.selectedRaid,
+                encounterName = frame.selectedEncounter,
+                roleId = capturedRoles[capturedIdx - 1].roleId,
+                oldPosition = capturedIdx,
+                newPosition = capturedIdx - 1,
+                column = isColumn2 and 2 or 1
+              })
+            end
+            
             RefreshRolesList()
           end,
           function()
             -- Move down
+            if capturedIdx >= table.getn(capturedRoles) then return end
             local temp = capturedRoles[capturedIdx + 1]
             capturedRoles[capturedIdx + 1] = capturedRoles[capturedIdx]
             capturedRoles[capturedIdx] = temp
+            
+            -- Record delta sync for structure change
+            if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+              OGRH.SyncDelta.RecordStructureChange("ROLE", "REORDER", {
+                raidName = frame.selectedRaid,
+                encounterName = frame.selectedEncounter,
+                roleId = capturedRoles[capturedIdx + 1].roleId,
+                oldPosition = capturedIdx,
+                newPosition = capturedIdx + 1,
+                column = isColumn2 and 2 or 1
+              })
+            end
+            
             RefreshRolesList()
           end,
           function()
             -- Delete
+            local roleToDelete = capturedRoles[capturedIdx]
             table.remove(capturedRoles, capturedIdx)
+            
+            -- Record delta sync for structure change
+            if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+              OGRH.SyncDelta.RecordStructureChange("ROLE", "DELETE", {
+                raidName = frame.selectedRaid,
+                encounterName = frame.selectedEncounter,
+                roleId = roleToDelete.roleId,
+                roleName = roleToDelete.name,
+                column = isColumn2 and 2 or 1
+              })
+            end
+            
             RefreshRolesList()
           end
         )
@@ -748,12 +845,25 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       addRoleBtn1:SetScript("OnClick", function()
         local newRoleId = GetNextRoleId(rolesData)
         local newIndex = table.getn(rolesData.column1) + 1
-        table.insert(rolesData.column1, {
+        local newRole = {
           name = "New Role " .. newIndex, 
           slots = 1, 
           roleId = newRoleId,
           fillOrder = newRoleId
-        })
+        }
+        table.insert(rolesData.column1, newRole)
+        
+        -- Record delta sync for structure change
+        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+          OGRH.SyncDelta.RecordStructureChange("ROLE", "ADD", {
+            raidName = frame.selectedRaid,
+            encounterName = frame.selectedEncounter,
+            roleName = newRole.name,
+            roleId = newRoleId,
+            column = 1
+          })
+        end
+        
         RefreshRolesList()
       end)
       
@@ -771,12 +881,25 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       addRoleBtn2:SetScript("OnClick", function()
         local newRoleId = GetNextRoleId(rolesData)
         local newIndex = table.getn(rolesData.column2) + 1
-        table.insert(rolesData.column2, {
+        local newRole = {
           name = "New Role " .. newIndex, 
           slots = 1, 
           roleId = newRoleId,
           fillOrder = newRoleId
-        })
+        }
+        table.insert(rolesData.column2, newRole)
+        
+        -- Record delta sync for structure change
+        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+          OGRH.SyncDelta.RecordStructureChange("ROLE", "ADD", {
+            raidName = frame.selectedRaid,
+            encounterName = frame.selectedEncounter,
+            roleName = newRole.name,
+            roleId = newRoleId,
+            column = 2
+          })
+        end
+        
         RefreshRolesList()
       end)
       
@@ -875,6 +998,14 @@ StaticPopupDialogs["OGRH_ADD_RAID"] = {
             }
           }
         })
+        
+        -- Record delta sync for structure change
+        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+          OGRH.SyncDelta.RecordStructureChange("RAID", "ADD", {
+            raidName = raidName
+          })
+        end
+        
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
           OGRH_EncounterSetupFrame.RefreshRaidsList()
         end
@@ -917,6 +1048,13 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"] = {
           table.remove(OGRH_SV.encounterMgmt.raids, i)
           break
         end
+      end
+      
+      -- Record delta sync for structure change
+      if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+        OGRH.SyncDelta.RecordStructureChange("RAID", "DELETE", {
+          raidName = raidName
+        })
       end
       
       if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
@@ -999,6 +1137,15 @@ StaticPopupDialogs["OGRH_ADD_ENCOUNTER"] = {
           }
         }
         table.insert(raidObj.encounters, newEncounter)
+        
+        -- Record delta sync for structure change
+        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+          OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "ADD", {
+            raidName = raidName,
+            encounterName = encounterName
+          })
+        end
+        
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshEncountersList then
           OGRH_EncounterSetupFrame.RefreshEncountersList()
         end
@@ -1054,6 +1201,14 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
             break
           end
         end
+      end
+      
+      -- Record delta sync for structure change
+      if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+        OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "DELETE", {
+          raidName = raidName,
+          encounterName = encounterName
+        })
       end
       
       -- TODO: Remove encounter design data
@@ -1142,6 +1297,14 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
         if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[oldName] then
           OGRH_SV.encounterAnnouncements[newName] = OGRH_SV.encounterAnnouncements[oldName]
           OGRH_SV.encounterAnnouncements[oldName] = nil
+        end
+        
+        -- Record delta sync for structure change
+        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+          OGRH.SyncDelta.RecordStructureChange("RAID", "RENAME", {
+            oldName = oldName,
+            newName = newName
+          })
         end
         
         -- Update selected raid in both windows
@@ -1275,6 +1438,15 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
         if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[raidName] and OGRH_SV.encounterAnnouncements[raidName][oldName] then
           OGRH_SV.encounterAnnouncements[raidName][newName] = OGRH_SV.encounterAnnouncements[raidName][oldName]
           OGRH_SV.encounterAnnouncements[raidName][oldName] = nil
+        end
+        
+        -- Record delta sync for structure change
+        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+          OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "RENAME", {
+            raidName = raidName,
+            oldName = oldName,
+            newName = newName
+          })
         end
         
         -- Update selected encounter in both windows
@@ -2333,6 +2505,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     end
     
     -- Update role data
+    local oldName = roleData.name
     roleData.name = frame.nameEditBox:GetText()
     roleData.isConsumeCheck = isConsumeCheck
     roleData.isCustomModule = isCustomModule
@@ -2389,6 +2562,33 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       -- Clear defaultRoles and classes for custom modules
       roleData.defaultRoles = nil
       roleData.classes = nil
+    end
+    
+    -- Record delta sync for role property update (send entire role data)
+    if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
+      OGRH.SyncDelta.RecordStructureChange("ROLE", "UPDATE", {
+        raidName = OGRH_EncounterSetupFrame.selectedRaid,
+        encounterName = OGRH_EncounterSetupFrame.selectedEncounter,
+        roleId = roleData.roleId,
+        roleData = {
+          name = roleData.name,
+          slots = roleData.slots,
+          roleId = roleData.roleId,
+          fillOrder = roleData.fillOrder,
+          isConsumeCheck = roleData.isConsumeCheck,
+          isCustomModule = roleData.isCustomModule,
+          roleType = roleData.roleType,
+          invertFillOrder = roleData.invertFillOrder,
+          linkRole = roleData.linkRole,
+          showRaidIcons = roleData.showRaidIcons,
+          showAssignment = roleData.showAssignment,
+          markPlayer = roleData.markPlayer,
+          allowOtherRoles = roleData.allowOtherRoles,
+          defaultRoles = roleData.defaultRoles,
+          classes = roleData.classes,
+          modules = roleData.modules
+        }
+      })
     end
     
     -- Refresh the roles list

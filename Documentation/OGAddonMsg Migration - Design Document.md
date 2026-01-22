@@ -664,27 +664,9 @@ end
 3. **Role Editor** - `OGRH.ShowEditRoleDialog` save button:
    - Role name, slot count, class restrictions, default roles, role type, module selection changes
 
-#### 5.2: OGRH_EncounterSetup.lua - Structure CRUD Operations
-
-**Update Points Needing Delta Sync:**
-
-1. **Raid CRUD** - StaticPopupDialogs OnAccept handlers:
-   - `OGRH_ADD_RAID` - After adding new raid
-   - `OGRH_CONFIRM_DELETE_RAID` - After deleting raid
-   - `OGRH_RENAME_RAID` - After renaming raid
-
-2. **Encounter CRUD** - StaticPopupDialogs OnAccept handlers:
-   - `OGRH_ADD_ENCOUNTER` - After adding new encounter
-   - `OGRH_CONFIRM_DELETE_ENCOUNTER` - After deleting encounter
-   - `OGRH_RENAME_ENCOUNTER` - After renaming encounter
-
-3. **Role Editor** - `OGRH.ShowEditRoleDialog` save button:
-   - Role name, slot count, class restrictions, default roles, role type, module selection changes
-
 **Recommended Approach:**
 - May need new delta sync function like `RecordStructureChange(changeType, raidName, encounterName, details)`
-- Or extend existing system to handle structure changes
-- Must coordinate with existing sync to avoid conflicts
+- Must coordinate with existing sync to avoid conflicts - as long as we are using the specification this should be managed but confirm this.
 
 #### 5.3: OGRH_AdvancedSettings.lua - Settings Changes
 

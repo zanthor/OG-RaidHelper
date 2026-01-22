@@ -629,12 +629,430 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             elseif change.type == "GROUP" then
                 -- Apply group change (if group assignment system exists)
                 -- (Implementation pending)
+                
+            elseif change.type == "STRUCTURE" then
+                -- Apply structure changes (raid/encounter/role CRUD operations)
+                
+                if change.structureType == "RAID" then
+                    OGRH.EnsureSV()
+                    if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, roles = {}} end
+                    if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
+                    
+                    if change.operation == "ADD" and change.details and change.details.raidName then
+                        -- Add new raid
+                        local raidName = change.details.raidName
+                        local exists = false
+                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                                exists = true
+                                break
+                            end
+                        end
+                        if not exists then
+                            table.insert(OGRH_SV.encounterMgmt.raids, {
+                                name = raidName,
+                                encounters = {},
+                                advancedSettings = {
+                                    consumeTracking = {
+                                        enabled = false,
+                                        readyThreshold = 85,
+                                        requiredFlaskRoles = {
+                                            ["Tanks"] = false,
+                                            ["Healers"] = false,
+                                            ["Melee"] = false,
+                                            ["Ranged"] = false,
+                                        }
+                                    }
+                                }
+                            })
+                        end
+                        
+                    elseif change.operation == "DELETE" and change.details and change.details.raidName then
+                        -- Delete raid
+                        local raidName = change.details.raidName
+                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                                table.remove(OGRH_SV.encounterMgmt.raids, i)
+                                break
+                            end
+                        end
+                        
+                    elseif change.operation == "RENAME" and change.details and change.details.oldName and change.details.newName then
+                        -- Rename raid
+                        local oldName = change.details.oldName
+                        local newName = change.details.newName
+                        
+                        -- Update raid name in raids list
+                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                            if OGRH_SV.encounterMgmt.raids[i].name == oldName then
+                                OGRH_SV.encounterMgmt.raids[i].name = newName
+                                break
+                            end
+                        end
+                        
+                        -- Update all related data structures
+                        if OGRH_SV.encounterMgmt.roles and OGRH_SV.encounterMgmt.roles[oldName] then
+                            OGRH_SV.encounterMgmt.roles[newName] = OGRH_SV.encounterMgmt.roles[oldName]
+                            OGRH_SV.encounterMgmt.roles[oldName] = nil
+                        end
+                        if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[oldName] then
+                            OGRH_SV.encounterAssignments[newName] = OGRH_SV.encounterAssignments[oldName]
+                            OGRH_SV.encounterAssignments[oldName] = nil
+                        end
+                        if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[oldName] then
+                            OGRH_SV.encounterRaidMarks[newName] = OGRH_SV.encounterRaidMarks[oldName]
+                            OGRH_SV.encounterRaidMarks[oldName] = nil
+                        end
+                        if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[oldName] then
+                            OGRH_SV.encounterAssignmentNumbers[newName] = OGRH_SV.encounterAssignmentNumbers[oldName]
+                            OGRH_SV.encounterAssignmentNumbers[oldName] = nil
+                        end
+                        if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[oldName] then
+                            OGRH_SV.encounterAnnouncements[newName] = OGRH_SV.encounterAnnouncements[oldName]
+                            OGRH_SV.encounterAnnouncements[oldName] = nil
+                        end
+                    
+                    elseif change.operation == "REORDER" and change.details and change.details.raidName and change.details.oldPosition and change.details.newPosition then
+                        -- Reorder raid in list
+                        local raidName = change.details.raidName
+                        local oldPos = change.details.oldPosition
+                        local newPos = change.details.newPosition
+                        
+                        -- Find raid by name and position
+                        local raidIndex = nil
+                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                                raidIndex = i
+                                break
+                            end
+                        end
+                        
+                        if raidIndex and raidIndex == oldPos then
+                            -- Swap elements
+                            local temp = OGRH_SV.encounterMgmt.raids[newPos]
+                            OGRH_SV.encounterMgmt.raids[newPos] = OGRH_SV.encounterMgmt.raids[oldPos]
+                            OGRH_SV.encounterMgmt.raids[oldPos] = temp
+                        end
+                    end
+                    
+                elseif change.structureType == "ENCOUNTER" then
+                    OGRH.EnsureSV()
+                    if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then return end
+                    
+                    if change.operation == "ADD" and change.details and change.details.raidName and change.details.encounterName then
+                        -- Add new encounter
+                        local raidName = change.details.raidName
+                        local encounterName = change.details.encounterName
+                        
+                        -- Find raid
+                        local raidObj = nil
+                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                                raidObj = OGRH_SV.encounterMgmt.raids[i]
+                                break
+                            end
+                        end
+                        
+                        if raidObj then
+                            if not raidObj.encounters then raidObj.encounters = {} end
+                            
+                            -- Check if encounter already exists
+                            local exists = false
+                            for i = 1, table.getn(raidObj.encounters) do
+                                if raidObj.encounters[i].name == encounterName then
+                                    exists = true
+                                    break
+                                end
+                            end
+                            
+                            if not exists then
+                                table.insert(raidObj.encounters, {
+                                    name = encounterName,
+                                    advancedSettings = {
+                                        bigwigs = {
+                                            enabled = false,
+                                            encounterId = "",
+                                            autoAnnounce = false
+                                        },
+                                        consumeTracking = {
+                                            enabled = nil,
+                                            readyThreshold = nil,
+                                            requiredFlaskRoles = {}
+                                        }
+                                    }
+                                })
+                            end
+                        end
+                        
+                    elseif change.operation == "DELETE" and change.details and change.details.raidName and change.details.encounterName then
+                        -- Delete encounter
+                        local raidName = change.details.raidName
+                        local encounterName = change.details.encounterName
+                        
+                        -- Find raid
+                        local raidObj = nil
+                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                                raidObj = OGRH_SV.encounterMgmt.raids[i]
+                                break
+                            end
+                        end
+                        
+                        if raidObj and raidObj.encounters then
+                            for i = 1, table.getn(raidObj.encounters) do
+                                if raidObj.encounters[i].name == encounterName then
+                                    table.remove(raidObj.encounters, i)
+                                    break
+                                end
+                            end
+                        end
+                        
+                    elseif change.operation == "RENAME" and change.details and change.details.raidName and change.details.oldName and change.details.newName then
+                        -- Rename encounter
+                        local raidName = change.details.raidName
+                        local oldName = change.details.oldName
+                        local newName = change.details.newName
+                        
+                        -- Find raid
+                        local raidObj = nil
+                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                                raidObj = OGRH_SV.encounterMgmt.raids[i]
+                                break
+                            end
+                        end
+                        
+                        if raidObj and raidObj.encounters then
+                            -- Update encounter name
+                            for i = 1, table.getn(raidObj.encounters) do
+                                if raidObj.encounters[i].name == oldName then
+                                    raidObj.encounters[i].name = newName
+                                    break
+                                end
+                            end
+                            
+                            -- Update all related data structures
+                            if OGRH_SV.encounterMgmt.roles and OGRH_SV.encounterMgmt.roles[raidName] and OGRH_SV.encounterMgmt.roles[raidName][oldName] then
+                                OGRH_SV.encounterMgmt.roles[raidName][newName] = OGRH_SV.encounterMgmt.roles[raidName][oldName]
+                                OGRH_SV.encounterMgmt.roles[raidName][oldName] = nil
+                            end
+                            if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[raidName] and OGRH_SV.encounterAssignments[raidName][oldName] then
+                                OGRH_SV.encounterAssignments[raidName][newName] = OGRH_SV.encounterAssignments[raidName][oldName]
+                                OGRH_SV.encounterAssignments[raidName][oldName] = nil
+                            end
+                            if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[raidName] and OGRH_SV.encounterRaidMarks[raidName][oldName] then
+                                OGRH_SV.encounterRaidMarks[raidName][newName] = OGRH_SV.encounterRaidMarks[raidName][oldName]
+                                OGRH_SV.encounterRaidMarks[raidName][oldName] = nil
+                            end
+                            if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[raidName] and OGRH_SV.encounterAssignmentNumbers[raidName][oldName] then
+                                OGRH_SV.encounterAssignmentNumbers[raidName][newName] = OGRH_SV.encounterAssignmentNumbers[raidName][oldName]
+                                OGRH_SV.encounterAssignmentNumbers[raidName][oldName] = nil
+                            end
+                            if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[raidName] and OGRH_SV.encounterAnnouncements[raidName][oldName] then
+                                OGRH_SV.encounterAnnouncements[raidName][newName] = OGRH_SV.encounterAnnouncements[raidName][oldName]
+                                OGRH_SV.encounterAnnouncements[raidName][oldName] = nil
+                            end
+                        end
+                    
+                    elseif change.operation == "REORDER" and change.details and change.details.raidName and change.details.encounterName and change.details.oldPosition and change.details.newPosition then
+                        -- Reorder encounter in list
+                        local raidName = change.details.raidName
+                        local encounterName = change.details.encounterName
+                        local oldPos = change.details.oldPosition
+                        local newPos = change.details.newPosition
+                        
+                        -- Find raid
+                        local raidObj = nil
+                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                                raidObj = OGRH_SV.encounterMgmt.raids[i]
+                                break
+                            end
+                        end
+                        
+                        if raidObj and raidObj.encounters then
+                            -- Find encounter by name and verify position
+                            local encounterIndex = nil
+                            for i = 1, table.getn(raidObj.encounters) do
+                                if raidObj.encounters[i].name == encounterName then
+                                    encounterIndex = i
+                                    break
+                                end
+                            end
+                            
+                            if encounterIndex and encounterIndex == oldPos then
+                                -- Swap elements
+                                local temp = raidObj.encounters[newPos]
+                                raidObj.encounters[newPos] = raidObj.encounters[oldPos]
+                                raidObj.encounters[oldPos] = temp
+                            end
+                        end
+                    end
+                    
+                elseif change.structureType == "ROLE" then
+                    -- Role CRUD operations (requires raid and encounter context)
+                    if not change.details or not change.details.raidName or not change.details.encounterName then
+                        return
+                    end
+                    
+                    OGRH.EnsureSV()
+                    if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, roles = {}} end
+                    if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
+                    if not OGRH_SV.encounterMgmt.roles[change.details.raidName] then 
+                        OGRH_SV.encounterMgmt.roles[change.details.raidName] = {} 
+                    end
+                    if not OGRH_SV.encounterMgmt.roles[change.details.raidName][change.details.encounterName] then 
+                        OGRH_SV.encounterMgmt.roles[change.details.raidName][change.details.encounterName] = {column1 = {}, column2 = {}} 
+                    end
+                    
+                    local encounterRoles = OGRH_SV.encounterMgmt.roles[change.details.raidName][change.details.encounterName]
+                    if not encounterRoles.column1 then encounterRoles.column1 = {} end
+                    if not encounterRoles.column2 then encounterRoles.column2 = {} end
+                    
+                    if change.operation == "ADD" and change.details.roleName and change.details.roleId then
+                        -- Add role to appropriate column
+                        local targetColumn = (change.details.column == 2) and encounterRoles.column2 or encounterRoles.column1
+                        
+                        -- Check if role already exists (by roleId)
+                        local exists = false
+                        for i = 1, table.getn(targetColumn) do
+                            if targetColumn[i].roleId == change.details.roleId then
+                                exists = true
+                                break
+                            end
+                        end
+                        
+                        if not exists then
+                            table.insert(targetColumn, {
+                                name = change.details.roleName,
+                                roleId = change.details.roleId,
+                                slots = 1,
+                                fillOrder = change.details.roleId
+                            })
+                        end
+                        
+                    elseif change.operation == "DELETE" and change.details.roleId then
+                        -- Delete role from appropriate column
+                        local targetColumn = (change.details.column == 2) and encounterRoles.column2 or encounterRoles.column1
+                        
+                        for i = 1, table.getn(targetColumn) do
+                            if targetColumn[i].roleId == change.details.roleId then
+                                table.remove(targetColumn, i)
+                                break
+                            end
+                        end
+                        
+                    elseif change.operation == "RENAME" and change.details.roleId and change.details.oldName and change.details.newName then
+                        -- Rename role (search both columns)
+                        local allColumns = {encounterRoles.column1, encounterRoles.column2}
+                        
+                        for _, column in ipairs(allColumns) do
+                            for i = 1, table.getn(column) do
+                                if column[i].roleId == change.details.roleId then
+                                    column[i].name = change.details.newName
+                                    break
+                                end
+                            end
+                        end
+                        
+                    elseif change.operation == "REORDER" and change.details.roleId and change.details.oldPosition and change.details.newPosition then
+                        -- Reorder within column
+                        local targetColumn = (change.details.column == 2) and encounterRoles.column2 or encounterRoles.column1
+                        
+                        -- Find role by ID and move it
+                        local roleToMove = nil
+                        local currentIndex = nil
+                        for i = 1, table.getn(targetColumn) do
+                            if targetColumn[i].roleId == change.details.roleId then
+                                roleToMove = targetColumn[i]
+                                currentIndex = i
+                                break
+                            end
+                        end
+                        
+                        if roleToMove and currentIndex then
+                            table.remove(targetColumn, currentIndex)
+                            table.insert(targetColumn, change.details.newPosition, roleToMove)
+                        end
+                        
+                    elseif change.operation == "MOVE_COLUMN" and change.details.roleId and change.details.fromColumn and change.details.toColumn then
+                        -- Move role between columns
+                        local fromColumn = (change.details.fromColumn == 2) and encounterRoles.column2 or encounterRoles.column1
+                        local toColumn = (change.details.toColumn == 2) and encounterRoles.column2 or encounterRoles.column1
+                        
+                        -- Find and remove from source column
+                        local roleToMove = nil
+                        for i = 1, table.getn(fromColumn) do
+                            if fromColumn[i].roleId == change.details.roleId then
+                                roleToMove = fromColumn[i]
+                                table.remove(fromColumn, i)
+                                break
+                            end
+                        end
+                        
+                        -- Add to target column
+                        if roleToMove then
+                            table.insert(toColumn, roleToMove)
+                        end
+                        
+                    elseif change.operation == "UPDATE" and change.details.roleId and change.details.roleData then
+                        -- Update role properties (search both columns)
+                        local allColumns = {encounterRoles.column1, encounterRoles.column2}
+                        
+                        for _, column in ipairs(allColumns) do
+                            for i = 1, table.getn(column) do
+                                if column[i].roleId == change.details.roleId then
+                                    -- Update all properties from roleData
+                                    local role = column[i]
+                                    local newData = change.details.roleData
+                                    
+                                    role.name = newData.name or role.name
+                                    role.slots = newData.slots or role.slots
+                                    role.fillOrder = newData.fillOrder or role.fillOrder
+                                    role.isConsumeCheck = newData.isConsumeCheck
+                                    role.isCustomModule = newData.isCustomModule
+                                    role.roleType = newData.roleType
+                                    role.invertFillOrder = newData.invertFillOrder
+                                    role.linkRole = newData.linkRole
+                                    role.showRaidIcons = newData.showRaidIcons
+                                    role.showAssignment = newData.showAssignment
+                                    role.markPlayer = newData.markPlayer
+                                    role.allowOtherRoles = newData.allowOtherRoles
+                                    role.defaultRoles = newData.defaultRoles
+                                    role.classes = newData.classes
+                                    role.modules = newData.modules
+                                    
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
         
         -- Update Encounter Planning UI if open (must be done after all changes applied)
         local encounterFrame = OGRH_EncounterFrame or _G["OGRH_EncounterFrame"]
         if encounterFrame and encounterFrame:IsShown() then
+            -- Check if any STRUCTURE changes occurred
+            local hasStructureChanges = false
+            for i = 1, table.getn(deltaData.changes) do
+                if deltaData.changes[i].type == "STRUCTURE" then
+                    hasStructureChanges = true
+                    break
+                end
+            end
+            
+            -- If structure changed, refresh raids/encounters/roles lists
+            if hasStructureChanges then
+                if encounterFrame.RefreshRaidsList then
+                    encounterFrame.RefreshRaidsList()
+                end
+                if encounterFrame.RefreshEncountersList then
+                    encounterFrame.RefreshEncountersList()
+                end
+            end
+            
             -- Refresh role containers (includes assignments, marks, numbers, and announcements)
             if encounterFrame.RefreshRoleContainers then
                 encounterFrame.RefreshRoleContainers()
@@ -644,7 +1062,7 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             if encounterFrame.announcementLines and encounterFrame.selectedRaid and encounterFrame.selectedEncounter then
                 for i = 1, table.getn(deltaData.changes) do
                     local change = deltaData.changes[i]
-                    if change.type == "ANNOUNCEMENT" and change.newValue and change.newValue.announcementData then
+                    if change.type == "ASSIGNMENT" and change.assignmentType == "ANNOUNCEMENT" and change.newValue and change.newValue.announcementData then
                         local announcementData = change.newValue.announcementData
                         -- Only update if this announcement is for the currently selected encounter
                         if announcementData.raid == encounterFrame.selectedRaid and 
@@ -655,6 +1073,32 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                             end
                         end
                     end
+                end
+            end
+        end
+        
+        -- Update Encounter Setup UI if open
+        local setupFrame = OGRH_EncounterSetupFrame or _G["OGRH_EncounterSetupFrame"]
+        if setupFrame and setupFrame:IsShown() then
+            -- Check if any STRUCTURE changes occurred
+            local hasStructureChanges = false
+            for i = 1, table.getn(deltaData.changes) do
+                if deltaData.changes[i].type == "STRUCTURE" then
+                    hasStructureChanges = true
+                    break
+                end
+            end
+            
+            -- If structure changed, refresh all lists
+            if hasStructureChanges then
+                if setupFrame.RefreshRaidsList then
+                    setupFrame.RefreshRaidsList()
+                end
+                if setupFrame.RefreshEncountersList then
+                    setupFrame.RefreshEncountersList()
+                end
+                if setupFrame.RefreshRolesList then
+                    setupFrame.RefreshRolesList()
                 end
             end
         end
