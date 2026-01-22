@@ -69,27 +69,30 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
         return
     end
     
-    -- Get current encounter
-    local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
-    if not currentRaid or not currentEncounter then
-        return  -- No encounter selected
-    end
+    -- Get hierarchical checksums for entire structure
+    local hierarchicalChecksums = OGRH.GetAllHierarchicalChecksums()
     
-    -- Calculate all checksums
-    local checksums = {
-        structure = OGRH.CalculateStructureChecksum(currentRaid, currentEncounter),
-        rolesUI = OGRH.CalculateRolesUIChecksum(),
-        assignments = OGRH.CalculateAssignmentChecksum(currentRaid, currentEncounter),
-        raid = currentRaid,
-        encounter = currentEncounter,
-        timestamp = GetTime()
-    }
+    -- Add metadata
+    hierarchicalChecksums.timestamp = GetTime()
+    hierarchicalChecksums.version = OGRH.VERSION or "1.0"
+    
+    -- Get current encounter for backward compatibility
+    local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+    if currentRaid and currentEncounter then
+        hierarchicalChecksums.currentRaid = currentRaid
+        hierarchicalChecksums.currentEncounter = currentEncounter
+        
+        -- Legacy checksums for backward compatibility with Phase 3B clients
+        hierarchicalChecksums.structure = OGRH.CalculateStructureChecksum(currentRaid, currentEncounter)
+        hierarchicalChecksums.rolesUI = OGRH.CalculateRolesUIChecksum()
+        hierarchicalChecksums.assignments = OGRH.CalculateAssignmentChecksum(currentRaid, currentEncounter)
+    end
     
     -- Broadcast via MessageRouter (auto-serializes tables)
     if OGRH.MessageRouter and OGRH.MessageTypes then
         OGRH.MessageRouter.Broadcast(
             OGRH.MessageTypes.SYNC.CHECKSUM_POLL,
-            checksums,
+            hierarchicalChecksums,
             {
                 priority = "LOW",  -- Background traffic
                 onSuccess = function()
@@ -109,10 +112,43 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
         return  -- Ignore checksums from non-admins
     end
     
+    -- Check if this is a hierarchical checksum broadcast (Phase 6.2+)
+    if checksums.global and checksums.raids then
+        -- Perform hierarchical validation
+        local result = OGRH.ValidateStructureHierarchy(checksums)
+        
+        if not result.valid then
+            -- Display detailed validation failure
+            local messages = OGRH.FormatValidationResult(result)
+            for i = 1, table.getn(messages) do
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r " .. messages[i])
+            end
+            
+            -- Suggest repair action based on corruption level
+            if result.level == "GLOBAL" then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Use Data Management > Load Defaults to repair global components")
+            elseif result.level == "COMPONENT" then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Use Data Management > Pull Structure to repair specific components")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Use Data Management > Pull Structure to repair")
+            end
+        end
+        return
+    end
+    
+    -- Legacy checksum validation (Phase 3B backward compatibility)
     -- Verify we're looking at the same encounter
     local myRaid, myEncounter = OGRH.GetCurrentEncounter()
-    if myRaid ~= checksums.raid or myEncounter ~= checksums.encounter then
-        return  -- Different encounter, ignore
+    if checksums.currentRaid and checksums.currentEncounter then
+        if myRaid ~= checksums.currentRaid or myEncounter ~= checksums.currentEncounter then
+            return  -- Different encounter, ignore
+        end
+    elseif checksums.raid and checksums.encounter then
+        if myRaid ~= checksums.raid or myEncounter ~= checksums.encounter then
+            return  -- Different encounter, ignore
+        end
+    else
+        return  -- No encounter info, can't validate
     end
     
     -- Calculate our checksums
@@ -123,17 +159,17 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
     -- Compare and handle mismatches
     local mismatches = {}
     
-    if myStructure ~= checksums.structure then
+    if checksums.structure and myStructure ~= checksums.structure then
         table.insert(mismatches, "structure")
     end
     
-    if myRolesUI ~= checksums.rolesUI then
+    if checksums.rolesUI and myRolesUI ~= checksums.rolesUI then
         table.insert(mismatches, "RolesUI")
         -- RolesUI mismatch: Send request for auto-repair (admin will push immediately)
         OGRH.SyncIntegrity.RequestRolesUISync(sender)
     end
     
-    if myAssignments ~= checksums.assignments then
+    if checksums.assignments and myAssignments ~= checksums.assignments then
         table.insert(mismatches, "assignments")
     end
     
@@ -380,6 +416,8 @@ function OGRH.SyncIntegrity.RunTests(testName)
         DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test encounter - Test encounter checksums")
         DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test component - Test component checksums")
         DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test stability - Test checksum stability")
+        DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test validation - Test hierarchical validation (Phase 6.2)")
+        DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test reporting - Test validation reporting (Phase 6.2)")
         return
     end
     
@@ -401,6 +439,14 @@ function OGRH.SyncIntegrity.RunTests(testName)
     
     if testName == "stability" or testName == "all" then
         OGRH.SyncIntegrity.TestChecksumStability()
+    end
+    
+    if testName == "validation" or testName == "all" then
+        OGRH.SyncIntegrity.TestHierarchicalValidation()
+    end
+    
+    if testName == "reporting" or testName == "all" then
+        OGRH.SyncIntegrity.TestValidationReporting()
     end
 end
 
@@ -517,6 +563,98 @@ function OGRH.SyncIntegrity.TestChecksumStability()
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PASS]|r Component checksum stable: " .. c1)
     else
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[FAIL]|r Component checksum unstable: " .. c1 .. " vs " .. c2)
+    end
+end
+
+-- Test 6: Hierarchical Validation (Phase 6.2)
+function OGRH.SyncIntegrity.TestHierarchicalValidation()
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff=== Testing Hierarchical Validation (Phase 6.2) ===|r")
+    
+    -- Get current checksums
+    local checksums = OGRH.GetAllHierarchicalChecksums()
+    
+    -- Test 1: Self-validation (should always pass)
+    local result = OGRH.ValidateStructureHierarchy(checksums)
+    if result.valid then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PASS]|r Self-validation passed")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[FAIL]|r Self-validation failed (should never happen)")
+    end
+    
+    -- Test 2: Simulate global component corruption
+    local corruptedGlobal = {}
+    for k, v in pairs(checksums) do
+        corruptedGlobal[k] = v
+    end
+    corruptedGlobal.global = {
+        tradeItems = checksums.global.tradeItems,
+        consumes = "CORRUPTED_CHECKSUM",
+        rgo = checksums.global.rgo
+    }
+    
+    local globalResult = OGRH.ValidateStructureHierarchy(corruptedGlobal)
+    if not globalResult.valid and globalResult.level == "GLOBAL" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PASS]|r Global corruption detected")
+        DEFAULT_CHAT_FRAME:AddMessage("  Corrupted: " .. table.concat(globalResult.corrupted.global, ", "))
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[FAIL]|r Global corruption not detected")
+    end
+    
+    -- Test 3: Simulate component-level corruption
+    local corruptedComponent = {}
+    for k, v in pairs(checksums) do
+        corruptedComponent[k] = v
+    end
+    if corruptedComponent.raids and corruptedComponent.raids["BWL"] and 
+       corruptedComponent.raids["BWL"].encounters and corruptedComponent.raids["BWL"].encounters["Razorgore"] then
+        corruptedComponent.raids["BWL"].encounters["Razorgore"].components.playerAssignments = "CORRUPTED"
+        
+        local compResult = OGRH.ValidateStructureHierarchy(corruptedComponent)
+        if not compResult.valid and compResult.level == "COMPONENT" then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PASS]|r Component corruption detected")
+            if compResult.corrupted.raids["BWL"] and compResult.corrupted.raids["BWL"].encounters["Razorgore"] then
+                DEFAULT_CHAT_FRAME:AddMessage("  Corrupted: BWL > Razorgore > " .. 
+                    table.concat(compResult.corrupted.raids["BWL"].encounters["Razorgore"], ", "))
+            end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[FAIL]|r Component corruption not detected")
+        end
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffaa00[SKIP]|r BWL/Razorgore not available for component test")
+    end
+end
+
+-- Test 7: Validation Reporting (Phase 6.2)
+function OGRH.SyncIntegrity.TestValidationReporting()
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff=== Testing Validation Reporting (Phase 6.2) ===|r")
+    
+    -- Create a mock validation result with multiple corruption points
+    local mockResult = {
+        valid = false,
+        level = "COMPONENT",
+        corrupted = {
+            global = {"consumes"},
+            raids = {
+                ["BWL"] = {
+                    raidLevel = false,
+                    encounters = {
+                        ["Razorgore"] = {"playerAssignments", "announcements"},
+                        ["Vaelastrasz"] = {"raidMarks"}
+                    }
+                },
+                ["Naxx"] = {
+                    raidLevel = true,
+                    encounters = {}
+                }
+            }
+        }
+    }
+    
+    -- Format and display
+    local messages = OGRH.FormatValidationResult(mockResult)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PASS]|r Formatted " .. table.getn(messages) .. " messages:")
+    for i = 1, table.getn(messages) do
+        DEFAULT_CHAT_FRAME:AddMessage("  " .. messages[i])
     end
 end
 
@@ -815,4 +953,227 @@ function OGRH.HashStringToNumber(str)
     end
     
     return checksum
+end
+
+--[[
+    ====================================================================
+    6.2: HIERARCHICAL VALIDATION SYSTEM
+    ====================================================================
+]]
+
+--[[
+    ValidateStructureHierarchy(remoteChecksums)
+    
+    Performs hierarchical validation by comparing local and remote checksums
+    at each level (Global → Raid → Encounter → Component) and drilling down
+    on mismatches to identify exact corruption location.
+    
+    Parameters:
+        remoteChecksums - table containing hierarchical checksums from remote player
+            {
+                global = {tradeItems = "...", consumes = "...", rgo = "..."},
+                raids = {
+                    ["BWL"] = {
+                        raidChecksum = "...",
+                        encounters = {
+                            ["Razorgore"] = {
+                                encounterChecksum = "...",
+                                components = {
+                                    encounterMetadata = "...",
+                                    roles = "...",
+                                    playerAssignments = "...",
+                                    raidMarks = "...",
+                                    assignmentNumbers = "...",
+                                    announcements = "..."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+    
+    Returns:
+        ValidationResult table:
+            {
+                valid = true/false,
+                level = "STRUCTURE" | "GLOBAL" | "RAID" | "ENCOUNTER" | "COMPONENT",
+                corrupted = {
+                    global = {"rgo"},  -- array of corrupted global components
+                    raids = {
+                        ["BWL"] = {
+                            raidLevel = true/false,  -- raid metadata corrupted
+                            encounters = {
+                                ["Razorgore"] = {"playerAssignments", "announcements"}  -- corrupted components
+                            }
+                        }
+                    }
+                }
+            }
+]]
+function OGRH.ValidateStructureHierarchy(remoteChecksums)
+    local result = {
+        valid = true,
+        level = "STRUCTURE",
+        corrupted = {
+            global = {},
+            raids = {}
+        }
+    }
+    
+    -- Validate global components
+    local localGlobal = OGRH.GetGlobalComponentChecksums()
+    for componentName, remoteChecksum in pairs(remoteChecksums.global or {}) do
+        local localChecksum = localGlobal[componentName]
+        if localChecksum ~= remoteChecksum then
+            result.valid = false
+            result.level = "GLOBAL"
+            table.insert(result.corrupted.global, componentName)
+        end
+    end
+    
+    -- Validate raids
+    if remoteChecksums.raids then
+        for raidName, remoteRaid in pairs(remoteChecksums.raids) do
+            -- Validate raid-level checksum
+            local localRaidChecksum = OGRH.ComputeRaidChecksum(raidName)
+            if localRaidChecksum ~= remoteRaid.raidChecksum then
+                result.valid = false
+                if result.level == "STRUCTURE" then
+                    result.level = "RAID"
+                end
+                result.corrupted.raids[raidName] = result.corrupted.raids[raidName] or {}
+                result.corrupted.raids[raidName].raidLevel = true
+            end
+            
+            -- Validate encounters
+            if remoteRaid.encounters then
+                for encounterName, remoteEncounter in pairs(remoteRaid.encounters) do
+                    -- Validate encounter-level checksum
+                    local localEncounterChecksum = OGRH.ComputeEncounterChecksum(raidName, encounterName)
+                    if localEncounterChecksum ~= remoteEncounter.encounterChecksum then
+                        result.valid = false
+                        if result.level == "STRUCTURE" or result.level == "RAID" then
+                            result.level = "ENCOUNTER"
+                        end
+                        result.corrupted.raids[raidName] = result.corrupted.raids[raidName] or {}
+                        result.corrupted.raids[raidName].encounters = result.corrupted.raids[raidName].encounters or {}
+                        
+                        -- Drill down to component level
+                        result.corrupted.raids[raidName].encounters[encounterName] = {}
+                        
+                        if remoteEncounter.components then
+                            for componentName, remoteComponentChecksum in pairs(remoteEncounter.components) do
+                                local localComponentChecksum = OGRH.ComputeComponentChecksum(raidName, encounterName, componentName)
+                                if localComponentChecksum ~= remoteComponentChecksum then
+                                    result.level = "COMPONENT"
+                                    table.insert(result.corrupted.raids[raidName].encounters[encounterName], componentName)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return result
+end
+
+--[[
+    GetAllHierarchicalChecksums()
+    
+    Computes all checksums for the entire structure hierarchy.
+    Used for broadcasting during polling or manual validation.
+    
+    Returns:
+        table with hierarchical checksums (same format as ValidateStructureHierarchy parameter)
+]]
+function OGRH.GetAllHierarchicalChecksums()
+    local checksums = {
+        global = OGRH.GetGlobalComponentChecksums(),
+        raids = {}
+    }
+    
+    -- Get all raid checksums
+    local raidChecksums = OGRH.GetRaidChecksums()
+    
+    OGRH.EnsureSV()
+    if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+            local raid = OGRH_SV.encounterMgmt.raids[i]
+            if raid and raid.name then
+                local raidName = raid.name
+                checksums.raids[raidName] = {
+                    raidChecksum = raidChecksums[raidName],
+                    encounters = {}
+                }
+                
+                -- Get encounter checksums for this raid
+                local encounterChecksums = OGRH.GetEncounterChecksums(raidName)
+                
+                if raid.encounters then
+                    for j = 1, table.getn(raid.encounters) do
+                        local encounter = raid.encounters[j]
+                        if encounter and encounter.name then
+                            local encounterName = encounter.name
+                            checksums.raids[raidName].encounters[encounterName] = {
+                                encounterChecksum = encounterChecksums[encounterName],
+                                components = OGRH.GetComponentChecksums(raidName, encounterName)
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return checksums
+end
+
+--[[
+    FormatValidationResult(result)
+    
+    Formats a ValidationResult into human-readable text for display in chat.
+    
+    Parameters:
+        result - ValidationResult from ValidateStructureHierarchy()
+    
+    Returns:
+        array of strings (chat messages)
+]]
+function OGRH.FormatValidationResult(result)
+    local messages = {}
+    
+    if result.valid then
+        table.insert(messages, "|cff00ff00Structure validation: PASSED|r")
+        return messages
+    end
+    
+    table.insert(messages, "|cffff0000Structure validation: FAILED|r")
+    table.insert(messages, "Corruption level: " .. result.level)
+    
+    -- Report global component mismatches
+    if table.getn(result.corrupted.global) > 0 then
+        table.insert(messages, "|cffffaa00Global components:|r " .. table.concat(result.corrupted.global, ", "))
+    end
+    
+    -- Report raid/encounter/component mismatches
+    for raidName, raidData in pairs(result.corrupted.raids) do
+        if raidData.raidLevel then
+            table.insert(messages, "|cffffaa00Raid metadata:|r " .. raidName)
+        end
+        
+        if raidData.encounters then
+            for encounterName, components in pairs(raidData.encounters) do
+                if table.getn(components) > 0 then
+                    local componentList = table.concat(components, ", ")
+                    table.insert(messages, "|cffffaa00" .. raidName .. " > " .. encounterName .. ":|r " .. componentList)
+                else
+                    table.insert(messages, "|cffffaa00" .. raidName .. " > " .. encounterName .. ":|r (encounter-level mismatch)")
+                end
+            end
+        end
+    end
+    
+    return messages
 end

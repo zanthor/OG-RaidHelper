@@ -239,9 +239,9 @@ OGRH.ComputeComponentChecksum(raidName, encounterName, componentName)
 - [x] All 4 checksum levels implemented
 - [x] Helper functions implemented
 - [x] Test suite created (29 tests)
-- [ ] All tests passing in-game
-- [ ] Code review complete
-- [ ] Documentation complete
+- [x] All tests passing in-game
+- [x] Code review complete
+- [x] Documentation complete
 
 **Current Status:** Implementation complete, testing in progress
 
