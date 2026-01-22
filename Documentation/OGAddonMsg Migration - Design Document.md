@@ -952,42 +952,175 @@ end
 
 #### 5.3: Backup & Rollback System
 
-**Backup Naming Convention:** `_RaidName` prefix for backup data
+**CRITICAL DESIGN DECISION: Separate SavedVariable for Backups**
+
+To prevent backup data from triggering sync operations or being included in checksums, backups are stored in a **completely separate SavedVariable**: `OGRH_Backups`.
+
+**Why Separate Storage?**
+- `OGRH_SV` = Active data subject to sync, checksums, and validation
+- `OGRH_Backups` = Local-only snapshots, NEVER synced or checksum'd
+- Prevents backup restoration from appearing as "new changes" requiring broadcast
+- Eliminates risk of backup data being accidentally synced to other players
+- Backups are purely local rollback points, not part of the shared data model
+
+**Backup Structure:**
 
 ```lua
--- Backup structure
-OGRH_SV.encounterMgmt.raids = {
-  {name = "BWL", encounters = {...}},      -- Active data
-  {name = "_BWL", encounters = {...}}      -- Backup (rollback point)
+-- Active data (OGRH_SV) - subject to sync & checksums
+OGRH_SV = {
+  encounterMgmt = { raids = {...} },
+  encounterAssignments = {...},
+  encounterRaidMarks = {...},
+  encounterAssignmentNumbers = {...},
+  encounterAnnouncements = {...},
+  tradeItems = {...},
+  consumes = {...},
+  rgo = {...}
 }
 
--- Backup assignments
-OGRH_SV.encounterAssignments = {
-  ["BWL"] = {...},      -- Active assignments
-  ["_BWL"] = {...}      -- Backup assignments
+-- Backup data (OGRH_Backups) - NEVER synced, NEVER in checksums
+OGRH_Backups = {
+  backups = {
+    -- Timestamped backups with raid name
+    ["BWL_2026-01-21_14-30-00"] = {
+      timestamp = 1737478200,
+      raidName = "BWL",
+      description = "Before sync from RaidLead",  -- Optional user description
+      data = {
+        encounterMgmt = {...},         -- Snapshot of structure
+        encounterAssignments = {...},  -- Snapshot of assignments
+        encounterRaidMarks = {...},
+        encounterAssignmentNumbers = {...},
+        encounterAnnouncements = {...}
+      }
+    },
+    ["MC_2026-01-21_15-00-00"] = {
+      timestamp = 1737480000,
+      raidName = "MC",
+      description = "Before RolesUI auto-repair",
+      data = {...}
+    }
+  },
+  maxBackups = 50  -- Configurable limit, auto-prune oldest
 }
 ```
+
+**Backup Naming Convention:**
+- Format: `{RaidName}_{YYYY-MM-DD}_{HH-MM-SS}`
+- Example: `BWL_2026-01-21_14-30-00`
+- Timestamp in filename for easy sorting and identification
 
 **Operations:**
 ```lua
--- Create backup before pull
-OGRH.Backup.CreateRaidBackup(raidName)
-  -> Copies "BWL" to "_BWL"
+-- Create backup before pull (stores in OGRH_Backups, NOT OGRH_SV)
+OGRH.Backup.CreateRaidBackup(raidName, description)
+  -> Creates new backup in OGRH_Backups.backups[]
+  -> Does NOT modify OGRH_SV at all
+  -> Auto-prunes old backups if > maxBackups
 
--- Restore from backup (rollback)
-OGRH.Backup.RestoreRaidBackup(raidName)
-  -> Copies "_BWL" back to "BWL"
+-- Restore from backup (copies backup data back into OGRH_SV)
+OGRH.Backup.RestoreRaidBackup(backupKey)
+  -> Loads data from OGRH_Backups.backups[backupKey]
+  -> Overwrites OGRH_SV with backup data
+  -> Creates new backup before restore (safety net)
 
--- Merge with backup (keep both)
-OGRH.Backup.MergeWithBackup(raidName, strategy)
+-- Merge with backup (selective restore)
+OGRH.Backup.MergeWithBackup(backupKey, strategy)
   -> strategy: "PREFER_LOCAL" | "PREFER_BACKUP" | "MANUAL"
+  -> Intelligent merge of backup vs current data
+
+-- List available backups
+OGRH.Backup.GetBackupList(raidName)
+  -> Returns sorted list of backups for specific raid
+  -> nil for raidName = all backups
+
+-- Delete old backups
+OGRH.Backup.DeleteBackup(backupKey)
+OGRH.Backup.PruneOldBackups(keepCount)  -- Auto-cleanup
 ```
 
 **Auto-Backup Triggers:**
-- Before pulling structure from admin
-- Before auto-applying RolesUI sync
-- Before restoring from export/import
-- Manual backup via Data Management UI
+- Before pulling structure from admin (safety net for accidental overwrites)
+- Before auto-applying RolesUI sync (undo failed repairs)
+- Before restoring from export/import (recover from bad imports)
+- Before manual "Pull All Data" operation (nuclear option safety)
+- Manual backup via Data Management UI (user-initiated snapshots)
+
+**Checksum Behavior:**
+```lua
+-- ✅ CORRECT: When computing checksums, ONLY OGRH_SV is included
+function OGRH.ComputeAllStructureChecksum()
+  local data = OGRH_SV  -- NEVER includes OGRH_Backups
+  return OGRH.ComputeChecksum(data)
+end
+
+-- ❌ WRONG: Including backups in checksum
+function OGRH.ComputeAllStructureChecksum()
+  local data = {
+    active = OGRH_SV,
+    backups = OGRH_Backups  -- NEVER DO THIS!
+  }
+  return OGRH.ComputeChecksum(data)
+end
+
+-- Backups are invisible to sync system
+-- Restoring a backup = local operation that modifies OGRH_SV, which then triggers NEW sync broadcast
+-- This is correct behavior: restore changes active data → checksum changes → broadcast new state
+```
+
+**Implementation Notes:**
+```lua
+-- Example: Create backup before accepting sync
+function OGRH.Sync.AcceptEncounterSync(raidName, encounterName, incomingData)
+  -- Step 1: Create backup (stores in OGRH_Backups)
+  local backupKey = OGRH.Backup.CreateRaidBackup(raidName, "Before sync from " .. senderName)
+  
+  -- Step 2: Apply incoming data to OGRH_SV
+  OGRH_SV.encounterAssignments[raidName][encounterName] = incomingData.assignments
+  OGRH_SV.encounterMgmt.roles[raidName][encounterName] = incomingData.roles
+  -- ... apply other components
+  
+  -- Step 3: Checksum automatically changes because OGRH_SV changed
+  -- (OGRH_Backups is NOT included in checksum, so backup creation didn't change checksum)
+  
+  -- Step 4: No need to broadcast - we just accepted sync, we're now in sync with admin
+  
+  OGRH.Msg("Sync applied. Backup saved as: " .. backupKey)
+end
+
+-- Example: Restore backup
+function OGRH.Backup.RestoreRaidBackup(backupKey)
+  -- Step 0: Safety backup of current state
+  local safetyBackup = OGRH.Backup.CreateRaidBackup(raidName, "Before restore of " .. backupKey)
+  
+  -- Step 1: Load backup data (from OGRH_Backups)
+  local backupData = OGRH_Backups.backups[backupKey]
+  if not backupData then
+    OGRH.Msg("Backup not found!")
+    return false
+  end
+  
+  -- Step 2: Copy backup data into OGRH_SV (overwrites active data)
+  OGRH_SV.encounterAssignments[raidName] = OGRH.DeepCopy(backupData.data.encounterAssignments[raidName])
+  OGRH_SV.encounterMgmt.roles[raidName] = OGRH.DeepCopy(backupData.data.encounterMgmt.roles[raidName])
+  -- ... restore other components
+  
+  -- Step 3: OGRH_SV changed, so checksum changes
+  -- Step 4: If we're raid admin, broadcast new state (our restored data is now authoritative)
+  if OGRH.IsRaidAdmin() then
+    OGRH.Sync.BroadcastRaidStructure(raidName)
+  end
+  
+  OGRH.Msg("Backup restored. Current state saved as: " .. safetyBackup)
+  return true
+end
+```
+
+**TOC Configuration:**
+```toc
+## SavedVariables: OGRH_SV, OGRH_Backups
+## SavedVariablesPerCharacter: OGRH_CharSV
+```
 
 #### 5.3: Merge Strategies
 
@@ -1191,15 +1324,18 @@ OGRH.MessageTypes.SYNC = {
 
 #### 5.8: Implementation Phases
 
-**Phase 5A: Backup System**
-- Implement `_RaidName` backup storage
-**Phase 5A: Hierarchical Checksum Computation**
+**Phase 5A: Backup System & Hierarchical Checksum Computation**
+- Implement backup storage in separate `OGRH_Backups` SavedVariable
+- **CRITICAL**: Exclude `OGRH_Backups` from ALL checksum computations
+- Add `OGRH_Backups` to TOC SavedVariables declaration
 - Implement checksum functions for all 3 granularity levels:
   - Global components (tradeItems, consumes, rgo)
   - Raid-level components (raidMetadata, encounterList)
   - Encounter-level components (6 component types)
+- **Verify**: Checksum functions only operate on `OGRH_SV`, never `OGRH_Backups`
 - Add checksum caching to avoid redundant computation
 - Test checksum stability and collision resistance
+- Test that backup creation/restoration does NOT trigger sync operations
 - Update SYNC_CHECKSUM broadcast to include hierarchy
 
 **Phase 5B: Component-Level Sync Implementation**
@@ -1219,7 +1355,11 @@ OGRH.MessageTypes.SYNC = {
 - Measure performance improvement (target: 90%+ reduction)
 
 **Phase 5D: Backup & Merge System**
-- Implement backup system with `_RaidName` naming
+- Implement backup system with `_RaidName` naming in separate SavedVariable
+- **CRITICAL**: Store backups in `OGRH_Backups` (separate from `OGRH_SV`)
+  - `OGRH_Backups` is NEVER included in checksums or sync operations
+  - Prevents backup data from triggering sync/desync detection
+  - Backups are local-only snapshots for rollback purposes
 - Create backup before any sync operation
 - Add backup list UI in Data Management window
 - Implement three merge strategies (PREFER_LOCAL, PREFER_BACKUP, MANUAL)
@@ -1251,12 +1391,13 @@ OGRH.MessageTypes.SYNC = {
 
 1. **Hierarchical Validation** - Drill down from overall → global → raid → encounter → component
 2. **Surgical Precision** - Sync only corrupted components, leave rest untouched
-3. **Backup Before Modify** - Always create backup before applying remote data
+3. **Backup Before Modify** - Always create backup before applying remote data (stored in separate `OGRH_Backups` SavedVariable)
 4. **User Control** - Default to manual sync, opt-in to auto-repair
 5. **Safe Rollback** - Always provide way to undo sync operation
 6. **Merge Support** - Handle conflicts gracefully with merge strategies
 7. **Performance** - Component-level sync reduces sync time from 76 seconds (full structure) to <5 seconds (93%+ reduction)
-8. **Data Safety** - Backups live outside sync scope, can't be overwritten remotely
+8. **Data Safety** - Backups live in separate SavedVariable (`OGRH_Backups`), completely isolated from sync scope. Can NEVER be overwritten remotely, checksummed, or trigger sync operations.
+9. **Sync Isolation** - Only `OGRH_SV` participates in checksums and sync. `OGRH_Backups` is purely local state for rollback.
 
 ---
 
