@@ -79,13 +79,13 @@ Copy-Item "World of Warcraft\WTF\Account\*\SavedVariables\OG-RaidHelper.lua" `
 **During this phase, the addon still uses v1 data.** The v2 schema exists but is not active yet.
 
 Test all features you regularly use:
-- [ ] Open main window (`/ogrh`)
-- [ ] Create/edit role assignments
-- [ ] Manage player assignments
-- [ ] View recruitment data
-- [ ] Check consume tracking
-- [ ] Test raid invites
-- [ ] Verify settings
+- [x] Open main window (`/ogrh`)
+- [x] Create/edit role assignments
+- [x] Manage player assignments
+- [x] View recruitment data
+- [x] Check consume tracking
+- [x] Test raid invites
+- [x] Verify settings
 
 **Everything should work exactly as before.**
 
