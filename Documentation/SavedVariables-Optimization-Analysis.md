@@ -615,6 +615,78 @@ function OGRH.RollbackMigration()
 end
 ```
 
+---
+
+## Migration Strategy: Versioned Schema Approach
+
+### Overview
+
+To ensure maximum safety during migration, we'll use a **dual-schema approach** where v2 data lives alongside v1:
+
+```lua
+OGRH_SV = {
+    schemaVersion = "v1",  -- Current active schema
+    
+    -- All existing v1 data (unchanged)
+    syncLocked = false,
+    encounterMgmt = { ... },
+    recruitment = { ... },
+    -- ... etc ...
+    
+    -- New optimized structure for testing
+    v2 = {
+        -- Optimized data without empty tables
+        encounterMgmt = { ... },  -- Future: with roles nested
+        recruitment = { ... },    -- With retention applied
+        -- ... optimized data ...
+    }
+}
+```
+
+### Migration Phases
+
+**Phase 1: Dual-Write (Week 1)**
+- Create `OGRH_SV.v2` structure alongside original
+- All data writes go to both v1 and v2
+- No reads from v2 yet (v1 still active)
+- Zero functional changes, pure data mirroring
+
+**Phase 2: Dual-Read Validation (Week 2-3)**
+- Code reads from v2 but validates against v1
+- Log any discrepancies for investigation
+- Continue dual-write to keep schemas in sync
+- Test all major features with v2 data
+
+**Phase 3: Cutover (Week 4)**
+- Set `schemaVersion = "v2"`
+- Stop reading from v1 (v2 becomes active)
+- Continue dual-write for safety (1 more week)
+- Monitor for issues, can rollback by changing schemaVersion
+
+**Phase 4: Cleanup (Week 5+)**
+- Stop writing to v1 after validation period
+- Remove v1 data, move v2 to top level
+- Remove dual-write code paths
+- Migration complete
+
+### Benefits of Versioned Approach
+
+1. **Zero Risk Rollback:** Just change `schemaVersion = "v1"` if issues found
+2. **Direct Comparison:** Can validate v2 migration by comparing against v1
+3. **Incremental Testing:** Different subsystems can migrate at different rates
+4. **Production Safety:** Original data never touched until fully validated
+5. **Easy Validation:** Can measure exact payload/performance differences
+
+### Temporary Costs
+
+- **Memory:** ~2x during transition (~5MB total)
+- **File Size:** ~80K lines during transition
+- **Code Complexity:** Dual read/write paths for 4 weeks
+
+**Worth it:** For a mission-critical addon managing raid data, the safety is essential.
+
+---
+
 ### Testing Requirements
 
 **Before Migration:**

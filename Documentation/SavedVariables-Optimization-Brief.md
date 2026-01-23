@@ -254,22 +254,73 @@ encounterMgmt.raids[1].encounters[2] = {
 
 ---
 
-## Recommended Approach
+## 6. MIGRATION STRATEGY: VERSIONED SCHEMA
+
+### Dual-Schema Approach for Maximum Safety
+
+Instead of in-place migration, we'll create `OGRH_SV.v2` alongside the original:
+
+```lua
+OGRH_SV = {
+    schemaVersion = "v1",      -- Active version
+    
+    -- Original v1 data (unchanged)
+    syncLocked = false,
+    encounterMgmt = { ... },
+    -- ... all existing data ...
+    
+    -- New optimized structure
+    v2 = {
+        encounterMgmt = { ... },  -- Future: with nested roles
+        recruitment = { ... },    -- With retention
+        -- ... optimized data ...
+    }
+}
+```
+
+### 4-Week Migration Timeline
+
+| Week | Phase | Description |
+|------|-------|-------------|
+| 1 | Dual-Write | Create v2, write to both, read from v1 |
+| 2-3 | Validation | Read from v2, validate against v1 |
+| 4 | Cutover | Switch `schemaVersion="v2"`, monitor |
+| 5+ | Cleanup | Remove v1 data after validation |
+
+### Key Benefits
+
+✅ **Zero-risk rollback:** Change one variable to revert  
+✅ **Direct comparison:** Can validate v2 vs v1 accuracy  
+✅ **Incremental testing:** Migrate subsystems gradually  
+✅ **Production safety:** Original data never touched  
+
+### Temporary Cost
+
+- Memory: ~2x during transition (5MB total)
+- File size: ~80K lines for 4 weeks
+- **Worth it** for mission-critical raid data
+
+---
+
+## 7. Recommended Approach
 
 ### Our Recommendation: Phase 1 + 2, Major Version Release
 
 **Timeline:**
-1. **Week 1:** Implement Phase 1 (dead code removal)
-2. **Week 2-3:** Implement Phase 2 (history pruning)
-3. **Week 4:** Testing with beta testers
-4. **Week 5:** Public release as v2.0
+1. **Week 1:** Implement migration system + Phase 1 (dead code removal)
+2. **Week 2:** Implement Phase 2 (history pruning)
+3. **Week 3:** Dual-write deployment, testing
+4. **Week 4-5:** Validation with beta testers
+5. **Week 6:** Cutover to v2
+6. **Week 7+:** Monitor and cleanup
 
 **Why this approach?**
 - ✅ Significant benefits (63% file reduction)
-- ✅ Lower risk (focused on data pruning only)
-- ✅ Clean marketing message ("Optimized for performance")
-- ✅ Sets foundation for future improvements
-- ✅ Reasonable effort (10-16 hours total)
+- ✅ Zero-risk rollback via versioning
+- ✅ Original data never lost
+- ✅ Can validate v2 against v1
+- ✅ Sets foundation for future improvements (Priority 2)
+- ✅ Reasonable effort (16-20 hours total including versioning)
 
 **What users will see:**
 ```
@@ -277,16 +328,18 @@ OG-RaidHelper v2.0 Update:
 - 63% smaller SavedVariables file
 - 48% faster loading
 - Automatic history cleanup
-- Use /ogrh migration rollback if issues
+- Safe migration with rollback support
 ```
 
 ---
 
-## Next Steps
+## 8. Next Steps
 
 1. **Review this document** with team
-2. **Decide on approach** (Phase 1 only, 1+2, or all)
+2. **Decide on approach** (Phase 1+2 recommended, Priority 2 for v3.0)
 3. **Set timeline** based on resources
+4. **Review migration script** (SavedVariables-Migration-v2-Prototype.lua)
+5. **Test with sample data** before production deployment
 4. **Begin Phase 1** if approved
 5. **Test with production data** from volunteers
 

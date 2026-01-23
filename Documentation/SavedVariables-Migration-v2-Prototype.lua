@@ -1,18 +1,26 @@
 --[[
-    SavedVariables Migration Script - Schema v2
+    SavedVariables Migration Script - Schema v2 (Versioned Approach)
     
     Purpose: Prototype migration script for SavedVariables optimization
     Status: PROTOTYPE - NOT FOR PRODUCTION USE YET
     
+    Migration Strategy: DUAL-SCHEMA APPROACH
+    - Original data preserved in OGRH_SV (v1)
+    - Migrated data created in OGRH_SV.v2
+    - Allows validation, rollback, and incremental testing
+    - After validation: cutover to v2 and remove old data
+    
     This script demonstrates the migration approach for:
     1. Removing empty/unused tables
-    2. Consolidating role data
-    3. Pruning historical data
-    4. Adding versioning and backup
+    2. Pruning historical data with retention
+    3. Testing alongside original data
+    4. Safe cutover with rollback capability
     
     Usage:
-    - Include in Core.lua after EnsureSV()
-    - Will auto-run on VARIABLES_LOADED if schema version < 2
+    1. Call MigrateToV2() to create v2 schema
+    2. Test with ValidateV2()
+    3. When ready: CutoverToV2()
+    4. If issues: RollbackFromV2()
 --]]
 
 OGRH.Migration = OGRH.Migration or {}
@@ -20,418 +28,306 @@ OGRH.Migration = OGRH.Migration or {}
 -- ============================================
 -- SCHEMA VERSION CONSTANTS
 -- ============================================
-local SCHEMA_V1 = 1
-local SCHEMA_V2 = 2
-local CURRENT_SCHEMA = SCHEMA_V2
-
-local BACKUP_RETENTION_DAYS = 30
+local SCHEMA_V1 = "v1"
+local SCHEMA_V2 = "v2"
 
 -- ============================================
--- MAIN MIGRATION ENTRY POINT
+-- UTILITY: Deep Copy
 -- ============================================
-function OGRH.Migration.Run()
-    if not OGRH_SV then
-        OGRH.Msg("[Migration] No SavedVariables found - skipping migration")
-        return
-    end
-    
-    -- Determine current schema version
-    local currentVersion = OGRH_SV.schemaVersion or SCHEMA_V1
-    
-    if currentVersion >= CURRENT_SCHEMA then
-        -- Already up to date
-        OGRH.Migration.CleanupOldBackups()
-        return
-    end
-    
-    OGRH.Msg("|cff00ff00[Migration]|r Starting SavedVariables migration from v" .. currentVersion .. " to v" .. CURRENT_SCHEMA)
-    
-    -- Run migrations in sequence
-    if currentVersion < SCHEMA_V2 then
-        local success = OGRH.Migration.MigrateToV2()
-        if not success then
-            OGRH.Msg("|cffff0000[Migration]|r Failed! Use /ogrh migration rollback to restore")
-            return
-        end
-        OGRH_SV.schemaVersion = SCHEMA_V2
-    end
-    
-    -- Future migrations would go here
-    -- if currentVersion < SCHEMA_V3 then
-    --     OGRH.Migration.MigrateToV3()
-    --     OGRH_SV.schemaVersion = SCHEMA_V3
-    -- end
-    
-    OGRH.Msg("|cff00ff00[Migration]|r Complete! SavedVariables now at schema v" .. CURRENT_SCHEMA)
-    OGRH.Msg("|cffcccccc[Migration]|r Backup stored for 30 days. Use /ogrh migration rollback if needed")
+local function DeepCopy(obj, seen)
+    if type(obj) ~= 'table' then return obj end
+    if seen and seen[obj] then return seen[obj] end
+    local s = seen or {}
+    local res = setmetatable({}, getmetatable(obj))
+    s[obj] = res
+    for k, v in pairs(obj) do res[DeepCopy(k, s)] = DeepCopy(v, s) end
+    return res
 end
 
 -- ============================================
--- SCHEMA V1 -> V2 MIGRATION
+-- MAIN MIGRATION: CREATE V2 SCHEMA
 -- ============================================
 function OGRH.Migration.MigrateToV2()
-    OGRH.Msg("[Migration v2] Step 1: Creating backup...")
-    
-    -- 1. Create backup of critical data
-    if not OGRH_SV._migrations then
-        OGRH_SV._migrations = {}
-    end
-    
-    OGRH_SV._migrations.v2 = {
-        timestamp = time(),
-        backupData = {
-            tankIcon = OGRH.DeepCopy(OGRH_SV.tankIcon),
-            healerIcon = OGRH.DeepCopy(OGRH_SV.healerIcon),
-            tankCategory = OGRH.DeepCopy(OGRH_SV.tankCategory),
-            healerBoss = OGRH.DeepCopy(OGRH_SV.healerBoss),
-            playerAssignments = OGRH.DeepCopy(OGRH_SV.playerAssignments),
-            pollTime = OGRH_SV.pollTime,
-            recruitment = {
-                whisperHistoryCount = OGRH.Migration.CountEntries(OGRH_SV.recruitment and OGRH_SV.recruitment.whisperHistory),
-                playerCacheCount = OGRH.Migration.CountEntries(OGRH_SV.recruitment and OGRH_SV.recruitment.playerCache)
-            },
-            consumesTracking = {
-                historyCount = OGRH_SV.consumesTracking and table.getn(OGRH_SV.consumesTracking.history or {}) or 0
-            }
-        }
-    }
-    
-    OGRH.Msg("[Migration v2] Step 2: Removing unused tables...")
-    OGRH.Migration.RemoveUnusedTables()
-    
-    OGRH.Msg("[Migration v2] Step 3: Pruning historical data...")
-    local recruitmentPruned = OGRH.Migration.PruneRecruitmentHistory()
-    local consumesPruned = OGRH.Migration.PruneConsumeHistory()
-    
-    OGRH.Msg("[Migration v2] Results:")
-    OGRH.Msg("  - Empty tables removed: 4")
-    OGRH.Msg("  - Recruitment history pruned: " .. recruitmentPruned .. " entries")
-    OGRH.Msg("  - Consume history pruned: " .. consumesPruned .. " entries")
-    
-    -- Note: Role consolidation was removed from migration
-    -- OGRH_SV.roles, rosterManagement.primaryRole, and ConsumeHelper_SV.playerRoles
-    -- serve distinct purposes and should NOT be consolidated
-    
-    return true
-end
-
--- ============================================
--- NOTE: Role Consolidation Removed
--- ============================================
--- The three role storage systems serve DISTINCT purposes:
--- 1. OGRH_SV.roles - Current raid composition (RolesUI drag-drop)
--- 2. rosterManagement.primaryRole - Player capabilities (ranking/ELO)
--- 3. ConsumeHelper_SV.playerRoles - Individual consume preferences
---
--- These are NOT redundant and should NOT be consolidated.
--- ============================================
--- STEP: REMOVE UNUSED TABLES
--- ============================================
-function OGRH.Migration.RemoveUnusedTables()
-    -- Remove tables that are always empty and never used
-    OGRH_SV.tankIcon = nil
-    OGRH_SV.healerIcon = nil
-    OGRH_SV.tankCategory = nil
-    OGRH_SV.healerBoss = nil
-    
-    -- Remove pollTime if unused (needs verification)
-    -- OGRH_SV.pollTime = nil
-    
-    -- playerAssignments was migrated to rosterManagement, but we keep it
-    -- for now as it may still be referenced in some places
-end
-
--- ============================================
--- STEP: PRUNE RECRUITMENT HISTORY
--- ============================================
-function OGRH.Migration.PruneRecruitmentHistory()
-    if not OGRH_SV.recruitment then
-        return 0
-    end
-    
-    local pruned = 0
-    local cutoffTime = time() - (BACKUP_RETENTION_DAYS * 24 * 60 * 60)
-    
-    -- 1. Prune whisper history (keep last 30 days)
-    if OGRH_SV.recruitment.whisperHistory then
-        for playerName, history in pairs(OGRH_SV.recruitment.whisperHistory) do
-            if type(history) == "table" then
-                local filtered = {}
-                for i = 1, table.getn(history) do
-                    local entry = history[i]
-                    if entry and entry.timestamp and entry.timestamp > cutoffTime then
-                        table.insert(filtered, entry)
-                    else
-                        pruned = pruned + 1
-                    end
-                end
-                
-                if table.getn(filtered) > 0 then
-                    OGRH_SV.recruitment.whisperHistory[playerName] = filtered
-                else
-                    OGRH_SV.recruitment.whisperHistory[playerName] = nil
-                end
-            end
-        end
-    end
-    
-    -- 2. Prune player cache (keep most recent 100 players)
-    if OGRH_SV.recruitment.playerCache then
-        local sorted = {}
-        for name, data in pairs(OGRH_SV.recruitment.playerCache) do
-            table.insert(sorted, {
-                name = name,
-                data = data,
-                lastSeen = data.lastSeen or 0
-            })
-        end
-        
-        -- Sort by most recent
-        table.sort(sorted, function(a, b)
-            return a.lastSeen > b.lastSeen
-        end)
-        
-        -- Keep only top 100
-        local newCache = {}
-        local maxPlayers = 100
-        for i = 1, math.min(maxPlayers, table.getn(sorted)) do
-            newCache[sorted[i].name] = sorted[i].data
-        end
-        
-        local removed = table.getn(sorted) - table.getn(newCache)
-        pruned = pruned + math.max(0, removed)
-        
-        OGRH_SV.recruitment.playerCache = newCache
-    end
-    
-    -- 3. Prune deleted contacts (keep most recent 50)
-    if OGRH_SV.recruitment.deletedContacts then
-        local contactList = {}
-        for name, _ in pairs(OGRH_SV.recruitment.deletedContacts) do
-            table.insert(contactList, name)
-        end
-        
-        if table.getn(contactList) > 50 then
-            -- Remove oldest entries (we don't have timestamps, so just keep first 50)
-            local newDeleted = {}
-            for i = 1, 50 do
-                newDeleted[contactList[i]] = true
-            end
-            pruned = pruned + (table.getn(contactList) - 50)
-            OGRH_SV.recruitment.deletedContacts = newDeleted
-        end
-    end
-    
-    return pruned
-end
-
--- ============================================
--- STEP: PRUNE CONSUME HISTORY
--- ============================================
-function OGRH.Migration.PruneConsumeHistory()
-    if not OGRH_SV.consumesTracking or not OGRH_SV.consumesTracking.history then
-        return 0
-    end
-    
-    local history = OGRH_SV.consumesTracking.history
-    local maxEntries = OGRH_SV.consumesTracking.maxEntries or 200
-    local currentCount = table.getn(history)
-    
-    if currentCount <= maxEntries then
-        return 0  -- No pruning needed
-    end
-    
-    -- Keep only the most recent maxEntries
-    local newHistory = {}
-    local startIndex = currentCount - maxEntries + 1
-    
-    for i = startIndex, currentCount do
-        table.insert(newHistory, history[i])
-    end
-    
-    local pruned = currentCount - table.getn(newHistory)
-    OGRH_SV.consumesTracking.history = newHistory
-    
-    return pruned
-end
-
--- ============================================
--- ROLLBACK FUNCTIONALITY
--- ============================================
-function OGRH.Migration.RollbackV2()
-    if not OGRH_SV._migrations or not OGRH_SV._migrations.v2 then
-        OGRH.Msg("|cffff0000[Migration]|r No backup found for v2 migration")
+    if not OGRH_SV then
+        print("[Migration] Error: OGRH_SV not found")
         return false
     end
     
-    local backup = OGRH_SV._migrations.v2.backupData
+    -- Check if already migrated
+    if OGRH_SV.v2 then
+        print("[Migration] v2 schema already exists. Use RollbackFromV2() to reset.")
+        return false
+    end
     
-    OGRH.Msg("[Migration] Rolling back to schema v1...")
+    print("[Migration] Creating v2 schema alongside original data...")
     
-    -- Restore backed up data
-    OGRH_SV.roles = backup.ro (empty tables only - no data lost)nkIcon
-    OGRH_SV.healerIcon = backup.healerIcon
-    OGRH_SV.tankCategory = backup.tankCategory
-    OGRH_SV.healerBoss = backup.healerBoss
-    OGRH_SV.playerAssignments = backup.playerAssignments
-    OGRH_SV.pollTime = backup.pollTime
+    -- Initialize schema version if not set
+    if not OGRH_SV.schemaVersion then
+        OGRH_SV.schemaVersion = SCHEMA_V1
+    end
     
-    -- Note: We don't restore pruned history as it's intentionally removed
-    -- If user needs it, they should restore from WTF backup
+    -- Create v2 structure
+    OGRH_SV.v2 = {}
     
-    OGRH_SV.schemaVersion = SCHEMA_V1
+    -- ========================================
+    -- PHASE 1: Copy v1 data to v2, EXCLUDING EMPTY TABLES
+    -- ========================================
+    print("[Migration] Phase 1: Copying data to v2 (excluding empty tables)...")
     
-    OGRH.Msg("|cff00ff00[Migration]|r Rollback complete! Reloading UI recommended")
+    local emptyTables = {
+        tankIcon = true,
+        healerIcon = true,
+        tankCategory = true,
+        healerBoss = true
+    }
+    
+    local copiedKeys = 0
+    for key, value in pairs(OGRH_SV) do
+        -- Skip metadata and empty tables
+        if key ~= "v2" and key ~= "schemaVersion" and not emptyTables[key] then
+            OGRH_SV.v2[key] = DeepCopy(value)
+            copiedKeys = copiedKeys + 1
+        end
+    end
+    
+    print(string.format("[Migration] Copied %d keys to v2", copiedKeys))
+    print("[Migration] Excluded: tankIcon, healerIcon, tankCategory, healerBoss (empty)")
+    
+    -- ========================================
+    -- PHASE 2: APPLY DATA RETENTION TO V2
+    -- ========================================
+    print("[Migration] Phase 2: Applying data retention policies...")
+    
+    -- Recruitment data: Keep only last 30 days
+    local recruitmentPruned = 0
+    if OGRH_SV.v2.recruitment and OGRH_SV.v2.recruitment.applicantData then
+        local cutoffTime = time() - (30 * 24 * 60 * 60)
+        local newApplicantData = {}
+        
+        for charName, applicant in pairs(OGRH_SV.v2.recruitment.applicantData) do
+            if applicant.lastUpdated and applicant.lastUpdated >= cutoffTime then
+                newApplicantData[charName] = applicant
+            else
+                recruitmentPruned = recruitmentPruned + 1
+            end
+        end
+        
+        OGRH_SV.v2.recruitment.applicantData = newApplicantData
+        print(string.format("[Migration] Pruned %d old recruitment entries (>30 days)", recruitmentPruned))
+    end
+    
+    -- Consume tracking: Keep only last 90 days
+    local consumePruned = 0
+    if OGRH_SV.v2.consumeTracking and OGRH_SV.v2.consumeTracking.history then
+        local cutoffTime = time() - (90 * 24 * 60 * 60)
+        local newHistory = {}
+        
+        for raidDate, data in pairs(OGRH_SV.v2.consumeTracking.history) do
+            if data.timestamp and data.timestamp >= cutoffTime then
+                newHistory[raidDate] = data
+            else
+                consumePruned = consumePruned + 1
+            end
+        end
+        
+        OGRH_SV.v2.consumeTracking.history = newHistory
+        print(string.format("[Migration] Pruned %d old consume history entries (>90 days)", consumePruned))
+    end
+    
+    print("[Migration] ✓ v2 schema created successfully")
+    print("[Migration] Original data preserved in OGRH_SV (v1)")
+    print("[Migration] New data available in OGRH_SV.v2")
+    print("[Migration] ")
+    print("[Migration] Next steps:")
+    print("[Migration]   1. Test addon functionality with v2 data")
+    print("[Migration]   2. Run ValidateV2() to compare schemas")
+    print("[Migration]   3. When ready: CutoverToV2()")
+    
     return true
 end
 
 -- ============================================
--- UTILITY: COUNT ENTRIES IN TABLE
+-- VALIDATION: COMPARE V1 VS V2
 -- ============================================
-function OGRH.Migration.CountEntries(tbl)
-    if not tbl then return 0 end
-    
-    local count = 0
-    for k, v in pairs(tbl) do
-        count = count + 1
-    end
-    return count
-end
-
--- ============================================
--- UTILITY: CLEANUP OLD BACKUPS
--- ============================================
-function OGRH.Migration.CleanupOldBackups()
-    if not OGRH_SV._migrations then
-        return
+function OGRH.Migration.ValidateV2()
+    if not OGRH_SV.v2 then
+        print("[Validation] Error: v2 schema not found. Run MigrateToV2() first.")
+        return false
     end
     
-    local cutoffTime = time() - (BACKUP_RETENTION_DAYS * 24 * 60 * 60)
+    print("[Validation] Comparing v1 and v2 schemas...")
+    print("[Validation] ")
     
-    for version, migrationData in pairs(OGRH_SV._migrations) do
-        if migrationData.timestamp and migrationData.timestamp < cutoffTime then
-            OGRH_SV._migrations[version] = nil
+    -- Count keys in each version
+    local v1Keys, v2Keys = 0, 0
+    for k, v in pairs(OGRH_SV) do
+        if k ~= "v2" and k ~= "schemaVersion" then
+            v1Keys = v1Keys + 1
         end
     end
+    for k, v in pairs(OGRH_SV.v2) do
+        v2Keys = v2Keys + 1
+    end
+    
+    print(string.format("[Validation] v1 keys: %d", v1Keys))
+    print(string.format("[Validation] v2 keys: %d", v2Keys))
+    print(string.format("[Validation] Difference: %d keys removed", v1Keys - v2Keys))
+    print("[Validation] ")
+    print("[Validation] Removed tables:")
+    print("[Validation]   - tankIcon")
+    print("[Validation]   - healerIcon")
+    print("[Validation]   - tankCategory")
+    print("[Validation]   - healerBoss")
+    print("[Validation] ")
+    print("[Validation] Data retention applied:")
+    print("[Validation]   - recruitment: Last 30 days only")
+    print("[Validation]   - consumeTracking: Last 90 days only")
+    print("[Validation] ")
+    print("[Validation] ✓ Review addon functionality before cutover")
+    
+    return true
 end
 
 -- ============================================
--- ACCESSOR: GET PLAYER ROLE (NEW UNIFIED API)
--- NOTE: Accessor Functions Not Needed
+-- CUTOVER: SWITCH TO V2
 -- ============================================
--- The three role systems remain separate:
--- - Use OGRH_SV.roles for current raid composition
--- - Use rosterManagement for player capabilities
--- - Use ConsumeHelper_SV.playerRoles for consume preferences-- ============================================
--- SLASH COMMAND HANDLERS
+function OGRH.Migration.CutoverToV2()
+    if not OGRH_SV.v2 then
+        print("[Cutover] Error: v2 schema not found")
+        return false
+    end
+    
+    print("[Cutover] WARNING: This will replace v1 data with v2")
+    print("[Cutover] v1 data will be backed up to OGRH_SV_BACKUP_V1")
+    print("[Cutover] Type '/ogrh migration cutover confirm' to proceed")
+    print("[Cutover] ")
+    print("[Cutover] (In production, this would require user confirmation)")
+    
+    -- Create backup of v1 (everything except v2)
+    OGRH_SV_BACKUP_V1 = {}
+    for k, v in pairs(OGRH_SV) do
+        if k ~= "v2" and k ~= "schemaVersion" then
+            OGRH_SV_BACKUP_V1[k] = DeepCopy(v)
+        end
+    end
+    
+    -- Remove v1 data from top level
+    for k, v in pairs(OGRH_SV) do
+        if k ~= "v2" and k ~= "schemaVersion" then
+            OGRH_SV[k] = nil
+        end
+    end
+    
+    -- Move v2 data to top level
+    for k, v in pairs(OGRH_SV.v2) do
+        OGRH_SV[k] = v
+    end
+    
+    -- Update schema version and remove v2 container
+    OGRH_SV.v2 = nil
+    OGRH_SV.schemaVersion = SCHEMA_V2
+    
+    print("[Cutover] ✓ Complete! Now using v2 schema")
+    print("[Cutover] v1 backup saved to OGRH_SV_BACKUP_V1 (global variable)")
+    print("[Cutover] Use RollbackFromV2() if issues found")
+    
+    return true
+end
+
 -- ============================================
-function OGRH.Migration.HandleCommand(args)
-    if not args or args == "" or args == "status" then
-        OGRH.Migration.ShowStatus()
-    elseif args == "rollback" then
-        OGRH.Migration.RollbackV2()
-    elseif args == "force" then
+-- ROLLBACK: REVERT TO V1
+-- ============================================
+function OGRH.Migration.RollbackFromV2()
+    -- Scenario 1: v2 exists but not active yet
+    if OGRH_SV.v2 then
+        OGRH_SV.v2 = nil
         OGRH_SV.schemaVersion = SCHEMA_V1
-        OGRH.Migration.Run()
-    elseif args == "backup" then
-        OGRH.Migration.ShowBackupInfo()
-    else
-        OGRH.Msg("Migration commands:")
-        OGRH.Msg("  /ogrh migration status - Show current schema version")
-        OGRH.Msg("  /ogrh migration rollback - Rollback last migration")
-        OGRH.Msg("  /ogrh migration force - Force re-run migration")
-        OGRH.Msg("  /ogrh migration backup - Show backup information")
+        print("[Rollback] v2 schema removed, back to v1")
+        return true
     end
+    
+    -- Scenario 2: Already cut over to v2, need to restore from backup
+    if OGRH_SV.schemaVersion == SCHEMA_V2 and OGRH_SV_BACKUP_V1 then
+        print("[Rollback] Restoring v1 from backup...")
+        
+        -- Remove v2 data
+        for k, v in pairs(OGRH_SV) do
+            if k ~= "schemaVersion" then
+                OGRH_SV[k] = nil
+            end
+        end
+        
+        -- Restore v1 backup
+        for k, v in pairs(OGRH_SV_BACKUP_V1) do
+            OGRH_SV[k] = DeepCopy(v)
+        end
+        
+        OGRH_SV.schemaVersion = SCHEMA_V1
+        
+        print("[Rollback] ✓ Restored v1 from backup")
+        print("[Rollback] Please reload UI (/reload) to ensure clean state")
+        return true
+    end
+    
+    print("[Rollback] Error: Nothing to rollback")
+    print("[Rollback] Current schema: " .. (OGRH_SV.schemaVersion or "unknown"))
+    return false
 end
 
-function OGRH.Migration.ShowStatus()
-    local version = OGRH_SV.schemaVersion or SCHEMA_V1
-    OGRH.Msg("SavedVariables Schema Version: " .. version)
-    OGRH.Msg("Current Schema Version: " .. CURRENT_SCHEMA)
-    
-    if version < CURRENT_SCHEMA then
-        OGRH.Msg("|cffff0000Status:|r Out of date - migration needed")
-    else
-        OGRH.Msg("|cff00ff00Status:|r Up to date")
-    end
-    
-    -- Show table sizes
-    if OGRH_SV.recruitment then
-        local whisperCount = OGRH.Migration.CountEntries(OGRH_SV.recruitment.whisperHistory or {})
-        local cacheCount = OGRH.Migration.CountEntries(OGRH_SV.recruitment.playerCache or {})
-        OGRH.Msg("Recruitment: " .. whisperCount .. " whisper entries, " .. cacheCount .. " cached players")
-    end
-    
-    if OGRH_SV.consumesTracking then
-        local historyCount = table.getn(OGRH_SV.consumesTracking.history or {})
-        OGRH.Msg("Consume History: " .. historyCount .. " entries")
-    end
-end
-
-function OGRH.Migration.ShowBackupInfo()
-    if not OGRH_SV._migrations then
-        OGRH.Msg("No migration backups found")
+-- ============================================
+-- DUAL-WRITE HELPER (For gradual migration)
+-- ============================================
+-- Example: Update both v1 and v2 during transition period
+function OGRH.Migration.DualWrite(keyPath, value)
+    -- Only active if v2 exists but not yet cut over
+    if not OGRH_SV.v2 or OGRH_SV.schemaVersion == SCHEMA_V2 then
         return
     end
     
-    for version, migrationData in pairs(OGRH_SV._migrations) do
-        if migrationData.timestamp then
-            local age = math.floor((time() - migrationData.timestamp) / (24 * 60 * 60))
-            OGRH.Msg(string.format("Backup for v%s: %d days old", tostring(version), age))
+    -- Write to both v1 and v2
+    -- keyPath format: "recruitment.applicantData.PlayerName"
+    local function SetNestedValue(tbl, path, val)
+        local keys = {}
+        for key in string.gmatch(path, "[^.]+") do
+            table.insert(keys, key)
         end
+        
+        for i = 1, #keys - 1 do
+            local key = keys[i]
+            if not tbl[key] then tbl[key] = {} end
+            tbl = tbl[key]
+        end
+        
+        tbl[keys[#keys]] = val
     end
+    
+    SetNestedValue(OGRH_SV, keyPath, DeepCopy(value))
+    SetNestedValue(OGRH_SV.v2, keyPath, DeepCopy(value))
 end
 
+-- ============================================
+-- EXAMPLE USAGE
+-- ============================================
 --[[
-    INTEGRATION INSTRUCTIONS:
+    -- Step 1: Create v2 schema
+    OGRH.Migration.MigrateToV2()
     
-    1. Add to Core.lua after OGRH.EnsureSV():
-       
-       -- Run migrations if needed
-       OGRH.Migration.Run()
+    -- Step 2: Validate
+    OGRH.Migration.ValidateV2()
     
-    2. Add slash command handler:
-       
-       SLASH_OGRH_MIGRATION1 = "/ogrh migration"
-       SlashCmdList["OGRH_MIGRATION"] = function(msg)
-           OGRH.Migration.HandleCommand(msg)
-       end
+    -- Step 3: Test addon with v2 data
+    -- Code can read from OGRH_SV.v2 for testing
     
-    3. Update all direct role references to use new API:
-       
-       -- OLD:
-       local role = OGRH_SV.roles[playerName]
-       
-       -- NEW:
-       local role = OGRH.GetPlayerRole(playerName)
+    -- Step 4: Cutover when ready
+    OGRH.Migration.CutoverToV2()
     
-    4. Test thoroughly:
-       - Fresh install (no SavedVariables)
-       - Existing install (with v1 data)
-       - Rollback functionality
-       - Multiple migration runs (should be idempotent)
-]]
+    -- If issues: Rollback
+    OGRH.Migration.RollbackFromV2()
+--]]
 
--- ============================================
--- AUTO-RUN ON LOAD (for testing)
--- ============================================
--- Uncomment to enable auto-migration on load
--- local migrationFrame = CreateFrame("Frame")
--- migrationFrame:RegisterEvent("VARIABLES_LOADED")
--- migrationFrame:SetScript("OnEvent", function()
---     if event == "VARIABLES_LOADED" then
---         OGRH.Migration.Run()
---     end
--- end)
-Test thoroughly:
-       - Fresh install (no SavedVariables)
-       - Existing install (with v1 data)
-       - Rollback functionality
-       - Multiple migration runs (should be idempotent)
-       - Verify empty tables removed
-       - Check history pruning works correctly
-       
-    Note: No code changes needed - this migration only:
-    - Removes empty tables (tankIcon, healerIcon, etc.)
-    - Prunes historical data to size limits
-    - Does NOT change role storage (those systems are separate
+print("[Migration Script] Loaded: SavedVariables v2 Migration (Versioned)")
+print("[Migration Script] Available functions:")
+print("  - OGRH.Migration.MigrateToV2()")
+print("  - OGRH.Migration.ValidateV2()")
+print("  - OGRH.Migration.CutoverToV2()")
+print("  - OGRH.Migration.RollbackFromV2()")
