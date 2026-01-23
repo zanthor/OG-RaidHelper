@@ -139,6 +139,11 @@ _svf:SetScript("OnEvent", function()
     OGRH.SyncDelta.Initialize()
   end
   
+  -- Initialize Phase 6.3 granular sync system
+  if OGRH.SyncGranular and OGRH.SyncGranular.Initialize then
+    OGRH.SyncGranular.Initialize()
+  end
+  
   if OGRH.SyncUI and OGRH.SyncUI.Initialize then
     OGRH.SyncUI.Initialize()
   end

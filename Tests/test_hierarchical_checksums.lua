@@ -50,48 +50,41 @@ RunTest("6.1.1.2: ComputeGlobalComponentChecksum - consumes", function()
     return true
 end)
 
-RunTest("6.1.1.3: ComputeGlobalComponentChecksum - rgo", function()
-    local cs1 = OGRH.ComputeGlobalComponentChecksum("rgo")
-    Assert(cs1 ~= nil, "Checksum should not be nil")
-    Assert(type(cs1) == "string", "Checksum should be string")
-    return true
-end)
-
-RunTest("6.1.1.4: ComputeGlobalComponentChecksum - unknown component", function()
+RunTest("6.1.1.3: ComputeGlobalComponentChecksum - unknown component", function()
     local cs1 = OGRH.ComputeGlobalComponentChecksum("invalidComponent")
     Assert(cs1 == "0", "Unknown component should return '0'")
     return true
 end)
 
-RunTest("6.1.1.5: GetGlobalComponentChecksums - returns all", function()
+RunTest("6.1.1.4: GetGlobalComponentChecksums - returns all", function()
     local checksums = OGRH.GetGlobalComponentChecksums()
     Assert(type(checksums) == "table", "Should return table")
     Assert(checksums.tradeItems ~= nil, "Should include tradeItems")
     Assert(checksums.consumes ~= nil, "Should include consumes")
-    Assert(checksums.rgo ~= nil, "Should include rgo")
+    -- RGO deprecated - no longer included
     return true
 end)
 
-RunTest("6.1.1.6: Checksum stability - same data produces same checksum", function()
-    local cs1 = OGRH.ComputeGlobalComponentChecksum("rgo")
-    local cs2 = OGRH.ComputeGlobalComponentChecksum("rgo")
+RunTest("6.1.1.5: Checksum stability - same data produces same checksum", function()
+    local cs1 = OGRH.ComputeGlobalComponentChecksum("consumes")
+    local cs2 = OGRH.ComputeGlobalComponentChecksum("consumes")
     Assert(cs1 == cs2, "Same data must produce same checksum: " .. cs1 .. " vs " .. cs2)
     return true
 end)
 
-RunTest("6.1.1.7: Checksum sensitivity - data change changes checksum", function()
+RunTest("6.1.1.6: Checksum sensitivity - data change changes checksum", function()
     -- Save original
     OGRH.EnsureSV()
-    local originalRgo = OGRH_SV.rgo
-    local cs1 = OGRH.ComputeGlobalComponentChecksum("rgo")
+    local originalConsumes = OGRH_SV.consumes
+    local cs1 = OGRH.ComputeGlobalComponentChecksum("consumes")
     
     -- Modify data
-    OGRH_SV.rgo = OGRH_SV.rgo or {}
-    OGRH_SV.rgo.testField = "testValue"
-    local cs2 = OGRH.ComputeGlobalComponentChecksum("rgo")
+    OGRH_SV.consumes = OGRH_SV.consumes or {}
+    OGRH_SV.consumes.testField = "testValue"
+    local cs2 = OGRH.ComputeGlobalComponentChecksum("consumes")
     
     -- Restore original
-    OGRH_SV.rgo = originalRgo
+    OGRH_SV.consumes = originalConsumes
     
     Assert(cs1 ~= cs2, "Data change must change checksum")
     return true

@@ -46,6 +46,7 @@ Infrastructure\Sync_v2.lua
 Infrastructure\DataManagement.lua
 Infrastructure\SyncIntegrity.lua
 Infrastructure\SyncDelta.lua
+Infrastructure\SyncGranular.lua
 Infrastructure\SyncUI.lua
 
 ## ===================================================================

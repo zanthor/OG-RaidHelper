@@ -135,6 +135,11 @@ end
 
 -- Record a player assignment change for delta sync
 function OGRH.SyncDelta.RecordAssignmentChange(playerName, assignmentType, assignmentValue, oldValue)
+    -- Record modification timestamp for checksum broadcast cooldown
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.RecordAdminModification then
+        OGRH.SyncIntegrity.RecordAdminModification()
+    end
+    
     local changeData = {
         type = "ASSIGNMENT",
         player = playerName,

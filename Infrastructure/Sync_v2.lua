@@ -161,13 +161,9 @@ function OGRH.Sync.OnChecksumReceived(sender, dataString)
             mismatchCount = mismatchCount + 1
         end
         
-        -- Show warning (only if admin)
-        if OGRH.CanModifyStructure(UnitName("player")) then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("|cffffff00[OGRH]|r WARNING: %d player(s) in raid with out-of-sync checksums. Use Data Management > Push Structure to sync.", mismatchCount),
-                1, 0.82, 0
-            )
-        end
+        -- Note: Warning suppressed - Phase 6 (SyncIntegrity) handles automatic repair
+        -- If Phase 6 is disabled, this would show:
+        -- "WARNING: X player(s) in raid with out-of-sync checksums. Use Data Management > Push Structure to sync."
     else
         -- Remove from mismatch list if they match now
         if OGRH.Sync.State.checksumMismatches then

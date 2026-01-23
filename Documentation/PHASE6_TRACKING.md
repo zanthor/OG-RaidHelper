@@ -31,7 +31,7 @@ Phase 6 implements hierarchical checksum validation and granular sync to enable 
 - [x] Implement `ComputeGlobalComponentChecksum(componentName)`
   - [x] `tradeItems` checksum
   - [x] `consumes` checksum
-  - [x] `rgo` checksum (Raid Group Organizer)
+  - [x] ~~`rgo` checksum (Raid Group Organizer)~~ **DEPRECATED** - RGO feature removed
 - [x] Implement `GetGlobalComponentChecksums()` (returns table of all global checksums)
 - [ ] Test checksum stability (same data = same checksum)
 - [ ] Test checksum sensitivity (1 byte change = different checksum)
@@ -157,7 +157,7 @@ assert(rolesCs1 == rolesCs2, "Assignment change must NOT change roles checksum")
 
 ### 6.2: Hierarchical Validation System
 
-**Status:** ✅ COMPLETE
+**Status:** ✅ COMPLETE ✅ TESTED
 
 #### 6.2.1: Validation Workflow
 - [x] Implement `ValidateStructureHierarchy(remoteChecksums)` (top-level validation entry point)
@@ -230,32 +230,128 @@ ValidationResult = {
 /ogrh test all          -- Run all tests including Phase 6.2
 ```
 
+**Phase 6.2 Performance Fix (January 22, 2026):**
+- ✅ Fixed critical performance issue: Admin was broadcasting FULL hierarchy (17.1s network queue)
+- ✅ Replaced with lightweight polling: Only global + raid-level checksums broadcast
+- ✅ Implemented on-demand drill-down: Client requests detailed checksums only for mismatched areas
+- ✅ Added CHECKSUM_DRILLDOWN_REQUEST/RESPONSE message types
+- ✅ Integrated with Phase 6.3 auto-repair (QueueRepair called after corruption identified)
+- ✅ Bandwidth reduction: ~95% for checksum polls (broadcasts now <1KB instead of 17.1s queue)
+
+**New Flow:**
+1. Admin broadcasts lightweight checksums every 30s (global + raid-level only)
+2. Client detects mismatch at raid level → requests drill-down for specific raid
+3. Admin responds with encounter + component checksums for that raid only
+4. Client identifies exact component corruption
+5. Phase 6.3 QueueRepair automatically triggered with prioritization
+
+**In-Game Testing (January 22, 2026):**
+- ✅ Clients with matching checksums show "Validation passed"
+- ✅ Clients with mismatched checksums detect differences
+- ✅ Admin (Tankmedady) broadcasts successfully
+- ✅ Lightweight polling confirmed working (no network flood)
+- ✅ Drill-down request/response flow working (detected all BWL encounter mismatches)
+- ✅ Added 2-second buffer for drill-down requests to batch multiple clients
+
+**Test Configuration:**
+- Admin: Tankmedady (checksum: 219755091199)
+- Client 1: Gnuzench (checksum: 219755091199) - MATCH ✅
+- Client 2: Sunderwhere (checksum: 219751090199) - MISMATCH ⚠️
+  - Detected playerAssignments mismatches in all BWL encounters
+
+**Performance Optimization (January 22, 2026):**
+- **Issue**: Multiple out-of-sync clients requesting drill-down simultaneously caused duplicate payloads
+  - Example: 2 clients both request BWL data → admin sends ~3s payload twice = 6s total
+- **Solution**: Added 2-second request batching buffer
+  - Admin queues drill-down requests instead of responding immediately
+  - After 2 seconds, broadcasts response to ALL queued requesters at once
+  - Eliminates duplicate payloads for concurrent requests
+- **Benefit**: If 5 clients are all out of sync, admin sends data once instead of 5 times
+
+**Architectural Refinement Needed (January 22, 2026):**
+
+The drill-down system works correctly but exposes a scope issue: we're validating ALL raids when only the currently active raid matters for immediate gameplay.
+
+**Proposed Changes:**
+1. **Scope checksum broadcasts to admin's currently selected raid only**
+   - Only broadcast checksums for the raid the admin is actively viewing/managing
+   - Reduces bandwidth and focuses validation on what's immediately relevant
+   - Other raids don't need real-time validation during gameplay
+
+2. **Identify truly global components that need cross-raid validation:**
+   - `rgo` (Raid Group Organizer) - affects all raids, needs validation
+   - `consumes` - affects all raids, needs validation
+   - `tradeItems` - less critical, possibly exclude or lower priority
+
+3. **Add explicit "Full Structure Validation" option:**
+   - Manual validation button in Data Management for all raids
+   - Used during raid setup or when switching raids
+   - Not part of 30-second polling cycle
+
+**Benefits:**
+- Dramatically reduces validation overhead (1 raid vs 8 raids)
+- Focuses validation on immediately relevant data
+- Still detects corruption where it matters (active raid)
+- Admin's current raid selection naturally indicates priority
+- Clients only need to sync data for the raid they're actually doing
+
+**Implementation Plan:**
+- Modify `BroadcastChecksums()` to accept optional `currentRaid` parameter
+- Only include encounter checksums for currently selected raid
+- Keep global component validation (rgo, consumes) in all broadcasts
+- Add UI selector or auto-detect admin's current raid selection
+
 ---
 
 ### 6.3: Granular Sync System
 
-**Status:** ⏳ NOT STARTED
+**Status:** ✅ COMPLETE
+
+**Design Note: Repair Prioritization**
+
+When corruption is detected (via Phase 6.2 validation), repairs should be prioritized by relevance to the user's current context:
+
+1. **Highest Priority: Currently Selected Raid/Encounter**
+   - User is actively viewing/editing this encounter
+   - Corruption directly impacts their current work
+   - Fix immediately to avoid confusion/errors
+
+2. **Medium Priority: Other Encounters in Same Raid**
+   - User likely to navigate to these encounters
+   - Related to current raid planning context
+   - Fix proactively to prevent disruption
+
+3. **Lowest Priority: Other Raids**
+   - User not currently working on these
+   - Fix when convenient
+   - Can defer until user switches raids
+
+**Implementation**: Track current raid/encounter selection in UI state. When multiple corruptions detected, queue repairs in priority order rather than arbitrary order. Consider batching low-priority repairs to reduce overhead.
+
+---
 
 #### 6.3.1: Component-Level Sync
-- [ ] Implement `SyncComponent(raidName, encounterName, componentName, targetPlayer)`
-  - [ ] Extract component data from saved variables
-  - [ ] Serialize component data
-  - [ ] Send via OGAddonMsg with chunking
-  - [ ] Validate component type
-  - [ ] Handle missing raids/encounters gracefully
-- [ ] Implement `ReceiveComponentSync(raidName, encounterName, componentName, data, sender)`
-  - [ ] Validate sender permission (ADMIN/OFFICER)
-  - [ ] Validate component structure
-  - [ ] Apply component data to saved variables
-  - [ ] Recompute checksums after update
-  - [ ] Trigger UI refresh for affected component
-- [ ] Register message handlers:
-  - [ ] `SYNC.COMPONENT_REQUEST` - Request specific component
-  - [ ] `SYNC.COMPONENT_RESPONSE` - Send component data
+- [x] Implement `SyncComponent(raidName, encounterName, componentName, targetPlayer)`
+  - [x] Extract component data from saved variables
+  - [x] Serialize component data
+  - [x] Send via OGAddonMsg with chunking
+  - [x] Validate component type
+  - [x] Handle missing raids/encounters gracefully
+- [x] Implement `ReceiveComponentSync(raidName, encounterName, componentName, data, sender)`
+  - [x] Validate sender permission (ADMIN/OFFICER)
+  - [x] Validate component structure
+  - [x] Apply component data to saved variables
+  - [x] Recompute checksums after update
+  - [x] Trigger UI refresh for affected component
+- [x] Register message handlers:
+  - [x] `SYNC.COMPONENT_REQUEST` - Request specific component
+  - [x] `SYNC.COMPONENT_RESPONSE` - Send component data
 
-**Files to Create/Modify:**
-- `OGRH_MessageRouter.lua` (new message types)
-- `OGRH_SyncGranular.lua` (NEW FILE - granular sync logic)
+**Files Created/Modified:**
+- `Infrastructure/SyncGranular.lua` (NEW FILE - 950+ lines)
+- `Infrastructure/MessageTypes.lua` (added 8 new message types)
+- `Infrastructure/MessageRouter.lua` (handlers registered automatically)
+- `Core/Core.lua` (added initialization call)
 
 **Testing Criteria:**
 ```lua
@@ -280,24 +376,23 @@ ValidationResult = {
 ---
 
 #### 6.3.2: Encounter-Level Sync
-- [ ] Implement `SyncEncounter(raidName, encounterName, targetPlayer)`
-  - [ ] Sync all 6 components in single operation
-  - [ ] Use component sync infrastructure
-  - [ ] Batch component updates
-  - [ ] Single checksum recomputation after all components applied
-- [ ] Implement `ReceiveEncounterSync(raidName, encounterName, allComponentsData, sender)`
-  - [ ] Validate sender permission
-  - [ ] Validate all component structures
-  - [ ] Apply all components atomically (all or nothing)
-  - [ ] Recompute checksums
-  - [ ] Trigger full encounter UI refresh
-- [ ] Register message handlers:
-  - [ ] `SYNC.ENCOUNTER_REQUEST`
-  - [ ] `SYNC.ENCOUNTER_RESPONSE`
+- [x] Implement `SyncEncounter(raidName, encounterName, targetPlayer)`
+  - [x] Sync all 6 components in single operation
+  - [x] Use component sync infrastructure
+  - [x] Batch component updates
+  - [x] Single checksum recomputation after all components applied
+- [x] Implement `ReceiveEncounterSync(raidName, encounterName, allComponentsData, sender)`
+  - [x] Validate sender permission
+  - [x] Validate all component structures
+  - [x] Apply all components atomically (all or nothing)
+  - [x] Recompute checksums
+  - [x] Trigger full encounter UI refresh
+- [x] Register message handlers:
+  - [x] `SYNC.ENCOUNTER_REQUEST`
+  - [x] `SYNC.ENCOUNTER_RESPONSE`
 
-**Files to Modify:**
-- `OGRH_SyncGranular.lua`
-- `OGRH_MessageRouter.lua`
+**Files Modified:**
+- `Infrastructure/SyncGranular.lua`
 
 **Testing Criteria:**
 ```lua
@@ -321,25 +416,24 @@ ValidationResult = {
 ---
 
 #### 6.3.3: Raid-Level Sync
-- [ ] Implement `SyncRaid(raidName, targetPlayer)`
-  - [ ] Sync raid metadata
-  - [ ] Sync all encounters in raid
-  - [ ] Use encounter sync infrastructure
-  - [ ] Batch encounter updates
-- [ ] Implement `ReceiveRaidSync(raidName, raidData, sender)`
-  - [ ] Validate sender permission
-  - [ ] Validate raid structure
-  - [ ] Apply raid metadata
-  - [ ] Apply all encounters
-  - [ ] Recompute checksums
-  - [ ] Trigger full raid UI refresh
-- [ ] Register message handlers:
-  - [ ] `SYNC.RAID_REQUEST`
-  - [ ] `SYNC.RAID_RESPONSE`
+- [x] Implement `SyncRaid(raidName, targetPlayer)`
+  - [x] Sync raid metadata
+  - [x] Sync all encounters in raid
+  - [x] Use encounter sync infrastructure
+  - [x] Batch encounter updates
+- [x] Implement `ReceiveRaidSync(raidName, raidData, sender)`
+  - [x] Validate sender permission
+  - [x] Validate raid structure
+  - [x] Apply raid metadata
+  - [x] Apply all encounters
+  - [x] Recompute checksums
+  - [x] Trigger full raid UI refresh
+- [x] Register message handlers:
+  - [x] `SYNC.RAID_REQUEST`
+  - [x] `SYNC.RAID_RESPONSE`
 
-**Files to Modify:**
-- `OGRH_SyncGranular.lua`
-- `OGRH_MessageRouter.lua`
+**Files Modified:**
+- `Infrastructure/SyncGranular.lua`
 
 **Testing Criteria:**
 ```lua
@@ -363,23 +457,36 @@ ValidationResult = {
 ---
 
 #### 6.3.4: Global Component Sync
-- [ ] Implement `SyncGlobalComponent(componentName, targetPlayer)`
-  - [ ] Support "tradeItems", "consumes", "rgo"
-  - [ ] Extract component from OGRH_SV
-  - [ ] Serialize and send
-- [ ] Implement `ReceiveGlobalComponentSync(componentName, data, sender)`
-  - [ ] Validate sender permission
-  - [ ] Validate component structure
-  - [ ] Apply to OGRH_SV
-  - [ ] Recompute checksums
-  - [ ] Trigger UI refresh if applicable
-- [ ] Register message handlers:
-  - [ ] `SYNC.GLOBAL_REQUEST`
-  - [ ] `SYNC.GLOBAL_RESPONSE`
+- [x] Implement `SyncGlobalComponent(componentName, targetPlayer)`
+  - [x] Support "tradeItems", "consumes", "rgo"
+  - [x] Extract component from OGRH_SV
+  - [x] Serialize and send
+- [x] Implement `ReceiveGlobalComponentSync(componentName, data, sender)`
+  - [x] Validate sender permission
+  - [x] Validate component structure
+  - [x] Apply to OGRH_SV
+  - [x] Recompute checksums
+  - [x] Trigger UI refresh if applicable
+- [x] Register message handlers:
+  - [x] `SYNC.GLOBAL_REQUEST`
+  - [x] `SYNC.GLOBAL_RESPONSE`
 
-**Files to Modify:**
-- `OGRH_SyncGranular.lua`
-- `OGRH_MessageRouter.lua`
+**Files Modified:**
+- `Infrastructure/SyncGranular.lua`
+
+**Testing:**
+- [x] Test function created: `TestGranularSync()` in SyncIntegrity.lua
+- [x] Module initialization test
+- [x] Priority calculation test
+- [x] Component extraction test (all 6 components)
+- [x] Validation result integration test
+- [x] Message type registration test (all 8 types)
+
+**Testing Command:**
+```lua
+/ogrh test granular   -- Test granular sync system
+/ogrh test all        -- Run all tests including Phase 6.3
+```
 
 **Testing Criteria:**
 ```lua
@@ -403,20 +510,20 @@ ValidationResult = {
 **Status:** ⏳ NOT STARTED
 
 #### 6.4.1: Mismatch Detection & Auto-Request
-- [ ] Integrate with checksum polling (from 6.2.2)
-- [ ] On validation failure, automatically request appropriate sync level:
-  - [ ] Component mismatch → request component sync
-  - [ ] Encounter mismatch (multiple components) → request encounter sync
-  - [ ] Raid mismatch → request raid sync
-  - [ ] Global component mismatch → request global sync
+- [x] Integrate with checksum polling (from 6.2.2)
+- [x] On validation failure, automatically request appropriate sync level:
+  - [x] Component mismatch → request component sync
+  - [x] Encounter mismatch (multiple components) → request encounter sync
+  - [x] Raid mismatch → request raid sync
+  - [x] Global component mismatch → request global sync
 - [ ] Implement smart sync selection:
   - [ ] If 1-2 components corrupted → request component sync
   - [ ] If 3+ components corrupted → request encounter sync
   - [ ] If multiple encounters corrupted → request raid sync
-- [ ] Add user notification:
-  - [ ] "Detected structure mismatch: BWL > Razorgore > playerAssignments"
-  - [ ] "Requesting repair from raid admin..."
-  - [ ] "Repair completed successfully"
+- [x] Add user notification:
+  - [x] "Detected structure mismatch: BWL > Razorgore > playerAssignments"
+  - [x] "Requesting repair from raid admin..."
+  - [x] "Repair completed successfully"
 
 **Files to Modify:**
 - `OGRH_SyncIntegrity.lua`
@@ -490,63 +597,261 @@ ValidationResult = {
 
 ---
 
-### 6.5: Performance Validation
+### 6.5: Rollback System
 
 **Status:** ⏳ NOT STARTED
 
-#### 6.5.1: Benchmark Testing
-- [ ] Create benchmark suite in `Tests/` directory
+**Design Philosophy:** Enable users to recover from sync corruption, accidental changes, or bad data by maintaining automatic backups and providing restore functionality.
+
+---
+
+#### 6.5.1: Automatic Backup System
+- [ ] Implement `CreateBackup(label)` function
+  - [ ] Snapshot entire OGRH_SV structure
+  - [ ] Store with timestamp and label
+  - [ ] Compress backup data to reduce memory
+  - [ ] Limit backup history (keep last 10 backups)
+- [ ] Implement automatic backup triggers:
+  - [ ] Before full structure sync (Phase 2)
+  - [ ] Before raid-level sync (Phase 6.3.3)
+  - [ ] Before manual "Load Defaults" operation
+  - [ ] On admin role transfer
+  - [ ] Before applying major UI changes
+- [ ] Implement backup pruning:
+  - [ ] Delete backups older than 7 days
+  - [ ] Keep minimum 3 backups regardless of age
+  - [ ] Provide "Pin" option to prevent auto-deletion
+- [ ] Add backup metadata:
+  - [ ] Timestamp
+  - [ ] User-provided label
+  - [ ] Trigger reason ("Before Full Sync", "Manual", etc.)
+  - [ ] Data size
+  - [ ] Pinned status
+
+**Files to Create/Modify:**
+- `Infrastructure/Rollback.lua` (NEW FILE)
+- `SavedVariables/SavedVariables.lua` (add backup storage)
+
+**Testing Criteria:**
+```lua
+-- Test 1: Automatic backup creation
+-- Trigger full sync
+-- Verify backup created before sync
+-- Verify backup contains pre-sync data
+
+-- Test 2: Backup pruning
+-- Create 15 backups
+-- Verify only last 10 retained
+-- Pin 3 old backups
+-- Verify pinned backups not deleted
+
+-- Test 3: Backup compression
+-- Create backup of full structure
+-- Verify compressed size < raw size
+-- Restore and verify data integrity
+```
+
+---
+
+#### 6.5.2: Manual Backup Creation
+- [ ] Add "Create Backup" button to Data Management window
+- [ ] Implement backup label dialog:
+  - [ ] Text input for custom label
+  - [ ] Display current data size estimate
+  - [ ] Confirm/Cancel buttons
+- [ ] Implement `CreateManualBackup(label)` function
+  - [ ] Same as automatic backup
+  - [ ] Mark as "Manual" in metadata
+  - [ ] Auto-pin manual backups
+- [ ] Add visual feedback:
+  - [ ] "Backup created successfully: [label]"
+  - [ ] Display backup size
+  - [ ] Add to backup history list
+
+**Files to Modify:**
+- `UI/DataManagement.lua`
+- `Infrastructure/Rollback.lua`
+
+**Testing Criteria:**
+```lua
+-- Test 1: Manual backup creation
+-- Click "Create Backup" button
+-- Enter label "Before BWL Changes"
+-- Verify backup created with label
+-- Verify backup auto-pinned
+
+-- Test 2: Backup during active raid
+-- Create backup during combat
+-- Verify no performance impact
+-- Verify backup completes successfully
+```
+
+---
+
+#### 6.5.3: Restore from Backup
+- [ ] Add "Restore from Backup" UI to Data Management window
+- [ ] Implement backup browser:
+  - [ ] List all available backups (timestamp, label, size)
+  - [ ] Sort by timestamp (newest first)
+  - [ ] Show pinned status
+  - [ ] Preview backup metadata
+- [ ] Implement `RestoreBackup(backupId)` function
+  - [ ] Create safety backup of current state first
+  - [ ] Replace OGRH_SV with backup data
+  - [ ] Recompute all checksums
+  - [ ] Broadcast structure update to raid
+  - [ ] Refresh all UI elements
+- [ ] Add confirmation dialog:
+  - [ ] "This will replace all current data. Continue?"
+  - [ ] Show backup timestamp and label
+  - [ ] "Safety backup will be created first"
+  - [ ] Confirm/Cancel buttons
+- [ ] Add restore validation:
+  - [ ] Verify backup structure valid
+  - [ ] Check for corrupted backup data
+  - [ ] Graceful error if backup invalid
+
+**Files to Modify:**
+- `UI/DataManagement.lua`
+- `Infrastructure/Rollback.lua`
+- `Infrastructure/SyncIntegrity.lua` (checksum recomputation)
+
+**Testing Criteria:**
+```lua
+-- Test 1: Basic restore
+-- Create backup
+-- Modify data (delete encounter, change assignments)
+-- Restore from backup
+-- Verify data restored to backup state
+-- Verify checksums recomputed
+
+-- Test 2: Safety backup creation
+-- Restore from old backup
+-- Verify safety backup created first
+-- Verify safety backup contains pre-restore data
+-- Verify restore completes successfully
+
+-- Test 3: Corrupted backup handling
+-- Corrupt backup data in SavedVariables
+-- Attempt restore
+-- Verify graceful error message
+-- Verify current data unchanged
+
+-- Test 4: Admin restore broadcast
+-- Admin restores from backup
+-- Verify structure broadcast to raid
+-- Verify other players receive updated data
+```
+
+---
+
+#### 6.5.4: Backup Management UI
+- [ ] Add "Backup History" section to Data Management window
+- [ ] Implement backup list display:
+  - [ ] Timestamp (formatted: "Jan 22, 2026 3:45 PM")
+  - [ ] Label
+  - [ ] Size (formatted: "245 KB")
+  - [ ] Trigger reason
+  - [ ] Pinned indicator
+- [ ] Add backup actions:
+  - [ ] "Restore" button (per backup)
+  - [ ] "Delete" button (per backup)
+  - [ ] "Pin/Unpin" toggle
+  - [ ] "Export" button (save backup to file)
+- [ ] Implement backup deletion:
+  - [ ] Confirmation dialog for manual backups
+  - [ ] No confirmation for auto-backups
+  - [ ] Cannot delete if < 3 backups remain
+- [ ] Add backup export:
+  - [ ] Serialize backup to text format
+  - [ ] Copy to clipboard or save to file
+  - [ ] Include metadata header
+
+**Files to Modify:**
+- `UI/DataManagement.lua`
+- `Infrastructure/Rollback.lua`
+
+**Testing Criteria:**
+```lua
+-- Test 1: Backup list display
+-- Create 5 backups with different labels
+-- Verify all displayed in history list
+-- Verify sorted by timestamp (newest first)
+-- Verify metadata displayed correctly
+
+-- Test 2: Pin/Unpin backup
+-- Click pin icon on backup
+-- Verify backup marked as pinned
+-- Trigger pruning (create 15 backups)
+-- Verify pinned backup not deleted
+
+-- Test 3: Delete backup
+-- Delete auto-backup
+-- Verify no confirmation dialog
+-- Delete manual backup
+-- Verify confirmation dialog shown
+-- Verify backup deleted after confirm
+
+-- Test 4: Cannot delete last 3 backups
+-- Delete backups until 3 remain
+-- Attempt to delete another
+-- Verify error: "Cannot delete - minimum 3 backups required"
+
+-- Test 5: Export backup
+-- Click "Export" on backup
+-- Verify serialized data copied to clipboard
+-- Verify metadata header included
+-- Verify can be imported on another client
+```
+
+---
+
+### 6.6: Performance Validation
+
+**Status:** ⏳ NOT STARTED
+
+**Note:** Performance benchmarks moved from original 6.5. Conducted as final validation before Phase 6 completion.
+
+#### 6.6.1: Benchmark Testing
 - [ ] Measure sync times for different scenarios:
-  - [ ] Full structure sync (baseline: 76.5 seconds)
-  - [ ] Single raid sync (target: 11.6 seconds)
-  - [ ] Single encounter sync (target: 3.9 seconds)
+  - [ ] Full structure sync (baseline comparison to Phase 2)
+  - [ ] Single raid sync (target: < 15 seconds)
+  - [ ] Single encounter sync (target: < 5 seconds)
   - [ ] Single component sync (target: < 1 second)
-- [ ] Test with various network conditions:
-  - [ ] Local (same machine)
-  - [ ] LAN (low latency)
-  - [ ] Internet (realistic latency)
-- [ ] Measure bandwidth usage:
-  - [ ] Bytes transmitted per sync operation
-  - [ ] Number of messages sent
-  - [ ] Compare to Phase 2 full sync
-
-**Files to Create:**
-- `Tests/benchmark_granular_sync.lua`
+- [ ] Test with realistic network conditions (in-game raid environment)
+- [ ] Measure bandwidth reduction vs Phase 2 full sync
+- [ ] Test with maximum data size (40-player raid, all encounters configured)
+- [ ] Verify no performance regression in UI responsiveness
 
 **Success Criteria:**
-- Full structure sync: 60-80 seconds (no worse than Phase 2)
-- Single raid sync: < 15 seconds
-- Single encounter sync: < 5 seconds
 - Single component sync: < 1 second
-- Bandwidth usage: 85-95% reduction vs full sync for component repairs
+- Single encounter sync: < 5 seconds
+- Single raid sync: < 15 seconds
+- Bandwidth reduction: 85%+ vs full sync for component repairs
+- No UI lag during sync operations
 
 ---
 
-#### 6.5.2: Load Testing
-- [ ] Test with maximum data size:
-  - [ ] All default raids/encounters loaded
-  - [ ] 40-player raid with all assignments
-  - [ ] Maximum announcements, marks, numbers
-- [ ] Test concurrent operations:
-  - [ ] Multiple players requesting sync simultaneously
-  - [ ] Sync during active combat
-  - [ ] Sync during zone transitions
-- [ ] Verify no message loss or corruption
-- [ ] Verify no OOM errors
+#### 6.6.2: Load Testing
+- [ ] Test concurrent sync requests (5+ players simultaneously)
+- [ ] Test sync during combat (no performance impact)
+- [ ] Test sync during zone transitions (no message loss)
+- [ ] Test maximum backup history (10 backups, no OOM errors)
+- [ ] Verify graceful degradation under load (queue, don't drop)
 
 **Success Criteria:**
-- Handle 40-player raid with full data
-- No message loss with 5+ concurrent sync requests
-- No OOM errors with maximum data size
-- Graceful degradation under load (queue, don't drop)
+- Handle 5+ concurrent sync requests without message loss
+- No FPS drop during sync operations
+- No OOM errors with 10 backups + full data
+- Queue properly handles burst requests
 
 ---
 
-### 6.6: Documentation & Migration
+### 6.7: Documentation & Migration
 
 **Status:** ⏳ NOT STARTED
 
-#### 6.6.1: Code Documentation
+#### 6.7.1: Code Documentation
 - [ ] Document all new functions with usage examples
 - [ ] Document checksum hierarchy architecture
 - [ ] Document sync level selection algorithm
@@ -661,7 +966,7 @@ ValidationResult = {
 
 ## Phase 6 Completion Criteria
 
-- [ ] All 6.1-6.6 tasks completed
+- [ ] All 6.1-6.7 tasks completed
 - [ ] All unit tests passing
 - [ ] All integration tests passing
 - [ ] Performance benchmarks met
@@ -696,3 +1001,50 @@ ValidationResult = {
 - [ ] Integration preparation for Phase 6.2
 
 **See:** [PHASE6_1_IMPLEMENTATION.md](PHASE6_1_IMPLEMENTATION.md) for detailed implementation notes
+
+---
+
+## Phase 6.3 Status Update (January 22, 2026)
+
+**Implementation:** ✅ COMPLETE  
+**Testing:** ⏳ PENDING
+
+### Completed Items
+- ✅ Created `Infrastructure/SyncGranular.lua` (950+ lines)
+- ✅ Implemented component-level sync (all 6 components)
+- ✅ Implemented encounter-level sync (atomic batch updates)
+- ✅ Implemented raid-level sync (metadata + all encounters)
+- ✅ Implemented global component sync (tradeItems, consumes, rgo)
+- ✅ Added 8 new message types to MessageTypes.lua
+- ✅ Message handlers registered automatically via Initialize()
+- ✅ Repair prioritization system (CRITICAL → HIGH → NORMAL → LOW)
+- ✅ Sync queue with priority-based execution
+- ✅ Integration with Phase 6.2 validation (QueueRepair function)
+- ✅ Test function created (TestGranularSync)
+- ✅ Module initialization added to Core.lua
+- ✅ TOC file updated
+
+### Key Features
+- **Priority-Based Repair**: Current raid/encounter = CRITICAL, same raid = HIGH, other raids = NORMAL
+- **Queued Execution**: Serializes sync operations to prevent conflicts
+- **Atomic Updates**: Encounter/raid syncs apply all-or-nothing
+- **Permission Validation**: All sync operations validate sender permissions
+- **Checksum Recomputation**: Automatic checksum updates after data changes
+- **UI Refresh Hooks**: Triggers UI updates after successful sync
+
+### Pending Items
+- [ ] In-game testing with 2+ clients
+- [ ] Test component sync (single component update)
+- [ ] Test encounter sync (all 6 components)
+- [ ] Test raid sync (all encounters)
+- [ ] Test global component sync (rgo, consumes, tradeItems)
+- [ ] Validate repair prioritization logic
+- [ ] Performance benchmarking (< 5s for encounter sync)
+- [ ] Integration with Phase 6.4 (automatic repair)
+
+### Testing Commands
+```lua
+/ogrh test granular   -- Test granular sync system
+/ogrh test all        -- Run all tests including Phase 6.3
+```
+

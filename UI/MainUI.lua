@@ -616,6 +616,14 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Message router not loaded.")
     end
+  elseif sub == "sync debug" or sub == "syncdebug" then
+    if OGRH.SyncIntegrity then
+      OGRH.SyncIntegrity.State.debug = not OGRH.SyncIntegrity.State.debug
+      local status = OGRH.SyncIntegrity.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+      OGRH.Msg("Sync debug messages: " .. status)
+    else
+      OGRH.Msg("SyncIntegrity not loaded.")
+    end
   elseif sub == "admin take" or sub == "takeadmin" then
     if OGRH.RequestAdminRole then
       OGRH.RequestAdminRole()

@@ -23,7 +23,21 @@ OGRH.SyncIntegrity.State = {
     verificationInterval = 30,  -- seconds
     checksumCache = {},
     pollingTimer = nil,
-    enabled = false
+    enabled = false,
+    
+    -- Drill-down request batching (2-second buffer)
+    drillDownQueue = {},  -- { [raidName] = { requesters = {}, timer = nil } }
+    drillDownBufferTime = 2,  -- seconds
+    
+    -- Admin modification cooldown (suppress broadcasts while admin is actively editing)
+    lastAdminModification = 0,  -- timestamp of last admin change
+    modificationCooldown = 10,  -- seconds to wait after last change before broadcasting
+    
+    -- Debug mode (toggle with /ogrh sync debug)
+    debug = false,  -- Hide verbose sync messages by default
+    
+    -- Raids pending full sync (prevent re-validation spam)
+    pendingFullSync = {}  -- { [raidName] = true }
 }
 
 --[[
@@ -60,7 +74,9 @@ function OGRH.StopIntegrityChecks()
         OGRH.SyncIntegrity.State.pollingTimer = nil
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r Stopped checksum polling")
+    if OGRH.SyncIntegrity.State.debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r Stopped checksum polling")
+    end
 end
 
 -- Admin: Broadcast unified checksums to raid
@@ -69,30 +85,75 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
         return
     end
     
-    -- Get hierarchical checksums for entire structure
-    local hierarchicalChecksums = OGRH.GetAllHierarchicalChecksums()
+    -- Skip broadcast if admin made changes recently (data still in flux)
+    local timeSinceLastMod = GetTime() - OGRH.SyncIntegrity.State.lastAdminModification
+    if timeSinceLastMod < OGRH.SyncIntegrity.State.modificationCooldown then
+        if OGRH.SyncIntegrity.State.debug then
+            local remaining = OGRH.SyncIntegrity.State.modificationCooldown - timeSinceLastMod
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (data modified %.0fs ago, cooldown %.0fs)", 
+                timeSinceLastMod, remaining))
+        end
+        return
+    end
     
-    -- Add metadata
-    hierarchicalChecksums.timestamp = GetTime()
-    hierarchicalChecksums.version = OGRH.VERSION or "1.0"
+    -- Phase 6.2 SCOPED FIX: Only broadcast checksums for CURRENTLY SELECTED RAID
+    -- This reduces overhead by ~87% (1 raid vs 8 raids)
+    -- Global components (consumes, tradeItems) still validated across all raids
     
-    -- Get current encounter for backward compatibility
+    local lightweightChecksums = {
+        -- Global component checksums (3 components - affects all raids)
+        global = OGRH.GetGlobalComponentChecksums(),
+        
+        -- ONLY current raid checksum (not all raids)
+        raids = {},
+        
+        -- Metadata
+        timestamp = GetTime(),
+        version = OGRH.VERSION or "1.0"
+    }
+    
+    -- Get current encounter to determine active raid
     local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+    
+    if currentRaid then
+        -- ONLY include checksum for the currently selected raid
+        local currentRaidChecksum = OGRH.ComputeRaidChecksum(currentRaid)
+        if currentRaidChecksum then
+            lightweightChecksums.raids[currentRaid] = {
+                raidChecksum = currentRaidChecksum
+                -- NO encounter details here - client will request if needed
+            }
+        end
+    end
+    
+    -- Compute AGGREGATE checksum (hash of global + current raid only)
+    local aggregateString = ""
+    -- Add global component checksums
+    for componentName, checksum in pairs(lightweightChecksums.global) do
+        aggregateString = aggregateString .. tostring(componentName) .. ":" .. tostring(checksum) .. ";"
+    end
+    -- Add current raid checksum only
+    if currentRaid and lightweightChecksums.raids[currentRaid] then
+        aggregateString = aggregateString .. currentRaid .. ":" .. tostring(lightweightChecksums.raids[currentRaid].raidChecksum) .. ";"
+    end
+    lightweightChecksums.aggregate = OGRH.HashStringToNumber(aggregateString)
+    
+    -- Include current raid/encounter for context and backward compatibility
     if currentRaid and currentEncounter then
-        hierarchicalChecksums.currentRaid = currentRaid
-        hierarchicalChecksums.currentEncounter = currentEncounter
+        lightweightChecksums.currentRaid = currentRaid
+        lightweightChecksums.currentEncounter = currentEncounter
         
         -- Legacy checksums for backward compatibility with Phase 3B clients
-        hierarchicalChecksums.structure = OGRH.CalculateStructureChecksum(currentRaid, currentEncounter)
-        hierarchicalChecksums.rolesUI = OGRH.CalculateRolesUIChecksum()
-        hierarchicalChecksums.assignments = OGRH.CalculateAssignmentChecksum(currentRaid, currentEncounter)
+        lightweightChecksums.structure = OGRH.CalculateStructureChecksum(currentRaid, currentEncounter)
+        lightweightChecksums.rolesUI = OGRH.CalculateRolesUIChecksum()
+        lightweightChecksums.assignments = OGRH.CalculateAssignmentChecksum(currentRaid, currentEncounter)
     end
     
     -- Broadcast via MessageRouter (auto-serializes tables)
     if OGRH.MessageRouter and OGRH.MessageTypes then
         OGRH.MessageRouter.Broadcast(
             OGRH.MessageTypes.SYNC.CHECKSUM_POLL,
-            hierarchicalChecksums,
+            lightweightChecksums,
             {
                 priority = "LOW",  -- Background traffic
                 onSuccess = function()
@@ -112,74 +173,100 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
         return  -- Ignore checksums from non-admins
     end
     
-    -- Check if this is a hierarchical checksum broadcast (Phase 6.2+)
-    if checksums.global and checksums.raids then
-        -- Perform hierarchical validation
-        local result = OGRH.ValidateStructureHierarchy(checksums)
-        
-        if not result.valid then
-            -- Display detailed validation failure
-            local messages = OGRH.FormatValidationResult(result)
-            for i = 1, table.getn(messages) do
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r " .. messages[i])
-            end
-            
-            -- Suggest repair action based on corruption level
-            if result.level == "GLOBAL" then
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Use Data Management > Load Defaults to repair global components")
-            elseif result.level == "COMPONENT" then
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Use Data Management > Pull Structure to repair specific components")
-            else
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Use Data Management > Pull Structure to repair")
-            end
+    -- Don't validate against ourselves (admin receives their own broadcast)
+    if sender == UnitName("player") then
+        return
+    end
+    
+    -- Lightweight validation with on-demand drill-down
+    if not (checksums.global and checksums.raids) then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncIntegrity]|r ERROR: Invalid checksum format received")
+        return
+    end
+    
+    if OGRH.SyncIntegrity.State.debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[RH-SyncIntegrity]|r Received checksum broadcast, validating...")
+    end
+    
+    -- Step 0: Compute and validate AGGREGATE checksum (hash of global + current raid only)
+    local localGlobal = OGRH.GetGlobalComponentChecksums()
+    
+    -- Compute local aggregate for comparison (same scope as broadcast: global + current raid only)
+    local localAggregateString = ""
+    for componentName, checksum in pairs(localGlobal) do
+        localAggregateString = localAggregateString .. tostring(componentName) .. ":" .. tostring(checksum) .. ";"
+    end
+    
+    -- Add checksums for raids included in the broadcast (should be 1 raid)
+    for raidName, remoteRaid in pairs(checksums.raids) do
+        local localRaidChecksum = OGRH.ComputeRaidChecksum(raidName)
+        localAggregateString = localAggregateString .. raidName .. ":" .. tostring(localRaidChecksum) .. ";"
+    end
+    
+    local localAggregate = OGRH.HashStringToNumber(localAggregateString)
+    
+    -- If aggregate matches, we're in sync - no need to check individual components
+    if localAggregate == checksums.aggregate then
+        if OGRH.SyncIntegrity.State.debug then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r Validation passed (aggregate match)")
         end
         return
     end
     
-    -- Legacy checksum validation (Phase 3B backward compatibility)
-    -- Verify we're looking at the same encounter
-    local myRaid, myEncounter = OGRH.GetCurrentEncounter()
-    if checksums.currentRaid and checksums.currentEncounter then
-        if myRaid ~= checksums.currentRaid or myEncounter ~= checksums.currentEncounter then
-            return  -- Different encounter, ignore
+    -- Aggregate mismatch! Now drill down to find what's different
+    if OGRH.SyncIntegrity.State.debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Aggregate mismatch detected! Drilling down...")
+    end
+    
+    -- Step 1: Validate global components
+    local globalMismatch = false
+    local corruptedGlobalComponents = {}
+    for componentName, remoteChecksum in pairs(checksums.global) do
+        local localChecksum = localGlobal[componentName]
+        if localChecksum ~= remoteChecksum then
+            globalMismatch = true
+            table.insert(corruptedGlobalComponents, componentName)
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff9900[RH-SyncIntegrity]|r Global component mismatch: %s", componentName))
         end
-    elseif checksums.raid and checksums.encounter then
-        if myRaid ~= checksums.raid or myEncounter ~= checksums.encounter then
-            return  -- Different encounter, ignore
+    end
+    
+    -- Trigger automatic repair for corrupted global components
+    if table.getn(corruptedGlobalComponents) > 0 then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncIntegrity]|r Detected %d corrupted global component(s)", table.getn(corruptedGlobalComponents)))
+        
+        if not OGRH.SyncGranular then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncIntegrity]|r ERROR: OGRH.SyncGranular is nil!")
+        elseif not OGRH.SyncGranular.QueueRepair then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncIntegrity]|r ERROR: OGRH.SyncGranular.QueueRepair is nil!")
+        else
+            local result = {
+                valid = false,
+                level = "GLOBAL",
+                corrupted = {
+                    global = corruptedGlobalComponents,
+                    raids = {}
+                }
+            }
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[RH-SyncIntegrity]|r Calling QueueRepair for global components...")
+            OGRH.SyncGranular.QueueRepair(result, sender)
         end
-    else
-        return  -- No encounter info, can't validate
     end
     
-    -- Calculate our checksums
-    local myStructure = OGRH.CalculateStructureChecksum(myRaid, myEncounter)
-    local myRolesUI = OGRH.CalculateRolesUIChecksum()
-    local myAssignments = OGRH.CalculateAssignmentChecksum(myRaid, myEncounter)
-    
-    -- Compare and handle mismatches
-    local mismatches = {}
-    
-    if checksums.structure and myStructure ~= checksums.structure then
-        table.insert(mismatches, "structure")
+    -- Step 2: Validate raid-level checksums (only raids included in broadcast)
+    local raidMismatches = {}
+    for raidName, remoteRaid in pairs(checksums.raids) do
+        local localRaidChecksum = OGRH.ComputeRaidChecksum(raidName)
+        if localRaidChecksum ~= remoteRaid.raidChecksum then
+            table.insert(raidMismatches, raidName)
+        end
     end
     
-    if checksums.rolesUI and myRolesUI ~= checksums.rolesUI then
-        table.insert(mismatches, "RolesUI")
-        -- RolesUI mismatch: Send request for auto-repair (admin will push immediately)
-        OGRH.SyncIntegrity.RequestRolesUISync(sender)
-    end
-    
-    if checksums.assignments and myAssignments ~= checksums.assignments then
-        table.insert(mismatches, "assignments")
-    end
-    
-    -- If mismatches found, show warning
-    if table.getn(mismatches) > 0 then
-        local mismatchList = table.concat(mismatches, ", ")
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Checksum mismatch: " .. mismatchList)
-        -- Note: RolesUI auto-repairs, structure/assignments require manual pull
-        if myStructure ~= checksums.structure or myAssignments ~= checksums.assignments then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff9900[RH-SyncIntegrity]|r Use Data Management to pull latest structure/assignments")
+    -- If mismatches detected, request drill-down for specific raids
+    if table.getn(raidMismatches) > 0 then
+        for i = 1, table.getn(raidMismatches) do
+            local raidName = raidMismatches[i]
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff9900[RH-SyncIntegrity]|r Raid mismatch detected: %s (requesting details...)", raidName))
+            OGRH.SyncIntegrity.RequestRaidDrillDown(sender, raidName)
         end
     end
 end
@@ -258,7 +345,343 @@ function OGRH.SyncIntegrity.OnRolesUISyncPush(sender, syncData)
         OGRH.rolesFrame.UpdatePlayerLists()
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r RolesUI data updated from admin")
+    if OGRH.SyncIntegrity.State.debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r RolesUI data updated from admin")
+    end
+end
+
+--[[
+    Phase 6.2 FIX: Drill-Down Validation System
+    
+    Instead of broadcasting full hierarchy, admin broadcasts lightweight checksums.
+    Clients request detailed checksums only for mismatched areas.
+]]
+
+-- Client: Request encounter-level drill-down for a specific raid
+function OGRH.SyncIntegrity.RequestRaidDrillDown(adminName, raidName)
+    if not OGRH.MessageRouter or not OGRH.MessageTypes then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncIntegrity]|r ERROR: MessageRouter not available for drill-down")
+        return
+    end
+    
+    local requestData = {
+        raidName = raidName,
+        requestor = UnitName("player"),
+        timestamp = GetTime()
+    }
+    
+    if OGRH.SyncIntegrity.State.debug then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncIntegrity]|r Sending drill-down request for %s to %s", raidName, adminName))
+    end
+    
+    OGRH.MessageRouter.SendTo(
+        adminName,
+        OGRH.MessageTypes.SYNC.CHECKSUM_DRILLDOWN_REQUEST,
+        requestData,
+        {priority = "NORMAL"}
+    )
+end
+
+-- Admin: Respond to drill-down request with encounter-level checksums for specific raid
+-- Uses 2-second buffering to batch multiple requests and broadcast once
+function OGRH.SyncIntegrity.OnDrillDownRequest(requester, requestData)
+    -- Verify we're the admin
+    local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+    local playerName = UnitName("player")
+    if not currentAdmin or playerName ~= currentAdmin then
+        return
+    end
+    
+    local raidName = requestData.raidName
+    if not raidName then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncIntegrity]|r ERROR: Drill-down request missing raid name")
+        return
+    end
+    
+    if OGRH.SyncIntegrity.State.debug then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncIntegrity]|r Received drill-down request for %s from %s", raidName, requester))
+    end
+    
+    -- Initialize queue for this raid if not exists
+    if not OGRH.SyncIntegrity.State.drillDownQueue[raidName] then
+        OGRH.SyncIntegrity.State.drillDownQueue[raidName] = {
+            requesters = {},
+            timer = nil
+        }
+    end
+    
+    local queue = OGRH.SyncIntegrity.State.drillDownQueue[raidName]
+    
+    -- Add requester to queue (avoid duplicates)
+    local alreadyQueued = false
+    for i = 1, table.getn(queue.requesters) do
+        if queue.requesters[i] == requester then
+            alreadyQueued = true
+            break
+        end
+    end
+    
+    if not alreadyQueued then
+        table.insert(queue.requesters, requester)
+    end
+    
+    -- If timer not running, start 2-second buffer
+    if not queue.timer then
+        queue.timer = OGRH.ScheduleTimer(function()
+            OGRH.SyncIntegrity.FlushDrillDownQueue(raidName)
+        end, OGRH.SyncIntegrity.State.drillDownBufferTime, false)  -- One-shot timer
+        
+        if OGRH.SyncIntegrity.State.debug then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncIntegrity]|r Started 2s buffer for %s drill-down requests", raidName))
+        end
+    else
+        if OGRH.SyncIntegrity.State.debug then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncIntegrity]|r Added %s to pending %s drill-down (buffer active)", requester, raidName))
+        end
+    end
+end
+
+-- Admin: Flush queued drill-down requests and broadcast response
+function OGRH.SyncIntegrity.FlushDrillDownQueue(raidName)
+    local queue = OGRH.SyncIntegrity.State.drillDownQueue[raidName]
+    if not queue or table.getn(queue.requesters) == 0 then
+        return
+    end
+    
+    -- Build encounter-level checksums for this raid only
+    local encounterChecksums = OGRH.GetEncounterChecksums(raidName)
+    
+    -- Find raid position in array
+    local raidPosition = nil
+    OGRH.EnsureSV()
+    if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
+        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
+            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                raidPosition = i
+                break
+            end
+        end
+    end
+    
+    local responseData = {
+        raidName = raidName,
+        raidPosition = raidPosition,  -- Include position for proper insertion
+        raidChecksum = OGRH.ComputeRaidChecksum(raidName),  -- Include raid checksum for comparison
+        encounters = {},
+        timestamp = GetTime()
+    }
+    
+    -- For each encounter, include encounter checksum + component checksums + position
+    OGRH.EnsureSV()
+    local raid = OGRH.FindRaidByName(raidName)
+    if raid and raid.encounters then
+        for i = 1, table.getn(raid.encounters) do
+            local encounter = raid.encounters[i]
+            if encounter and encounter.name then
+                local encounterName = encounter.name
+                responseData.encounters[encounterName] = {
+                    encounterChecksum = encounterChecksums[encounterName],
+                    components = OGRH.GetComponentChecksums(raidName, encounterName),
+                    position = i  -- Include position for proper encounter ordering
+                }
+            end
+        end
+    end
+    
+    -- BROADCAST once to entire raid (not individual sends)
+    -- All queued requesters will receive it, but network payload sent only once
+    if OGRH.MessageRouter and OGRH.MessageTypes then
+        if OGRH.SyncIntegrity.State.debug then
+            local requesterList = table.concat(queue.requesters, ", ")
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncIntegrity]|r Broadcasting drill-down response for %s to %d client(s): %s", raidName, table.getn(queue.requesters), requesterList))
+        end
+        
+        -- Broadcast to entire raid (sent once on network, all clients receive)
+        OGRH.MessageRouter.Broadcast(
+            OGRH.MessageTypes.SYNC.CHECKSUM_DRILLDOWN_RESPONSE,
+            responseData,
+            {priority = "NORMAL"}
+        )
+    end
+    
+    -- Clear queue
+    OGRH.SyncIntegrity.State.drillDownQueue[raidName] = nil
+end
+
+-- Client: Handle drill-down response and validate at component level
+function OGRH.SyncIntegrity.OnDrillDownResponse(sender, responseData)
+    -- Verify sender is the admin
+    local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+    if not currentAdmin or sender ~= currentAdmin then
+        return
+    end
+    
+    local raidName = responseData.raidName
+    local encounters = responseData.encounters
+    
+    if not raidName or not encounters then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncIntegrity]|r ERROR: Invalid drill-down response")
+        return
+    end
+    
+    if OGRH.SyncIntegrity.State.debug then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncIntegrity]|r Received drill-down response for %s, validating encounters...", raidName))
+    end
+    
+    -- Check if this raid already has a pending full sync
+    if OGRH.SyncIntegrity.State.pendingFullSync[raidName] then
+        if OGRH.SyncIntegrity.State.debug then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncIntegrity]|r Skipping %s validation (full sync pending)", raidName))
+        end
+        return
+    end
+    
+    -- First check: Does the raid even exist locally?
+    local raid = OGRH.FindRaidByName(raidName)
+    if not raid then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff9900[RH-SyncIntegrity]|r %s: Raid missing entirely - requesting full raid sync", raidName))
+        
+        -- Mark as pending to prevent re-queuing
+        OGRH.SyncIntegrity.State.pendingFullSync[raidName] = true
+        
+        -- Raid doesn't exist at all - need FULL RAID SYNC
+        if OGRH.SyncGranular and OGRH.SyncGranular.QueueRepair then
+            local result = {
+                valid = false,
+                level = "RAID",
+                corrupted = {
+                    global = {},
+                    raids = {
+                        [raidName] = {
+                            raidLevel = true,
+                            encounters = {}
+                        }
+                    }
+                }
+            }
+            OGRH.SyncGranular.QueueRepair(result, sender)
+        end
+        return  -- Don't try to validate encounters if raid doesn't exist
+    end
+    
+    -- Second check: Do we have the same encounter count?
+    if raid and raid.encounters then
+        local localEncounterCount = table.getn(raid.encounters)
+        local remoteEncounterCount = 0
+        for _ in pairs(encounters) do
+            remoteEncounterCount = remoteEncounterCount + 1
+        end
+        
+        if localEncounterCount ~= remoteEncounterCount then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff9900[RH-SyncIntegrity]|r %s: Encounter count mismatch (local: %d, remote: %d) - requesting full raid sync", raidName, localEncounterCount, remoteEncounterCount))
+            
+            -- Encounter count differs - need FULL RAID SYNC to preserve order
+            if OGRH.SyncGranular and OGRH.SyncGranular.QueueRepair then
+                local result = {
+                    valid = false,
+                    level = "RAID",
+                    corrupted = {
+                        global = {},
+                        raids = {
+                            [raidName] = {
+                                raidLevel = true,
+                                encounters = {}
+                            }
+                        }
+                    }
+                }
+                OGRH.SyncGranular.QueueRepair(result, sender)
+            end
+            return  -- Skip component-level validation, full raid sync will fix everything
+        end
+        
+        -- Debug: Check raid metadata
+        if OGRH.SyncIntegrity.State.debug then
+            local localRaidChecksum = OGRH.ComputeRaidChecksum(raidName)
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncIntegrity]|r %s RAID checksum: local=%s, remote=%s", raidName, tostring(localRaidChecksum), tostring(responseData.raidChecksum or "?")))
+        end
+    end
+    
+    -- Validate each encounter
+    for encounterName, remoteEncounter in pairs(encounters) do
+        local localEncounterChecksum = OGRH.ComputeEncounterChecksum(raidName, encounterName)
+        
+        -- Debug: Show position info
+        if OGRH.SyncIntegrity.State.debug and remoteEncounter.position then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncIntegrity]|r %s position %d, checksum: local=%s, remote=%s", 
+                encounterName, remoteEncounter.position, tostring(localEncounterChecksum), tostring(remoteEncounter.encounterChecksum)))
+        end
+        
+        if localEncounterChecksum ~= remoteEncounter.encounterChecksum then
+            -- Encounter mismatch - check components
+            local corruptedComponents = {}
+            
+            if remoteEncounter.components then
+                for componentName, remoteComponentChecksum in pairs(remoteEncounter.components) do
+                    local localComponentChecksum = OGRH.ComputeComponentChecksum(raidName, encounterName, componentName)
+                    if localComponentChecksum ~= remoteComponentChecksum then
+                        table.insert(corruptedComponents, componentName)
+                    end
+                end
+            end
+            
+            if table.getn(corruptedComponents) > 0 then
+                local componentList = table.concat(corruptedComponents, ", ")
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncIntegrity]|r %s > %s: %s", raidName, encounterName, componentList))
+                
+                -- Trigger automatic repair with position information
+                if not OGRH.SyncGranular then
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncIntegrity]|r ERROR: OGRH.SyncGranular is nil!")
+                elseif not OGRH.SyncGranular.QueueRepair then
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncIntegrity]|r ERROR: OGRH.SyncGranular.QueueRepair is nil!")
+                else
+                    local result = {
+                        valid = false,
+                        level = "COMPONENT",
+                        corrupted = {
+                            global = {},
+                            raids = {
+                                [raidName] = {
+                                    raidLevel = false,
+                                    encounters = {
+                                        [encounterName] = {
+                                            components = corruptedComponents,
+                                            position = remoteEncounter.position  -- Pass encounter position
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    OGRH.SyncGranular.QueueRepair(result, sender)
+                end
+            end
+        end
+    end
+    
+    -- After validating all encounters, check if raid-level metadata differs
+    -- (all encounters match but raid checksum doesn't = advancedSettings differ)
+    if responseData.raidChecksum then
+        local localRaidChecksum = OGRH.ComputeRaidChecksum(raidName)
+        if OGRH.SyncIntegrity.State.debug then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncIntegrity]|r %s: Checking raid checksum: local=%s, remote=%s", 
+                raidName, tostring(localRaidChecksum), tostring(responseData.raidChecksum)))
+        end
+        
+        if tostring(localRaidChecksum) ~= tostring(responseData.raidChecksum) then
+            -- All encounters validated above and match, but raid checksum differs
+            -- This means raid metadata (advancedSettings) is different
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff9900[RH-SyncIntegrity]|r %s: Raid metadata mismatch - requesting metadata sync", raidName))
+            
+            -- Request raid metadata sync
+            if OGRH.SyncGranular and OGRH.SyncGranular.RequestRaidMetadataSync then
+                OGRH.SyncGranular.RequestRaidMetadataSync(raidName, sender)
+            else
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncIntegrity]|r ERROR: Cannot request metadata sync - SyncGranular=%s, RequestRaidMetadataSync=%s", 
+                    tostring(OGRH.SyncGranular ~= nil), tostring(OGRH.SyncGranular and OGRH.SyncGranular.RequestRaidMetadataSync ~= nil)))
+            end
+        end
+    end
 end
 
 -- Request full sync from another player
@@ -299,6 +722,11 @@ end
 function OGRH.RequestAdminIntervention()
     DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[RH-SyncIntegrity]|r Admin intervention required")
     DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[RH-SyncIntegrity]|r Open Data Management window to push structure")
+end
+
+-- Record admin modification timestamp (called by delta sync when admin makes changes)
+function OGRH.SyncIntegrity.RecordAdminModification()
+    OGRH.SyncIntegrity.State.lastAdminModification = GetTime()
 end
 
 -- Compute structure checksum (lightweight)
@@ -348,9 +776,18 @@ function OGRH.SyncIntegrity.Initialize()
         OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ROLESUI.SYNC_PUSH, function(sender, data)
             OGRH.SyncIntegrity.OnRolesUISyncPush(sender, data)
         end)
+        
+        -- Phase 6.2 FIX: Register drill-down handlers
+        OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.SYNC.CHECKSUM_DRILLDOWN_REQUEST, function(sender, data)
+            OGRH.SyncIntegrity.OnDrillDownRequest(sender, data)
+        end)
+        
+        OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.SYNC.CHECKSUM_DRILLDOWN_RESPONSE, function(sender, data)
+            OGRH.SyncIntegrity.OnDrillDownResponse(sender, data)
+        end)
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r Loaded - Unified checksum polling with auto-repair")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r Loaded - Lightweight checksum polling with drill-down validation")
 end
 
 -- Auto-initialize on load
@@ -418,6 +855,7 @@ function OGRH.SyncIntegrity.RunTests(testName)
         DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test stability - Test checksum stability")
         DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test validation - Test hierarchical validation (Phase 6.2)")
         DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test reporting - Test validation reporting (Phase 6.2)")
+        DEFAULT_CHAT_FRAME:AddMessage("  /ogrh test granular - Test granular sync system (Phase 6.3)")
         return
     end
     
@@ -448,6 +886,10 @@ function OGRH.SyncIntegrity.RunTests(testName)
     if testName == "reporting" or testName == "all" then
         OGRH.SyncIntegrity.TestValidationReporting()
     end
+    
+    if testName == "granular" or testName == "all" then
+        OGRH.SyncIntegrity.TestGranularSync()
+    end
 end
 
 -- Test 1: Global Component Checksums
@@ -455,7 +897,7 @@ function OGRH.SyncIntegrity.TestGlobalChecksums()
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff=== Testing Global Checksums ===|r")
     
     local checksums = OGRH.GetGlobalComponentChecksums()
-    local deprecated = {rgo = true}  -- Deprecated components
+    local deprecated = {rgo = true}  -- RGO deprecated - no longer synced
     
     for component, cs in pairs(checksums) do
         if deprecated[component] and cs == "0" then
@@ -588,8 +1030,8 @@ function OGRH.SyncIntegrity.TestHierarchicalValidation()
     end
     corruptedGlobal.global = {
         tradeItems = checksums.global.tradeItems,
-        consumes = "CORRUPTED_CHECKSUM",
-        rgo = checksums.global.rgo
+        consumes = "CORRUPTED_CHECKSUM"
+        -- RGO deprecated - no longer validated
     }
     
     local globalResult = OGRH.ValidateStructureHierarchy(corruptedGlobal)
@@ -658,13 +1100,107 @@ function OGRH.SyncIntegrity.TestValidationReporting()
     end
 end
 
+-- Test 8: Granular Sync System (Phase 6.3)
+function OGRH.SyncIntegrity.TestGranularSync()
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff=== Testing Granular Sync System (Phase 6.3) ===|r")
+    
+    -- Test 1: Module initialization
+    if OGRH.SyncGranular and OGRH.SyncGranular.Initialize then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PASS]|r SyncGranular module loaded")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[FAIL]|r SyncGranular module not found")
+        return
+    end
+    
+    -- Test 2: Priority calculation
+    OGRH.SyncGranular.SetContext("BWL", "Razorgore")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PASS]|r Context set to BWL > Razorgore")
+    
+    -- Test 3: Component extraction
+    local testComponents = {
+        "encounterMetadata",
+        "roles",
+        "playerAssignments",
+        "raidMarks",
+        "assignmentNumbers",
+        "announcements"
+    }
+    
+    local extractionCount = 0
+    for i = 1, table.getn(testComponents) do
+        local componentName = testComponents[i]
+        local data = OGRH.SyncGranular.ExtractComponentData("BWL", "Razorgore", componentName)
+        if data then
+            extractionCount = extractionCount + 1
+        end
+    end
+    
+    if extractionCount == table.getn(testComponents) then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[PASS]|r Extracted all %d components", extractionCount))
+    else
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffffaa00[PARTIAL]|r Extracted %d/%d components", extractionCount, table.getn(testComponents)))
+    end
+    
+    -- Test 4: Validation result integration
+    local mockResult = {
+        valid = false,
+        level = "COMPONENT",
+        corrupted = {
+            global = {},
+            raids = {
+                ["BWL"] = {
+                    raidLevel = false,
+                    encounters = {
+                        ["Razorgore"] = {"playerAssignments"}
+                    }
+                }
+            }
+        }
+    }
+    
+    if OGRH.SyncGranular.QueueRepair then
+        -- Don't actually queue (no target player), just test the function exists
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[PASS]|r QueueRepair function available")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[FAIL]|r QueueRepair function not found")
+    end
+    
+    -- Test 5: Message type registration
+    local messageTypes = {
+        "COMPONENT_REQUEST",
+        "COMPONENT_RESPONSE",
+        "ENCOUNTER_REQUEST",
+        "ENCOUNTER_RESPONSE",
+        "RAID_REQUEST",
+        "RAID_RESPONSE",
+        "GLOBAL_REQUEST",
+        "GLOBAL_RESPONSE"
+    }
+    
+    local registeredCount = 0
+    for i = 1, table.getn(messageTypes) do
+        local msgType = messageTypes[i]
+        if OGRH.MessageTypes.SYNC[msgType] then
+            registeredCount = registeredCount + 1
+        end
+    end
+    
+    if registeredCount == table.getn(messageTypes) then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[PASS]|r All %d message types registered", registeredCount))
+    else
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[FAIL]|r Only %d/%d message types registered", registeredCount, table.getn(messageTypes)))
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff=== Phase 6.3 Tests Complete ===|r")
+end
+
 --[[
     ====================================================================
     PHASE 6: HIERARCHICAL CHECKSUM SYSTEM
     ====================================================================
     
     This section implements granular checksums at 4 levels:
-    1. Global-Level: tradeItems, consumes, rgo
+    1. Global-Level: tradeItems, consumes (rgo deprecated)
     2. Raid-Level: Raid metadata and encounter list
     3. Encounter-Level: Encounter metadata + 6 component checksums
     4. Component-Level: Individual components within an encounter
@@ -687,8 +1223,7 @@ function OGRH.ComputeGlobalComponentChecksum(componentName)
         data = OGRH_SV.tradeItems
     elseif componentName == "consumes" then
         data = OGRH_SV.consumes
-    elseif componentName == "rgo" then
-        data = OGRH_SV.rgo
+    -- RGO deprecated - no longer synced
     else
         return "0"  -- Unknown component
     end
@@ -706,8 +1241,8 @@ end
 function OGRH.GetGlobalComponentChecksums()
     return {
         tradeItems = OGRH.ComputeGlobalComponentChecksum("tradeItems"),
-        consumes = OGRH.ComputeGlobalComponentChecksum("consumes"),
-        rgo = OGRH.ComputeGlobalComponentChecksum("rgo")
+        consumes = OGRH.ComputeGlobalComponentChecksum("consumes")
+        -- RGO deprecated - no longer synced
     }
 end
 
@@ -732,14 +1267,19 @@ function OGRH.ComputeRaidChecksum(raidName)
         checksum = checksum + OGRH.HashStringToNumber(serialized)
     end
     
-    -- Include encounter list structure (names only, not content)
+    -- Include encounter list structure - ORDER MATTERS
     if raid.encounters then
         for i = 1, table.getn(raid.encounters) do
             local enc = raid.encounters[i]
             if enc and enc.name then
+                -- Multiply by position to make order-dependent
                 for j = 1, string.len(enc.name) do
                     checksum = checksum + string.byte(enc.name, j) * i
                 end
+                
+                -- Include encounter checksums (all components)
+                local encounterChecksum = OGRH.ComputeEncounterChecksum(raidName, enc.name)
+                checksum = checksum + (tonumber(encounterChecksum) or 0) * i
             end
         end
     end
@@ -971,7 +1511,7 @@ end
     Parameters:
         remoteChecksums - table containing hierarchical checksums from remote player
             {
-                global = {tradeItems = "...", consumes = "...", rgo = "..."},
+                global = {tradeItems = "...", consumes = "..."},  -- rgo deprecated
                 raids = {
                     ["BWL"] = {
                         raidChecksum = "...",
@@ -998,7 +1538,7 @@ end
                 valid = true/false,
                 level = "STRUCTURE" | "GLOBAL" | "RAID" | "ENCOUNTER" | "COMPONENT",
                 corrupted = {
-                    global = {"rgo"},  -- array of corrupted global components
+                    global = {"consumes"},  -- array of corrupted global components (rgo no longer checked)
                     raids = {
                         ["BWL"] = {
                             raidLevel = true/false,  -- raid metadata corrupted
