@@ -29,4 +29,4 @@ function OGRH.CancelScheduledFunc(frame)
   end
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH-Utilities]|r Loaded")
+OGRH.Msg("Utilities Loaded")

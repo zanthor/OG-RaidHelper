@@ -10,6 +10,9 @@
 ## ===================================================================
 Core\Backport.lua
 
+## Chat Window - Load FIRST before any messages
+Core\ChatWindow.lua
+
 Libs\LibStub\LibStub.lua
 Libs\Libs.xml
 Libs\OGST\OGST.lua
@@ -31,6 +34,7 @@ Libs\OGAddonMsg\Commands.lua
 ## Phase 1: Core System - Namespace & Utilities
 ## ===================================================================
 Core\Core.lua
+Core\SavedVariablesManager.lua
 Core\Utilities.lua
 Core\Defaults.lua
 Core\ConTrack_Defaults.lua

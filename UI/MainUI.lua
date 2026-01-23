@@ -636,6 +636,166 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Permission system not loaded.")
     end
+  -- Migration Commands (Phase 1 - SavedVariables v2)
+  elseif sub == "migration create" or sub == "migrate" then
+    if OGRH.Migration and OGRH.Migration.MigrateToV2 then
+      OGRH.Migration.MigrateToV2()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration validate" then
+    if OGRH.Migration and OGRH.Migration.ValidateV2 then
+      OGRH.Migration.ValidateV2()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration cutover confirm" then
+    if OGRH.Migration and OGRH.Migration.CutoverToV2 then
+      OGRH.Migration.CutoverToV2()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration rollback" then
+    if OGRH.Migration and OGRH.Migration.RollbackFromV2 then
+      OGRH.Migration.RollbackFromV2()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration help" then
+    OGRH.Msg("|cff00ff00[OGRH Migration]|r Available commands:")
+    OGRH.Msg("  /ogrh migration create - Create v2 schema")
+    OGRH.Msg("  /ogrh migration validate - Compare v1 vs v2")
+    OGRH.Msg("  /ogrh migration cutover confirm - Switch to v2")
+    OGRH.Msg("  /ogrh migration rollback - Revert to v1")
+  -- Chat Window Cleanup Command
+  elseif sub == "chat clean" or sub == "chatclean" then
+    if OGRH._ogrhChatFrame and OGRH._ogrhChatFrameIndex then
+      local frameIndex = OGRH._ogrhChatFrameIndex
+      
+      -- Remove all channels using the correct API
+      local channels = {GetChatWindowChannels(frameIndex)}
+      for i = 1, table.getn(channels), 2 do
+        local channelName = channels[i]
+        if channelName then
+          RemoveChatWindowChannel(frameIndex, channelName)
+        end
+      end
+      
+      -- Remove all message groups using the correct API
+      local messageGroups = {
+        "SAY", "YELL", "EMOTE",
+        "PARTY", "RAID", "GUILD", "OFFICER",
+        "WHISPER",
+        "CHANNEL",
+        "SYSTEM"
+      }
+      
+      for i = 1, table.getn(messageGroups) do
+        RemoveChatWindowMessages(frameIndex, messageGroups[i])
+      end
+      
+      OGRH.Msg("Cleaned OGRH chat window (ChatFrame" .. frameIndex .. ") - removed all channels and message types")
+    else
+      OGRH.Msg("|cffFF0000[OGRH]|r OGRH chat window not found. Run /ogrh chatwindow first.")
+    end
+  -- Chat Window Test
+  elseif sub == "chatwindow" or sub == "chat window" or sub == "chat test" then
+    -- Detect pfUI
+    local pfUIDetected = pfUI ~= nil
+    if pfUIDetected then
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r pfUI detected - keeping window docked")
+    end
+    
+    -- Find or create OGRH chat window
+    local ogrh_frame = nil
+    local frameIndex = nil
+    
+    -- Search existing chat frames by checking their tab text AND if they're actually shown/active
+    for i = 1, NUM_CHAT_WINDOWS do
+      local frame = getglobal("ChatFrame" .. i)
+      if frame then
+        local tab = getglobal("ChatFrame" .. i .. "Tab")
+        if tab then
+          local tabText = tab:GetText()
+          -- Check if this is OGRH AND the frame is actually shown/visible (not a zombie)
+          if tabText and tabText == "OGRH" and frame:IsShown() then
+            ogrh_frame = frame
+            frameIndex = i
+            break
+          elseif tabText and tabText == "OGRH" and not frame:IsShown() then
+            -- Found zombie frame - log it but keep searching
+            DEFAULT_CHAT_FRAME:AddMessage("|cffFFFF00[OGRH]|r Found hidden OGRH window (ChatFrame" .. i .. ") - ignoring zombie frame")
+          end
+        end
+      end
+    end
+    
+    -- Create if doesn't exist
+    if not ogrh_frame then
+      ogrh_frame = FCF_OpenNewWindow("OGRH")
+      if ogrh_frame then
+        -- Find the index of the newly created frame
+        for i = 1, NUM_CHAT_WINDOWS do
+          if getglobal("ChatFrame" .. i) == ogrh_frame then
+            frameIndex = i
+            break
+          end
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Created new OGRH chat window (ChatFrame" .. (frameIndex or "?") .. ")")
+        
+        -- If pfUI detected, trigger a refresh first so pfUI knows about the new window
+        if pfUIDetected and pfUI.chat and pfUI.chat.RefreshChat then
+          pfUI.chat.RefreshChat()
+          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Refreshed pfUI chat layout")
+        end
+        
+        -- Remove all channels using the correct API
+        if frameIndex then
+          local channels = {GetChatWindowChannels(frameIndex)}
+          for i = 1, table.getn(channels), 2 do
+            local channelName = channels[i]
+            if channelName then
+              RemoveChatWindowChannel(frameIndex, channelName)
+            end
+          end
+        end
+        
+        -- Remove all message groups using the correct API
+        local messageGroups = {
+          "SAY", "YELL", "EMOTE",
+          "PARTY", "RAID", "GUILD", "OFFICER",
+          "WHISPER",
+          "CHANNEL",
+          "SYSTEM"
+        }
+        
+        if frameIndex then
+          for i = 1, table.getn(messageGroups) do
+            RemoveChatWindowMessages(frameIndex, messageGroups[i])
+          end
+        end
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Removed channels and message types - OGRH-only window")
+      else
+        OGRH.Msg("|cffFF0000[OGRH]|r Failed to create chat window")
+        return
+      end
+    else
+      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Found existing OGRH chat window (ChatFrame" .. (frameIndex or "?") .. ")")
+    end
+    
+    -- Store frame reference and index globally for later access
+    OGRH._ogrhChatFrame = ogrh_frame
+    OGRH._ogrhChatFrameIndex = frameIndex
+    
+    -- Test it
+    if ogrh_frame then
+      ogrh_frame:AddMessage("|cff00ff00[OGRH]|r Dedicated chat window test successful!", 1, 1, 1)
+      ogrh_frame:AddMessage("|cff00ff00[OGRH]|r All addon messages can be directed here.", 1, 1, 1)
+      if pfUIDetected then
+        ogrh_frame:AddMessage("|cff00ff00[OGRH]|r pfUI detected - window stays docked", 1, 1, 1)
+      end
+    end
   -- Phase 6.1 Test Commands
   elseif string.find(sub, "^test") then
     local _, _, testName = string.find(fullMsg, "^%s*test%s+(%S+)")
@@ -650,6 +810,11 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     OGRH.Msg("  sand - Execute sand trade")
     OGRH.Msg("  shuffle [ms] - Shuffle raid with delay")
     OGRH.Msg("  sortspeed [ms] - Set/get auto-sort speed")
+    OGRH.Msg("Migration Commands:")
+    OGRH.Msg("  migration help - Show migration commands")
+    OGRH.Msg("Chat Window Commands:")
+    OGRH.Msg("  chatwindow - Create/find OGRH chat window")
+    OGRH.Msg("  chat clean - Remove channels from OGRH window")
     OGRH.Msg("Debug Commands (Phase 1):")
     OGRH.Msg("  messages - Show all message types")
     OGRH.Msg("  permissions - Show raid permissions")
@@ -666,18 +831,18 @@ end
 _G["SLASH_"..string.upper(OGRH.CMD).."1"] = "/"..OGRH.CMD
 
 if OGRH and OGRH.Msg then
-  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r v" .. OGRH.VERSION .. " loaded")
+  OGRH.Msg("|cff00ff00[RaidHelper]|r v" .. OGRH.VERSION .. " loaded")
   
   -- Notify about RollFor status
   if OGRH.ROLLFOR_AVAILABLE then
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " detected")
+    OGRH.Msg("|cff00ff00[RaidHelper]|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " detected")
   else
     local rollForVersion = GetAddOnMetadata("RollFor", "Version")
     if rollForVersion then
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r |cffff8800Warning:|r RollFor v" .. rollForVersion .. " found, but v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " required")
+      OGRH.Msg("|cff00ff00[RaidHelper]|r |cffff8800Warning:|r RollFor v" .. rollForVersion .. " found, but v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " required")
     else
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r |cffff8800Warning:|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " not found")
+      OGRH.Msg("|cff00ff00[RaidHelper]|r |cffff8800Warning:|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " not found")
     end
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Some features disabled: Invites, SR Validation, RollFor sync")
+    OGRH.Msg("|cff00ff00[RaidHelper]|r Some features disabled: Invites, SR Validation, RollFor sync")
   end
 end

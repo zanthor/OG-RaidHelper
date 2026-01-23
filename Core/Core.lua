@@ -5,6 +5,9 @@ OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 OGRH.VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 
+-- Initialize Migration namespace (loaded later from SavedVariablesManager)
+OGRH.Migration = OGRH.Migration or {}
+
 -- RollFor version detection
 OGRH.ROLLFOR_REQUIRED_VERSION = "4.8.1"
 OGRH.ROLLFOR_AVAILABLE = false
@@ -205,6 +208,229 @@ function OGRH.MigrateRGOSettings()
 end
 
 -- ========================================
+-- SAVEDVARIABLES V2 MIGRATION SYSTEM
+-- ========================================
+-- Schema version constants
+local SCHEMA_V1 = "v1"
+local SCHEMA_V2 = "v2"
+
+-- Deep copy utility (for migration and dual-write)
+local function DeepCopy(obj, seen)
+    if type(obj) ~= 'table' then return obj end
+    if seen and seen[obj] then return seen[obj] end
+    local s = seen or {}
+    local res = setmetatable({}, getmetatable(obj))
+    s[obj] = res
+    for k, v in pairs(obj) do res[DeepCopy(k, s)] = DeepCopy(v, s) end
+    return res
+end
+
+-- Main migration: Create v2 schema
+function OGRH.Migration.MigrateToV2()
+    if not OGRH_SV then
+        OGRH.Msg("|cffFF0000[Migration]|r Error: OGRH_SV not found")
+        return false
+    end
+    
+    if OGRH_SV.v2 then
+        OGRH.Msg("|cffFFFF00[Migration]|r v2 schema already exists. Use /ogrh migration rollback to reset.")
+        return false
+    end
+    
+    OGRH.Msg("|cff00ff00[Migration]|r Creating v2 schema alongside original data...")
+    
+    -- Initialize schema version if not set
+    if not OGRH_SV.schemaVersion then
+        OGRH_SV.schemaVersion = SCHEMA_V1
+    end
+    
+    -- Create v2 structure
+    OGRH_SV.v2 = {}
+    
+    -- Phase 1: Copy v1 data to v2, excluding empty tables
+    OGRH.Msg("|cff00ff00[Migration]|r Phase 1: Copying data to v2 (excluding empty tables)...")
+    
+    local emptyTables = {
+        tankIcon = true,
+        healerIcon = true,
+        tankCategory = true,
+        healerBoss = true
+    }
+    
+    local copiedKeys = 0
+    for key, value in pairs(OGRH_SV) do
+        if key ~= "v2" and key ~= "schemaVersion" and not emptyTables[key] then
+            OGRH_SV.v2[key] = DeepCopy(value)
+            copiedKeys = copiedKeys + 1
+        end
+    end
+    
+    OGRH.Msg(string.format("|cff00ff00[Migration]|r Copied %d keys to v2", copiedKeys))
+    OGRH.Msg("|cff00ff00[Migration]|r Excluded: tankIcon, healerIcon, tankCategory, healerBoss (empty)")
+    
+    -- Phase 2: Apply data retention to v2
+    OGRH.Msg("|cff00ff00[Migration]|r Phase 2: Applying data retention policies...")
+    
+    -- Recruitment data: Keep only last 30 days
+    local recruitmentPruned = 0
+    if OGRH_SV.v2.recruitment and OGRH_SV.v2.recruitment.applicantData then
+        local cutoffTime = time() - (30 * 24 * 60 * 60)
+        local newApplicantData = {}
+        
+        for charName, applicant in pairs(OGRH_SV.v2.recruitment.applicantData) do
+            if applicant.lastUpdated and applicant.lastUpdated >= cutoffTime then
+                newApplicantData[charName] = applicant
+            else
+                recruitmentPruned = recruitmentPruned + 1
+            end
+        end
+        
+        OGRH_SV.v2.recruitment.applicantData = newApplicantData
+        OGRH.Msg(string.format("|cff00ff00[Migration]|r Pruned %d old recruitment entries (>30 days)", recruitmentPruned))
+    end
+    
+    -- Consume tracking: Keep only last 90 days
+    local consumePruned = 0
+    if OGRH_SV.v2.consumeTracking and OGRH_SV.v2.consumeTracking.history then
+        local cutoffTime = time() - (90 * 24 * 60 * 60)
+        local newHistory = {}
+        
+        for raidDate, data in pairs(OGRH_SV.v2.consumeTracking.history) do
+            if data.timestamp and data.timestamp >= cutoffTime then
+                newHistory[raidDate] = data
+            else
+                consumePruned = consumePruned + 1
+            end
+        end
+        
+        OGRH_SV.v2.consumeTracking.history = newHistory
+        OGRH.Msg(string.format("|cff00ff00[Migration]|r Pruned %d old consume history entries (>90 days)", consumePruned))
+    end
+    
+    OGRH.Msg("|cff00ff00[Migration]|r ✓ v2 schema created successfully")
+    OGRH.Msg("|cff00ff00[Migration]|r Original data preserved in OGRH_SV (v1)")
+    OGRH.Msg("|cff00ff00[Migration]|r New data available in OGRH_SV.v2")
+    OGRH.Msg(" ")
+    OGRH.Msg("|cff00ff00[Migration]|r Next steps:")
+    OGRH.Msg("|cff00ff00[Migration]|r   1. Test addon functionality")
+    OGRH.Msg("|cff00ff00[Migration]|r   2. Run /ogrh migration validate")
+    OGRH.Msg("|cff00ff00[Migration]|r   3. When ready: /ogrh migration cutover confirm")
+    
+    return true
+end
+
+-- Validation: Compare v1 vs v2
+function OGRH.Migration.ValidateV2()
+    if not OGRH_SV.v2 then
+        OGRH.Msg("|cffFF0000[Validation]|r Error: v2 schema not found. Run /ogrh migration create first.")
+        return false
+    end
+    
+    OGRH.Msg("|cff00ff00[Validation]|r Comparing v1 and v2 schemas...")
+    
+    -- Count keys in each version
+    local v1Keys, v2Keys = 0, 0
+    for k, v in pairs(OGRH_SV) do
+        if k ~= "v2" and k ~= "schemaVersion" then
+            v1Keys = v1Keys + 1
+        end
+    end
+    for k, v in pairs(OGRH_SV.v2) do
+        v2Keys = v2Keys + 1
+    end
+    
+    OGRH.Msg(string.format("|cff00ff00[Validation]|r v1 keys: %d", v1Keys))
+    OGRH.Msg(string.format("|cff00ff00[Validation]|r v2 keys: %d", v2Keys))
+    OGRH.Msg(string.format("|cff00ff00[Validation]|r Difference: %d keys removed", v1Keys - v2Keys))
+    OGRH.Msg(" ")
+    OGRH.Msg("|cff00ff00[Validation]|r Removed tables: tankIcon, healerIcon, tankCategory, healerBoss")
+    OGRH.Msg("|cff00ff00[Validation]|r Data retention: recruitment (30 days), consumeTracking (90 days)")
+    OGRH.Msg(" ")
+    OGRH.Msg("|cff00ff00[Validation]|r ✓ Review addon functionality before cutover")
+    
+    return true
+end
+
+-- Cutover: Switch to v2
+function OGRH.Migration.CutoverToV2()
+    if not OGRH_SV.v2 then
+        OGRH.Msg("|cffFF0000[Cutover]|r Error: v2 schema not found")
+        return false
+    end
+    
+    OGRH.Msg("|cffFFFF00[Cutover]|r Switching to v2 schema...")
+    
+    -- Create backup of v1
+    OGRH_SV_BACKUP_V1 = {}
+    for k, v in pairs(OGRH_SV) do
+        if k ~= "v2" and k ~= "schemaVersion" then
+            OGRH_SV_BACKUP_V1[k] = DeepCopy(v)
+        end
+    end
+    
+    -- Remove v1 data from top level
+    for k, v in pairs(OGRH_SV) do
+        if k ~= "v2" and k ~= "schemaVersion" then
+            OGRH_SV[k] = nil
+        end
+    end
+    
+    -- Move v2 data to top level
+    for k, v in pairs(OGRH_SV.v2) do
+        OGRH_SV[k] = v
+    end
+    
+    -- Update schema version and remove v2 container
+    OGRH_SV.v2 = nil
+    OGRH_SV.schemaVersion = SCHEMA_V2
+    
+    OGRH.Msg("|cff00ff00[Cutover]|r ✓ Complete! Now using v2 schema")
+    OGRH.Msg("|cff00ff00[Cutover]|r v1 backup saved to OGRH_SV_BACKUP_V1")
+    OGRH.Msg("|cff00ff00[Cutover]|r Use /ogrh migration rollback if issues found")
+    OGRH.Msg("|cffFFFF00[Cutover]|r Please /reload to ensure clean state")
+    
+    return true
+end
+
+-- Rollback: Revert to v1
+function OGRH.Migration.RollbackFromV2()
+    -- Scenario 1: v2 exists but not active yet
+    if OGRH_SV.v2 then
+        OGRH_SV.v2 = nil
+        OGRH_SV.schemaVersion = SCHEMA_V1
+        OGRH.Msg("|cff00ff00[Rollback]|r v2 schema removed, back to v1")
+        return true
+    end
+    
+    -- Scenario 2: Already cut over to v2, restore from backup
+    if OGRH_SV.schemaVersion == SCHEMA_V2 and OGRH_SV_BACKUP_V1 then
+        OGRH.Msg("|cff00ff00[Rollback]|r Restoring v1 from backup...")
+        
+        -- Remove v2 data
+        for k, v in pairs(OGRH_SV) do
+            if k ~= "schemaVersion" then
+                OGRH_SV[k] = nil
+            end
+        end
+        
+        -- Restore v1 backup
+        for k, v in pairs(OGRH_SV_BACKUP_V1) do
+            OGRH_SV[k] = DeepCopy(v)
+        end
+        
+        OGRH_SV.schemaVersion = SCHEMA_V1
+        
+        OGRH.Msg("|cff00ff00[Rollback]|r ✓ Restored v1 from backup")
+        OGRH.Msg("|cffFFFF00[Rollback]|r Please /reload to ensure clean state")
+        return true
+    end
+    
+    OGRH.Msg("|cffFF0000[Rollback]|r Error: Nothing to rollback")
+    OGRH.Msg("|cffFF0000[Rollback]|r Current schema: " .. (OGRH_SV.schemaVersion or "unknown"))
+    return false
+end
+
+-- ========================================
 -- TIMER SYSTEM (for delayed execution)
 -- ========================================
 OGRH.timers = {}
@@ -306,7 +532,10 @@ function OGRH.CleanupModules()
   end
 end
 
-function OGRH.Msg(s) if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[OGRH]|r "..tostring(s)) end end
+-- Only define OGRH.Msg if ChatWindow.lua hasn't already defined it
+if not OGRH.Msg then
+  function OGRH.Msg(s) if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[OGRH]|r "..tostring(s)) end end
+end
 function OGRH.Trim(s) return string.gsub(s or "", "^%s*(.-)%s*$", "%1") end
 function OGRH.Mod1(n,t) return math.mod(n-1, t)+1 end
 function OGRH.CanRW() if IsRaidLeader and IsRaidLeader()==1 then return true end if IsRaidOfficer and IsRaidOfficer()==1 then return true end return false end
