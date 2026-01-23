@@ -454,4 +454,4 @@ function OGRH.Permissions.DebugPrintDenials()
     DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === End Denials ===")
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-Permissions]|r Loaded")
+OGRH.Msg("|cff00ccff[RH-Permissions]|r Loaded")

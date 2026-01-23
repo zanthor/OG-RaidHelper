@@ -787,7 +787,7 @@ function OGRH.SyncIntegrity.Initialize()
         end)
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r Loaded - Lightweight checksum polling with drill-down validation")
+    OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Loaded - Lightweight checksum polling with drill-down validation")
 end
 
 -- Auto-initialize on load

@@ -48,14 +48,14 @@ function OGRH.CreateChatWindow()
     if existingFrame then
         OGRH._ogrhChatFrame = existingFrame
         OGRH._ogrhChatFrameIndex = existingIndex
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Using existing chat window (ChatFrame" .. existingIndex .. ")")
+        OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Using existing chat window (ChatFrame" .. existingIndex .. ")")
         return existingFrame
     end
     
     -- Create new window only if none found
     local newFrame = FCF_OpenNewWindow("OGRH")
     if not newFrame then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffFF0000[OGRH]|r Failed to create chat window")
+        OGRH.Msg("|cffFF0000[ChatWindow] Failed to create chat window|r")
         return nil
     end
     
@@ -71,7 +71,7 @@ function OGRH.CreateChatWindow()
     OGRH._ogrhChatFrame = newFrame
     OGRH._ogrhChatFrameIndex = frameIndex
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Created NEW chat window (ChatFrame" .. (frameIndex or "?") .. ")")
+    OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Created NEW chat window (ChatFrame" .. (frameIndex or "?") .. ")")
     
     -- If pfUI detected, refresh layout
     if pfUI and pfUI.chat and pfUI.chat.RefreshChat then
@@ -121,11 +121,8 @@ end
 -- Override OGRH.Msg to use chat window (will be defined in Core.lua, but we provide fallback)
 local originalMsg = OGRH.Msg
 OGRH.Msg = function(text, r, g, b)
-    -- Add [OGRH] prefix if not already present (matching Core.lua behavior)
-    local formattedText = text
-    if text and not string.find(text, "%[OGRH%]") and not string.find(text, "%[RaidHelper%]") then
-        formattedText = "|cff66ccff[OGRH]|r " .. tostring(text)
-    end
+    -- Always add [OG] prefix
+    local formattedText = "|cff66ccff[OG]|r" .. tostring(text)
     
     if OGRH._chatWindowEnabled and OGRH._ogrhChatFrame then
         OGRH.ChatMsg(formattedText, r, g, b)
@@ -165,7 +162,7 @@ chatWindowFrame:SetScript("OnEvent", function()
         -- Create window immediately when addon loads (before pfUI)
         OGRH.CreateChatWindow()
         FlushMessageQueue()  -- Flush any queued messages
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Chat window created (before pfUI)")
+        OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Chat window created (before pfUI)")
         
     elseif event == "ADDON_LOADED" and arg1 == "pfUI" then
         -- pfUI just loaded - wait a moment for it to initialize, then clean our window
@@ -208,7 +205,7 @@ chatWindowFrame:SetScript("OnEvent", function()
                         end
                     end
                     
-                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Cleaned channels and docked into pfUI")
+                    OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Cleaned channels and docked into pfUI")
                 end
             end, 1.0)
         else
@@ -251,7 +248,7 @@ chatWindowFrame:SetScript("OnEvent", function()
                             end
                         end
                         
-                        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Cleaned channels and docked into pfUI")
+                        OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Cleaned channels and docked into pfUI")
                     end
                 end
             end)
@@ -266,5 +263,5 @@ chatWindowFrame:SetScript("OnEvent", function()
     end
 end)
 
--- Success message (to default frame since our window might not exist yet)
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r ChatWindow module loaded")
+-- Success message (will be queued until window exists)
+OGRH.Msg("|cff66ff66[RH-ChatWindow]|r module loaded")

@@ -222,5 +222,5 @@ function OGRH.DebugPrintMessageTypes()
 end
 
 -- Initialize message type system
-DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-MsgTypes]|r Loaded %d message categories", 
+OGRH.Msg(string.format("|cff00ccff[RH-MsgTypes]|r Loaded %d message categories", 
     table.getn({OGRH.MessageTypes.STRUCT, OGRH.MessageTypes.ASSIGN, OGRH.MessageTypes.SYNC, OGRH.MessageTypes.ADMIN, OGRH.MessageTypes.STATE, OGRH.MessageTypes.READHELPER})))

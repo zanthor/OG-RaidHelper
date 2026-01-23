@@ -579,10 +579,10 @@ end
 -- Migrate old roleDefaults to poolDefaults (one-time migration)
 local function MigrateRoleDefaultsToPoolDefaults()
   if OGRH_SV.roleDefaults and not OGRH_SV.poolDefaults then
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Migrating Role Defaults to Pool Defaults...")
+    OGRH.Msg("|cffff6666[RH-EncounterMgmt]|r Migrating Role Defaults to Pool Defaults...")
     OGRH_SV.poolDefaults = OGRH_SV.roleDefaults
     OGRH_SV.roleDefaults = nil
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Migration complete!")
+    OGRH.Msg("|cff00ff00[RH-EncounterMgmt]|r Migration complete!")
   end
 end
 
@@ -620,7 +620,7 @@ function OGRH.MigrateRolesToStableIDs()
   
   if not needsMigration then return end
   
-  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Migrating roles to stable IDs...")
+  OGRH.Msg("|cffff6666[RH-EncounterMgmt]|r Migrating roles to stable IDs...")
   
   -- Assign stable IDs based on current position
   for raidName, raidRoles in pairs(OGRH_SV.encounterMgmt.roles) do
@@ -650,7 +650,7 @@ function OGRH.MigrateRolesToStableIDs()
     end
   end
   
-  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Role ID migration complete!")
+  OGRH.Msg("|cff00ff00[RH-EncounterMgmt]|r Role ID migration complete!")
 end
 
 -- Initialize SavedVariables structure

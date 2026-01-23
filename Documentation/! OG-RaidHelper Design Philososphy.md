@@ -403,7 +403,219 @@ ChatThrottleLib.VERBOSE = false
 
 ---
 
-### 5. Code Style & Conventions
+### 5. Message Routing & Prefix System: OGRH.Msg() (REQUIRED)
+
+**ALL addon chat output MUST use OGRH.Msg() for routing to the dedicated OGRH chat window.**
+
+OGRH has a dedicated chat window that isolates addon output from player chat. Messages sent via OGRH.Msg() are automatically routed to this window.
+
+#### Message Prefix Format
+
+All messages use a standardized two-part prefix:
+
+```lua
+OGRH.Msg("[Category-Module] Message text")
+-- Displays as: [OG][Category-Module] Message text
+--              ^^^^  ^^^^^^^^^^^^^^^^
+--              Auto  Your prefix
+```
+
+**The [OG] prefix is automatically added** - you only provide the module-specific portion.
+
+#### Category Color Codes
+
+Use these color codes based on the file's location:
+
+| Category | Color Code | RGB | Usage |
+|----------|------------|-----|-------|
+| **Infrastructure** | `|cff00ccff` | Cyan | Infrastructure/* (MessageRouter, Sync, Versioning, etc.) |
+| **Core** | `|cff66ff66` | Light Green | Core/* (Core.lua, SavedVariablesManager, Utilities, ChatWindow) |
+| **Configuration** | `|cffffaa00` | Orange | Configuration/* (Invites, Recruitment, Roster, Consumes) |
+| **Raid** | `|cffff6666` | Light Red | Raid/* (EncounterMgmt, RolesUI, Announce, BigWigs) |
+| **Administration** | `|cffcc99ff` | Light Purple | Administration/* (Recruitment, SRValidation, AddonAudit) |
+| **UI** | `|cff66ccff` | Sky Blue | UI/* (MainUI, windows, dialogs) |
+| **Modules** | `|cffffff66` | Light Yellow | Modules/* (specific encounter modules, helpers) |
+| **Error** | `|cffff0000` | Red | Any error message regardless of location |
+| **Warning** | `|cffffaa00` | Orange | Any warning message |
+| **Success** | `|cff00ff00` | Green | Successful operations, confirmations |
+
+#### Usage Patterns
+
+**Module Load Messages:**
+```lua
+-- Infrastructure module
+OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Loaded")
+-- Displays: [OG][RH-MessageRouter] Loaded (cyan)
+
+-- Core module  
+OGRH.Msg("|cff66ff66[RH-SVM]|r loaded")
+-- Displays: [OG][RH-SVM] loaded (light green)
+
+-- Configuration module
+OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r module loaded (v1.0.0)")
+-- Displays: [OG][RH-ConsumesTracking] module loaded (v1.0.0) (orange)
+```
+
+**Error Messages:**
+```lua
+-- Use red for all errors, regardless of file location
+OGRH.Msg("|cffff0000[RH-Permissions]|r Error: Invalid permission level")
+-- Displays: [OG][RH-Permissions] Error: Invalid permission level (red)
+```
+
+**User Action Feedback:**
+```lua
+-- Success (green)
+OGRH.Msg("|cff00ff00[RH-EncounterMgmt]|r Assignments saved successfully")
+
+-- Warning (orange)
+OGRH.Msg("|cffffaa00[RH-Sync]|r Warning: Sync locked by raid leader")
+
+-- Info (category color)
+OGRH.Msg("|cffff6666[RH-RolesUI]|r Role updated: Tank -> Healer")
+```
+
+**Debug Messages:**
+```lua
+-- Use category color + [DEBUG] prefix
+OGRH.Msg("|cff00ccff[RH-Sync][DEBUG]|r BroadcastFullSync called")
+```
+
+#### Complete Examples by Location
+
+```lua
+-- Infrastructure/MessageRouter.lua
+function OGRH.MessageRouter.Initialize()
+    -- ... initialization code ...
+    OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Loaded")
+end
+
+function OGRH.MessageRouter.HandleError(err)
+    OGRH.Msg("|cffff0000[RH-MessageRouter]|r Error: " .. err)
+end
+
+-- Core/SavedVariablesManager.lua
+function OGRH.SVM.Initialize()
+    -- ... initialization code ...
+    OGRH.Msg("|cff66ff66[RH-SVM]|r loaded")
+end
+
+-- Configuration/Invites.lua  
+function OGRH.Invites.SendInvite(player)
+    -- ... send invite ...
+    OGRH.Msg("|cffffaa00[RH-Invites]|r Invited " .. player)
+end
+
+-- Raid/EncounterMgmt.lua
+function OGRH.EncounterMgmt.SaveAssignments()
+    -- ... save ...
+    OGRH.Msg("|cff00ff00[RH-EncounterMgmt]|r Assignments saved successfully")
+end
+
+function OGRH.EncounterMgmt.HandleConflict()
+    OGRH.Msg("|cffffaa00[RH-EncounterMgmt]|r Warning: Conflicting assignment")
+end
+
+-- Administration/Recruitment.lua
+function OGRH.Recruitment.ProcessApplicant(name)
+    OGRH.Msg("|cffcc99ff[RH-Recruitment]|r Processing application from " .. name)
+end
+
+-- UI/MainUI.lua
+function OGRH.ShowMainWindow()
+    OGRH.Msg("|cff66ccff[RH]|r v1.31.2 loaded")
+end
+
+-- Modules/cthun.lua
+function CThunModule.OnLoad()
+    OGRH.Msg("|cffffff66[RH-CThun]|r Encounter module loaded")
+end
+```
+
+#### Prefix Naming Conventions
+
+**ALL modules use the `[RH-ModuleName]` format for consistency:**
+
+| File Location | Prefix Format | Examples |
+|---------------|---------------|----------|
+| Infrastructure/* | `[RH-ModuleName]` | `[RH-MessageRouter]`, `[RH-Sync]`, `[RH-Permissions]` |
+| Core/* | `[RH-ModuleName]` | `[RH-SVM]`, `[RH-Utilities]`, `[RH-ChatWindow]` |
+| Configuration/* | `[RH-ModuleName]` | `[RH-Invites]`, `[RH-Recruitment]`, `[RH-ConsumesTracking]` |
+| Raid/* | `[RH-ModuleName]` | `[RH-EncounterMgmt]`, `[RH-RolesUI]`, `[RH-Announce]` |
+| Administration/* | `[RH-ModuleName]` | `[RH-Recruitment]`, `[RH-SRValidation]`, `[RH-AddonAudit]` |
+| UI/* | `[RH]` or `[RH-UI-Name]` | `[RH]`, `[RH-UI-Roles]`, `[RH-UI-Consumes]` |
+| Modules/* | `[RH-ModuleName]` | `[RH-CThun]`, `[RH-ConsumeHelper]` |
+
+#### Message Queue System
+
+Messages sent before the chat window exists are automatically queued:
+
+```lua
+-- Early in load process - message is queued
+OGRH.Msg("|cff66ff66[SVM]|r loaded")  
+
+-- Later, when ChatWindow.lua creates the window
+-- FlushMessageQueue() automatically displays all queued messages
+```
+
+#### When NOT to Use OGRH.Msg()
+
+**Do NOT use OGRH.Msg() for:**
+- Meta-messages about the chat window itself (use DEFAULT_CHAT_FRAME directly)
+- Test framework output (should be visible in default chat)
+- External library code (OGAddonMsg, OGST, ChatThrottleLib)
+- Fallback handlers within OGRH.Msg() itself
+
+**Example of valid DEFAULT_CHAT_FRAME usage:**
+```lua
+-- In ChatWindow.lua - message ABOUT the window system
+DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Failed to create chat window", 1, 0, 0)
+
+-- In test file - test output should be visible
+DEFAULT_CHAT_FRAME:AddMessage("Test 1: PASS", 0, 1, 0)
+```
+
+#### Migration from DEFAULT_CHAT_FRAME
+
+When converting existing code:
+
+```lua
+-- ❌ OLD
+DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r MessageRouter loaded", 0, 1, 0)
+
+-- ✅ NEW
+OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Loaded")
+```
+
+**Key Changes:**
+1. Remove `[OGRH]` prefix (auto-added as `[OG]`)
+2. Add category color code
+3. Use standardized module prefix
+4. Remove RGB parameters (colors in text)
+5. Shorten "loaded" messages for consistency
+
+#### Color Code Reference (Copy-Paste)
+
+```lua
+-- Quick reference for copy-pasting
+local COLORS = {
+    INFRASTRUCTURE = "|cff00ccff",  -- Cyan
+    CORE = "|cff66ff66",            -- Light Green
+    CONFIG = "|cffffaa00",          -- Orange
+    RAID = "|cffff6666",            -- Light Red
+    ADMIN = "|cffcc99ff",           -- Light Purple
+    UI = "|cff66ccff",              -- Sky Blue
+    MODULE = "|cffffff66",          -- Light Yellow
+    ERROR = "|cffff0000",           -- Red
+    WARNING = "|cffffaa00",         -- Orange
+    SUCCESS = "|cff00ff00",         -- Green
+    RESET = "|r"                    -- Reset color
+}
+```
+
+---
+
+### 6. Code Style & Conventions
 
 #### Namespace & Structure
 
@@ -469,7 +681,7 @@ Commands.lua      # Last - references everything
 
 ---
 
-### 6. Integration Patterns
+### 7. Integration Patterns
 
 #### SavedVariables
 
@@ -532,7 +744,7 @@ end
 
 ---
 
-### 7. Common WoW 1.12 API Patterns
+### 8. Common WoW 1.12 API Patterns
 
 #### Safe Item Info Fetching
 
@@ -632,7 +844,7 @@ end
 
 ---
 
-### 8. Testing Requirements
+### 9. Testing Requirements
 
 All implementations must be tested in WoW 1.12 client:
 

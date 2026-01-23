@@ -337,7 +337,7 @@ function OGRH.Versioning.Initialize()
         -- Don't load changeLog (session only)
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-Versioning]|r Initialized (v%d)", OGRH.Versioning.State.globalVersion))
+    OGRH.Msg(string.format("|cff00ccff[RH-Versioning]|r Initialized (v%d)", OGRH.Versioning.State.globalVersion))
 end
 
 -- Save versioning state to SavedVariables
@@ -675,4 +675,4 @@ function OGRH.Versioning.SetGlobalVersion(version)
     return OGRH.SetDataVersion(version)
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-Versioning]|r Loaded")
+OGRH.Msg("|cff00ccff[RH-Versioning]|r Loaded")

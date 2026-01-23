@@ -364,7 +364,5 @@ function OGRH.SyncDelta.Initialize()
         end
     end)
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncDelta]|r Loaded (Phase 3A)")
+    OGRH.Msg("|cff00ccff[RH-SyncDelta]|r Loaded (Phase 3A)")
 end
-
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncDelta]|r Loaded")

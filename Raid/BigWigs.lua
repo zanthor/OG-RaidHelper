@@ -119,7 +119,7 @@ function OGRH.BigWigs.OnEncounterDetected(moduleName)
     end
     
     -- Notify user
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Auto-selected: " .. encounterName .. " (" .. raidName .. ")", 0, 1, 0)
+    OGRH.Msg("|cffff6666[RH-BigWigs]|r Auto-selected: " .. encounterName .. " (" .. raidName .. ")")
     
     -- Auto-mark players if encounter has marks configured
     if OGRH.MarkPlayersFromMainUI and GetNumRaidMembers() > 0 then
@@ -153,7 +153,7 @@ function OGRH.BigWigs.OnEncounterDetected(moduleName)
       
       if hasMarks then
         OGRH.MarkPlayersFromMainUI()
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Auto-marked players", 0, 1, 0)
+        OGRH.Msg("|cffff6666[RH-BigWigs]|r Auto-marked players")
       end
     end
     
@@ -179,7 +179,7 @@ function OGRH.BigWigs.OnEncounterDetected(moduleName)
           -- Auto-announce the encounter
           if OGRH.Announcements and OGRH.Announcements.SendEncounterAnnouncement then
             OGRH.Announcements.SendEncounterAnnouncement(raidName, encounterName)
-            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r Auto-announcing encounter", 0, 1, 0)
+            OGRH.Msg("|cffff6666[RH-BigWigs]|r Auto-announcing encounter")
           end
         end
       end
@@ -239,9 +239,9 @@ local function HookBigWigs()
       end
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OG-RaidHelper:|r BigWigs integration active (hooked " .. count .. " modules)")
+    OGRH.Msg("|cff00ff00[RH-BigWigs]|r Integration active (hooked " .. count .. " modules)")
   else
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OG-RaidHelper:|r BigWigs.modules not found")
+    OGRH.Msg("|cffff0000[RH-BigWigs]|r Error: BigWigs.modules not found")
   end
 end
 

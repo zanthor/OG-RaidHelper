@@ -68,7 +68,7 @@ local function ReportLoadedConsumes()
   end
   
   if count > 0 then
-    OGRH.Msg("ConsumeHelper: Loaded " .. count .. " saved consume assignments")
+    OGRH.Msg("|cffffff66[RH-ConsumeHelper]|r Loaded " .. count .. " saved consume assignments")
   end
 end
 
@@ -2918,4 +2918,4 @@ OGRH.ShowConsumeHelper = ConsumeHelper.ShowWindow
 OGRH.ShowManageConsumes = ConsumeHelper.ShowManageConsumes
 
 -- Initialize on load
-OGRH.Msg("Consume Helper module loaded.")
+OGRH.Msg("|cffffff66[RH-ConsumeHelper]|r module loaded.")

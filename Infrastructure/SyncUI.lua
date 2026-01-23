@@ -77,7 +77,5 @@ end
 ]]
 
 function OGRH.SyncUI.Initialize()
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncUI]|r Loaded (STUB - Phase 2)")
+    OGRH.Msg("|cff00ccff[RH-SyncUI]|r Loaded (STUB - Phase 2)")
 end
-
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncUI]|r Loaded (STUB)")

@@ -29,4 +29,4 @@ function OGRH.CancelScheduledFunc(frame)
   end
 end
 
-OGRH.Msg("Utilities Loaded")
+OGRH.Msg("|cff66ff66[RH-Utilities]|r loaded")

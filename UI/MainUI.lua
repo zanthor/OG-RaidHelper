@@ -831,18 +831,18 @@ end
 _G["SLASH_"..string.upper(OGRH.CMD).."1"] = "/"..OGRH.CMD
 
 if OGRH and OGRH.Msg then
-  OGRH.Msg("|cff00ff00[RaidHelper]|r v" .. OGRH.VERSION .. " loaded")
+  OGRH.Msg("|cff66ccff[RH]|r v" .. OGRH.VERSION .. " loaded")
   
   -- Notify about RollFor status
   if OGRH.ROLLFOR_AVAILABLE then
-    OGRH.Msg("|cff00ff00[RaidHelper]|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " detected")
+    OGRH.Msg("|cff66ccff[RH]|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " detected")
   else
     local rollForVersion = GetAddOnMetadata("RollFor", "Version")
     if rollForVersion then
-      OGRH.Msg("|cff00ff00[RaidHelper]|r |cffff8800Warning:|r RollFor v" .. rollForVersion .. " found, but v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " required")
+      OGRH.Msg("|cffffaa00[RH] Warning:|r RollFor v" .. rollForVersion .. " found, but v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " required")
     else
-      OGRH.Msg("|cff00ff00[RaidHelper]|r |cffff8800Warning:|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " not found")
+      OGRH.Msg("|cffffaa00[RH] Warning:|r RollFor v" .. OGRH.ROLLFOR_REQUIRED_VERSION .. " not found")
     end
-    OGRH.Msg("|cff00ff00[RaidHelper]|r Some features disabled: Invites, SR Validation, RollFor sync")
+    OGRH.Msg("|cff66ccff[RH]|r Some features disabled: Invites, SR Validation, RollFor sync")
   end
 end

@@ -64,7 +64,7 @@ function OGRH.Sync.NotifyStructureChange(changeDescription)
         return -- Only admin can push structure changes
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[OGRH-Sync]|r %s", changeDescription or "Structure changed"))
+    OGRH.Msg(string.format("|cff00ccff[RH-Sync]|r %s", changeDescription or "Structure changed"))
     
     -- Always use full sync for structure changes
     -- (Delta sync is reserved for future rapid-fire changes like assignments)
@@ -426,7 +426,7 @@ function OGRH.Sync.FlushDeltas()
     end
     
     local deltaCount = table.getn(OGRH.Sync.State.pendingDeltas)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[OGRH-Sync]|r Flushing %d delta(s)", deltaCount))
+    OGRH.Msg(string.format("|cff00ccff[RH-Sync]|r Flushing %d delta(s)", deltaCount))
     
     local version = OGRH.Versioning.IncrementDataVersion("DELTA", "Batch delta sync")
     
@@ -557,7 +557,7 @@ function OGRH.Sync.Initialize()
     -- Start checksum polling
     OGRH.Sync.StartChecksumPolling()
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH-Sync]|r Initialized")
+    OGRH.Msg("|cff00ccff[RH-Sync]|r Initialized")
 end
 
 -- Save state (called from Core on logout)
@@ -691,4 +691,4 @@ function OGRH.Sync.ImportData(serializedData)
     return true
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-Sync]|r Loaded (Phase 2)")
+OGRH.Msg("|cff00ccff[RH-Sync]|r Loaded (Phase 2)")

@@ -1428,4 +1428,4 @@ function OGRH.MessageRouter.DebugPrintReceivedMessages()
     DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === End Messages ===")
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-MessageRouter]|r Loaded")
+OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Loaded")

@@ -2724,4 +2724,4 @@ CT.Initialize()
 -- Debug/Info
 -- ============================================================================
 
-OGRH.Msg("ConsumesTracking module loaded (v1.0.0)")
+OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r module loaded (v1.0.0)")

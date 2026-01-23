@@ -532,10 +532,6 @@ function OGRH.CleanupModules()
   end
 end
 
--- Only define OGRH.Msg if ChatWindow.lua hasn't already defined it
-if not OGRH.Msg then
-  function OGRH.Msg(s) if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[OGRH]|r "..tostring(s)) end end
-end
 function OGRH.Trim(s) return string.gsub(s or "", "^%s*(.-)%s*$", "%1") end
 function OGRH.Mod1(n,t) return math.mod(n-1, t)+1 end
 function OGRH.CanRW() if IsRaidLeader and IsRaidLeader()==1 then return true end if IsRaidOfficer and IsRaidOfficer()==1 then return true end return false end

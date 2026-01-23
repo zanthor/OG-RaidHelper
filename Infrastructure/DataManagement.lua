@@ -838,4 +838,4 @@ if OGRH.Sync then
   OGRH.Sync.GetDefaultsChecksum = OGRH.DataManagement.GetDefaultsChecksum
 end
 
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH-DataManagement]|r Loaded")
+OGRH.Msg("|cff00ccff[RH-DataManagement]|r Loaded")

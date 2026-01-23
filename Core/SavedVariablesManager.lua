@@ -366,5 +366,5 @@ end)
 
 -- Success message
 if DEFAULT_CHAT_FRAME then
-    OGRH.Msg("|cff00ff00SavedVariablesManager loaded|r")
+    OGRH.Msg("|cff66ff66[RH-SVM]|r loaded")
 end
