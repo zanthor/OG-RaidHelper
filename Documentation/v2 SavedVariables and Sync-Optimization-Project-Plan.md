@@ -31,22 +31,22 @@
 ### Phase 1: Migration System Foundation (Week 1)
 **Goal:** Build versioned migration infrastructure
 
-### Phase 2: Empty Table Cleanup (Week 1)
+### Phase 3: Empty Table Cleanup (Week 3)
 **Goal:** Remove unused tables from v2 schema
 
-### Phase 3: Data Retention Policies (Week 2)
+### Phase 4: Data Retention Policies (Week 3)
 **Goal:** Apply historical data pruning to v2 schema
 
-### Phase 4: Dual-Write Deployment (Week 3)
+### Phase 5: Dual-Write Deployment (Week 4)
 **Goal:** Deploy to beta testers with dual-write enabled
 
-### Phase 5: Validation & Testing (Weeks 4-5)
+### Phase 6: Validation & Testing (Weeks 5-6)
 **Goal:** Validate v2 accuracy against v1 with real usage
 
-### Phase 6: Cutover to V2 (Week 6)
+### Phase 7: Cutover to V2 (Week 7)
 **Goal:** Switch active schema to v2
 
-### Phase 7: Cleanup & Release (Week 7+)
+### Phase 8: Cleanup & Release (Week 8+)
 **Goal:** Remove v1 data, public release
 
 ### Future: Priority 2 - EncounterMgmt Restructure (v3.0)
@@ -54,9 +54,74 @@
 
 ---
 
-## Phase 1: Migration System Foundation
+## Phase 1: SVM Foundation with Sync Integration
 
-### Status: 🟡 IN PROGRESS - Migration script created, needs integration
+### Status: ✅ COMPLETE - All 23 tests passing, documentation complete
+
+**Completed:**
+- ✅ SavedVariablesManager core with integrated sync (590 lines)
+- ✅ MessageRouter integration (SYNC.DELTA, ASSIGN.DELTA_BATCH)
+- ✅ Event handlers (combat/raid/zoning)
+- ✅ Checksum integration (single + batch invalidation)
+- ✅ Comprehensive test suite (23 tests, all passing)
+- ✅ Complete API documentation
+- ✅ WoW 1.12 compliance validation
+
+---
+
+## Phase 2: Migrate Write Calls
+
+### Status: � BLOCKED - v2 schema needs redesign with stable identifiers
+
+**📋 Tracking Documents:** 
+- [Phase-2-Write-Migration-Tracker.md](Phase-2-Write-Migration-Tracker.md) - Original tracker
+- [v2-Schema-Stable-Identifiers-Design.md](v2-Schema-Stable-Identifiers-Design.md) - **NEW: Critical schema fix**
+
+**🚨 CRITICAL ISSUE DISCOVERED:** During first write conversion, discovered v1 uses user-editable display names as table keys (e.g., "Tanks and Heals" with spaces), which breaks SetPath() parsing. v2 schema partially fixed this but encounterAssignments still broken.
+
+**USER MANDATE:** "The ENTIRE point of this project is to fix the data structure... unfuck it, not just work around it."
+
+### Revised Objectives
+- **NEW PRIORITY**: Design v2 schema with stable numeric identifiers
+- Implement index lookup system for name→index translation
+- Update migration scripts for v1→v2 conversion
+- THEN convert writes to use v2 schema with indices
+- Remove 55+ manual sync calls
+- Reduce network traffic 40-60%
+
+### Approach
+
+**⚠️ CRITICAL PIVOT - Schema Redesign Required First:**
+
+Before converting writes, we MUST fix the v2 schema to use stable identifiers. See [v2-Schema-Stable-Identifiers-Design.md](v2-Schema-Stable-Identifiers-Design.md) for complete design.
+
+**Schema Fix Phase (Week 2, Days 1-4):**
+1. Implement index lookup system (name→index translation)
+2. Complete migration scripts (v1 string keys → v2 numeric indices)
+3. Test migration with real SavedVariables data
+4. Validate v1 and v2 data matches
+
+**Write Conversion Phase (Week 2, Days 5-7):**
+1. Redo EncounterMgmt.lua with index lookups
+2. Convert remaining files using v2 schema
+3. Integration testing with 2+ clients
+
+### Files to Convert
+
+| Priority | Group | Files | Status |
+|----------|-------|-------|--------|
+| 🔴 CRITICAL | Encounter Mgmt | 5 files | ⚪ Not Started |
+| 🟡 HIGH | Configuration | 3 files | ⚪ Not Started |
+| 🟢 MEDIUM | Administrative/UI | 5 files | ⚪ Not Started |
+| ⚪ LOW | Structure | 2 files | ⚪ Not Started |
+
+**See [Phase-2-Write-Migration-Tracker.md](Phase-2-Write-Migration-Tracker.md) for complete file-by-file breakdown.**
+
+---
+
+## Phase 1: Migration System Foundation (DEPRECATED - See Phase 1: SVM Foundation)
+
+### Status: ⚪ DEFERRED - Superseded by SVM-first approach
 
 ### Objectives
 - [x] Create migration script prototype
@@ -175,11 +240,11 @@ end
 
 **Validation Checklist:**
 - [x] Sample data loads without errors
-- [ ] Migration creates v2 schema
-- [ ] Validation shows correct key counts
-- [ ] v1 data remains unchanged
-- [ ] Rollback removes v2 schema
-- [ ] No data loss in any step
+- [x] Migration creates v2 schema
+- [x] Validation shows correct key counts
+- [x] v1 data remains unchanged
+- [x] Rollback removes v2 schema
+- [x] No data loss in any step
 
 ---
 
@@ -305,9 +370,9 @@ OGRH.SVM.SyncConfig = {
     enabled = true
 }
 
--- Sync level definitions
+-- Sync level definitions (priorities must match OGAddonMsg: CRITICAL, HIGH, NORMAL, LOW)
 OGRH.SyncLevels = {
-    REALTIME = { delay = 0, priority = "ALERT" },
+    REALTIME = { delay = 0, priority = "HIGH" },
     BATCH = { delay = 2.0, priority = "NORMAL" },
     GRANULAR = { onDemand = true },
     MANUAL = { onDemand = true }
@@ -352,7 +417,7 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
     OGRH.MessageRouter.Broadcast(
         OGRH.MessageTypes.ASSIGN.DELTA_REALTIME,
         changeData,
-        { priority = "ALERT" }
+        { priority = "HIGH" }  -- Must match OGAddonMsg queue levels
     )
     
     OGRH.SVM.InvalidateChecksum(syncMetadata.scope)

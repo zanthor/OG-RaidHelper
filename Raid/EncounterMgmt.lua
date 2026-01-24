@@ -151,8 +151,16 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
     end
   end
   
-  -- Clear existing assignments for this encounter
-  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = {}
+  -- Clear existing assignments for this encounter using SVM
+  local path = string.format("encounterAssignments.%s.%s", frame.selectedRaid, frame.selectedEncounter)
+  OGRH.SVM.SetPath(path, {}, {
+    syncLevel = "REALTIME",
+    componentType = "assignments",
+    scope = {
+      raid = frame.selectedRaid,
+      encounter = frame.selectedEncounter
+    }
+  })
   
   local assignments = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter]
   
@@ -2430,9 +2438,8 @@ function OGRH.ShowEncounterWindow(encounterName)
             
             -- Assign player to slot if we found a target
             if foundTarget and targetRoleIndex and targetSlotIndex then
-              if not OGRH_SV.encounterAssignments then
-                OGRH_SV.encounterAssignments = {}
-              end
+              -- Ensure table structure exists
+              if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
               if not OGRH_SV.encounterAssignments[frame.selectedRaid] then
                 OGRH_SV.encounterAssignments[frame.selectedRaid] = {}
               end
@@ -2443,26 +2450,27 @@ function OGRH.ShowEncounterWindow(encounterName)
                 OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex] = {}
               end
               
-              -- Get old player at target for delta tracking
-              local oldPlayerAtTarget = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex] and
-                                        OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex]
-              
+              -- Write directly (SetPath won't work with encounter names containing brackets/dots)
               OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex] = frame.draggedPlayerName
               
-              -- Record assignment change for delta sync
-              if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
-                OGRH.SyncDelta.RecordAssignmentChange(
-                  frame.draggedPlayerName,
-                  "ENCOUNTER_ROLE",
-                  {
+              -- Trigger sync via SVM (bypass SetPath for complex keys)
+              if OGRH.SVM and OGRH.SVM.HandleSync then
+                local path = string.format("encounterAssignments.%s.%s.%d.%d",
+                  frame.selectedRaid,
+                  frame.selectedEncounter,
+                  targetRoleIndex,
+                  targetSlotIndex
+                )
+                OGRH.SVM.HandleSync("encounterAssignments", nil, frame.draggedPlayerName, {
+                  syncLevel = "REALTIME",
+                  componentType = "assignments",
+                  scope = {
                     raid = frame.selectedRaid,
                     encounter = frame.selectedEncounter,
                     roleIndex = targetRoleIndex,
-                    slotIndex = targetSlotIndex,
-                    playerName = frame.draggedPlayerName
-                  },
-                  oldPlayerAtTarget
-                )
+                    slotIndex = targetSlotIndex
+                  }
+                })
               end
               
               -- Refresh display
@@ -3312,77 +3320,85 @@ function OGRH.ShowEncounterWindow(encounterName)
               if not OGRH_SV.encounterAssignments then
                 OGRH_SV.encounterAssignments = {}
               end
-              if not OGRH_SV.encounterAssignments[frame.selectedRaid] then
-                OGRH_SV.encounterAssignments[frame.selectedRaid] = {}
-              end
-              if not OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] then
-                OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] = {}
-              end
-              if not OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex] then
-                OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex] = {}
-              end
               
               if isDraggingFromPlayerList then
-                -- Dragging from players list - just assign
-                OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex] = frame.draggedPlayerName
+                -- Dragging from players list - just assign using SVM
+                local path = string.format("encounterAssignments.%s.%s.%d.%d",
+                  frame.selectedRaid,
+                  frame.selectedEncounter,
+                  targetRoleIndex,
+                  targetSlotIndex
+                )
+                
+                OGRH.SVM.SetPath(path, frame.draggedPlayerName, {
+                  syncLevel = "REALTIME",
+                  componentType = "assignments",
+                  scope = {
+                    raid = frame.selectedRaid,
+                    encounter = frame.selectedEncounter,
+                    roleIndex = targetRoleIndex,
+                    slotIndex = targetSlotIndex
+                  }
+                })
               else
                 -- Dragging from another slot - swap or move
-                if not OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][frame.draggedFromRole] then
-                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][frame.draggedFromRole] = {}
-                end
-                
                 -- Get current player at target position (if any)
-                local targetPlayer = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex]
+                local targetPlayer = OGRH_SV.encounterAssignments[frame.selectedRaid] and
+                                     OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] and
+                                     OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex] and
+                                     OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex]
                 
-                -- Perform swap or move
-                OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][targetRoleIndex][targetSlotIndex] = frame.draggedPlayer
+                -- Perform swap or move using SVM
+                local targetPath = string.format("encounterAssignments.%s.%s.%d.%d",
+                  frame.selectedRaid,
+                  frame.selectedEncounter,
+                  targetRoleIndex,
+                  targetSlotIndex
+                )
+                
+                local sourcePath = string.format("encounterAssignments.%s.%s.%d.%d",
+                  frame.selectedRaid,
+                  frame.selectedEncounter,
+                  frame.draggedFromRole,
+                  frame.draggedFromSlot
+                )
+                
+                -- First write: move player to target
+                OGRH.SVM.SetPath(targetPath, frame.draggedPlayer, {
+                  syncLevel = "REALTIME",
+                  componentType = "assignments",
+                  scope = {
+                    raid = frame.selectedRaid,
+                    encounter = frame.selectedEncounter,
+                    roleIndex = targetRoleIndex,
+                    slotIndex = targetSlotIndex
+                  }
+                })
                 
                 if targetPlayer then
                   -- Swap: put target player in source position
-                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][frame.draggedFromRole][frame.draggedFromSlot] = targetPlayer
-                  
-                  -- Record swap as atomic transaction
-                  if OGRH.SyncDelta and OGRH.SyncDelta.RecordSwapChange then
-                    OGRH.SyncDelta.RecordSwapChange(
-                      frame.draggedPlayer,  -- player1 (being dragged)
-                      targetPlayer,         -- player2 (at target position)
-                      {  -- assignData1: where player1 ends up
-                        raid = frame.selectedRaid,
-                        encounter = frame.selectedEncounter,
-                        roleIndex = targetRoleIndex,
-                        slotIndex = targetSlotIndex
-                      },
-                      {  -- assignData2: where player2 ends up
-                        raid = frame.selectedRaid,
-                        encounter = frame.selectedEncounter,
-                        roleIndex = frame.draggedFromRole,
-                        slotIndex = frame.draggedFromSlot
-                      }
-                    )
-                  end
+                  OGRH.SVM.SetPath(sourcePath, targetPlayer, {
+                    syncLevel = "REALTIME",
+                    componentType = "assignments",
+                    scope = {
+                      raid = frame.selectedRaid,
+                      encounter = frame.selectedEncounter,
+                      roleIndex = frame.draggedFromRole,
+                      slotIndex = frame.draggedFromSlot
+                    }
+                  })
                 else
-                  -- Just move: clear source position (treat as swap with empty for immediate sync)
-                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][frame.draggedFromRole][frame.draggedFromSlot] = nil
-                  
-                  -- Record move as atomic swap (player to target, empty to source) for immediate sync
-                  if OGRH.SyncDelta and OGRH.SyncDelta.RecordSwapChange then
-                    OGRH.SyncDelta.RecordSwapChange(
-                      frame.draggedPlayer,  -- player1 (being moved)
-                      nil,                  -- player2 (empty slot)
-                      {  -- assignData1: where player goes
-                        raid = frame.selectedRaid,
-                        encounter = frame.selectedEncounter,
-                        roleIndex = targetRoleIndex,
-                        slotIndex = targetSlotIndex
-                      },
-                      {  -- assignData2: source becomes empty
-                        raid = frame.selectedRaid,
-                        encounter = frame.selectedEncounter,
-                        roleIndex = frame.draggedFromRole,
-                        slotIndex = frame.draggedFromSlot
-                      }
-                    )
-                  end
+                  -- Just move: clear source position
+                  OGRH.SVM.SetPath(sourcePath, nil, {
+                    syncLevel = "REALTIME",
+                    componentType = "assignments",
+                    scope = {
+                      raid = frame.selectedRaid,
+                      encounter = frame.selectedEncounter,
+                      roleIndex = frame.draggedFromRole,
+                      slotIndex = frame.draggedFromSlot
+                    }
+                  })
                 end
               end
             end
@@ -3424,32 +3440,29 @@ function OGRH.ShowEncounterWindow(encounterName)
                 return
               end
               
-              -- Right click: Unassign player
+              -- Right click: Unassign player using SVM
               if OGRH_SV.encounterAssignments and
                  OGRH_SV.encounterAssignments[frame.selectedRaid] and
                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter] and
                  OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][slotRoleIndex] then
                 
-                -- Get old player name for delta tracking
-                local oldPlayerName = OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][slotRoleIndex][slotSlotIndex]
+                local path = string.format("encounterAssignments.%s.%s.%d.%d",
+                  frame.selectedRaid,
+                  frame.selectedEncounter,
+                  slotRoleIndex,
+                  slotSlotIndex
+                )
                 
-                OGRH_SV.encounterAssignments[frame.selectedRaid][frame.selectedEncounter][slotRoleIndex][slotSlotIndex] = nil
-                
-                -- Record removal with delta sync
-                if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
-                  OGRH.SyncDelta.RecordAssignmentChange(
-                    "",  -- Empty player name for clear
-                    "ENCOUNTER_ROLE",
-                    {
-                      raid = frame.selectedRaid,
-                      encounter = frame.selectedEncounter,
-                      roleIndex = slotRoleIndex,
-                      slotIndex = slotSlotIndex,
-                      playerName = nil  -- Clearing slot
-                    },
-                    oldPlayerName  -- Old value
-                  )
-                end
+                OGRH.SVM.SetPath(path, nil, {
+                  syncLevel = "REALTIME",
+                  componentType = "assignments",
+                  scope = {
+                    raid = frame.selectedRaid,
+                    encounter = frame.selectedEncounter,
+                    roleIndex = slotRoleIndex,
+                    slotIndex = slotSlotIndex
+                  }
+                })
                 
                 -- Refresh display
                 if frame.RefreshRoleContainers then

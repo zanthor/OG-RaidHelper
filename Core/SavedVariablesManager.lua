@@ -60,9 +60,9 @@ OGRH.SVM.SyncConfig = {
     enabled = true
 }
 
--- Sync level definitions
+-- Sync level definitions (priorities must match OGAddonMsg queue levels: CRITICAL, HIGH, NORMAL, LOW)
 OGRH.SyncLevels = {
-    REALTIME = { delay = 0, priority = "ALERT" },
+    REALTIME = { delay = 0, priority = "HIGH" },
     BATCH = { delay = 2.0, priority = "NORMAL" },
     GRANULAR = { onDemand = true },
     MANUAL = { onDemand = true }
@@ -149,7 +149,10 @@ end
 -- ============================================
 function OGRH.SVM.SetPath(path, value, syncMetadata)
     local sv = OGRH.SVM.GetActiveSchema()
-    if not sv then return false end
+    if not sv then
+        if OGRH.Msg then OGRH.Msg("SVM: GetActiveSchema returned nil") end
+        return false
+    end
     
     -- Parse path using string.gfind (WoW 1.12 compatible)
     local keys = {}
@@ -160,7 +163,15 @@ function OGRH.SVM.SetPath(path, value, syncMetadata)
         key = iter()
     end
     
-    if table.getn(keys) == 0 then return false end
+    if table.getn(keys) == 0 then
+        if OGRH.Msg then OGRH.Msg("SVM: No keys parsed from path: " .. path) end
+        return false
+    end
+    
+    -- DEBUG: Show what we're writing
+    if OGRH.Msg then
+        OGRH.Msg(string.format("SVM: Writing to %s = %s", path, tostring(value)))
+    end
     
     -- Navigate to parent table
     local current = sv
@@ -214,6 +225,25 @@ end
 -- SYNC: Realtime (Immediate)
 -- ============================================
 function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
+    -- Check permissions based on componentType
+    local playerName = UnitName("player")
+    local componentType = syncMetadata.componentType or "generic"
+    
+    if componentType == "structure" or componentType == "metadata" then
+        -- Structure changes require admin permission
+        if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(playerName) then
+            OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
+            return
+        end
+    elseif componentType == "assignments" or componentType == "roles" or componentType == "marks" or componentType == "numbers" then
+        -- Assignment changes require officer/admin permission
+        if not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName) then
+            OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
+            return
+        end
+    end
+    -- Other types (settings, consumes, etc.) don't require special permissions
+    
     -- Check if we can sync now
     if not OGRH.CanSyncNow or not OGRH.CanSyncNow() then
         OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
@@ -226,13 +256,30 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
         path = key .. "." .. subkey
     end
     
+    -- Prepare delta change data
+    local changeData = {
+        type = "REALTIME_UPDATE",
+        path = path,
+        value = value,
+        componentType = syncMetadata.componentType or "generic",
+        scope = syncMetadata.scope,
+        timestamp = GetTime(),
+        author = UnitName("player")
+    }
+    
     -- Send via MessageRouter with high priority
-    if OGRH.MessageRouter and OGRH.MessageRouter.SendMessage then
-        local componentType = syncMetadata.componentType or "generic"
-        OGRH.MessageRouter.SendMessage(componentType, "UPDATE", {
-            path = path,
-            value = value
-        }, "ALERT")  -- High priority for realtime
+    if OGRH.MessageRouter and OGRH.MessageTypes then
+        OGRH.MessageRouter.Broadcast(
+            OGRH.MessageTypes.SYNC.DELTA,
+            changeData,
+            {
+                priority = "HIGH",  -- High priority for realtime (was "ALERT", fixed to match OGAddonMsg queue levels)
+                onFailure = function()
+                    -- If send fails, queue for retry
+                    OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
+                end
+            }
+        )
     end
     
     -- Invalidate checksum for affected scope
@@ -245,6 +292,25 @@ end
 -- SYNC: Batch (Delayed)
 -- ============================================
 function OGRH.SVM.SyncBatch(key, subkey, value, syncMetadata)
+    -- Check permissions based on componentType
+    local playerName = UnitName("player")
+    local componentType = syncMetadata.componentType or "generic"
+    
+    if componentType == "structure" or componentType == "metadata" then
+        -- Structure changes require admin permission
+        if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(playerName) then
+            OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
+            return
+        end
+    elseif componentType == "assignments" or componentType == "roles" or componentType == "marks" or componentType == "numbers" then
+        -- Assignment changes require officer/admin permission
+        if not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName) then
+            OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
+            return
+        end
+    end
+    -- Other types (settings, consumes, etc.) don't require special permissions
+    
     -- Check if we can sync now
     if not OGRH.CanSyncNow or not OGRH.CanSyncNow() then
         OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
@@ -260,7 +326,9 @@ function OGRH.SVM.SyncBatch(key, subkey, value, syncMetadata)
     table.insert(OGRH.SVM.SyncConfig.pendingBatch, {
         path = path,
         value = value,
-        metadata = syncMetadata
+        metadata = syncMetadata,
+        timestamp = GetTime(),
+        author = UnitName("player")
     })
     
     -- Schedule flush
@@ -285,13 +353,36 @@ end
 -- SYNC: Flush Batch
 -- ============================================
 function OGRH.SVM.FlushBatch()
-    if table.getn(OGRH.SVM.SyncConfig.pendingBatch) == 0 then return end
+    if table.getn(OGRH.SVM.SyncConfig.pendingBatch) == 0 then 
+        OGRH.SVM.SyncConfig.batchTimer = nil
+        return 
+    end
+    
+    -- Prepare batch data
+    local batchData = {
+        type = "BATCH_UPDATE",
+        updates = OGRH.SVM.SyncConfig.pendingBatch,
+        timestamp = GetTime(),
+        author = UnitName("player")
+    }
     
     -- Send batch via MessageRouter
-    if OGRH.MessageRouter and OGRH.MessageRouter.SendMessage then
-        OGRH.MessageRouter.SendMessage("batch", "UPDATE_BATCH", {
-            updates = OGRH.SVM.SyncConfig.pendingBatch
-        }, "NORMAL")  -- Normal priority for batch
+    if OGRH.MessageRouter and OGRH.MessageTypes then
+        OGRH.MessageRouter.Broadcast(
+            OGRH.MessageTypes.ASSIGN.DELTA_BATCH,
+            batchData,
+            {
+                priority = "NORMAL",  -- Normal priority for batch
+                onFailure = function()
+                    -- On failure, items stay in queue and will retry on next flush
+                    OGRH.Msg("|cffff0000[RH-SVM]|r Failed to send batch sync, will retry")
+                end,
+                onSuccess = function()
+                    -- Invalidate checksums for all affected scopes
+                    OGRH.SVM.InvalidateChecksumsBatch(batchData.updates)
+                end
+            }
+        )
     end
     
     -- Clear batch and timer
@@ -334,6 +425,28 @@ function OGRH.SVM.InvalidateChecksum(scope)
     end
 end
 
+-- Invalidate checksums for batch of changes
+function OGRH.SVM.InvalidateChecksumsBatch(updates)
+    if not OGRH.SyncIntegrity or not OGRH.SyncIntegrity.RecordAdminModification then
+        return
+    end
+    
+    -- Collect unique scopes from all updates
+    local scopes = {}
+    for i = 1, table.getn(updates) do
+        local update = updates[i]
+        if update.metadata and update.metadata.scope then
+            local scope = update.metadata.scope
+            scopes[scope] = true
+        end
+    end
+    
+    -- Invalidate each unique scope once
+    for scope, _ in pairs(scopes) do
+        OGRH.SyncIntegrity.RecordAdminModification(scope)
+    end
+end
+
 -- ============================================
 -- HELPER: Check if Sync is Possible
 -- ============================================
@@ -348,19 +461,169 @@ function OGRH.CanSyncNow()
         return false
     end
     
+    -- Can't sync while zoning
+    if OGRH.SVM.SyncConfig.isZoning then
+        return false
+    end
+    
     return true
 end
 
 -- ============================================
--- INITIALIZATION
+-- INITIALIZATION AND EVENT HANDLING
 -- ============================================
--- Register combat events to flush offline queue
+-- Register combat and raid events to manage offline queue
 local svmFrame = CreateFrame("Frame")
-svmFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+svmFrame:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Left combat
+svmFrame:RegisterEvent("RAID_ROSTER_UPDATE")    -- Raid roster changed
+svmFrame:RegisterEvent("PLAYER_ENTERING_WORLD") -- Zoning complete
 svmFrame:SetScript("OnEvent", function()
     if event == "PLAYER_REGEN_ENABLED" then
         -- Left combat - flush offline queue
+        OGRH.SVM.SyncConfig.isZoning = false
         OGRH.SVM.FlushOfflineQueue()
+        
+    elseif event == "RAID_ROSTER_UPDATE" then
+        -- Raid roster changed - flush offline queue if we just joined raid
+        if GetNumRaidMembers() > 0 then
+            OGRH.SVM.FlushOfflineQueue()
+        end
+        
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Zoning complete - clear zoning flag and flush queue
+        OGRH.SVM.SyncConfig.isZoning = false
+        OGRH.SVM.FlushOfflineQueue()
+    end
+end)
+
+-- Track zoning state
+OGRH.SVM.SyncConfig.isZoning = false
+
+-- Hook into zone change detection (called from other systems)
+function OGRH.SVM.OnZoningStart()
+    OGRH.SVM.SyncConfig.isZoning = true
+end
+
+function OGRH.SVM.OnZoningEnd()
+    OGRH.SVM.SyncConfig.isZoning = false
+    OGRH.SVM.FlushOfflineQueue()
+end
+
+-- ============================================
+-- MESSAGE HANDLERS: Receive Sync Messages
+-- ============================================
+
+-- Handle incoming REALTIME delta update
+function OGRH.SVM.OnDeltaReceived(sender, data, channel)
+    -- Verify sender is admin
+    local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+    if not currentAdmin or sender ~= currentAdmin then
+        return  -- Ignore updates from non-admins
+    end
+    
+    -- Don't apply our own updates
+    if sender == UnitName("player") then
+        return
+    end
+    
+    -- Validate data
+    if not data or not data.path or not data.value then
+        OGRH.Msg("|cffff0000[RH-SVM]|r Received invalid delta update")
+        return
+    end
+    
+    -- Apply update to local SavedVariables
+    local success = OGRH.SVM.SetPath(data.path, data.value, nil)  -- nil = no sync (we're receiving)
+    
+    if success then
+        -- Trigger UI updates if needed
+        if OGRH.RolesUI and OGRH.RolesUI.RefreshDisplay then
+            OGRH.RolesUI.RefreshDisplay()
+        end
+    else
+        OGRH.Msg("|cffff0000[RH-SVM]|r Failed to apply delta update: " .. data.path)
+    end
+end
+
+-- Handle incoming BATCH delta updates
+function OGRH.SVM.OnBatchReceived(sender, data, channel)
+    -- Verify sender is admin
+    local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+    if not currentAdmin or sender ~= currentAdmin then
+        return  -- Ignore updates from non-admins
+    end
+    
+    -- Don't apply our own updates
+    if sender == UnitName("player") then
+        return
+    end
+    
+    -- Validate data
+    if not data or not data.updates then
+        OGRH.Msg("|cffff0000[RH-SVM]|r Received invalid batch update")
+        return
+    end
+    
+    -- Apply all updates in batch
+    local successCount = 0
+    local failCount = 0
+    
+    for i = 1, table.getn(data.updates) do
+        local update = data.updates[i]
+        if update.path and update.value then
+            local success = OGRH.SVM.SetPath(update.path, update.value, nil)  -- nil = no sync
+            if success then
+                successCount = successCount + 1
+            else
+                failCount = failCount + 1
+            end
+        end
+    end
+    
+    -- Trigger UI updates if any succeeded
+    if successCount > 0 then
+        if OGRH.RolesUI and OGRH.RolesUI.RefreshDisplay then
+            OGRH.RolesUI.RefreshDisplay()
+        end
+    end
+    
+    if failCount > 0 then
+        OGRH.Msg(string.format("|cffffaa00[RH-SVM]|r Batch update: %d succeeded, %d failed", successCount, failCount))
+    end
+end
+
+-- Register message handlers with MessageRouter
+function OGRH.SVM.RegisterMessageHandlers()
+    if not OGRH.MessageRouter or not OGRH.MessageTypes then
+        -- MessageRouter not loaded yet - will register later
+        return
+    end
+    
+    -- Register handler for realtime delta updates
+    OGRH.MessageRouter.RegisterHandler(
+        OGRH.MessageTypes.SYNC.DELTA,
+        OGRH.SVM.OnDeltaReceived
+    )
+    
+    -- Register handler for batch delta updates
+    OGRH.MessageRouter.RegisterHandler(
+        OGRH.MessageTypes.ASSIGN.DELTA_BATCH,
+        OGRH.SVM.OnBatchReceived
+    )
+end
+
+-- ============================================
+-- DELAYED INITIALIZATION
+-- ============================================
+-- Register handlers after MessageRouter loads
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:SetScript("OnEvent", function()
+    if event == "ADDON_LOADED" and arg1 == "OG-RaidHelper" then
+        -- Wait a moment for all modules to load
+        OGRH.ScheduleTimer(function()
+            OGRH.SVM.RegisterMessageHandlers()
+        end, 0.5)
     end
 end)
 

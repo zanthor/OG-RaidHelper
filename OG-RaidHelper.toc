@@ -97,3 +97,8 @@ UI\MainUI.lua
 Modules\cthun.lua
 Modules\OGRH-ConsumeHelperDefaults.lua
 Modules\OGRH-ConsumeHelper.lua
+
+## ===================================================================
+## Phase 8: Tests (Debug Mode Only)
+## ===================================================================
+Tests\test_svm.lua

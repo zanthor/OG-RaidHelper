@@ -799,10 +799,18 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
   -- Phase 6.1 Test Commands
   elseif string.find(sub, "^test") then
     local _, _, testName = string.find(fullMsg, "^%s*test%s+(%S+)")
-    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.RunTests then
+    
+    -- Route to appropriate test suite
+    if testName == "svm" then
+      if OGRH.Tests and OGRH.Tests.SVM and OGRH.Tests.SVM.RunAll then
+        OGRH.Tests.SVM.RunAll()
+      else
+        OGRH.Msg("SVM tests not loaded.")
+      end
+    elseif OGRH.SyncIntegrity and OGRH.SyncIntegrity.RunTests then
       OGRH.SyncIntegrity.RunTests(testName)
     else
-      OGRH.Msg("SyncIntegrity tests not loaded.")
+      OGRH.Msg("Test system not loaded. Available: test svm")
     end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
@@ -824,6 +832,8 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     OGRH.Msg("  handlers - Show message handlers")
     OGRH.Msg("  takeadmin - Request admin role")
     OGRH.Msg("  sa - Set session admin (temporary)")
+    OGRH.Msg("Test Commands:")
+    OGRH.Msg("  test svm - Run SavedVariablesManager tests")
   else
     OGRH.Msg("Unknown command. Type /" .. OGRH.CMD .. " help for usage.")
   end

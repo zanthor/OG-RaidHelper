@@ -286,7 +286,7 @@ OGRH.SyncLevels = {
     -- REALTIME: Instant sync (combat-critical data)
     REALTIME = {
         delay = 0,
-        priority = "ALERT",
+        priority = "HIGH",  -- Must match OGAddonMsg queue levels: CRITICAL, HIGH, NORMAL, LOW
         examples = {
             "encounterMgmt.roles.*.*.column*.slots.*",  -- Role assignments
             "playerAssignments.*.*"                      -- Player-to-role assignments
@@ -469,7 +469,7 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
     OGRH.MessageRouter.Broadcast(
         OGRH.MessageTypes.ASSIGN.DELTA_REALTIME,
         changeData,
-        { priority = "ALERT" }
+        { priority = "HIGH" }  -- Must match OGAddonMsg queue levels
     )
     
     -- Update checksum (notify integrity system)
