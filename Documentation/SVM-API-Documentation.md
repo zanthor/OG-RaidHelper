@@ -449,7 +449,7 @@ SVM reads/writes to the **active schema only** based on `OGRH_SV.schemaVersion`:
 **Migration Workflow:**
 1. Migrate code to use SVM read wrappers (`GetPath()`, `Get()`)
 2. Update code to use v2 numeric indices in paths
-3. Test with v1 active (code reads/writes v1 schema via SVM)
+3. Test with v1 active
 4. Run `/ogrh migration create` to generate v2 at `OGRH_SV.v2.*`
 5. Run comparison commands to verify v2 data
 6. Run `/ogrh migration cutover confirm` to set `schemaVersion = "v2"`

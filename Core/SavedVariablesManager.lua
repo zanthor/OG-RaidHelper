@@ -58,7 +58,8 @@ OGRH.SVM.SyncConfig = {
     pendingBatch = {},
     batchTimer = nil,
     offlineQueue = {},
-    enabled = true
+    enabled = true,
+    debug = true
 }
 
 -- Sync level definitions (priorities must match OGAddonMsg queue levels: CRITICAL, HIGH, NORMAL, LOW)
@@ -157,9 +158,9 @@ function OGRH.SVM.Set(key, subkey, value, syncMetadata)
     if not sv then return false end
     
     -- DEBUG: Show what schema we're writing to
-    local schemaName = (OGRH_SV.schemaVersion == "v2") and "v2" or "v1"
-    if OGRH.Msg and key == "ui" and (subkey == "selectedRaid" or subkey == "selectedEncounter") then
-        OGRH.Msg(string.format("[SVM] Writing %s.%s = %s to schema %s", key, subkey, tostring(value), schemaName))
+    if OGRH.SVM.SyncConfig.debug and OGRH.Msg and key == "ui" and (subkey == "selectedRaid" or subkey == "selectedEncounter") then
+        local schemaName = (OGRH_SV.schemaVersion == "v2") and "v2" or "v1"
+        OGRH.Msg(string.format("|cff66ff66[RH-SVM]|r Writing %s.%s = %s to schema %s", key, subkey, tostring(value), schemaName))
     end
     
     -- Write value to active schema only
@@ -184,7 +185,7 @@ end
 function OGRH.SVM.SetPath(path, value, syncMetadata)
     local sv = OGRH.SVM.GetActiveSchema()
     if not sv then
-        if OGRH.Msg then OGRH.Msg("SVM: GetActiveSchema returned nil") end
+        if OGRH.Msg then OGRH.Msg("|cffff0000[RH-SVM]|r ERROR: GetActiveSchema returned nil") end
         return false
     end
     
@@ -198,13 +199,14 @@ function OGRH.SVM.SetPath(path, value, syncMetadata)
     end
     
     if table.getn(keys) == 0 then
-        if OGRH.Msg then OGRH.Msg("SVM: No keys parsed from path: " .. path) end
+        if OGRH.Msg then OGRH.Msg("|cffff0000[RH-SVM]|r ERROR: No keys parsed from path: " .. path) end
         return false
     end
     
     -- DEBUG: Show what we're writing
-    if OGRH.Msg then
-        OGRH.Msg(string.format("SVM: Writing to %s = %s", path, tostring(value)))
+    if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+        local valuePreview = type(value) == "table" and ("table: " .. tostring(value)) or tostring(value)
+        OGRH.Msg(string.format("|cff66ff66[RH-SVM]|r Writing to [%s] = %s", path, valuePreview))
     end
     
     -- Navigate to parent table

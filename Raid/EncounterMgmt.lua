@@ -4865,13 +4865,16 @@ end
 -- Helper function to find raid by name (supports new nested structure)
 function OGRH.FindRaidByName(raidName)
   OGRH.EnsureSV()
-  if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then
+  
+  -- Use SVM to get raids from active schema (v1 or v2)
+  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+  if not raids then
     return nil
   end
   
-  -- New structure only: raids are objects with name property
-  for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-    local raid = OGRH_SV.encounterMgmt.raids[i]
+  -- Search array for raid with matching name
+  for i = 1, table.getn(raids) do
+    local raid = raids[i]
     if raid.name == raidName then
       return raid
     end

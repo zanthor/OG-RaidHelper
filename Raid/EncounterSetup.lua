@@ -9,10 +9,9 @@ if not OGRH then OGRH = {} end
 function OGRH.ShowEncounterSetup(raidName, encounterName)
   -- Check if encounter data exists, if not show Share window
   OGRH.EnsureSV()
-  if not OGRH_SV.encounterMgmt or 
-     not OGRH_SV.encounterMgmt.raids or 
-     table.getn(OGRH_SV.encounterMgmt.raids) == 0 then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGRH:|r No encounter data found. Please import data from the Share window.")
+  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+  if not raids or table.getn(raids) == 0 then
+    OGRH.Msg("|cffff6666[RH-Encounter]|r No encounter data found. Please import data from the Share window.")
     if OGRH.ShowShareWindow then
       OGRH.ShowShareWindow()
     end
@@ -137,8 +136,9 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       local contentWidth = scrollChild:GetWidth()
       
       -- Add existing raids (new structure only)
-      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-        local raid = OGRH_SV.encounterMgmt.raids[i]
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+      for i = 1, table.getn(raids) do
+        local raid = raids[i]
         local raidName = raid.name
         local raidBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         raidBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
@@ -176,41 +176,36 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
         end)
         
         -- Add up/down/delete buttons using template
+        local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
         OGRH.AddListItemButtons(
           raidBtn,
           capturedIndex,
-          table.getn(OGRH_SV.encounterMgmt.raids),
+          table.getn(raids),
           function()
             -- Move up
-            local temp = OGRH_SV.encounterMgmt.raids[capturedIndex - 1]
-            OGRH_SV.encounterMgmt.raids[capturedIndex - 1] = OGRH_SV.encounterMgmt.raids[capturedIndex]
-            OGRH_SV.encounterMgmt.raids[capturedIndex] = temp
+            local currentRaids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+            local temp = currentRaids[capturedIndex - 1]
+            currentRaids[capturedIndex - 1] = currentRaids[capturedIndex]
+            currentRaids[capturedIndex] = temp
             
-            -- Record structure change for delta sync
-            if OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-              OGRH.SyncDelta.RecordStructureChange("RAID", "REORDER", {
-                raidName = capturedRaidName,
-                oldPosition = capturedIndex,
-                newPosition = capturedIndex - 1
-              })
-            end
+            OGRH.SVM.SetPath("encounterMgmt.raids", currentRaids, {
+              syncLevel = "MANUAL",
+              componentType = "structure"
+            })
             
             RefreshRaidsList()
           end,
           function()
             -- Move down
-            local temp = OGRH_SV.encounterMgmt.raids[capturedIndex + 1]
-            OGRH_SV.encounterMgmt.raids[capturedIndex + 1] = OGRH_SV.encounterMgmt.raids[capturedIndex]
-            OGRH_SV.encounterMgmt.raids[capturedIndex] = temp
+            local currentRaids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+            local temp = currentRaids[capturedIndex + 1]
+            currentRaids[capturedIndex + 1] = currentRaids[capturedIndex]
+            currentRaids[capturedIndex] = temp
             
-            -- Record structure change for delta sync
-            if OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-              OGRH.SyncDelta.RecordStructureChange("RAID", "REORDER", {
-                raidName = capturedRaidName,
-                oldPosition = capturedIndex,
-                newPosition = capturedIndex + 1
-              })
-            end
+            OGRH.SVM.SetPath("encounterMgmt.raids", currentRaids, {
+              syncLevel = "MANUAL",
+              componentType = "structure"
+            })
             
             RefreshRaidsList()
           end,
@@ -307,7 +302,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
         return
       end
       
-      -- Get encounters from raid object (new structure only)
+      -- Get encounters from raid object via SVM
       local raid = OGRH.FindRaidByName(frame.selectedRaid)
       if not raid or not raid.encounters then
         return
@@ -370,42 +365,48 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           table.getn(encounters),
           function()
             -- Move up
-            local raidObj = OGRH.FindRaidByName(capturedRaid)
+            local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+            local raidObj = nil
+            for i = 1, table.getn(raids) do
+              if raids[i].name == capturedRaid then
+                raidObj = raids[i]
+                break
+              end
+            end
+            
             if raidObj and raidObj.encounters then
               local temp = raidObj.encounters[capturedIndex - 1]
               raidObj.encounters[capturedIndex - 1] = raidObj.encounters[capturedIndex]
               raidObj.encounters[capturedIndex] = temp
               
-              -- Record structure change for delta sync
-              if OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-                OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "REORDER", {
-                  raidName = capturedRaid,
-                  encounterName = capturedEncounterName,
-                  oldPosition = capturedIndex,
-                  newPosition = capturedIndex - 1
-                })
-              end
+              OGRH.SVM.SetPath("encounterMgmt.raids", raids, {
+                syncLevel = "MANUAL",
+                componentType = "structure"
+              })
               
               RefreshEncountersList()
             end
           end,
           function()
             -- Move down
-            local raidObj = OGRH.FindRaidByName(capturedRaid)
+            local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+            local raidObj = nil
+            for i = 1, table.getn(raids) do
+              if raids[i].name == capturedRaid then
+                raidObj = raids[i]
+                break
+              end
+            end
+            
             if raidObj and raidObj.encounters then
               local temp = raidObj.encounters[capturedIndex + 1]
               raidObj.encounters[capturedIndex + 1] = raidObj.encounters[capturedIndex]
               raidObj.encounters[capturedIndex] = temp
               
-              -- Record structure change for delta sync
-              if OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-                OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "REORDER", {
-                  raidName = capturedRaid,
-                  encounterName = capturedEncounterName,
-                  oldPosition = capturedIndex,
-                  newPosition = capturedIndex + 1
-                })
-              end
+              OGRH.SVM.SetPath("encounterMgmt.raids", raids, {
+                syncLevel = "MANUAL",
+                componentType = "structure"
+              })
               
               RefreshEncountersList()
             end
@@ -550,15 +551,10 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       end
     end)
     
-    -- Function to get next available role ID
-    local function GetNextRoleId(rolesData)
+    -- Function to get next available role ID (v2: flat array)
+    local function GetNextRoleId(roles)
       local maxId = 0
-      for _, role in ipairs(rolesData.column1 or {}) do
-        if role.roleId and role.roleId > maxId then
-          maxId = role.roleId
-        end
-      end
-      for _, role in ipairs(rolesData.column2 or {}) do
+      for _, role in ipairs(roles or {}) do
         if role.roleId and role.roleId > maxId then
           maxId = role.roleId
         end
@@ -566,13 +562,41 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       return maxId + 1
     end
     
-    -- Function to refresh roles list
-    local function RefreshRolesList()
-      -- Ensure migration has run (in case this is called before InitializeSavedVars)
-      if OGRH.MigrateRolesToStableIDs then
-        OGRH.MigrateRolesToStableIDs()
+    -- Helper: Write encounter roles via SVM (v2: write specific path, not entire raids array)
+    function OGRH.WriteEncounterRoles(raidName, encounterName, roles, syncLevel)
+      -- Find raid and encounter indices
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+      if not raids then return end
+      
+      local raidIdx, encIdx
+      for i = 1, table.getn(raids) do
+        if raids[i].name == raidName then
+          raidIdx = i
+          if raids[i].encounters then
+            for j = 1, table.getn(raids[i].encounters) do
+              if raids[i].encounters[j].name == encounterName then
+                encIdx = j
+                break
+              end
+            end
+          end
+          break
+        end
       end
       
+      if not raidIdx or not encIdx then return end
+      
+      -- Write just the roles array at specific path
+      local path = string.format("encounterMgmt.raids.%d.encounters.%d.roles", raidIdx, encIdx)
+      OGRH.SVM.SetPath(path, roles, {
+        syncLevel = syncLevel or "MANUAL",
+        componentType = "settings",
+        scope = {raid = raidName, encounter = encounterName}
+      })
+    end
+    
+    -- Function to refresh roles list (v2 schema)
+    local function RefreshRolesList()
       -- Clear existing buttons from both columns
       if frame.roleButtons then
         for _, btn in ipairs(frame.roleButtons) do
@@ -602,53 +626,27 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
         return
       end
       
-      -- Ensure roles storage exists with column structure
-      if not OGRH_SV.encounterMgmt.roles then
-        OGRH_SV.encounterMgmt.roles = {}
-      end
-      if not OGRH_SV.encounterMgmt.roles[frame.selectedRaid] then
-        OGRH_SV.encounterMgmt.roles[frame.selectedRaid] = {}
-      end
-      if not OGRH_SV.encounterMgmt.roles[frame.selectedRaid][frame.selectedEncounter] then
-        OGRH_SV.encounterMgmt.roles[frame.selectedRaid][frame.selectedEncounter] = {
-          column1 = {},
-          column2 = {}
-        }
+      -- V2 schema: Get encounter object which contains roles array
+      local raid = OGRH.FindRaidByName(frame.selectedRaid)
+      if not raid then return end
+      
+      local encounter = OGRH.FindEncounterByName(raid, frame.selectedEncounter)
+      if not encounter then return end
+      
+      -- Ensure roles array exists (v2: flat array with column field)
+      if not encounter.roles then
+        encounter.roles = {}
       end
       
-      local rolesData = OGRH_SV.encounterMgmt.roles[frame.selectedRaid][frame.selectedEncounter]
+      local allRoles = encounter.roles
       
-      -- Handle legacy format (flat array) - migrate to column structure
-      if rolesData[1] and not rolesData.column1 then
-        local legacyRoles = {}
-        for i, role in ipairs(rolesData) do
-          table.insert(legacyRoles, role)
-        end
-        rolesData.column1 = {}
-        rolesData.column2 = {}
-        for i, role in ipairs(legacyRoles) do
-          if math.mod(i, 2) == 1 then
-            table.insert(rolesData.column1, role)
-          else
-            table.insert(rolesData.column2, role)
-          end
-          rolesData[i] = nil
-        end
-      end
-      
-      -- Ensure columns exist
-      if not rolesData.column1 then rolesData.column1 = {} end
-      if not rolesData.column2 then rolesData.column2 = {} end
-      
-      -- Ensure columns exist
-      if not rolesData.column1 then rolesData.column1 = {} end
-      if not rolesData.column2 then rolesData.column2 = {} end
+      local allRoles = encounter.roles
       
       local yOffset1 = -5
       local yOffset2 = -5
       
-      -- Helper function to create a role button
-      local function CreateRoleButton(roleIndex, role, columnRoles, scrollChild, isColumn2)
+      -- Helper function to create a role button (v2: roles have column field)
+      local function CreateRoleButton(globalIndex, role, scrollChild, isColumn2)
         local roleBtn = OGRH.CreateStyledListItem(scrollChild, frame.rolesContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         
         local yOffset = isColumn2 and yOffset2 or yOffset1
@@ -667,13 +665,11 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
         
         -- Store data on button for drag operations
         roleBtn.roleData = role
-        roleBtn.roleIndex = roleIndex
-        roleBtn.columnRoles = columnRoles
+        roleBtn.globalIndex = globalIndex
         roleBtn.isColumn2 = isColumn2
         
         -- Click to edit role
         roleBtn:SetScript("OnClick", function()
-          -- Check permission
           if not OGRH.CanEdit or not OGRH.CanEdit() then
             OGRH.Msg("Only the raid lead can edit roles.")
             return
@@ -683,19 +679,17 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
             frame.selectedRaid,
             frame.selectedEncounter,
             role,
-            columnRoles,
-            roleIndex,
+            allRoles,
+            globalIndex,
             RefreshRolesList
           )
         end)
         
-        -- Drag handlers
+        -- Drag handlers (v2: change column field instead of moving between arrays)
         roleBtn:SetScript("OnDragStart", function()
           this.isDragging = true
-          -- Visual feedback on original button
           OGRH.SetListItemColor(roleBtn, 0.3, 0.5, 0.3, 0.8)
           
-          -- Show drag cursor
           if frame.dragCursor and frame.dragCursorText then
             frame.dragCursorText:SetText(role.name or "Unnamed")
             frame.dragCursor:Show()
@@ -706,109 +700,97 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           this.isDragging = false
           OGRH.SetListItemSelected(roleBtn, false)
           
-          -- Hide drag cursor
           if frame.dragCursor then
             frame.dragCursor:Hide()
           end
           
           -- Check if dropped on the other column's scroll frame
           local targetScrollFrame = this.isColumn2 and frame.rolesScrollFrame or frame.rolesScrollFrame2
-          local targetColumnRoles = this.isColumn2 and rolesData.column1 or rolesData.column2
-          local sourceColumnRoles = this.columnRoles
           
           if MouseIsOver(targetScrollFrame) then
-            -- Move role to other column
-            local role = sourceColumnRoles[this.roleIndex]
-            local fromColumn = this.isColumn2 and 2 or 1
-            local toColumn = this.isColumn2 and 1 or 2
+            -- V2: Change column field (1 <-> 2)
+            role.column = this.isColumn2 and 1 or 2
             
-            table.remove(sourceColumnRoles, this.roleIndex)
-            table.insert(targetColumnRoles, role)
+            -- Write back via SVM (just the roles array, not entire raids)
+            OGRH.WriteEncounterRoles(frame.selectedRaid, frame.selectedEncounter, allRoles, "MANUAL")
             
-            -- Record delta sync for column transfer
-            if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-              OGRH.SyncDelta.RecordStructureChange("ROLE", "MOVE_COLUMN", {
-                raidName = frame.selectedRaid,
-                encounterName = frame.selectedEncounter,
-                roleId = role.roleId,
-                fromColumn = fromColumn,
-                toColumn = toColumn
-              })
-            end
-            
-            RefreshRolesList()
-          else
-            -- Just refresh position
             RefreshRolesList()
           end
         end)
         
         -- Capture variables for button closures
-        local capturedRoles = columnRoles
-        local capturedIdx = roleIndex
+        local capturedIdx = globalIndex
         
-        -- Add up/down/delete buttons using template
+        -- Count roles in same column for up/down limits
+        local sameColumnCount = 0
+        local posInColumn = 0
+        for i, r in ipairs(allRoles) do
+          if (r.column or 1) == (role.column or 1) then
+            sameColumnCount = sameColumnCount + 1
+            if i <= capturedIdx then
+              posInColumn = posInColumn + 1
+            end
+          end
+        end
+        
+        -- Add up/down/delete buttons
         OGRH.AddListItemButtons(
           roleBtn,
-          capturedIdx,
-          table.getn(capturedRoles),
+          posInColumn,
+          sameColumnCount,
           function()
-            -- Move up
-            if capturedIdx <= 1 then return end
-            local temp = capturedRoles[capturedIdx - 1]
-            capturedRoles[capturedIdx - 1] = capturedRoles[capturedIdx]
-            capturedRoles[capturedIdx] = temp
+            -- Move up (within same column)
+            if posInColumn <= 1 then return end
             
-            -- Record delta sync for structure change
-            if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-              OGRH.SyncDelta.RecordStructureChange("ROLE", "REORDER", {
-                raidName = frame.selectedRaid,
-                encounterName = frame.selectedEncounter,
-                roleId = capturedRoles[capturedIdx - 1].roleId,
-                oldPosition = capturedIdx,
-                newPosition = capturedIdx - 1,
-                column = isColumn2 and 2 or 1
-              })
+            -- Find previous role in same column
+            local prevIdx = nil
+            local currentColumn = role.column or 1
+            for i = capturedIdx - 1, 1, -1 do
+              if (allRoles[i].column or 1) == currentColumn then
+                prevIdx = i
+                break
+              end
             end
             
-            RefreshRolesList()
+            if prevIdx then
+              local temp = allRoles[prevIdx]
+              allRoles[prevIdx] = allRoles[capturedIdx]
+              allRoles[capturedIdx] = temp
+              
+              OGRH.WriteEncounterRoles(frame.selectedRaid, frame.selectedEncounter, allRoles, "MANUAL")
+              
+              RefreshRolesList()
+            end
           end,
           function()
-            -- Move down
-            if capturedIdx >= table.getn(capturedRoles) then return end
-            local temp = capturedRoles[capturedIdx + 1]
-            capturedRoles[capturedIdx + 1] = capturedRoles[capturedIdx]
-            capturedRoles[capturedIdx] = temp
+            -- Move down (within same column)
+            if posInColumn >= sameColumnCount then return end
             
-            -- Record delta sync for structure change
-            if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-              OGRH.SyncDelta.RecordStructureChange("ROLE", "REORDER", {
-                raidName = frame.selectedRaid,
-                encounterName = frame.selectedEncounter,
-                roleId = capturedRoles[capturedIdx + 1].roleId,
-                oldPosition = capturedIdx,
-                newPosition = capturedIdx + 1,
-                column = isColumn2 and 2 or 1
-              })
+            -- Find next role in same column
+            local nextIdx = nil
+            local currentColumn = role.column or 1
+            for i = capturedIdx + 1, table.getn(allRoles) do
+              if (allRoles[i].column or 1) == currentColumn then
+                nextIdx = i
+                break
+              end
             end
             
-            RefreshRolesList()
+            if nextIdx then
+              local temp = allRoles[nextIdx]
+              allRoles[nextIdx] = allRoles[capturedIdx]
+              allRoles[capturedIdx] = temp
+              
+              OGRH.WriteEncounterRoles(frame.selectedRaid, frame.selectedEncounter, allRoles, "MANUAL")
+              
+              RefreshRolesList()
+            end
           end,
           function()
             -- Delete
-            local roleToDelete = capturedRoles[capturedIdx]
-            table.remove(capturedRoles, capturedIdx)
+            table.remove(allRoles, capturedIdx)
             
-            -- Record delta sync for structure change
-            if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-              OGRH.SyncDelta.RecordStructureChange("ROLE", "DELETE", {
-                raidName = frame.selectedRaid,
-                encounterName = frame.selectedEncounter,
-                roleId = roleToDelete.roleId,
-                roleName = roleToDelete.name,
-                column = isColumn2 and 2 or 1
-              })
-            end
+            OGRH.WriteEncounterRoles(frame.selectedRaid, frame.selectedEncounter, allRoles, "MANUAL")
             
             RefreshRolesList()
           end
@@ -823,14 +805,14 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
         end
       end  -- End of CreateRoleButton function
       
-      -- Add roles from column 1
-      for i, role in ipairs(rolesData.column1) do
-        CreateRoleButton(i, role, rolesData.column1, scrollChild1, false)
-      end
-      
-      -- Add roles from column 2
-      for i, role in ipairs(rolesData.column2) do
-        CreateRoleButton(i, role, rolesData.column2, scrollChild2, true)
+      -- V2: Iterate flat array, filter by column field
+      for i, role in ipairs(allRoles) do
+        local column = role.column or 1  -- Default to column 1 if not set
+        if column == 1 then
+          CreateRoleButton(i, role, scrollChild1, false)
+        elseif column == 2 then
+          CreateRoleButton(i, role, scrollChild2, true)
+        end
       end
       
       -- Add "Add Role" button to both columns at the bottom
@@ -843,26 +825,17 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       addText1:SetText("|cff00ff00Add Role|r")
       
       addRoleBtn1:SetScript("OnClick", function()
-        local newRoleId = GetNextRoleId(rolesData)
-        local newIndex = table.getn(rolesData.column1) + 1
+        local newRoleId = GetNextRoleId(allRoles)
         local newRole = {
-          name = "New Role " .. newIndex, 
+          name = "New Role", 
           slots = 1, 
           roleId = newRoleId,
-          fillOrder = newRoleId
+          fillOrder = newRoleId,
+          column = 1
         }
-        table.insert(rolesData.column1, newRole)
+        table.insert(allRoles, newRole)
         
-        -- Record delta sync for structure change
-        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-          OGRH.SyncDelta.RecordStructureChange("ROLE", "ADD", {
-            raidName = frame.selectedRaid,
-            encounterName = frame.selectedEncounter,
-            roleName = newRole.name,
-            roleId = newRoleId,
-            column = 1
-          })
-        end
+        OGRH.WriteEncounterRoles(frame.selectedRaid, frame.selectedEncounter, allRoles, "MANUAL")
         
         RefreshRolesList()
       end)
@@ -879,26 +852,17 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       addText2:SetText("|cff00ff00Add Role|r")
       
       addRoleBtn2:SetScript("OnClick", function()
-        local newRoleId = GetNextRoleId(rolesData)
-        local newIndex = table.getn(rolesData.column2) + 1
+        local newRoleId = GetNextRoleId(allRoles)
         local newRole = {
-          name = "New Role " .. newIndex, 
+          name = "New Role", 
           slots = 1, 
           roleId = newRoleId,
-          fillOrder = newRoleId
+          fillOrder = newRoleId,
+          column = 2
         }
-        table.insert(rolesData.column2, newRole)
+        table.insert(allRoles, newRole)
         
-        -- Record delta sync for structure change
-        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-          OGRH.SyncDelta.RecordStructureChange("ROLE", "ADD", {
-            raidName = frame.selectedRaid,
-            encounterName = frame.selectedEncounter,
-            roleName = newRole.name,
-            roleId = newRoleId,
-            column = 2
-          })
-        end
+        OGRH.WriteEncounterRoles(frame.selectedRaid, frame.selectedEncounter, allRoles, "MANUAL")
         
         RefreshRolesList()
       end)
@@ -971,9 +935,10 @@ StaticPopupDialogs["OGRH_ADD_RAID"] = {
     if raidName and raidName ~= "" then
       OGRH.EnsureSV()
       -- Check if raid already exists
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
       local exists = false
-      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-        local existing = OGRH_SV.encounterMgmt.raids[i]
+      for i = 1, table.getn(raids) do
+        local existing = raids[i]
         local existingName = type(existing) == "table" and existing.name or existing
         if existingName == raidName then
           exists = true
@@ -982,7 +947,7 @@ StaticPopupDialogs["OGRH_ADD_RAID"] = {
       end
       
       if not exists then
-        table.insert(OGRH_SV.encounterMgmt.raids, {
+        table.insert(raids, {
           name = raidName,
           encounters = {},
           advancedSettings = {
@@ -999,19 +964,17 @@ StaticPopupDialogs["OGRH_ADD_RAID"] = {
           }
         })
         
-        -- Record delta sync for structure change
-        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-          OGRH.SyncDelta.RecordStructureChange("RAID", "ADD", {
-            raidName = raidName
-          })
-        end
+        OGRH.SVM.SetPath("encounterMgmt.raids", raids, {
+          syncLevel = "MANUAL",
+          componentType = "structure"
+        })
         
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
           OGRH_EncounterSetupFrame.RefreshRaidsList()
         end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Raid '" .. raidName .. "' added")
+        OGRH.Msg("|cffff6666[RH-Encounter]|r Raid '" .. raidName .. "' added")
       else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid '" .. raidName .. "' already exists")
+        OGRH.Msg("|cffff0000[RH-Error]|r Raid '" .. raidName .. "' already exists")
       end
     end
   end,
@@ -1041,21 +1004,20 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"] = {
     local raidName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"].text_arg1
     if raidName then
       -- Remove raid from list
-      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-        local raid = OGRH_SV.encounterMgmt.raids[i]
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+      for i = 1, table.getn(raids) do
+        local raid = raids[i]
         local name = type(raid) == "table" and raid.name or raid
         if name == raidName then
-          table.remove(OGRH_SV.encounterMgmt.raids, i)
+          table.remove(raids, i)
           break
         end
       end
       
-      -- Record delta sync for structure change
-      if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-        OGRH.SyncDelta.RecordStructureChange("RAID", "DELETE", {
-          raidName = raidName
-        })
-      end
+      OGRH.SVM.SetPath("encounterMgmt.raids", raids, {
+        syncLevel = "MANUAL",
+        componentType = "structure"
+      })
       
       if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshRaidsList then
         OGRH_EncounterSetupFrame.selectedRaid = nil
@@ -1068,7 +1030,7 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"] = {
           OGRH_EncounterSetupFrame.RefreshRolesList()
         end
       end
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Raid '" .. raidName .. "' deleted")
+      OGRH.Msg("|cffff6666[RH-Encounter]|r Raid '" .. raidName .. "' deleted")
     end
   end,
   timeout = 0,
@@ -1090,18 +1052,17 @@ StaticPopupDialogs["OGRH_ADD_ENCOUNTER"] = {
       
       -- Find the raid in new structure
       local raidObj = nil
-      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
-        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-          local raid = OGRH_SV.encounterMgmt.raids[i]
-          if raid.name == raidName then
-            raidObj = raid
-            break
-          end
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+      for i = 1, table.getn(raids) do
+        local raid = raids[i]
+        if raid.name == raidName then
+          raidObj = raid
+          break
         end
       end
       
       if not raidObj then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid not found")
+        OGRH.Msg("|cffff0000[RH-Error]|r Raid not found")
         return
       end
       
@@ -1138,20 +1099,18 @@ StaticPopupDialogs["OGRH_ADD_ENCOUNTER"] = {
         }
         table.insert(raidObj.encounters, newEncounter)
         
-        -- Record delta sync for structure change
-        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-          OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "ADD", {
-            raidName = raidName,
-            encounterName = encounterName
-          })
-        end
+        -- Write back via SVM
+        OGRH.SVM.SetPath("encounterMgmt.raids", raids, {
+          syncLevel = "MANUAL",
+          componentType = "structure"
+        })
         
         if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshEncountersList then
           OGRH_EncounterSetupFrame.RefreshEncountersList()
         end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter '" .. encounterName .. "' added to " .. raidName)
+        OGRH.Msg("|cffff6666[RH-Encounter]|r Encounter '" .. encounterName .. "' added to " .. raidName)
       else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Encounter '" .. encounterName .. "' already exists in " .. raidName)
+        OGRH.Msg("|cffff0000[RH-Error]|r Encounter '" .. encounterName .. "' already exists in " .. raidName)
       end
     end
   end,
@@ -1183,13 +1142,12 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
     if encounterName and raidName then
       -- Find the raid in new structure
       local raidObj = nil
-      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
-        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-          local raid = OGRH_SV.encounterMgmt.raids[i]
-          if raid.name == raidName then
-            raidObj = raid
-            break
-          end
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+      for i = 1, table.getn(raids) do
+        local raid = raids[i]
+        if raid.name == raidName then
+          raidObj = raid
+          break
         end
       end
       
@@ -1203,13 +1161,11 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
         end
       end
       
-      -- Record delta sync for structure change
-      if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-        OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "DELETE", {
-          raidName = raidName,
-          encounterName = encounterName
-        })
-      end
+      -- Write back via SVM
+      OGRH.SVM.SetPath("encounterMgmt.raids", raids, {
+        syncLevel = "MANUAL",
+        componentType = "structure"
+      })
       
       -- TODO: Remove encounter design data
       
@@ -1222,7 +1178,7 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
           OGRH_EncounterSetupFrame.RefreshRolesList()
         end
       end
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter '" .. encounterName .. "' deleted")
+      OGRH.Msg("|cffff6666[RH-Encounter]|r Encounter '" .. encounterName .. "' deleted")
     end
   end,
   timeout = 0,
@@ -1244,9 +1200,10 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
       OGRH.EnsureSV()
       
       -- Check if new name already exists
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
       local exists = false
-      for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-        local existing = OGRH_SV.encounterMgmt.raids[i]
+      for i = 1, table.getn(raids) do
+        local existing = raids[i]
         local name = type(existing) == "table" and existing.name or existing
         if name == newName then
           exists = true
@@ -1256,54 +1213,77 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
       
       if not exists then
         -- Update raid name in raids list
-        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-          local raid = OGRH_SV.encounterMgmt.raids[i]
+        for i = 1, table.getn(raids) do
+          local raid = raids[i]
           local name = type(raid) == "table" and raid.name or raid
           if name == oldName then
             if type(raid) == "table" then
               raid.name = newName
             else
-              OGRH_SV.encounterMgmt.raids[i] = newName
+              raids[i] = newName
             end
             break
           end
         end
         
         -- Update roles data structure
-        if OGRH_SV.encounterMgmt.roles and OGRH_SV.encounterMgmt.roles[oldName] then
-          OGRH_SV.encounterMgmt.roles[newName] = OGRH_SV.encounterMgmt.roles[oldName]
-          OGRH_SV.encounterMgmt.roles[oldName] = nil
+        local roles = OGRH.SVM.GetPath("encounterMgmt.roles") or {}
+        if roles[oldName] then
+          roles[newName] = roles[oldName]
+          roles[oldName] = nil
         end
         
-        -- Update assignments
-        if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[oldName] then
-          OGRH_SV.encounterAssignments[newName] = OGRH_SV.encounterAssignments[oldName]
-          OGRH_SV.encounterAssignments[oldName] = nil
+        -- Write back via SVM
+        OGRH.SVM.SetPath("encounterMgmt.raids", raids, {
+          syncLevel = "MANUAL",
+          componentType = "structure"
+        })
+        OGRH.SVM.SetPath("encounterMgmt.roles", roles, {
+          syncLevel = "MANUAL",
+          componentType = "structure"
+        })
+        
+        -- Update assignments (read, modify, write back)
+        local assignments = OGRH.SVM.GetPath("encounterAssignments") or {}
+        if assignments[oldName] then
+          assignments[newName] = assignments[oldName]
+          assignments[oldName] = nil
+          OGRH.SVM.SetPath("encounterAssignments", assignments, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
+          })
         end
         
         -- Update raid marks
-        if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[oldName] then
-          OGRH_SV.encounterRaidMarks[newName] = OGRH_SV.encounterRaidMarks[oldName]
-          OGRH_SV.encounterRaidMarks[oldName] = nil
+        local marks = OGRH.SVM.GetPath("encounterRaidMarks") or {}
+        if marks[oldName] then
+          marks[newName] = marks[oldName]
+          marks[oldName] = nil
+          OGRH.SVM.SetPath("encounterRaidMarks", marks, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
+          })
         end
         
         -- Update assignment numbers
-        if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[oldName] then
-          OGRH_SV.encounterAssignmentNumbers[newName] = OGRH_SV.encounterAssignmentNumbers[oldName]
-          OGRH_SV.encounterAssignmentNumbers[oldName] = nil
+        local numbers = OGRH.SVM.GetPath("encounterAssignmentNumbers") or {}
+        if numbers[oldName] then
+          numbers[newName] = numbers[oldName]
+          numbers[oldName] = nil
+          OGRH.SVM.SetPath("encounterAssignmentNumbers", numbers, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
+          })
         end
         
         -- Update announcements
-        if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[oldName] then
-          OGRH_SV.encounterAnnouncements[newName] = OGRH_SV.encounterAnnouncements[oldName]
-          OGRH_SV.encounterAnnouncements[oldName] = nil
-        end
-        
-        -- Record delta sync for structure change
-        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-          OGRH.SyncDelta.RecordStructureChange("RAID", "RENAME", {
-            oldName = oldName,
-            newName = newName
+        local announcements = OGRH.SVM.GetPath("encounterAnnouncements") or {}
+        if announcements[oldName] then
+          announcements[newName] = announcements[oldName]
+          announcements[oldName] = nil
+          OGRH.SVM.SetPath("encounterAnnouncements", announcements, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
           })
         end
         
@@ -1329,9 +1309,9 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
           end
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Raid renamed from '" .. oldName .. "' to '" .. newName .. "'")
+        OGRH.Msg("|cffff6666[RH-Encounter]|r Raid renamed from '" .. oldName .. "' to '" .. newName .. "'")
       else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid '" .. newName .. "' already exists")
+        OGRH.Msg("|cffff0000[RH-Error]|r Raid '" .. newName .. "' already exists")
       end
     end
   end,
@@ -1373,18 +1353,17 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
       
       -- Find the raid in new structure
       local raidObj = nil
-      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.raids then
-        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-          local raid = OGRH_SV.encounterMgmt.raids[i]
-          if raid.name == raidName then
-            raidObj = raid
-            break
-          end
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
+      for i = 1, table.getn(raids) do
+        local raid = raids[i]
+        if raid.name == raidName then
+          raidObj = raid
+          break
         end
       end
       
       if not raidObj then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Raid not found")
+        OGRH.Msg("|cffff0000[RH-Error]|r Raid not found")
         return
       end
       
@@ -1410,42 +1389,64 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
           end
         end
         
+        -- Write back raids via SVM
+        OGRH.SVM.SetPath("encounterMgmt.raids", raids, {
+          syncLevel = "MANUAL",
+          componentType = "structure"
+        })
+        
         -- Update roles data structure
-        if OGRH_SV.encounterMgmt.roles and OGRH_SV.encounterMgmt.roles[raidName] and OGRH_SV.encounterMgmt.roles[raidName][oldName] then
-          OGRH_SV.encounterMgmt.roles[raidName][newName] = OGRH_SV.encounterMgmt.roles[raidName][oldName]
-          OGRH_SV.encounterMgmt.roles[raidName][oldName] = nil
+        local roles = OGRH.SVM.GetPath("encounterMgmt.roles") or {}
+        if roles[raidName] and roles[raidName][oldName] then
+          roles[raidName][newName] = roles[raidName][oldName]
+          roles[raidName][oldName] = nil
+          OGRH.SVM.SetPath("encounterMgmt.roles", roles, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
+          })
         end
         
         -- Update assignments
-        if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[raidName] and OGRH_SV.encounterAssignments[raidName][oldName] then
-          OGRH_SV.encounterAssignments[raidName][newName] = OGRH_SV.encounterAssignments[raidName][oldName]
-          OGRH_SV.encounterAssignments[raidName][oldName] = nil
+        local assignments = OGRH.SVM.GetPath("encounterAssignments") or {}
+        if assignments[raidName] and assignments[raidName][oldName] then
+          assignments[raidName][newName] = assignments[raidName][oldName]
+          assignments[raidName][oldName] = nil
+          OGRH.SVM.SetPath("encounterAssignments", assignments, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
+          })
         end
         
         -- Update raid marks
-        if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[raidName] and OGRH_SV.encounterRaidMarks[raidName][oldName] then
-          OGRH_SV.encounterRaidMarks[raidName][newName] = OGRH_SV.encounterRaidMarks[raidName][oldName]
-          OGRH_SV.encounterRaidMarks[raidName][oldName] = nil
+        local marks = OGRH.SVM.GetPath("encounterRaidMarks") or {}
+        if marks[raidName] and marks[raidName][oldName] then
+          marks[raidName][newName] = marks[raidName][oldName]
+          marks[raidName][oldName] = nil
+          OGRH.SVM.SetPath("encounterRaidMarks", marks, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
+          })
         end
         
         -- Update assignment numbers
-        if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[raidName] and OGRH_SV.encounterAssignmentNumbers[raidName][oldName] then
-          OGRH_SV.encounterAssignmentNumbers[raidName][newName] = OGRH_SV.encounterAssignmentNumbers[raidName][oldName]
-          OGRH_SV.encounterAssignmentNumbers[raidName][oldName] = nil
+        local numbers = OGRH.SVM.GetPath("encounterAssignmentNumbers") or {}
+        if numbers[raidName] and numbers[raidName][oldName] then
+          numbers[raidName][newName] = numbers[raidName][oldName]
+          numbers[raidName][oldName] = nil
+          OGRH.SVM.SetPath("encounterAssignmentNumbers", numbers, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
+          })
         end
         
         -- Update announcements
-        if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[raidName] and OGRH_SV.encounterAnnouncements[raidName][oldName] then
-          OGRH_SV.encounterAnnouncements[raidName][newName] = OGRH_SV.encounterAnnouncements[raidName][oldName]
-          OGRH_SV.encounterAnnouncements[raidName][oldName] = nil
-        end
-        
-        -- Record delta sync for structure change
-        if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-          OGRH.SyncDelta.RecordStructureChange("ENCOUNTER", "RENAME", {
-            raidName = raidName,
-            oldName = oldName,
-            newName = newName
+        local announcements = OGRH.SVM.GetPath("encounterAnnouncements") or {}
+        if announcements[raidName] and announcements[raidName][oldName] then
+          announcements[raidName][newName] = announcements[raidName][oldName]
+          announcements[raidName][oldName] = nil
+          OGRH.SVM.SetPath("encounterAnnouncements", announcements, {
+            syncLevel = "MANUAL",
+            componentType = "structure"
           })
         end
         
@@ -1471,9 +1472,9 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
           end
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Encounter renamed from '" .. oldName .. "' to '" .. newName .. "'")
+        OGRH.Msg("|cffff6666[RH-Encounter]|r Encounter renamed from '" .. oldName .. "' to '" .. newName .. "'")
       else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Encounter '" .. newName .. "' already exists in " .. raidName)
+        OGRH.Msg("|cffff0000[RH-Error]|r Encounter '" .. newName .. "' already exists in " .. raidName)
       end
     end
   end,
@@ -2489,7 +2490,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     if isConsumeCheck then
       for i, role in ipairs(currentColumnRoles) do
         if i ~= currentRoleIndex and role.isConsumeCheck then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Only one Consume Check role allowed per encounter.")
+          OGRH.Msg("|cffff0000[RH-Error]|r Only one Consume Check role allowed per encounter.")
           return
         end
       end
@@ -2498,7 +2499,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     if isCustomModule then
       for i, role in ipairs(currentColumnRoles) do
         if i ~= currentRoleIndex and role.isCustomModule then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Only one Custom Module role allowed per encounter.")
+          OGRH.Msg("|cffff0000[RH-Error]|r Only one Custom Module role allowed per encounter.")
           return
         end
       end
@@ -2564,32 +2565,13 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
       roleData.classes = nil
     end
     
-    -- Record delta sync for role property update (send entire role data)
-    if OGRH.SyncDelta and OGRH.SyncDelta.RecordStructureChange then
-      OGRH.SyncDelta.RecordStructureChange("ROLE", "UPDATE", {
-        raidName = OGRH_EncounterSetupFrame.selectedRaid,
-        encounterName = OGRH_EncounterSetupFrame.selectedEncounter,
-        roleId = roleData.roleId,
-        roleData = {
-          name = roleData.name,
-          slots = roleData.slots,
-          roleId = roleData.roleId,
-          fillOrder = roleData.fillOrder,
-          isConsumeCheck = roleData.isConsumeCheck,
-          isCustomModule = roleData.isCustomModule,
-          roleType = roleData.roleType,
-          invertFillOrder = roleData.invertFillOrder,
-          linkRole = roleData.linkRole,
-          showRaidIcons = roleData.showRaidIcons,
-          showAssignment = roleData.showAssignment,
-          markPlayer = roleData.markPlayer,
-          allowOtherRoles = roleData.allowOtherRoles,
-          defaultRoles = roleData.defaultRoles,
-          classes = roleData.classes,
-          modules = roleData.modules
-        }
-      })
-    end
+    -- Write updated roles via SVM (v2: write specific encounter.roles path)
+    OGRH.WriteEncounterRoles(
+      OGRH_EncounterSetupFrame.selectedRaid,
+      OGRH_EncounterSetupFrame.selectedEncounter,
+      columnRoles,
+      "MANUAL"
+    )
     
     -- Refresh the roles list
     if refreshCallback then
@@ -2597,7 +2579,7 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
     end
     
     frame:Hide()
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Role updated")
+    OGRH.Msg("|cffff6666[RH-Encounter]|r Role updated")
   end)
   
   frame:Show()
