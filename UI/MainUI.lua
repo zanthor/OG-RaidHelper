@@ -668,12 +668,165 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Migration system not loaded.")
     end
+  elseif string.find(sub, "^migration comp raid") then
+    local _, _, raidName = string.find(fullMsg, "^%s*migration%s+comp%s+raid%s+(.+)$")
+    if not raidName or raidName == "" then
+      OGRH.Msg("Usage: /ogrh migration comp raid <raidname>")
+      OGRH.Msg("Example: /ogrh migration comp raid MC")
+    else
+      if OGRH.Migration and OGRH.Migration.CompareRaid then
+        OGRH.Migration.CompareRaid(raidName)
+      else
+        OGRH.Msg("Migration system not loaded.")
+      end
+    end
+  elseif string.find(fullMsg, "^%s*migration%s+comp%s+enc") then
+    -- Extract raid/encounter from "migration comp enc RaidName/EncounterName"
+    local _, _, fullPath = string.find(fullMsg, "^%s*migration%s+comp%s+enc%s+(.+)$")
+    if not fullPath or fullPath == "" then
+      OGRH.Msg("Usage: /ogrh migration comp enc <raidname>/<encountername>")
+      OGRH.Msg("Example: /ogrh migration comp enc BWL/Razorgore")
+    else
+      -- Split by / delimiter
+      local slashPos = string.find(fullPath, "/")
+      if not slashPos then
+        OGRH.Msg("ERROR: Missing '/' delimiter. Use format: <raidname>/<encountername>")
+        OGRH.Msg("Example: /ogrh migration comp enc BWL/Razorgore")
+      else
+        local raidName = string.sub(fullPath, 1, slashPos - 1)
+        local encounterName = string.sub(fullPath, slashPos + 1)
+        
+        -- Trim whitespace
+        raidName = string.gsub(raidName, "^%s*(.-)%s*$", "%1")
+        encounterName = string.gsub(encounterName, "^%s*(.-)%s*$", "%1")
+        
+        if raidName == "" or encounterName == "" then
+          OGRH.Msg("ERROR: Both raid name and encounter name required")
+          OGRH.Msg("Example: /ogrh migration comp enc BWL/Razorgore")
+        else
+          if OGRH.Migration and OGRH.Migration.CompareEncounter then
+            OGRH.Migration.CompareEncounter(raidName, encounterName)
+          else
+            OGRH.Msg("Migration system not loaded.")
+          end
+        end
+      end
+    end
+  elseif string.find(fullMsg, "^%s*migration%s+comp%s+roles") then
+    -- Extract raid/encounter/role from "migration comp roles RaidName/EncounterName/RoleID"
+    local _, _, fullPath = string.find(fullMsg, "^%s*migration%s+comp%s+roles%s+(.+)$")
+    if not fullPath or fullPath == "" then
+      OGRH.Msg("Usage: /ogrh migration comp roles <raid>/<encounter>/<role>")
+      OGRH.Msg("Example: /ogrh migration comp roles BWL/Vael/R1")
+    else
+      -- Split by / delimiter (Lua 5.0 compatible)
+      local slash1 = string.find(fullPath, "/")
+      if not slash1 then
+        OGRH.Msg("ERROR: Format must be <raid>/<encounter>/<role>")
+        OGRH.Msg("Example: /ogrh migration comp roles BWL/Vael/R1")
+      else
+        local slash2 = string.find(fullPath, "/", slash1 + 1)
+        if not slash2 then
+          OGRH.Msg("ERROR: Format must be <raid>/<encounter>/<role>")
+          OGRH.Msg("Example: /ogrh migration comp roles BWL/Vael/R1")
+        else
+          local raidName = string.sub(fullPath, 1, slash1 - 1)
+          local encounterName = string.sub(fullPath, slash1 + 1, slash2 - 1)
+          local roleId = string.sub(fullPath, slash2 + 1)
+          
+          -- Trim whitespace
+          raidName = string.gsub(raidName, "^%s*(.-)%s*$", "%1")
+          encounterName = string.gsub(encounterName, "^%s*(.-)%s*$", "%1")
+          roleId = string.gsub(roleId, "^%s*(.-)%s*$", "%1")
+          
+          if raidName == "" or encounterName == "" or roleId == "" then
+            OGRH.Msg("ERROR: All parts required: <raid>/<encounter>/<role>")
+            OGRH.Msg("Example: /ogrh migration comp roles BWL/Vael/R1")
+          else
+            if OGRH.Migration and OGRH.Migration.CompareRole then
+              OGRH.Migration.CompareRole(raidName, encounterName, roleId)
+            else
+              OGRH.Msg("Migration system not loaded.")
+            end
+          end
+        end
+      end
+    end
+  elseif string.find(fullMsg, "^%s*migration%s+comp%s+class") then
+    -- Extract raid/encounter/role from "migration comp class RaidName/EncounterName/RoleID"
+    local _, _, fullPath = string.find(fullMsg, "^%s*migration%s+comp%s+class%s+(.+)$")
+    if not fullPath or fullPath == "" then
+      OGRH.Msg("Usage: /ogrh migration comp class <raid>/<encounter>/<role>")
+      OGRH.Msg("Example: /ogrh migration comp class BWL/Vael/R1")
+    else
+      -- Split by / delimiter (Lua 5.0 compatible)
+      local slash1 = string.find(fullPath, "/")
+      if not slash1 then
+        OGRH.Msg("ERROR: Format must be <raid>/<encounter>/<role>")
+        OGRH.Msg("Example: /ogrh migration comp class BWL/Vael/R1")
+      else
+        local slash2 = string.find(fullPath, "/", slash1 + 1)
+        if not slash2 then
+          OGRH.Msg("ERROR: Format must be <raid>/<encounter>/<role>")
+          OGRH.Msg("Example: /ogrh migration comp class BWL/Vael/R1")
+        else
+          local raidName = string.sub(fullPath, 1, slash1 - 1)
+          local encounterName = string.sub(fullPath, slash1 + 1, slash2 - 1)
+          local roleId = string.sub(fullPath, slash2 + 1)
+          
+          -- Trim whitespace
+          raidName = string.gsub(raidName, "^%s*(.-)%s*$", "%1")
+          encounterName = string.gsub(encounterName, "^%s*(.-)%s*$", "%1")
+          roleId = string.gsub(roleId, "^%s*(.-)%s*$", "%1")
+          
+          if raidName == "" or encounterName == "" or roleId == "" then
+            OGRH.Msg("ERROR: All parts required: <raid>/<encounter>/<role>")
+            OGRH.Msg("Example: /ogrh migration comp class BWL/Vael/R1")
+          else
+            if OGRH.Migration and OGRH.Migration.CompareClassPriority then
+              OGRH.Migration.CompareClassPriority(raidName, encounterName, roleId)
+            else
+              OGRH.Msg("Migration system not loaded.")
+            end
+          end
+        end
+      end
+    end
+  elseif string.find(fullMsg, "^%s*migration%s+comp%s+announce") then
+    local _, _, fullPath = string.find(fullMsg, "^%s*migration%s+comp%s+announce%s+(.+)$")
+    if fullPath then
+      -- Manual "/" parsing for Lua 5.0 compatibility
+      local firstSlashPos = string.find(fullPath, "/")
+      if firstSlashPos then
+        local raidName = string.sub(fullPath, 1, firstSlashPos - 1)
+        local encounterName = string.sub(fullPath, firstSlashPos + 1)
+        
+        if raidName and encounterName and string.len(raidName) > 0 and string.len(encounterName) > 0 then
+          if OGRH.Migration and OGRH.Migration.CompareAnnouncements then
+            OGRH.Migration.CompareAnnouncements(raidName, encounterName)
+          else
+            OGRH.Msg("|cffff0000[OGRH]|r Migration system not loaded")
+          end
+        else
+          OGRH.Msg("|cffff0000[OGRH]|r Invalid format. Use: /ogrh migration comp announce <raid>/<encounter>")
+        end
+      else
+        OGRH.Msg("|cffff0000[OGRH]|r Invalid format. Use: /ogrh migration comp announce <raid>/<encounter>")
+      end
+    else
+      OGRH.Msg("|cffff0000[OGRH]|r Usage: /ogrh migration comp announce <raid>/<encounter>")
+    end
   elseif sub == "migration help" then
     OGRH.Msg("|cff00ff00[OGRH Migration]|r Available commands:")
     OGRH.Msg("  /ogrh migration create - Create v2 schema")
     OGRH.Msg("  /ogrh migration validate - Compare v1 vs v2")
     OGRH.Msg("  /ogrh migration cutover confirm - Switch to v2")
     OGRH.Msg("  /ogrh migration rollback - Revert to v1")
+    OGRH.Msg("  /ogrh migration comp raid <name> - Compare raid")
+    OGRH.Msg("  /ogrh migration comp enc <raid>/<encounter> - Compare encounter")
+    OGRH.Msg("  /ogrh migration comp roles <raid>/<enc>/<role> - Compare role data")
+    OGRH.Msg("  /ogrh migration comp class <raid>/<enc>/<role> - Compare class priority")
+    OGRH.Msg("  /ogrh migration comp announce <raid>/<encounter> - Compare announcements")
   -- Chat Window Cleanup Command
   elseif sub == "chat clean" or sub == "chatclean" then
     if OGRH._ogrhChatFrame and OGRH._ogrhChatFrameIndex then
