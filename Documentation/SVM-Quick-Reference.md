@@ -115,13 +115,17 @@ OGRH.SVM.SetPath(
 
 ## Migration Checklist
 
-Convert existing code:
+Convert existing code to v2 schema:
 
-1. Find: `OGRH_SV.key.subkey = value`
-2. Replace with: `OGRH.SVM.SetPath("key.subkey", value, syncMetadata)`
-3. Remove: `OGRH.SyncDelta.RecordXYZChange()` calls
-4. Remove: `OGRH.SyncIntegrity.RecordAdminModification()` calls
-5. Test sync behavior
+1. Find: `OGRH_SV.encounterMgmt.roles[raidName][encounterName]`
+2. Replace with: `OGRH_SV.encounterMgmt.raids[raidIdx].encounters[encIdx]`
+3. Update SVM calls to use numeric indices
+4. Test with v1 active (`schemaVersion = "v1"`)
+5. Run `/ogrh migration create` to generate v2
+6. Run `/ogrh migration comp` commands to verify
+7. Run `/ogrh migration cutover confirm` to switch to v2
+8. Test with v2 active (`schemaVersion = "v2"`)
+9. Compare behavior between v1 and v2 testing
 
 ---
 

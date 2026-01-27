@@ -72,9 +72,15 @@ OGRH.SyncLevels = {
 -- HELPER: Get Active Schema
 -- ============================================
 function OGRH.SVM.GetActiveSchema()
+    -- Route to v2 if schemaVersion is set to "v2"
     if OGRH_SV.schemaVersion == "v2" then
-        return OGRH_SV
+        -- Use v2 schema at OGRH_SV.v2.*
+        if not OGRH_SV.v2 then
+            OGRH_SV.v2 = {}  -- Initialize if missing
+        end
+        return OGRH_SV.v2
     else
+        -- Use v1 schema at OGRH_SV.* (default)
         return OGRH_SV
     end
 end
@@ -118,22 +124,12 @@ function OGRH.SVM.Set(key, subkey, value, syncMetadata)
     local sv = OGRH.SVM.GetActiveSchema()
     if not sv then return false end
     
-    -- Write value
+    -- Write value to active schema only
     if subkey then
         if not sv[key] then sv[key] = {} end
         sv[key][subkey] = value
     else
         sv[key] = value
-    end
-    
-    -- Dual-write to v2 if migrating
-    if OGRH_SV.v2 and OGRH_SV.schemaVersion ~= "v2" then
-        if subkey then
-            if not OGRH_SV.v2[key] then OGRH_SV.v2[key] = {} end
-            OGRH_SV.v2[key][subkey] = DeepCopy(value)
-        else
-            OGRH_SV.v2[key] = DeepCopy(value)
-        end
     end
     
     -- Handle sync if metadata provided
@@ -181,20 +177,9 @@ function OGRH.SVM.SetPath(path, value, syncMetadata)
         current = current[k]
     end
     
-    -- Set value
+    -- Set value in active schema only
     local finalKey = keys[table.getn(keys)]
     current[finalKey] = value
-    
-    -- Dual-write to v2 if migrating
-    if OGRH_SV.v2 and OGRH_SV.schemaVersion ~= "v2" then
-        local currentV2 = OGRH_SV.v2
-        for i = 1, table.getn(keys) - 1 do
-            local k = keys[i]
-            if not currentV2[k] then currentV2[k] = {} end
-            currentV2 = currentV2[k]
-        end
-        currentV2[finalKey] = DeepCopy(value)
-    end
     
     -- Handle sync if metadata provided
     if syncMetadata then

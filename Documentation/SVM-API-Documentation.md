@@ -408,22 +408,28 @@ OGRH.SVM.FlushOfflineQueue()
 
 ---
 
-## Dual-Write Support (v1 → v2 Migration)
+## Schema Version Support (v1 → v2 Migration)
 
-During migration, SVM automatically writes to both v1 and v2 schemas:
+SVM reads/writes to the **active schema only** based on `OGRH_SV.schemaVersion`:
 
 ```lua
--- Automatic dual-write when v2 exists
-OGRH_SV.v2 = {}  -- Enable v2 schema
-OGRH_SV.schemaVersion = "v1"  -- Still on v1
+-- Before cutover: schemaVersion = "v1" (or nil)
+-- SVM accesses OGRH_SV.* (v1 data at top level)
 
-OGRH.SVM.Set("testKey", nil, "testValue")
--- Writes to BOTH:
---   OGRH_SV.testKey = "testValue"
---   OGRH_SV.v2.testKey = "testValue"
+-- After cutover: schemaVersion = "v2"  
+-- SVM accesses OGRH_SV.* (v2 data at top level after migration)
 ```
 
-**No code changes needed** - dual-write is automatic during migration phases.
+**Migration Workflow:**
+1. Update code to use v2 numeric indices in paths
+2. Test with v1 active (code writes to v1 schema)
+3. Run `/ogrh migration create` to generate v2 from v1
+4. Run comparison commands to verify v2 data
+5. Run `/ogrh migration cutover confirm` to activate v2
+6. Test with v2 active (code now writes to v2 schema)
+7. Use comparison commands to validate behavior matches
+
+**No dual-write** - SVM only touches the active schema.
 
 ---
 

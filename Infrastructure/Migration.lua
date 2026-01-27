@@ -597,48 +597,22 @@ end
 -- ============================================
 function OGRH.Migration.CutoverToV2()
     if not OGRH_SV.v2 then
-OGRH.Msg("[Cutover] ERROR: v2 schema not found")
+OGRH.Msg("[Cutover] ERROR: v2 schema not found. Run /ogrh migration create first.")
         return false
     end
     
-OGRH.Msg("[Cutover] Creating backup of v1 data...")
+OGRH.Msg("[Cutover] Switching to v2 schema...")
     
-    -- Backup v1 data
-    OGRH_SV_BACKUP_V1 = {}
-    for k, v in pairs(OGRH_SV) do
-        if k ~= "v2" then
-            OGRH_SV_BACKUP_V1[k] = DeepCopy(v)
-        end
-    end
-    
-OGRH.Msg("[Cutover] Removing v1 data from OGRH_SV...")
-    
-    -- Remove v1 data
-    for k in pairs(OGRH_SV) do
-        if k ~= "v2" then
-            OGRH_SV[k] = nil
-        end
-    end
-    
-OGRH.Msg("[Cutover] Moving v2 data to top level...")
-    
-    -- Move v2 to top level
-    for k, v in pairs(OGRH_SV.v2) do
-        OGRH_SV[k] = v
-    end
-    OGRH_SV.v2 = nil
-    
-    -- Set schema version
-    if OGRH_SV.encounterMgmt then
-        OGRH_SV.encounterMgmt.schemaVersion = SCHEMA_V2
-    end
+    -- Simply set schema version to v2
+    -- SVM will now read/write to OGRH_SV.v2.* instead of OGRH_SV.*
+    OGRH_SV.schemaVersion = "v2"
     
 OGRH.Msg("=" .. string.rep("=", 70))
 OGRH.Msg("[Cutover] ✓ Cutover Complete!")
 OGRH.Msg("=" .. string.rep("=", 70))
-OGRH.Msg("Now using v2 schema with numeric indices")
-OGRH.Msg("v1 backup saved to OGRH_SV_BACKUP_V1 (global variable)")
-OGRH.Msg("\nUse /ogrh migration rollback if issues found")
+OGRH.Msg("Now using v2 schema at OGRH_SV.v2.*")
+OGRH.Msg("v1 data preserved at OGRH_SV.* (can be removed later)")
+OGRH.Msg("\nUse /ogrh migration rollback to switch back to v1")
 OGRH.Msg("/reload recommended to ensure clean state")
     
     return true
@@ -648,34 +622,25 @@ end
 -- ROLLBACK FUNCTION
 -- ============================================
 function OGRH.Migration.RollbackFromV2()
-    -- Scenario 1: v2 exists but not active yet
-    if OGRH_SV and OGRH_SV.v2 then
-        OGRH_SV.v2 = nil
-OGRH.Msg("[Rollback] v2 schema removed, back to v1")
-        return true
+    if OGRH_SV.schemaVersion ~= "v2" then
+OGRH.Msg("[Rollback] Not using v2 schema - nothing to rollback")
+        return false
     end
     
-    -- Scenario 2: Already cut over to v2, need to restore from backup
-    if OGRH_SV and OGRH_SV_BACKUP_V1 then
-OGRH.Msg("[Rollback] Restoring v1 from backup...")
-        
-        -- Clear current data
-        for k in pairs(OGRH_SV) do
-            OGRH_SV[k] = nil
-        end
-        
-        -- Restore backup
-        for k, v in pairs(OGRH_SV_BACKUP_V1) do
-            OGRH_SV[k] = DeepCopy(v)
-        end
-        
-OGRH.Msg("[Rollback] ✓ Restored v1 from backup")
-OGRH.Msg("[Rollback] /reload recommended to ensure clean state")
-        return true
-    end
+OGRH.Msg("[Rollback] Switching back to v1 schema...")
     
-OGRH.Msg("[Rollback] ERROR: Nothing to rollback")
-    return false
+    -- Simply reset schema version to v1
+    -- SVM will now read/write to OGRH_SV.* instead of OGRH_SV.v2.*
+    OGRH_SV.schemaVersion = "v1"
+    
+OGRH.Msg("=" .. string.rep("=", 70))
+OGRH.Msg("[Rollback] ✓ Rollback Complete!")
+OGRH.Msg("=" .. string.rep("=", 70))
+OGRH.Msg("Now using v1 schema at OGRH_SV.*")
+OGRH.Msg("v2 data preserved at OGRH_SV.v2.* (can cutover again)")
+OGRH.Msg("\n/reload recommended to ensure clean state")
+    
+    return true
 end
 
 -- ============================================
