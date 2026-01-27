@@ -1,7 +1,9 @@
 -- OGRH_Invites.lua
 -- Raid Invites Module - Manage invites for players from dual data sources (RollFor / Raid-Helper JSON)
 if not OGRH then
-  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Error: OGRH_Invites requires OGRH_Core to be loaded first!|r")
+  if DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Error: OGRH_Invites requires OGRH_Core to be loaded first!|r")
+  end
   return
 end
 
@@ -12,7 +14,7 @@ if not json then
   if loadFunc then
     json = loadFunc()
   else
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Error loading json.lua: " .. tostring(errorMsg) .. "|r")
+    OGRH.Msg("|cffff0000[RH-Error]|r Error loading json.lua: " .. tostring(errorMsg))
   end
 end
 
@@ -50,8 +52,8 @@ end
 -- Initialize saved variables for invite tracking
 function OGRH.Invites.EnsureSV()
   OGRH.EnsureSV()
-  if not OGRH_SV.invites then
-    OGRH_SV.invites = {
+  if not OGRH.SVM.Get("invites") then
+    OGRH.SVM.Set("invites", nil, {
       -- Legacy tracking
       declinedPlayers = {}, -- Track who declined invites this session
       history = {}, -- Track invite history with timestamps
@@ -79,38 +81,37 @@ function OGRH.Invites.EnsureSV()
       
       -- RollFor change detection
       lastRollForHash = nil
-    }
+    }, {syncLevel = "MANUAL", componentType = "settings"})
   end
   
   -- Ensure new fields exist (for migration from old versions)
-  if not OGRH_SV.invites.currentSource then
-    OGRH_SV.invites.currentSource = OGRH.Invites.SOURCE_TYPE.ROLLFOR
+  if not OGRH.SVM.GetPath("invites.currentSource") then
+    OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.ROLLFOR, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.invites.raidhelperData then
-    OGRH_SV.invites.raidhelperData = nil
+  if not OGRH.SVM.GetPath("invites.raidhelperData") then
+    OGRH.SVM.SetPath("invites.raidhelperData", nil, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.invites.raidhelperGroupsData then
-    OGRH_SV.invites.raidhelperGroupsData = nil
+  if not OGRH.SVM.GetPath("invites.raidhelperGroupsData") then
+    OGRH.SVM.SetPath("invites.raidhelperGroupsData", nil, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.invites.inviteMode then
-    OGRH_SV.invites.inviteMode = {
+  if not OGRH.SVM.GetPath("invites.inviteMode") then
+    OGRH.SVM.SetPath("invites.inviteMode", {
       enabled = false,
       interval = 60,
       lastInviteTime = 0,
       totalPlayers = 0,
       invitedCount = 0
-    }
+    }, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.invites.invitePanelPosition then
-    OGRH_SV.invites.invitePanelPosition = {
+  if not OGRH.SVM.GetPath("invites.invitePanelPosition") then
+    OGRH.SVM.SetPath("invites.invitePanelPosition", {
       point = "BOTTOMRIGHT",
       x = -20,
       y = 200
-    }
+    }, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.invites.lastRollForHash then
-    OGRH_SV.invites.lastRollForHash = nil
-  end
+  -- Note: Don't initialize lastRollForHash here - it gets set by RollFor change detection
+  -- Setting it to nil repeatedly causes spam in SVM debug output
 end
 
 -- Parse Raid-Helper JSON data
@@ -359,8 +360,8 @@ end
 
 -- Apply group assignments from Groups JSON to Invites data
 function OGRH.Invites.ApplyGroupAssignments()
-  local groupsData = OGRH_SV.invites.raidhelperGroupsData
-  local invitesData = OGRH_SV.invites.raidhelperData
+  local groupsData = OGRH.SVM.GetPath("invites.raidhelperGroupsData")
+  local invitesData = OGRH.SVM.GetPath("invites.raidhelperData")
   
   if not groupsData or not groupsData.groupAssignments then
     return
@@ -479,11 +480,11 @@ end
 function OGRH.Invites.GetRosterPlayers()
   OGRH.Invites.EnsureSV()
   
-  local currentSource = OGRH_SV.invites.currentSource
+  local currentSource = OGRH.SVM.GetPath("invites.currentSource")
   
   if currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
     -- Use Raid-Helper JSON data
-    local raidhelperData = OGRH_SV.invites.raidhelperData
+    local raidhelperData = OGRH.SVM.GetPath("invites.raidhelperData")
     if not raidhelperData or not raidhelperData.players then
       return {}
     end
@@ -594,7 +595,8 @@ function OGRH.Invites.GetPlayerStatus(playerName)
   end
   
   -- Check if they declined
-  if OGRH_SV.invites.declinedPlayers[playerName] then
+  local declinedPlayers = OGRH.SVM.GetPath("invites.declinedPlayers") or {}
+  if declinedPlayers[playerName] then
     return STATUS.DECLINED, false, nil
   end
   
@@ -627,13 +629,13 @@ function OGRH.Invites.InvitePlayer(playerName)
   if numRaid > 0 then
     -- In a raid, check if we're leader or assistant
     if not IsRaidLeader() and not IsRaidOfficer() then
-      OGRH.Msg("You must be raid leader or assistant to invite players.")
+      OGRH.Msg("|cffffaa00[RH-Config]|r You must be raid leader or assistant to invite players.")
       return false
     end
   elseif numParty > 0 then
     -- In a party, check if we're leader
     if not IsPartyLeader() then
-      OGRH.Msg("You must be party leader to invite players.")
+      OGRH.Msg("|cffffaa00[RH-Config]|r You must be party leader to invite players.")
       return false
     end
   end
@@ -644,16 +646,18 @@ function OGRH.Invites.InvitePlayer(playerName)
   
   -- Log the invite in history
   OGRH.Invites.EnsureSV()
-  table.insert(OGRH_SV.invites.history, {
+  local history = OGRH.SVM.GetPath("invites.history") or {}
+  table.insert(history, {
     player = playerName,
     timestamp = time(),
     action = "invited"
   })
+  OGRH.SVM.SetPath("invites.history", history, {syncLevel = "MANUAL", componentType = "settings"})
   
   if numRaid > 0 then
-    OGRH.Msg("Invited " .. playerName .. " to raid.")
+    OGRH.Msg("|cffffaa00[RH-Config]|r Invited " .. playerName .. " to raid.")
   else
-    OGRH.Msg("Invited " .. playerName .. " to party.")
+    OGRH.Msg("|cffffaa00[RH-Config]|r Invited " .. playerName .. " to party.")
   end
   return true
 end
@@ -673,22 +677,24 @@ function OGRH.Invites.WhisperPlayer(playerName, message)
   end
   SendChatMessage(msg, "WHISPER", nil, playerName)
   
-  OGRH.Msg("Whispered " .. playerName .. ".")
+  OGRH.Msg("|cffffaa00[RH-Config]|r Whispered " .. playerName .. ".")
 end
 
 -- Clear declined status for a player
 function OGRH.Invites.ClearDeclined(playerName)
   OGRH.Invites.EnsureSV()
-  OGRH_SV.invites.declinedPlayers[playerName] = nil
+  local declinedPlayers = OGRH.SVM.GetPath("invites.declinedPlayers") or {}
+  declinedPlayers[playerName] = nil
+  OGRH.SVM.SetPath("invites.declinedPlayers", declinedPlayers, {syncLevel = "MANUAL", componentType = "settings"})
   OGRH.Invites.playerStatuses[playerName] = nil
 end
 
 -- Clear all invite tracking
 function OGRH.Invites.ClearAllTracking()
   OGRH.Invites.EnsureSV()
-  OGRH_SV.invites.declinedPlayers = {}
+  OGRH.SVM.SetPath("invites.declinedPlayers", {}, {syncLevel = "MANUAL", componentType = "settings"})
   OGRH.Invites.playerStatuses = {}
-  OGRH.Msg("Cleared all invite tracking.")
+  OGRH.Msg("|cffffaa00[RH-Config]|r Cleared all invite tracking.")
 end
 
 -- Update player class from raid roster
@@ -926,7 +932,7 @@ function OGRH.Invites.ShowWindow()
       onClick = function()
         if RollFor and RollFor.key_bindings and RollFor.key_bindings.softres_toggle then
           RollFor.key_bindings.softres_toggle()
-          OGRH_SV.invites.currentSource = OGRH.Invites.SOURCE_TYPE.ROLLFOR
+          OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.ROLLFOR, {syncLevel = "MANUAL", componentType = "settings"})
           if OGRH_InvitesFrame and OGRH_InvitesFrame.UpdateOrganizeButton then
             OGRH_InvitesFrame.UpdateOrganizeButton()
           end
@@ -1034,7 +1040,8 @@ function OGRH.Invites.ShowWindow()
   inviteModeBtn:SetWidth(130)
   inviteModeBtn:SetHeight(28)
   inviteModeBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, 15)
-  inviteModeBtn:SetText(OGRH_SV.invites.inviteMode.enabled and "Stop Invite Mode" or "Start Invite Mode")
+  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {enabled = false}
+  inviteModeBtn:SetText(inviteMode.enabled and "Stop Invite Mode" or "Start Invite Mode")
   if OGRH.StyleButton then
     OGRH.StyleButton(inviteModeBtn)
   end
@@ -1044,7 +1051,8 @@ function OGRH.Invites.ShowWindow()
   frame.inviteModeBtn = inviteModeBtn
   
   local function UpdateInviteModeButton()
-    inviteModeBtn:SetText(OGRH_SV.invites.inviteMode.enabled and "Stop Invite Mode" or "Start Invite Mode")
+    local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {enabled = false}
+    inviteModeBtn:SetText(inviteMode.enabled and "Stop Invite Mode" or "Start Invite Mode")
   end
   
   -- Interval input with label using OGST
@@ -1062,7 +1070,9 @@ function OGRH.Invites.ShowWindow()
       local value = tonumber(text) or 10
       if value < 10 then value = 10 end
       if value > 300 then value = 300 end
-      OGRH_SV.invites.inviteMode.interval = value
+      local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
+      inviteMode.interval = value
+      OGRH.SVM.SetPath("invites.inviteMode", inviteMode, {syncLevel = "MANUAL", componentType = "settings"})
       if intervalInput and intervalInput.SetText then
         intervalInput:SetText(tostring(value))
       end
@@ -1070,7 +1080,8 @@ function OGRH.Invites.ShowWindow()
   })
   OGST.AnchorElement(intervalContainer, inviteModeBtn, {position = "right", align = "center"})
   if intervalInput and intervalInput.SetText then
-    intervalInput:SetText(tostring(OGRH_SV.invites.inviteMode.interval))
+    local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {interval = 60}
+    intervalInput:SetText(tostring(inviteMode.interval))
   end
   frame.intervalInput = intervalInput
   
@@ -1102,11 +1113,11 @@ function OGRH.Invites.ShowWindow()
   UpdateInviteModeButton()
   
   -- Initialize auto-sort state (default off)
-  if not OGRH_SV.invites then
-    OGRH_SV.invites = {}
+  if not OGRH.SVM.Get("invites") then
+    OGRH.SVM.Set("invites", nil, {}, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if OGRH_SV.invites.autoSortEnabled == nil then
-    OGRH_SV.invites.autoSortEnabled = false
+  if OGRH.SVM.GetPath("invites.autoSortEnabled") == nil then
+    OGRH.SVM.SetPath("invites.autoSortEnabled", false, {syncLevel = "MANUAL", componentType = "settings"})
   end
   
   -- Refresh button (row 2, right side)
@@ -1116,7 +1127,7 @@ function OGRH.Invites.ShowWindow()
     height = 28,
     onClick = function()
       OGRH.Invites.RefreshPlayerList()
-      OGRH.Msg("Refreshed player list.")
+      OGRH.Msg("|cffffaa00[RH-Config]|r Refreshed player list.")
     end
   })
   refreshBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 50)
@@ -1146,7 +1157,8 @@ function OGRH.Invites.ShowWindow()
   
   -- Show/hide organize button based on data source
   local function UpdateOrganizeButton()
-    if OGRH_SV.invites.currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
+    local currentSource = OGRH.SVM.GetPath("invites.currentSource")
+    if currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
       organizeBtn:Show()
     else
       organizeBtn:Hide()
@@ -1403,13 +1415,13 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
       end
       
       -- Replace invites roster data with Groups data
-      OGRH_SV.invites.raidhelperData = {
+      OGRH.SVM.SetPath("invites.raidhelperData", {
         id = parsedData.hash,
         name = customRaidName,
         players = parsedData.players
-      }
-      OGRH_SV.invites.raidhelperGroupsData = parsedData
-      OGRH_SV.invites.currentSource = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
+      }, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.SVM.SetPath("invites.raidhelperGroupsData", parsedData, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.RAIDHELPER, {syncLevel = "MANUAL", componentType = "settings"})
       
       statusText:SetText("|cff00ff00Successfully imported " .. table.getn(parsedData.players) .. " players from Groups|r")
     else
@@ -1422,11 +1434,11 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
       end
       
       -- Store data and set source
-      OGRH_SV.invites.raidhelperData = parsedData
-      OGRH_SV.invites.currentSource = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
+      OGRH.SVM.SetPath("invites.raidhelperData", parsedData, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.RAIDHELPER, {syncLevel = "MANUAL", componentType = "settings"})
       
       -- Apply group assignments if groups data exists
-      if OGRH_SV.invites.raidhelperGroupsData then
+      if OGRH.SVM.GetPath("invites.raidhelperGroupsData") then
         OGRH.Invites.ApplyGroupAssignments()
       end
       
@@ -1555,7 +1567,7 @@ function OGRH.Invites.RefreshPlayerList()
   local absentCount = table.getn(absentPlayers)
   
   -- Update title and info text based on current source
-  local currentSource = OGRH_SV.invites.currentSource
+  local currentSource = OGRH.SVM.GetPath("invites.currentSource")
   local sourceName = "Unknown"
   local sourceColor = "|cffffffff"
   
@@ -1574,13 +1586,15 @@ function OGRH.Invites.RefreshPlayerList()
     sourceColor = "|cff00ccff"
     
     -- Show if groups data is imported
-    if OGRH_SV.invites.raidhelperGroupsData then
+    local raidhelperGroupsData = OGRH.SVM.GetPath("invites.raidhelperGroupsData")
+    if raidhelperGroupsData then
       sourceName = sourceName .. " (Groups)"
     end
     
     -- Update title with raid-helper data
-    if OGRH_SV.invites.raidhelperData and OGRH_SV.invites.raidhelperData.name and OGRH_InvitesFrame.titleText then
-      OGRH_InvitesFrame.titleText:SetText("Raid Invites - " .. OGRH_SV.invites.raidhelperData.name)
+    local raidhelperData = OGRH.SVM.GetPath("invites.raidhelperData")
+    if raidhelperData and raidhelperData.name and OGRH_InvitesFrame.titleText then
+      OGRH_InvitesFrame.titleText:SetText("Raid Invites - " .. raidhelperData.name)
     end
   end
   
@@ -1934,7 +1948,7 @@ end
 -- ============================================================================
 
 function OGRH.Invites.ToggleInviteMode()
-  local inviteMode = OGRH_SV.invites.inviteMode
+  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
   inviteMode.enabled = not inviteMode.enabled
   
   if inviteMode.enabled then
@@ -1952,10 +1966,11 @@ function OGRH.Invites.ToggleInviteMode()
     
     -- Get raid name for announcement
     local raidName = "Raid"
-    local currentSource = OGRH_SV.invites.currentSource
+    local currentSource = OGRH.SVM.GetPath("invites.currentSource")
     if currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
-      if OGRH_SV.invites.raidhelperData and OGRH_SV.invites.raidhelperData.name then
-        raidName = OGRH_SV.invites.raidhelperData.name
+      local raidhelperData = OGRH.SVM.GetPath("invites.raidhelperData")
+      if raidhelperData and raidhelperData.name then
+        raidName = raidhelperData.name
       end
     elseif currentSource == OGRH.Invites.SOURCE_TYPE.ROLLFOR then
       local meta = OGRH.Invites.GetMetadata()
@@ -1979,14 +1994,18 @@ function OGRH.Invites.ToggleInviteMode()
     end
   end
   
+  -- Save updated invite mode state
+  OGRH.SVM.SetPath("invites.inviteMode", inviteMode, {syncLevel = "MANUAL", componentType = "settings"})
+  
   -- Update button text
   if OGRH_InvitesFrame and OGRH_InvitesFrame.inviteModeBtn then
+    local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {enabled = false}
     OGRH_InvitesFrame.inviteModeBtn:SetText(inviteMode.enabled and "Stop Invite Mode" or "Start Invite Mode")
   end
 end
 
 function OGRH.Invites.DoInviteCycle()
-  local inviteMode = OGRH_SV.invites.inviteMode
+  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
   local players = OGRH.Invites.GetRosterPlayers()
   local invitedThisCycle = 0
   
@@ -2100,12 +2119,12 @@ function OGRH.Invites.ShowInviteModePanel()
     
     -- Update script
     panel:SetScript("OnUpdate", function()
-      if not OGRH_SV.invites.inviteMode.enabled then
+      local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
+      if not inviteMode or not inviteMode.enabled then
         panel:Hide()
         return
       end
       
-      local inviteMode = OGRH_SV.invites.inviteMode
       local now = GetTime()
       local elapsed = now - inviteMode.lastInviteTime
       
@@ -2189,7 +2208,7 @@ function OGRH.Invites.UpdateInviteModePanel()
   local panel = OGRH_InviteModePanel
   if not panel or not panel:IsVisible() then return end
   
-  local inviteMode = OGRH_SV.invites.inviteMode
+  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
   
   -- Count how many roster players are now in raid
   local inRaidCount = 0
@@ -2233,9 +2252,8 @@ inviteEventFrame:SetScript("OnEvent", function()
     -- We'll track this indirectly
   elseif event == "RAID_ROSTER_UPDATE" then
     -- Detect new members and sync their roles during invite mode
-    -- TODO: Fix nil inviteMode error - need to ensure OGRH_SV.invites.inviteMode exists before accessing
-    -- Error: attempt to index field `inviteMode` (a nil value) at line 2236
-    if OGRH_SV.invites and OGRH_SV.invites.inviteMode and OGRH_SV.invites.inviteMode.enabled then
+    local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
+    if inviteMode and inviteMode.enabled then
       -- Track who was in raid before
       if not OGRH.Invites.previousRaidMembers then
         OGRH.Invites.previousRaidMembers = {}
@@ -2259,7 +2277,8 @@ inviteEventFrame:SetScript("OnEvent", function()
       OGRH.Invites.previousRaidMembers = currentMembers
       
       -- Auto-organize players when they join the raid (only for Raid-Helper source)
-      if OGRH_SV.invites.currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
+      local currentSource = OGRH.SVM.GetPath("invites.currentSource")
+      if currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
         OGRH.Invites.AutoOrganizeNewMembers()
       end
     end
@@ -2278,7 +2297,8 @@ end)
 
 -- Sync player role to RolesUI when they join raid during invite mode
 function OGRH.Invites.SyncPlayerRole(playerName)
-  if not OGRH_SV.invites.inviteMode.enabled then
+  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
+  if not inviteMode or not inviteMode.enabled then
     return -- Only sync during invite mode
   end
   
@@ -2316,7 +2336,8 @@ function OGRH.Invites.HandleWhisperAutoResponse(sender, message)
       end
       
       -- Player is on active roster - check if invite mode is active
-      if OGRH_SV.invites.inviteMode.enabled then
+      local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
+      if inviteMode and inviteMode.enabled then
         local inRaid = OGRH.Invites.IsPlayerInRaid(senderNormalized)
         
         -- Only auto-invite if they're not already in raid
@@ -2393,11 +2414,12 @@ end
 -- Organize raid groups based on Raid-Helper assignments
 -- Auto-organize new raid members (silent version)
 function OGRH.Invites.AutoOrganizeNewMembers()
-  if OGRH_SV.invites.currentSource ~= OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
+  local currentSource = OGRH.SVM.GetPath("invites.currentSource")
+  if currentSource ~= OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
     return
   end
   
-  local raidhelperData = OGRH_SV.invites.raidhelperData
+  local raidhelperData = OGRH.SVM.GetPath("invites.raidhelperData")
   if not raidhelperData or not raidhelperData.players then
     return
   end
@@ -2462,11 +2484,12 @@ end
 
 -- Manual organize command (with feedback)
 function OGRH.Invites.OrganizeRaidGroups()
-  if OGRH_SV.invites.currentSource ~= OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
+  local currentSource = OGRH.SVM.GetPath("invites.currentSource")
+  if currentSource ~= OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
     return
   end
   
-  local raidhelperData = OGRH_SV.invites.raidhelperData
+  local raidhelperData = OGRH.SVM.GetPath("invites.raidhelperData")
   if not raidhelperData or not raidhelperData.players then
     return
   end
@@ -2560,7 +2583,8 @@ rollForCheckFrame:SetScript("OnUpdate", function()
     rollForTimeSinceCheck = 0
     
     -- Only check if RollFor is the current source and window is open
-    if OGRH_SV.invites.currentSource == OGRH.Invites.SOURCE_TYPE.ROLLFOR and OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
+    local currentSource = OGRH.SVM.GetPath("invites.currentSource")
+    if currentSource == OGRH.Invites.SOURCE_TYPE.ROLLFOR and OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
       local currentHash = GetRollForDataHash()
       
       if currentHash and currentHash ~= rollForLastHash then
@@ -2579,12 +2603,15 @@ end)
 -- Initialize
 OGRH.Invites.EnsureSV()
 
--- Reset invite mode on reload/login
-if OGRH_SV.invites.inviteMode then
-  OGRH_SV.invites.inviteMode.enabled = false
+-- Clean up invite mode on reload
+local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
+if inviteMode then
+  inviteMode.enabled = false
+  OGRH.SVM.SetPath("invites.inviteMode", inviteMode, {syncLevel = "MANUAL", componentType = "settings"})
 end
 
 -- Initialize RollFor hash
 rollForLastHash = GetRollForDataHash()
 
 -- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Invites loaded")
+
