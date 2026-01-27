@@ -157,10 +157,11 @@ function OGRH.SVM.Set(key, subkey, value, syncMetadata)
     local sv = OGRH.SVM.GetActiveSchema()
     if not sv then return false end
     
-    -- DEBUG: Show what schema we're writing to
-    if OGRH.SVM.SyncConfig.debug and OGRH.Msg and key == "ui" and (subkey == "selectedRaid" or subkey == "selectedEncounter") then
-        local schemaName = (OGRH_SV.schemaVersion == "v2") and "v2" or "v1"
-        OGRH.Msg(string.format("|cff66ff66[RH-SVM]|r Writing %s.%s = %s to schema %s", key, subkey, tostring(value), schemaName))
+    -- DEBUG: Show what we're writing
+    if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+        local path = subkey and (key .. "." .. subkey) or key
+        local valuePreview = (type(value) == "table") and "{table}" or tostring(value)
+        OGRH.Msg(string.format("|cff66ff66[RH-SVM]|r Writing to [%s] = %s", path, valuePreview))
     end
     
     -- Write value to active schema only

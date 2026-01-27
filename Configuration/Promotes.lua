@@ -7,16 +7,29 @@ local OGRH = _G.OGRH
 -- Ensure SavedVariables structure
 local function EnsurePromotesSV()
   OGRH.EnsureSV()
-  if not OGRH_SV.autoPromotes then
-    OGRH_SV.autoPromotes = {}
+  local autoPromotes = OGRH.SVM.Get("autoPromotes")
+  if not autoPromotes then
+    OGRH.SVM.Set("autoPromotes", nil, {}, {
+      syncLevel = "BATCH",
+      componentType = "settings"
+    })
+    autoPromotes = {}
   end
   -- Migrate old string format to new table format
-  for i, entry in ipairs(OGRH_SV.autoPromotes) do
+  local needsUpdate = false
+  for i, entry in ipairs(autoPromotes) do
     if type(entry) == "string" then
       -- Get class for this player
       local class = GetClassColor(entry)
-      OGRH_SV.autoPromotes[i] = {name = entry, class = nil}  -- Class will be updated on next refresh
+      autoPromotes[i] = {name = entry, class = nil}  -- Class will be updated on next refresh
+      needsUpdate = true
     end
+  end
+  if needsUpdate then
+    OGRH.SVM.Set("autoPromotes", nil, autoPromotes, {
+      syncLevel = "BATCH",
+      componentType = "settings"
+    })
   end
 end
 
@@ -89,7 +102,8 @@ local function CheckAndPromotePlayers()
     if name and rank == 0 then  -- Regular member (not leader or assistant)
       -- Check if they're in the auto-promote list and haven't been promoted this session
       if not promotedThisSession[name] then
-        for _, promoteEntry in ipairs(OGRH_SV.autoPromotes) do
+        local autoPromotes = OGRH.SVM.Get("autoPromotes") or {}
+        for _, promoteEntry in ipairs(autoPromotes) do
           local promoteName = type(promoteEntry) == "table" and promoteEntry.name or promoteEntry
           if name == promoteName then
             if isLeader then
@@ -338,7 +352,8 @@ function OGRH.RefreshAutoPromote()
   
   -- Sort promote list alphabetically
   local promoteList = {}
-  for _, entry in ipairs(OGRH_SV.autoPromotes) do
+  local autoPromotes = OGRH.SVM.Get("autoPromotes") or {}
+  for _, entry in ipairs(autoPromotes) do
     local playerName = type(entry) == "table" and entry.name or entry
     local playerClass = type(entry) == "table" and entry.class or nil
     
@@ -402,7 +417,12 @@ function OGRH.RefreshAutoPromote()
       nil,  -- No move down
       function()
         -- Delete
-        table.remove(OGRH_SV.autoPromotes, idx)
+        local autoPromotes = OGRH.SVM.Get("autoPromotes") or {}
+        table.remove(autoPromotes, idx)
+        OGRH.SVM.Set("autoPromotes", nil, autoPromotes, {
+          syncLevel = "BATCH",
+          componentType = "settings"
+        })
         OGRH.RefreshAutoPromote()
       end,
       true  -- Hide up/down buttons
@@ -446,7 +466,8 @@ function OGRH.RefreshAutoPromote()
         if searchText == "" or string.find(string.lower(name), searchText, 1, true) then
           -- Don't show players already in the promote list
           local alreadyInList = false
-          for _, promoteEntry in ipairs(OGRH_SV.autoPromotes) do
+          local autoPromotes = OGRH.SVM.Get("autoPromotes") or {}
+          for _, promoteEntry in ipairs(autoPromotes) do
             local promoteName = type(promoteEntry) == "table" and promoteEntry.name or promoteEntry
             if name == promoteName then
               alreadyInList = true
@@ -477,7 +498,8 @@ function OGRH.RefreshAutoPromote()
       if searchText == "" or string.find(string.lower(name), searchText, 1, true) then
         -- Don't show players already in the promote list
         local alreadyInList = false
-        for _, promoteEntry in ipairs(OGRH_SV.autoPromotes) do
+        local autoPromotes = OGRH.SVM.Get("autoPromotes") or {}
+        for _, promoteEntry in ipairs(autoPromotes) do
           local promoteName = type(promoteEntry) == "table" and promoteEntry.name or promoteEntry
           if name == promoteName then
             alreadyInList = true
@@ -563,16 +585,26 @@ function OGRH.RefreshAutoPromote()
     local playerClass = memberData.class
     row:SetScript("OnDragStart", function()
       -- Add to promote list
-      table.insert(OGRH_SV.autoPromotes, {name = playerName, class = playerClass})
+      local autoPromotes = OGRH.SVM.Get("autoPromotes") or {}
+      table.insert(autoPromotes, {name = playerName, class = playerClass})
+      OGRH.SVM.Set("autoPromotes", nil, autoPromotes, {
+        syncLevel = "BATCH",
+        componentType = "settings"
+      })
       OGRH.RefreshAutoPromote()
-      OGRH.Msg(playerName .. " added to auto-promote list.")
+      OGRH.Msg("|cffffaa00[RH-Config]|r " .. playerName .. " added to auto-promote list.")
     end)
     
     -- Click to add
     row:SetScript("OnClick", function()
-      table.insert(OGRH_SV.autoPromotes, {name = playerName, class = playerClass})
+      local autoPromotes = OGRH.SVM.Get("autoPromotes") or {}
+      table.insert(autoPromotes, {name = playerName, class = playerClass})
+      OGRH.SVM.Set("autoPromotes", nil, autoPromotes, {
+        syncLevel = "BATCH",
+        componentType = "settings"
+      })
       OGRH.RefreshAutoPromote()
-      OGRH.Msg(playerName .. " added to auto-promote list.")
+      OGRH.Msg("|cffffaa00[RH-Config]|r " .. playerName .. " added to auto-promote list.")
     end)
     
     table.insert(rightScrollChild.rows, row)
