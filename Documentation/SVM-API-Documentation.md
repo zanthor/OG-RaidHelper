@@ -17,13 +17,14 @@ The SavedVariablesManager (SVM) is the **unified write interface** for all OG-Ra
 
 ---
 
-## Core Principle: Read Direct, Write Via SVM
+## Core Principle: Use SVM for Reads and Writes
 
 ```lua
--- ✅ READS: Direct access (fast, no overhead)
-local roles = OGRH_SV.encounterMgmt.roles
+-- ✅ READS: Use SVM (abstracts v1/v2 schema location)
+local roles = OGRH.SVM.GetPath("encounterMgmt.roles")
+local pollTime = OGRH.SVM.Get("pollTime")
 
--- ✅ WRITES: Always use SVM (triggers sync)
+-- ✅ WRITES: Use SVM (triggers sync)
 OGRH.SVM.SetPath("encounterMgmt.roles.MC.Rag.tank1", "PlayerName", {
     syncLevel = "REALTIME",
     componentType = "roles",
@@ -32,8 +33,9 @@ OGRH.SVM.SetPath("encounterMgmt.roles.MC.Rag.tank1", "PlayerName", {
 ```
 
 **Why?**
-- Reads are frequent → direct access is fast
+- SVM abstracts schema location (v1 at `OGRH_SV.*` vs v2 at `OGRH_SV.v2.*`)
 - Writes trigger sync → must go through SVM
+- Direct reads (`OGRH_SV.key`) work during v1 phase but break after cutover
 
 ---
 
@@ -109,7 +111,7 @@ OGRH.SVM.SetPath("playerAssignments.PlayerName", {type = "icon", value = 1}, {
 Read a value from SavedVariables.
 
 **Parameters:**
-- `key` (string) - Top-level key in OGRH_SV
+- `key` (string) - Top-level key in active schema
 - `subkey` (string|nil) - Optional subkey within table
 
 **Returns:** `any` - Value or nil if not found
@@ -124,10 +126,28 @@ local pollTime = OGRH.SVM.Get("pollTime")
 local minimized = OGRH.SVM.Get("ui", "minimized")
 ```
 
-**Note:** For performance, prefer direct access for reads:
+---
+
+#### `OGRH.SVM.GetPath(path)`
+
+Read a value from a deep path in SavedVariables (e.g., "key.subkey.nested").
+
+**Parameters:**
+- `path` (string) - Dot-separated path (e.g., "encounterMgmt.roles.MC.Rag")
+
+**Returns:** `any` - Value or nil if not found
+
+**Examples:**
+
 ```lua
--- Preferred for reads
-local roles = OGRH_SV.encounterMgmt.roles
+-- Deep path read
+local tank1 = OGRH.SVM.GetPath("encounterMgmt.roles.MC.Rag.tank1")
+
+-- Table read
+local allRoles = OGRH.SVM.GetPath("encounterMgmt.roles")
+
+-- Handles missing paths gracefully
+local missing = OGRH.SVM.GetPath("does.not.exist")  -- Returns nil
 ```
 
 ---
@@ -417,19 +437,32 @@ SVM reads/writes to the **active schema only** based on `OGRH_SV.schemaVersion`:
 -- SVM accesses OGRH_SV.* (v1 data at top level)
 
 -- After cutover: schemaVersion = "v2"  
--- SVM accesses OGRH_SV.* (v2 data at top level after migration)
+-- SVM accesses OGRH_SV.v2.* (v2 data in nested location)
+-- v1 data remains at OGRH_SV.* for rollback capability
 ```
 
+**Schema Locations:**
+- **v1 Active:** Data at `OGRH_SV.*`, `schemaVersion` is `nil` or `"v1"`
+- **v2 Active:** Data at `OGRH_SV.v2.*`, `schemaVersion` is `"v2"`
+- **After Cutover:** v1 remains at `OGRH_SV.*` (read-only, rollback capability)
+
 **Migration Workflow:**
-1. Update code to use v2 numeric indices in paths
-2. Test with v1 active (code writes to v1 schema)
-3. Run `/ogrh migration create` to generate v2 from v1
-4. Run comparison commands to verify v2 data
-5. Run `/ogrh migration cutover confirm` to activate v2
-6. Test with v2 active (code now writes to v2 schema)
-7. Use comparison commands to validate behavior matches
+1. Migrate code to use SVM read wrappers (`GetPath()`, `Get()`)
+2. Update code to use v2 numeric indices in paths
+3. Test with v1 active (code reads/writes v1 schema via SVM)
+4. Run `/ogrh migration create` to generate v2 at `OGRH_SV.v2.*`
+5. Run comparison commands to verify v2 data
+6. Run `/ogrh migration cutover confirm` to set `schemaVersion = "v2"`
+7. Test with v2 active (code now reads/writes v2 schema via SVM)
+8. v1 data remains at `OGRH_SV.*` for emergency rollback
 
 **No dual-write** - SVM only touches the active schema.
+
+**Why v2 stays nested:**
+- Preserves v1 data for rollback without complex archiving
+- Clear separation between schemas
+- Prevents accidental v1/v2 data mixing
+- All config and UI data migrated to v2 for consistency
 
 ---
 
@@ -516,14 +549,14 @@ end
 ### Read Performance
 
 ```lua
--- ❌ SLOWER: Function call overhead
-local value = OGRH.SVM.Get("encounterMgmt", "roles")
+-- ✅ CORRECT: Use SVM for all reads
+local value = OGRH.SVM.GetPath("encounterMgmt.roles")
 
--- ✅ FASTER: Direct access
-local value = OGRH_SV.encounterMgmt.roles
+-- ❌ WRONG: Direct access breaks after v2 cutover
+local value = OGRH_SV.encounterMgmt.roles  -- Works in v1, fails in v2
 ```
 
-**Rule:** Use SVM for writes, direct access for reads.
+**Rule:** Always use SVM for reads and writes to ensure compatibility across schema versions.
 
 ---
 

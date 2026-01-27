@@ -63,34 +63,74 @@ OGRH.COLOR = {
 }
 
 function OGRH.EnsureSV()
-  if not OGRH_SV then OGRH_SV = { roles = {}, order = {}, pollTime = 5, tankCategory = {}, healerBoss = {}, ui = {}, tankIcon = {}, healerIcon = {}, rolesUI = {}, playerAssignments = {}, allowRemoteReadyCheck = true, tradeItems = {} } end
-  if not OGRH_SV.roles then OGRH_SV.roles = {} end
-  if not OGRH_SV.order then OGRH_SV.order = {} end
-  if not OGRH_SV.order.TANKS then OGRH_SV.order.TANKS = {} end
-  if not OGRH_SV.order.HEALERS then OGRH_SV.order.HEALERS = {} end
-  if not OGRH_SV.order.MELEE then OGRH_SV.order.MELEE = {} end
-  if not OGRH_SV.order.RANGED then OGRH_SV.order.RANGED = {} end
-  if OGRH_SV.pollTime == nil then OGRH_SV.pollTime = 5 end
-  if not OGRH_SV.tankCategory then OGRH_SV.tankCategory = {} end
-  if not OGRH_SV.healerBoss then OGRH_SV.healerBoss = {} end
-  if not OGRH_SV.ui then OGRH_SV.ui = {} end
-  if OGRH_SV.ui.minimized == nil then OGRH_SV.ui.minimized = false end
-  if not OGRH_SV.tankIcon then OGRH_SV.tankIcon = {} end
-  if not OGRH_SV.healerIcon then OGRH_SV.healerIcon = {} end
-  if not OGRH_SV.rolesUI then OGRH_SV.rolesUI = {} end
-  if not OGRH_SV.playerAssignments then OGRH_SV.playerAssignments = {} end
-  if OGRH_SV.allowRemoteReadyCheck == nil then OGRH_SV.allowRemoteReadyCheck = true end
-  if not OGRH_SV.tradeItems then OGRH_SV.tradeItems = {} end
-  if OGRH_SV.syncLocked == nil then OGRH_SV.syncLocked = false end
+  -- Initialize base OGRH_SV table if needed
+  if not OGRH_SV then
+    OGRH_SV = {}
+  end
   
-  -- Migrate old healerTankAssigns to playerAssignments (as icons)
-  if OGRH_SV.healerTankAssigns and not OGRH_SV._assignmentsMigrated then
-    for name, iconId in pairs(OGRH_SV.healerTankAssigns) do
-      if iconId and iconId >= 1 and iconId <= 8 then
-        OGRH_SV.playerAssignments[name] = {type = "icon", value = iconId}
-      end
+  -- Determine schema version (default to v2 for new installs)
+  if not OGRH_SV.schemaVersion then
+    -- Check if v1 data exists (upgrading from old version)
+    local hasV1Data = OGRH_SV.roles or OGRH_SV.encounterMgmt or OGRH_SV.pollTime
+    
+    if hasV1Data then
+      -- Legacy installation - keep using v1 (migration will happen later)
+      OGRH_SV.schemaVersion = "v1"
+    else
+      -- New installation - use v2 from the start
+      OGRH_SV.schemaVersion = "v2"
+      OGRH_SV.v2 = {}
     end
-    OGRH_SV._assignmentsMigrated = true
+  end
+  
+  -- Bootstrap schema-specific data based on active version
+  if OGRH_SV.schemaVersion == "v2" then
+    -- Initialize v2 schema
+    if not OGRH_SV.v2 then OGRH_SV.v2 = {} end
+    
+    -- Core settings
+    if OGRH_SV.v2.pollTime == nil then OGRH_SV.v2.pollTime = 5 end
+    if OGRH_SV.v2.allowRemoteReadyCheck == nil then OGRH_SV.v2.allowRemoteReadyCheck = true end
+    if OGRH_SV.v2.syncLocked == nil then OGRH_SV.v2.syncLocked = false end
+    
+    -- UI state
+    if not OGRH_SV.v2.ui then OGRH_SV.v2.ui = {} end
+    if OGRH_SV.v2.ui.minimized == nil then OGRH_SV.v2.ui.minimized = false end
+    
+    -- Data structures
+    if not OGRH_SV.v2.tradeItems then OGRH_SV.v2.tradeItems = {} end
+    if not OGRH_SV.v2.consumes then OGRH_SV.v2.consumes = {} end
+    
+  else
+    -- Initialize v1 schema (legacy)
+    if not OGRH_SV.roles then OGRH_SV.roles = {} end
+    if not OGRH_SV.order then OGRH_SV.order = {} end
+    if not OGRH_SV.order.TANKS then OGRH_SV.order.TANKS = {} end
+    if not OGRH_SV.order.HEALERS then OGRH_SV.order.HEALERS = {} end
+    if not OGRH_SV.order.MELEE then OGRH_SV.order.MELEE = {} end
+    if not OGRH_SV.order.RANGED then OGRH_SV.order.RANGED = {} end
+    if OGRH_SV.pollTime == nil then OGRH_SV.pollTime = 5 end
+    if not OGRH_SV.tankCategory then OGRH_SV.tankCategory = {} end
+    if not OGRH_SV.healerBoss then OGRH_SV.healerBoss = {} end
+    if not OGRH_SV.ui then OGRH_SV.ui = {} end
+    if OGRH_SV.ui.minimized == nil then OGRH_SV.ui.minimized = false end
+    if not OGRH_SV.tankIcon then OGRH_SV.tankIcon = {} end
+    if not OGRH_SV.healerIcon then OGRH_SV.healerIcon = {} end
+    if not OGRH_SV.rolesUI then OGRH_SV.rolesUI = {} end
+    if not OGRH_SV.playerAssignments then OGRH_SV.playerAssignments = {} end
+    if OGRH_SV.allowRemoteReadyCheck == nil then OGRH_SV.allowRemoteReadyCheck = true end
+    if not OGRH_SV.tradeItems then OGRH_SV.tradeItems = {} end
+    if OGRH_SV.syncLocked == nil then OGRH_SV.syncLocked = false end
+    
+    -- Migrate old healerTankAssigns to playerAssignments (as icons)
+    if OGRH_SV.healerTankAssigns and not OGRH_SV._assignmentsMigrated then
+      for name, iconId in pairs(OGRH_SV.healerTankAssigns) do
+        if iconId and iconId >= 1 and iconId <= 8 then
+          OGRH_SV.playerAssignments[name] = {type = "icon", value = iconId}
+        end
+      end
+      OGRH_SV._assignmentsMigrated = true
+    end
   end
 end
 local _svf = CreateFrame("Frame")
@@ -179,6 +219,33 @@ end)
 OGRH.EnsureSV()
 
 -- ========================================
+-- CURRENT ENCOUNTER MANAGEMENT
+-- ========================================
+
+-- Get currently selected raid/encounter (read-only)
+function OGRH.GetCurrentEncounter()
+  return OGRH.SVM.Get("ui", "selectedRaid"), OGRH.SVM.Get("ui", "selectedEncounter")
+end
+
+-- Set currently selected raid/encounter (centralized write interface)
+-- This is the ONLY function that should write selectedRaid/selectedEncounter
+function OGRH.SetCurrentEncounter(raidName, encounterName)
+  if raidName then
+    OGRH.SVM.Set("ui", "selectedRaid", raidName, {
+      syncLevel = "REALTIME",
+      componentType = "settings"
+    })
+  end
+  
+  if encounterName then
+    OGRH.SVM.Set("ui", "selectedEncounter", encounterName, {
+      syncLevel = "REALTIME",
+      componentType = "settings"
+    })
+  end
+end
+
+-- ========================================
 -- RGO SETTINGS MIGRATION
 -- ========================================
 -- Migrate deprecated RGO settings to new locations and clean up
@@ -225,16 +292,27 @@ local function DeepCopy(obj, seen)
     return res
 end
 
+-- NOTE: OGRH.Migration.MigrateToV2() is defined in Infrastructure/Migration.lua
+-- The version below is NOT USED - it's overwritten when Migration.lua loads
+-- Keeping it commented for reference only
+
+--[[ DEPRECATED - Migration function moved to Infrastructure/Migration.lua
 -- Main migration: Create v2 schema
-function OGRH.Migration.MigrateToV2()
+function OGRH.Migration.MigrateToV2(force)
     if not OGRH_SV then
         OGRH.Msg("|cffFF0000[Migration]|r Error: OGRH_SV not found")
         return false
     end
     
-    if OGRH_SV.v2 then
+    if OGRH_SV.v2 and not force then
         OGRH.Msg("|cffFFFF00[Migration]|r v2 schema already exists. Use /ogrh migration rollback to reset.")
+        OGRH.Msg("|cffFFFF00[Migration]|r Or use /ogrh migration create force to overwrite.")
         return false
+    end
+    
+    if force and OGRH_SV.v2 then
+        OGRH.Msg("|cffFFFF00[Migration]|r Force mode: Clearing existing v2 schema...")
+        OGRH_SV.v2 = nil
     end
     
     OGRH.Msg("|cff00ff00[Migration]|r Creating v2 schema alongside original data...")
@@ -262,6 +340,17 @@ function OGRH.Migration.MigrateToV2()
         if key ~= "v2" and key ~= "schemaVersion" and not emptyTables[key] then
             OGRH_SV.v2[key] = DeepCopy(value)
             copiedKeys = copiedKeys + 1
+            
+            -- Debug logging for critical data
+            if key == "tradeItems" or key == "consumes" or key == "playerAssignments" then
+                local count = 0
+                if type(value) == "table" then
+                    for k, v in pairs(value) do
+                        count = count + 1
+                    end
+                end
+                OGRH.Msg(string.format("|cff00ff00[Migration]|r   Copied %s: %d items", key, count))
+            end
         end
     end
     
@@ -318,6 +407,7 @@ function OGRH.Migration.MigrateToV2()
     
     return true
 end
+--]] -- END DEPRECATED Migration function
 
 -- Validation: Compare v1 vs v2
 function OGRH.Migration.ValidateV2()
@@ -2038,8 +2128,9 @@ function OGRH.CalculateAllStructureChecksum()
   end
   
   -- Hash consumes (if it exists and is exported)
-  if OGRH_SV.consumes then
-    for consumeName, consumeData in pairs(OGRH_SV.consumes) do
+  local consumes = OGRH.SVM.Get("consumes")
+  if consumes then
+    for consumeName, consumeData in pairs(consumes) do
       for j = 1, string.len(consumeName) do
         checksum = checksum + string.byte(consumeName, j) * 40
       end
@@ -2511,7 +2602,9 @@ addonFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 addonFrame:SetScript("OnEvent", function()
   if event == "PLAYER_ENTERING_WORLD" then
     -- Restore consume monitor if encounter is selected
-    if OGRH_SV and OGRH_SV.ui and OGRH_SV.ui.selectedRaid and OGRH_SV.ui.selectedEncounter then
+    local selectedRaid = OGRH.SVM.Get("ui", "selectedRaid")
+    local selectedEncounter = OGRH.SVM.Get("ui", "selectedEncounter")
+    if OGRH_SV and selectedRaid and selectedEncounter then
       if OGRH.ShowConsumeMonitor then
         OGRH.ShowConsumeMonitor()
       end
@@ -3049,8 +3142,8 @@ addonFrame:SetScript("OnEvent", function()
             -- Update main UI selection only (don't touch planning window)
             OGRH.EnsureSV()
             if not OGRH_SV.ui then OGRH_SV.ui = {} end
-            OGRH_SV.ui.selectedRaid = raidName
-            OGRH_SV.ui.selectedEncounter = encounterName
+            OGRH.SVM.Set("ui", "selectedRaid", raidName)
+            OGRH.SVM.Set("ui", "selectedEncounter", encounterName)
             
             -- Do NOT update planning window frame
             -- Planning window maintains its own independent selection
@@ -4256,7 +4349,7 @@ function OGRH.ExportShareData()
     encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
     encounterAnnouncements = OGRH_SV.encounterAnnouncements or {},
     tradeItems = OGRH_SV.tradeItems or {},
-    consumes = OGRH_SV.consumes or {},
+    consumes = OGRH.SVM.Get("consumes") or {},
     rgo = OGRH_SV.rgo or {}
   }
   
@@ -4510,7 +4603,7 @@ function OGRH.ImportShareData(dataString, isSingleEncounter)
       OGRH_SV.tradeItems = importData.tradeItems
     end
     if importData.consumes then
-      OGRH_SV.consumes = importData.consumes
+      OGRH.SVM.Set("consumes", nil, importData.consumes)
     end
     if importData.rgo then
       OGRH_SV.rgo = importData.rgo
@@ -4582,7 +4675,7 @@ function OGRH.LoadFactoryDefaults()
     OGRH_SV.tradeItems = OGRH.FactoryDefaults.tradeItems
   end
   if OGRH.FactoryDefaults.consumes then
-    OGRH_SV.consumes = OGRH.FactoryDefaults.consumes
+    OGRH.SVM.Set("consumes", nil, OGRH.FactoryDefaults.consumes)
   end
   if OGRH.FactoryDefaults.rgo then
     OGRH_SV.rgo = OGRH.FactoryDefaults.rgo
@@ -4662,481 +4755,7 @@ function OGRH.Deserialize(str)
 end
 
 -- Trade Settings Window
-function OGRH.ShowTradeSettings()
-  OGRH.EnsureSV()
-  OGRH.CloseAllWindows("OGRH_TradeSettingsFrame")
-  
-  if OGRH_TradeSettingsFrame then
-    OGRH_TradeSettingsFrame:Show()
-    OGRH.RefreshTradeSettings()
-    return
-  end
-  
-  local frame = CreateFrame("Frame", "OGRH_TradeSettingsFrame", UIParent)
-  frame:SetWidth(300)
-  frame:SetHeight(450)
-  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-  frame:SetFrameStrata("DIALOG")
-  frame:EnableMouse(true)
-  frame:SetMovable(true)
-  frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", function() frame:StartMoving() end)
-  frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
-  
-  -- Backdrop
-  frame:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  frame:SetBackdropColor(0, 0, 0, 0.85)
-  
-  -- Register ESC key handler
-  OGRH.MakeFrameCloseOnEscape(frame, "OGRH_TradeSettingsFrame")
-  
-  -- Title
-  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", 0, -15)
-  title:SetText("Trade Settings")
-  
-  -- Close button
-  local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  closeBtn:SetWidth(60)
-  closeBtn:SetHeight(24)
-  closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
-  closeBtn:SetText("Close")
-  if OGRH.StyleButton then
-    OGRH.StyleButton(closeBtn)
-  end
-  closeBtn:SetScript("OnClick", function() frame:Hide() end)
-  
-  -- Instructions
-  local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  instructions:SetPoint("TOPLEFT", 20, -45)
-  instructions:SetText("Configure trade items and quantities:")
-  
-  -- Create scroll list using template
-  local listWidth = frame:GetWidth() - 34
-  local listHeight = frame:GetHeight() - 85
-  local outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGRH.CreateStyledScrollList(frame, listWidth, listHeight)
-  outerFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 17, -75)
-  
-  frame.scrollChild = scrollChild
-  frame.scrollFrame = scrollFrame
-  frame.scrollBar = scrollBar
-  
-  frame:Show()
-  OGRH.RefreshTradeSettings()
-end
-
--- Refresh the trade settings list
-function OGRH.RefreshTradeSettings()
-  if not OGRH_TradeSettingsFrame then return end
-  
-  local scrollChild = OGRH_TradeSettingsFrame.scrollChild
-  
-  -- Clear existing rows
-  if scrollChild.rows then
-    for _, row in ipairs(scrollChild.rows) do
-      row:Hide()
-      row:SetParent(nil)
-    end
-  end
-  scrollChild.rows = {}
-  
-  OGRH.EnsureSV()
-  local items = OGRH_SV.tradeItems
-  
-  local yOffset = -5
-  local rowHeight = OGRH.LIST_ITEM_HEIGHT
-  local rowSpacing = OGRH.LIST_ITEM_SPACING
-  
-  local contentWidth = OGRH_TradeSettingsFrame.scrollChild:GetWidth()
-  
-  for i, itemData in ipairs(items) do
-    local row = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
-    row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
-    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    
-    local idx = i
-    
-    -- Right-click to edit
-    row:SetScript("OnClick", function()
-      if arg1 == "RightButton" then
-        OGRH.ShowEditTradeItemDialog(idx)
-      end
-    end)
-    
-    -- Add up/down/delete buttons using template
-    local deleteBtn, downBtn, upBtn = OGRH.AddListItemButtons(
-      row,
-      idx,
-      table.getn(OGRH_SV.tradeItems),
-      function()
-        -- Move up
-        local temp = OGRH_SV.tradeItems[idx - 1]
-        OGRH_SV.tradeItems[idx - 1] = OGRH_SV.tradeItems[idx]
-        OGRH_SV.tradeItems[idx] = temp
-        OGRH.RefreshTradeSettings()
-      end,
-      function()
-        -- Move down
-        local temp = OGRH_SV.tradeItems[idx + 1]
-        OGRH_SV.tradeItems[idx + 1] = OGRH_SV.tradeItems[idx]
-        OGRH_SV.tradeItems[idx] = temp
-        OGRH.RefreshTradeSettings()
-      end,
-      function()
-        -- Delete
-        table.remove(OGRH_SV.tradeItems, idx)
-        OGRH.RefreshTradeSettings()
-      end
-    )
-    
-    -- Quantity (positioned 10px from up arrow)
-    local qtyText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    qtyText:SetPoint("RIGHT", upBtn, "LEFT", -10, 0)
-    qtyText:SetText("x" .. (itemData.quantity or 1))
-    
-    -- Item name (fill remaining space)
-    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    nameText:SetPoint("LEFT", row, "LEFT", 5, 0)
-    nameText:SetPoint("RIGHT", qtyText, "LEFT", -5, 0)
-    nameText:SetJustifyH("LEFT")
-    nameText:SetText(itemData.name or ("Item " .. itemData.itemId))
-    upBtn:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-    upBtn:SetScript("OnClick", function()
-      if idx > 1 then
-        local temp = OGRH_SV.tradeItems[idx - 1]
-        OGRH_SV.tradeItems[idx - 1] = OGRH_SV.tradeItems[idx]
-        OGRH_SV.tradeItems[idx] = temp
-        OGRH.RefreshTradeSettings()
-      end
-    end)
-    
-    table.insert(scrollChild.rows, row)
-    yOffset = yOffset - rowHeight - rowSpacing
-  end
-  
-  -- Add "Add Item" placeholder row at the bottom
-  local addItemBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
-  addItemBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
-  
-  -- Text
-  local addText = addItemBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  addText:SetPoint("CENTER", addItemBtn, "CENTER", 0, 0)
-  addText:SetText("|cff00ff00Add Item|r")
-  
-  addItemBtn:SetScript("OnClick", function()
-    OGRH.ShowAddTradeItemDialog()
-  end)
-  
-  table.insert(scrollChild.rows, addItemBtn)
-  yOffset = yOffset - rowHeight
-  
-  -- Update scroll child height
-  local contentHeight = math.abs(yOffset) + 5
-  scrollChild:SetHeight(math.max(contentHeight, 1))
-  
-  -- Update scrollbar visibility
-  local scrollBar = OGRH_TradeSettingsFrame.scrollBar
-  local scrollFrame = OGRH_TradeSettingsFrame.scrollFrame
-  local scrollFrameHeight = scrollFrame:GetHeight()
-  
-  if contentHeight > scrollFrameHeight then
-    scrollBar:Show()
-    scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
-    scrollBar:SetValue(0)
-  else
-    scrollBar:Hide()
-  end
-  scrollFrame:SetVerticalScroll(0)
-end
-
--- Show add trade item dialog
-function OGRH.ShowAddTradeItemDialog()
-  if OGRH_AddTradeItemDialog then
-    OGRH_AddTradeItemDialog:Show()
-    return
-  end
-  
-  local dialog = CreateFrame("Frame", "OGRH_AddTradeItemDialog", UIParent)
-  dialog:SetWidth(250)
-  dialog:SetHeight(160)
-  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
-  dialog:EnableMouse(true)
-  dialog:SetMovable(true)
-  dialog:RegisterForDrag("LeftButton")
-  dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
-  dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
-  
-  -- Backdrop
-  dialog:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  dialog:SetBackdropColor(0, 0, 0, 0.9)
-  
-  -- Register ESC key handler
-  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_AddTradeItemDialog")
-  
-  -- Title
-  local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", 0, -15)
-  title:SetText("Add Trade Item")
-  
-  -- Item ID label
-  local itemIdLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  itemIdLabel:SetPoint("TOPLEFT", 20, -50)
-  itemIdLabel:SetText("Item ID:")
-  
-  -- Item ID input
-  local itemIdInput = CreateFrame("EditBox", nil, dialog)
-  itemIdInput:SetPoint("LEFT", itemIdLabel, "RIGHT", 10, 0)
-  itemIdInput:SetWidth(120)
-  itemIdInput:SetHeight(25)
-  itemIdInput:SetAutoFocus(false)
-  itemIdInput:SetFontObject(ChatFontNormal)
-  itemIdInput:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  itemIdInput:SetBackdropColor(0, 0, 0, 0.8)
-  itemIdInput:SetTextInsets(8, 8, 0, 0)
-  itemIdInput:SetScript("OnEscapePressed", function() itemIdInput:ClearFocus() end)
-  dialog.itemIdInput = itemIdInput
-  
-  -- Quantity label
-  local qtyLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  qtyLabel:SetPoint("TOPLEFT", 20, -90)
-  qtyLabel:SetText("Quantity:")
-  
-  -- Quantity input
-  local qtyInput = CreateFrame("EditBox", nil, dialog)
-  qtyInput:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
-  qtyInput:SetWidth(120)
-  qtyInput:SetHeight(25)
-  qtyInput:SetAutoFocus(false)
-  qtyInput:SetFontObject(ChatFontNormal)
-  qtyInput:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  qtyInput:SetBackdropColor(0, 0, 0, 0.8)
-  qtyInput:SetTextInsets(8, 8, 0, 0)
-  qtyInput:SetText("1")
-  qtyInput:SetScript("OnEscapePressed", function() qtyInput:ClearFocus() end)
-  dialog.qtyInput = qtyInput
-  
-  -- Cancel button
-  local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
-  cancelBtn:SetWidth(80)
-  cancelBtn:SetHeight(25)
-  cancelBtn:SetPoint("BOTTOMRIGHT", -20, 15)
-  cancelBtn:SetText("Cancel")
-  cancelBtn:SetScript("OnClick", function()
-    dialog:Hide()
-  end)
-  
-  -- Add button
-  local addBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
-  addBtn:SetWidth(80)
-  addBtn:SetHeight(25)
-  addBtn:SetPoint("RIGHT", cancelBtn, "LEFT", -10, 0)
-  addBtn:SetText("Add")
-  addBtn:SetScript("OnClick", function()
-    local itemIdText = itemIdInput:GetText()
-    local qtyText = qtyInput:GetText()
-    
-    local itemId = tonumber(itemIdText)
-    local quantity = tonumber(qtyText)
-    
-    if not itemId or itemId <= 0 then
-      OGRH.Msg("Invalid Item ID. Please enter a valid number.")
-      return
-    end
-    
-    if not quantity or quantity <= 0 then
-      OGRH.Msg("Invalid Quantity. Please enter a valid number.")
-      return
-    end
-    
-    -- Get item name from game
-    local itemName, itemLink = GetItemInfo(itemId)
-    
-    -- Add to list
-    OGRH.EnsureSV()
-    table.insert(OGRH_SV.tradeItems, {
-      itemId = itemId,
-      name = itemName or ("Item " .. itemId),
-      quantity = quantity
-    })
-    
-    -- Clear inputs
-    itemIdInput:SetText("")
-    qtyInput:SetText("1")
-    
-    -- Refresh settings window
-    OGRH.RefreshTradeSettings()
-    
-    dialog:Hide()
-    OGRH.Msg("Added trade item: " .. (itemName or ("Item " .. itemId)))
-  end)
-  
-  dialog:Show()
-end
-
--- Show edit trade item dialog
-function OGRH.ShowEditTradeItemDialog(itemIndex)
-  OGRH.EnsureSV()
-  local itemData = OGRH_SV.tradeItems[itemIndex]
-  if not itemData then return end
-  
-  if OGRH_EditTradeItemDialog then
-    OGRH_EditTradeItemDialog.itemIndex = itemIndex
-    OGRH_EditTradeItemDialog.itemIdInput:SetText(tostring(itemData.itemId))
-    OGRH_EditTradeItemDialog.qtyInput:SetText(tostring(itemData.quantity or 1))
-    OGRH_EditTradeItemDialog:Show()
-    return
-  end
-  
-  local dialog = CreateFrame("Frame", "OGRH_EditTradeItemDialog", UIParent)
-  dialog:SetWidth(250)
-  dialog:SetHeight(160)
-  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
-  dialog:EnableMouse(true)
-  dialog:SetMovable(true)
-  dialog:RegisterForDrag("LeftButton")
-  dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
-  dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
-  dialog.itemIndex = itemIndex
-  
-  -- Backdrop
-  dialog:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  dialog:SetBackdropColor(0, 0, 0, 0.9)
-  
-  -- Register ESC key handler
-  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_EditTradeItemDialog")
-  
-  -- Title
-  local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", 0, -15)
-  title:SetText("Edit Trade Item")
-  
-  -- Item ID label
-  local itemIdLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  itemIdLabel:SetPoint("TOPLEFT", 20, -50)
-  itemIdLabel:SetText("Item ID:")
-  
-  -- Item ID input
-  local itemIdInput = CreateFrame("EditBox", nil, dialog)
-  itemIdInput:SetPoint("LEFT", itemIdLabel, "RIGHT", 10, 0)
-  itemIdInput:SetWidth(120)
-  itemIdInput:SetHeight(25)
-  itemIdInput:SetAutoFocus(false)
-  itemIdInput:SetFontObject(ChatFontNormal)
-  itemIdInput:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  itemIdInput:SetBackdropColor(0, 0, 0, 0.8)
-  itemIdInput:SetTextInsets(8, 8, 0, 0)
-  itemIdInput:SetText(tostring(itemData.itemId))
-  itemIdInput:SetScript("OnEscapePressed", function() itemIdInput:ClearFocus() end)
-  dialog.itemIdInput = itemIdInput
-  
-  -- Quantity label
-  local qtyLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  qtyLabel:SetPoint("TOPLEFT", 20, -90)
-  qtyLabel:SetText("Quantity:")
-  
-  -- Quantity input
-  local qtyInput = CreateFrame("EditBox", nil, dialog)
-  qtyInput:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
-  qtyInput:SetWidth(120)
-  qtyInput:SetHeight(25)
-  qtyInput:SetAutoFocus(false)
-  qtyInput:SetFontObject(ChatFontNormal)
-  qtyInput:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    edgeSize = 12,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  qtyInput:SetBackdropColor(0, 0, 0, 0.8)
-  qtyInput:SetTextInsets(8, 8, 0, 0)
-  qtyInput:SetText(tostring(itemData.quantity or 1))
-  qtyInput:SetScript("OnEscapePressed", function() qtyInput:ClearFocus() end)
-  dialog.qtyInput = qtyInput
-  
-  -- Cancel button
-  local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
-  cancelBtn:SetWidth(80)
-  cancelBtn:SetHeight(25)
-  cancelBtn:SetPoint("BOTTOMRIGHT", -20, 15)
-  cancelBtn:SetText("Cancel")
-  cancelBtn:SetScript("OnClick", function()
-    dialog:Hide()
-  end)
-  
-  -- Save button
-  local saveBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
-  saveBtn:SetWidth(80)
-  saveBtn:SetHeight(25)
-  saveBtn:SetPoint("RIGHT", cancelBtn, "LEFT", -10, 0)
-  saveBtn:SetText("Save")
-  saveBtn:SetScript("OnClick", function()
-    local itemIdText = itemIdInput:GetText()
-    local qtyText = qtyInput:GetText()
-    
-    local itemId = tonumber(itemIdText)
-    local quantity = tonumber(qtyText)
-    
-    if not itemId or itemId <= 0 then
-      OGRH.Msg("Invalid Item ID. Please enter a valid number.")
-      return
-    end
-    
-    if not quantity or quantity <= 0 then
-      OGRH.Msg("Invalid Quantity. Please enter a valid number.")
-      return
-    end
-    
-    -- Get item name from game
-    local itemName, itemLink = GetItemInfo(itemId)
-    
-    -- Update item
-    OGRH_SV.tradeItems[dialog.itemIndex] = {
-      itemId = itemId,
-      name = itemName or ("Item " .. itemId),
-      quantity = quantity
-    }
-    
-    -- Refresh settings window
-    OGRH.RefreshTradeSettings()
-    
-    dialog:Hide()
-    OGRH.Msg("Updated trade item: " .. (itemName or ("Item " .. itemId)))
-  end)
-  
-  dialog:Show()
-end
+-- Trade settings UI moved to Raid/Trade.lua
 
 -- Create minimap button
 local function CreateMinimapButton()
@@ -5262,46 +4881,6 @@ local function CreateMinimapButton()
         srValidationItem.fs:SetTextColor(0.5, 0.5, 0.5)
       end
       
-      -- Audit Addons
-      menu:AddItem({
-        text = "Audit Addons",
-        onClick = function()
-          if OGRH.ShowAddonAudit then
-            OGRH.ShowAddonAudit()
-          else
-            OGRH.Msg("Addon Audit module not loaded.")
-          end
-        end
-      })
-      
-      -- Monitor Consumes toggle
-      menu.monitorConsumesItem = menu:AddItem({
-        text = "Monitor Consumes",
-        onClick = function()
-          OGRH.EnsureSV()
-          OGRH_SV.monitorConsumes = not OGRH_SV.monitorConsumes
-          
-          -- Update button text color
-          if OGRH_SV.monitorConsumes then
-            menu.monitorConsumesItem.fs:SetText("|cff00ff00Monitor Consumes|r")
-            if OGRH.ShowConsumeMonitor then
-              OGRH.ShowConsumeMonitor()
-            end
-          else
-            menu.monitorConsumesItem.fs:SetText("Monitor Consumes")
-            if OGRH.HideConsumeMonitor then
-              OGRH.HideConsumeMonitor()
-            end
-          end
-          
-          if OGRH_SV.monitorConsumes then
-            OGRH.Msg("Consume monitoring |cff00ff00enabled|r.")
-          else
-            OGRH.Msg("Consume monitoring |cffff0000disabled|r.")
-          end
-        end
-      })
-      
       -- Track Consumes
       menu:AddItem({
         text = "Track Consumes",
@@ -5315,20 +4894,8 @@ local function CreateMinimapButton()
         end
       })
       
-      -- Helper function to update monitor consumes text
-      menu.UpdateMonitorConsumesText = function()
-        OGRH.EnsureSV()
-        if OGRH_SV.monitorConsumes then
-          menu.monitorConsumesItem.fs:SetText("|cff00ff00Monitor Consumes|r")
-        else
-          menu.monitorConsumesItem.fs:SetText("Monitor Consumes")
-        end
-      end
-      
       -- Settings submenu
-      menu:AddItem({
-        text = "Settings",
-        submenu = {
+      local settingsItems = {
           {
             text = "Encounters",
             onClick = function()
@@ -5355,6 +4922,26 @@ local function CreateMinimapButton()
                 OGRH.ShowConsumesSettings()
               else
                 OGRH.Msg("Consumes module not loaded.")
+              end
+            end
+          },
+          {
+            text = "Monitor Consumes",
+            onClick = function()
+              OGRH.EnsureSV()
+              local currentValue = OGRH.SVM.Get("monitorConsumes")
+              OGRH.SVM.Set("monitorConsumes", nil, not currentValue)
+              
+              if OGRH.SVM.Get("monitorConsumes") then
+                if OGRH.ShowConsumeMonitor then
+                  OGRH.ShowConsumeMonitor()
+                end
+                OGRH.Msg("Consume monitoring |cff00ff00enabled|r.")
+              else
+                if OGRH.HideConsumeMonitor then
+                  OGRH.HideConsumeMonitor()
+                end
+                OGRH.Msg("Consume monitoring |cffff0000disabled|r.")
               end
             end
           },
@@ -5398,8 +4985,32 @@ local function CreateMinimapButton()
               end
             end
           }
-        }
+      }
+      
+      local settingsMenuItem = menu:AddItem({
+        text = "Settings",
+        submenu = settingsItems
       })
+      
+      -- Hook into Settings menu item OnEnter to update Monitor Consumes text before submenu shows
+      local originalOnEnter = settingsMenuItem:GetScript("OnEnter")
+      settingsMenuItem:SetScript("OnEnter", function()
+        -- Clear cached submenu to force recreation with updated text
+        settingsMenuItem.submenu = nil
+        
+        -- Update Monitor Consumes text (4th item in settings) before submenu is created
+        OGRH.EnsureSV()
+        if OGRH.SVM.Get("monitorConsumes") then
+          settingsItems[4].text = "|cff00ff00Monitor Consumes|r"
+        else
+          settingsItems[4].text = "Monitor Consumes"
+        end
+        
+        -- Call original OnEnter to show submenu
+        if originalOnEnter then
+          originalOnEnter()
+        end
+      end)
       
       -- Modules submenu
       menu:AddItem({
@@ -5425,10 +5036,10 @@ local function CreateMinimapButton()
           if OGRH_Main then
             if OGRH_Main:IsVisible() then
               OGRH_Main:Hide()
-              OGRH_SV.ui.hidden = true
+              OGRH.SVM.Set("ui", "hidden", true)
             else
               OGRH_Main:Show()
-              OGRH_SV.ui.hidden = false
+              OGRH.SVM.Set("ui", "hidden", false)
             end
           end
         end
@@ -5457,11 +5068,6 @@ local function CreateMinimapButton()
     
     -- Update toggle button text
     menu.UpdateToggleText()
-    
-    -- Update monitor consumes text
-    if menu.UpdateMonitorConsumesText then
-      menu.UpdateMonitorConsumesText()
-    end
     
     -- Position menu near source button with boundary checking
     menu:ClearAllPoints()

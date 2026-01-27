@@ -95,10 +95,7 @@ function OGRH.RefreshConsumesSettings()
   scrollChild.rows = {}
   
   OGRH.EnsureSV()
-  if not OGRH_SV.consumes then
-    OGRH_SV.consumes = {}
-  end
-  local items = OGRH_SV.consumes
+  local items = OGRH.SVM.Get("consumes") or {}
   
   local yOffset = -5
   local rowHeight = OGRH.LIST_ITEM_HEIGHT
@@ -124,24 +121,30 @@ function OGRH.RefreshConsumesSettings()
     local deleteBtn, downBtn, upBtn = OGRH.AddListItemButtons(
       row,
       idx,
-      table.getn(OGRH_SV.consumes),
+      table.getn(items),
       function()
         -- Move up
-        local temp = OGRH_SV.consumes[idx - 1]
-        OGRH_SV.consumes[idx - 1] = OGRH_SV.consumes[idx]
-        OGRH_SV.consumes[idx] = temp
+        local consumes = OGRH.SVM.Get("consumes") or {}
+        local temp = consumes[idx - 1]
+        consumes[idx - 1] = consumes[idx]
+        consumes[idx] = temp
+        OGRH.SVM.Set("consumes", nil, consumes, {syncLevel = "BATCH", componentType = "consumes"})
         OGRH.RefreshConsumesSettings()
       end,
       function()
         -- Move down
-        local temp = OGRH_SV.consumes[idx + 1]
-        OGRH_SV.consumes[idx + 1] = OGRH_SV.consumes[idx]
-        OGRH_SV.consumes[idx] = temp
+        local consumes = OGRH.SVM.Get("consumes") or {}
+        local temp = consumes[idx + 1]
+        consumes[idx + 1] = consumes[idx]
+        consumes[idx] = temp
+        OGRH.SVM.Set("consumes", nil, consumes, {syncLevel = "BATCH", componentType = "consumes"})
         OGRH.RefreshConsumesSettings()
       end,
       function()
         -- Delete
-        table.remove(OGRH_SV.consumes, idx)
+        local consumes = OGRH.SVM.Get("consumes") or {}
+        table.remove(consumes, idx)
+        OGRH.SVM.Set("consumes", nil, consumes, {syncLevel = "BATCH", componentType = "consumes"})
         OGRH.RefreshConsumesSettings()
       end
     )
@@ -324,9 +327,7 @@ function OGRH.ShowAddConsumeDialog()
     
     -- Add to list
     OGRH.EnsureSV()
-    if not OGRH_SV.consumes then
-      OGRH_SV.consumes = {}
-    end
+    local consumes = OGRH.SVM.Get("consumes") or {}
     local consumeData = {
       primaryId = primaryId,
       primaryName = primaryName or ("Item " .. primaryId)
@@ -335,7 +336,8 @@ function OGRH.ShowAddConsumeDialog()
       consumeData.secondaryId = secondaryId
       consumeData.secondaryName = secondaryName or ("Item " .. secondaryId)
     end
-    table.insert(OGRH_SV.consumes, consumeData)
+    table.insert(consumes, consumeData)
+    OGRH.SVM.Set("consumes", nil, consumes, {syncLevel = "BATCH", componentType = "consumes"})
     
     -- Clear inputs
     primaryInput:SetText("")
@@ -358,10 +360,8 @@ end
 -- Show edit consume dialog
 function OGRH.ShowEditConsumeDialog(itemIndex)
   OGRH.EnsureSV()
-  if not OGRH_SV.consumes then
-    OGRH_SV.consumes = {}
-  end
-  local itemData = OGRH_SV.consumes[itemIndex]
+  local consumes = OGRH.SVM.Get("consumes") or {}
+  local itemData = consumes[itemIndex]
   if not itemData then return end
   
   if OGRH_EditConsumeDialog then
@@ -493,6 +493,7 @@ function OGRH.ShowEditConsumeDialog(itemIndex)
     end
     
     -- Update item
+    local consumes = OGRH.SVM.Get("consumes") or {}
     local consumeData = {
       primaryId = primaryId,
       primaryName = primaryName or ("Item " .. primaryId)
@@ -501,7 +502,8 @@ function OGRH.ShowEditConsumeDialog(itemIndex)
       consumeData.secondaryId = secondaryId
       consumeData.secondaryName = secondaryName or ("Item " .. secondaryId)
     end
-    OGRH_SV.consumes[dialog.itemIndex] = consumeData
+    consumes[dialog.itemIndex] = consumeData
+    OGRH.SVM.Set("consumes", nil, consumes, {syncLevel = "BATCH", componentType = "consumes"})
     
     -- Refresh settings window
     OGRH.RefreshConsumesSettings()

@@ -1,4 +1,5 @@
 V1 Path,V2 Path (PER DESIGN DOC),Transformation Type,Breaking Change,UI Bindings,Control Name,File Location,Notes,
+"NOTE: All V2 paths are relative to OGRH_SV.v2.* root. For example, 'recruitment.enabled' resolves to OGRH_SV.v2.recruitment.enabled after cutover. V1 data remains at OGRH_SV.* for rollback capability.",,,,,,,,
 OGRH_SV.recruitment.whisperHistory,recruitment.whisperHistory,NO CHANGE,NO,UI40-7,contact list (left panel),Administration/Recruitment.lua:203-279,Whisper conversation history per player,
 OGRH_SV.recruitment.enabled,recruitment.enabled,NO CHANGE,NO,,,Administration/Recruitment.lua:25,Recruitment system enabled flag,
 OGRH_SV.recruitment.selectedMessageIndex,recruitment.selectedMessageIndex,NO CHANGE,NO,UI40-8,messageSelectorBtn,Administration/Recruitment.lua:316-420,Currently active message slot (1-5),

@@ -487,6 +487,30 @@ OGRH.Msg("\n[Phase 5] Applying semantic transformations...")
         end
     end
     
+    -- Phase 6: Copy simple data structures not in migration map
+OGRH.Msg("\n[Phase 6] Copying unmapped data (consumes, tradeItems)...")
+    local simpleCopyFields = {"consumes", "tradeItems", "pollTime", "allowRemoteReadyCheck", "monitorConsumes", "syncLocked"}
+    for _, field in ipairs(simpleCopyFields) do
+        if OGRH_SV[field] ~= nil then
+            v2[field] = DeepCopy(OGRH_SV[field])
+            local count = 0
+            if type(OGRH_SV[field]) == "table" then
+                for k, v in pairs(OGRH_SV[field]) do
+                    count = count + 1
+                end
+OGRH.Msg(string.format("  Copied %s: %d items", field, count))
+            else
+OGRH.Msg(string.format("  Copied %s: %s", field, tostring(OGRH_SV[field])))
+            end
+        end
+    end
+    
+    -- Copy UI state
+    if OGRH_SV.ui then
+        v2.ui = DeepCopy(OGRH_SV.ui)
+OGRH.Msg(string.format("  Copied ui state"))
+    end
+    
 OGRH.Msg("\n" .. string.rep("=", 72))
 OGRH.Msg("[Migration] ✓ Migration Complete!")
 OGRH.Msg(string.rep("=", 72))
@@ -1771,3 +1795,727 @@ function OGRH.Migration.CompareAnnouncements(raidName, encounterName)
     return true
 end
 
+-- ============================================
+-- COMPARISON: Component-Level Comparisons
+-- ============================================
+
+-- Compare recruitment data
+function OGRH.Migration.CompareRecruitment()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1 = OGRH_SV.recruitment or {}
+    local v2 = OGRH_SV.v2.recruitment or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("RECRUITMENT COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Compare simple fields
+    local fields = {
+        {key = "enabled", label = "Enabled"},
+        {key = "selectedMessageIndex", label = "Selected Message"},
+        {key = "lastAdTime", label = "Last Ad Time"},
+        {key = "autoAd", label = "Auto-Ad"},
+        {key = "selectedChannel", label = "Channel"},
+        {key = "interval", label = "Interval"},
+        {key = "targetTime", label = "Target Time"},
+        {key = "isRecruiting", label = "Is Recruiting"}
+    }
+    
+    for i = 1, table.getn(fields) do
+        local field = fields[i]
+        local v1Val = v1[field.key]
+        local v2Val = v2[field.key]
+        local match = (v1Val == v2Val) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+        
+        OGRH.Msg(string.format("%s |cffffaa00%s:|r", match, field.label))
+        OGRH.Msg(string.format("  v1: %s", tostring(v1Val)))
+        OGRH.Msg(string.format("  v2: %s", tostring(v2Val)))
+        OGRH.Msg(" ")
+    end
+    
+    -- Compare messages
+    OGRH.Msg("|cffffaa00Messages:|r")
+    for i = 1, 5 do
+        local v1Msg = (v1.messages and v1.messages[i]) or ""
+        local v2Msg = (v2.messages and v2.messages[i]) or ""
+        local match = (v1Msg == v2Msg) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+        OGRH.Msg(string.format("%s  Slot %d: v1='%s' v2='%s'", match, i, v1Msg, v2Msg))
+    end
+    OGRH.Msg(" ")
+    
+    -- Compare messages2
+    OGRH.Msg("|cffffaa00Messages2:|r")
+    for i = 1, 5 do
+        local v1Msg = (v1.messages2 and v1.messages2[i]) or ""
+        local v2Msg = (v2.messages2 and v2.messages2[i]) or ""
+        local match = (v1Msg == v2Msg) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+        OGRH.Msg(string.format("%s  Slot %d: v1='%s' v2='%s'", match, i, v1Msg, v2Msg))
+    end
+    OGRH.Msg(" ")
+    
+    -- Compare table sizes
+    OGRH.Msg("|cffffaa00Table Sizes:|r")
+    local v1WhisperCount = (v1.whisperHistory and table.getn(v1.whisperHistory)) or 0
+    local v2WhisperCount = (v2.whisperHistory and table.getn(v2.whisperHistory)) or 0
+    OGRH.Msg(string.format("  whisperHistory: v1=%d v2=%d", v1WhisperCount, v2WhisperCount))
+    OGRH.Msg(" ")
+    
+    OGRH.Msg("======================================")
+    return true
+end
+
+-- Compare consumes tracking data
+function OGRH.Migration.CompareConsumesTracking()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1 = OGRH_SV.consumesTracking or {}
+    local v2 = OGRH_SV.v2.consumesTracking or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("CONSUMES TRACKING COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Compare simple fields
+    local fields = {
+        {key = "enabled", label = "Enabled"},
+        {key = "trackOnPull", label = "Track on Pull"},
+        {key = "maxEntries", label = "Max Entries"},
+        {key = "secondsBeforePull", label = "Seconds Before Pull"},
+        {key = "logToMemory", label = "Log to Memory"},
+        {key = "logToCombatLog", label = "Log to Combat Log"}
+    }
+    
+    for i = 1, table.getn(fields) do
+        local field = fields[i]
+        local v1Val = v1[field.key]
+        local v2Val = v2[field.key]
+        local match = (v1Val == v2Val) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+        
+        OGRH.Msg(string.format("%s |cffffaa00%s:|r", match, field.label))
+        OGRH.Msg(string.format("  v1: %s", tostring(v1Val)))
+        OGRH.Msg(string.format("  v2: %s", tostring(v2Val)))
+        OGRH.Msg(" ")
+    end
+    
+    -- Compare table sizes
+    OGRH.Msg("|cffffaa00Table Sizes:|r")
+    local v1HistoryCount = (v1.history and table.getn(v1.history)) or 0
+    local v2HistoryCount = (v2.history and table.getn(v2.history)) or 0
+    OGRH.Msg(string.format("  history: v1=%d v2=%d", v1HistoryCount, v2HistoryCount))
+    OGRH.Msg(" ")
+    
+    OGRH.Msg("======================================")
+    return true
+end
+
+-- Compare auto-promotes data
+function OGRH.Migration.ComparePromotes()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1 = OGRH_SV.autoPromotes or {}
+    local v2 = OGRH_SV.v2.autoPromotes or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("AUTO-PROMOTES COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    local v1Count = table.getn(v1)
+    local v2Count = table.getn(v2)
+    
+    OGRH.Msg(string.format("|cffffaa00Entry Count:|r v1=%d v2=%d", v1Count, v2Count))
+    OGRH.Msg(" ")
+    
+    local maxCount = v1Count > v2Count and v1Count or v2Count
+    
+    if maxCount > 0 then
+        for i = 1, maxCount do
+            local v1Entry = v1[i]
+            local v2Entry = v2[i]
+            
+            OGRH.Msg(string.format("|cffffaa00[Entry %d]|r", i))
+            
+            if v1Entry and v2Entry then
+                local nameMatch = (v1Entry.name == v2Entry.name) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+                local classMatch = (v1Entry.class == v2Entry.class) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+                
+                OGRH.Msg(string.format("%s  name: v1='%s' v2='%s'", nameMatch, tostring(v1Entry.name), tostring(v2Entry.name)))
+                OGRH.Msg(string.format("%s  class: v1='%s' v2='%s'", classMatch, tostring(v1Entry.class), tostring(v2Entry.class)))
+            elseif v1Entry then
+                OGRH.Msg(string.format("  v1: name='%s' class='%s'", tostring(v1Entry.name), tostring(v1Entry.class)))
+                OGRH.Msg("  v2: (missing)")
+            elseif v2Entry then
+                OGRH.Msg("  v1: (missing)")
+                OGRH.Msg(string.format("  v2: name='%s' class='%s'", tostring(v2Entry.name), tostring(v2Entry.class)))
+            end
+            OGRH.Msg(" ")
+        end
+    else
+        OGRH.Msg("  No auto-promote entries")
+        OGRH.Msg(" ")
+    end
+    
+    OGRH.Msg("======================================")
+    return true
+end
+
+-- Compare roster management data
+function OGRH.Migration.CompareRoster()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1 = OGRH_SV.rosterManagement or {}
+    local v2 = OGRH_SV.v2.rosterManagement or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("ROSTER MANAGEMENT COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Count players
+    local v1PlayerCount = 0
+    local v2PlayerCount = 0
+    
+    if v1.players then
+        for _ in pairs(v1.players) do
+            v1PlayerCount = v1PlayerCount + 1
+        end
+    end
+    
+    if v2.players then
+        for _ in pairs(v2.players) do
+            v2PlayerCount = v2PlayerCount + 1
+        end
+    end
+    
+    OGRH.Msg(string.format("|cffffaa00Player Count:|r v1=%d v2=%d", v1PlayerCount, v2PlayerCount))
+    OGRH.Msg(" ")
+    
+    -- Compare config
+    if v1.config or v2.config then
+        OGRH.Msg("|cffffaa00Config:|r")
+        local v1Config = v1.config or {}
+        local v2Config = v2.config or {}
+        
+        local configFields = {"historySize", "autoRankingEnabled"}
+        for i = 1, table.getn(configFields) do
+            local field = configFields[i]
+            local v1Val = v1Config[field]
+            local v2Val = v2Config[field]
+            local match = (v1Val == v2Val) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+            
+            OGRH.Msg(string.format("%s  %s: v1=%s v2=%s", match, field, tostring(v1Val), tostring(v2Val)))
+        end
+        OGRH.Msg(" ")
+    end
+    
+    OGRH.Msg("======================================")
+    return true
+end
+
+-- Compare core settings
+function OGRH.Migration.CompareBaseConsumes()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1Consumes = OGRH_SV.consumes or {}
+    local v2Consumes = OGRH_SV.v2.consumes or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("BASE CONSUMES COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Show v1 consumes
+    OGRH.Msg("|cffffaa00v1 Consumes:|r")
+    local v1Count = 0
+    for key, value in pairs(v1Consumes) do
+        v1Count = v1Count + 1
+        if type(value) == "table" then
+            local items = ""
+            for k, v in pairs(value) do
+                if items ~= "" then items = items .. ", " end
+                items = items .. tostring(k) .. "=" .. tostring(v)
+            end
+            OGRH.Msg(string.format("  [%s] = {%s}", tostring(key), items))
+        else
+            OGRH.Msg(string.format("  [%s] = %s", tostring(key), tostring(value)))
+        end
+    end
+    if v1Count == 0 then
+        OGRH.Msg("  (empty)")
+    end
+    OGRH.Msg(" ")
+    
+    -- Show v2 consumes
+    OGRH.Msg("|cffffaa00v2 Consumes:|r")
+    local v2Count = 0
+    for key, value in pairs(v2Consumes) do
+        v2Count = v2Count + 1
+        if type(value) == "table" then
+            local items = ""
+            for k, v in pairs(value) do
+                if items ~= "" then items = items .. ", " end
+                items = items .. tostring(k) .. "=" .. tostring(v)
+            end
+            OGRH.Msg(string.format("  [%s] = {%s}", tostring(key), items))
+        else
+            OGRH.Msg(string.format("  [%s] = %s", tostring(key), tostring(value)))
+        end
+    end
+    if v2Count == 0 then
+        OGRH.Msg("  (empty)")
+    end
+    OGRH.Msg(" ")
+    
+    local match = (v1Count == v2Count) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    OGRH.Msg(string.format("%s |cffffaa00Total Items:|r v1=%d v2=%d", match, v1Count, v2Count))
+    OGRH.Msg("======================================")
+    return true
+end
+
+function OGRH.Migration.CompareTrade()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1Trade = OGRH_SV.tradeItems or {}
+    local v2Trade = OGRH_SV.v2.tradeItems or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("TRADE ITEMS COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Show v1 trade items
+    OGRH.Msg("|cffffaa00v1 Trade Items:|r")
+    local v1Count = 0
+    for i = 1, table.getn(v1Trade) do
+        v1Count = v1Count + 1
+        local item = v1Trade[i]
+        if type(item) == "table" then
+            -- Dump all keys in the table
+            local keys = ""
+            for k, v in pairs(item) do
+                if keys ~= "" then keys = keys .. ", " end
+                keys = keys .. tostring(k) .. "=" .. tostring(v)
+            end
+            OGRH.Msg(string.format("  [%d] {%s}", i, keys))
+        else
+            OGRH.Msg(string.format("  [%d] = %s", i, tostring(item)))
+        end
+    end
+    if v1Count == 0 then
+        OGRH.Msg("  (empty)")
+    end
+    OGRH.Msg(" ")
+    
+    -- Show v2 trade items
+    OGRH.Msg("|cffffaa00v2 Trade Items:|r")
+    local v2Count = 0
+    for i = 1, table.getn(v2Trade) do
+        v2Count = v2Count + 1
+        local item = v2Trade[i]
+        if type(item) == "table" then
+            -- Dump all keys in the table
+            local keys = ""
+            for k, v in pairs(item) do
+                if keys ~= "" then keys = keys .. ", " end
+                keys = keys .. tostring(k) .. "=" .. tostring(v)
+            end
+            OGRH.Msg(string.format("  [%d] {%s}", i, keys))
+        else
+            OGRH.Msg(string.format("  [%d] = %s", i, tostring(item)))
+        end
+    end
+    if v2Count == 0 then
+        OGRH.Msg("  (empty)")
+    end
+    OGRH.Msg(" ")
+    
+    local match = (v1Count == v2Count) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    OGRH.Msg(string.format("%s |cffffaa00Total Items:|r v1=%d v2=%d", match, v1Count, v2Count))
+    OGRH.Msg("======================================")
+    return true
+end
+
+function OGRH.Migration.CompareCore()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("CORE SETTINGS COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Schema version is a meta field (only at root level)
+    OGRH.Msg("|cffffaa00Schema Version:|r")
+    OGRH.Msg(string.format("  Root level (active schema): %s", tostring(OGRH_SV.schemaVersion)))
+    OGRH.Msg(" ")
+    
+    -- Compare root-level data fields
+    local v1PollTime = OGRH_SV.pollTime
+    local v2PollTime = OGRH_SV.v2.pollTime
+    local pollMatch = (v1PollTime == v2PollTime) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    
+    OGRH.Msg(string.format("%s |cffffaa00Poll Time:|r", pollMatch))
+    OGRH.Msg(string.format("  v1: %s", tostring(v1PollTime)))
+    OGRH.Msg(string.format("  v2: %s", tostring(v2PollTime)))
+    OGRH.Msg(" ")
+    
+    -- Remote ready check setting
+    local v1RemoteRC = OGRH_SV.allowRemoteReadyCheck
+    local v2RemoteRC = OGRH_SV.v2.allowRemoteReadyCheck
+    local rcMatch = (v1RemoteRC == v2RemoteRC) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    
+    OGRH.Msg(string.format("%s |cffffaa00Allow Remote Ready Check:|r", rcMatch))
+    OGRH.Msg(string.format("  v1: %s", tostring(v1RemoteRC)))
+    OGRH.Msg(string.format("  v2: %s", tostring(v2RemoteRC)))
+    OGRH.Msg(" ")
+    
+    -- Monitor consumes setting
+    local v1MonitorConsumes = OGRH_SV.monitorConsumes
+    local v2MonitorConsumes = OGRH_SV.v2.monitorConsumes
+    local monitorMatch = (v1MonitorConsumes == v2MonitorConsumes) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    
+    OGRH.Msg(string.format("%s |cffffaa00Monitor Consumes:|r", monitorMatch))
+    OGRH.Msg(string.format("  v1: %s", tostring(v1MonitorConsumes)))
+    OGRH.Msg(string.format("  v2: %s", tostring(v2MonitorConsumes)))
+    OGRH.Msg(" ")
+    
+    -- Selected raid/encounter are in ui.* not root
+    local v1SelectedRaid = (OGRH_SV.ui and OGRH_SV.ui.selectedRaid) or nil
+    local v2SelectedRaid = (OGRH_SV.v2.ui and OGRH_SV.v2.ui.selectedRaid) or nil
+    local raidMatch = (v1SelectedRaid == v2SelectedRaid) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    
+    OGRH.Msg(string.format("%s |cffffaa00Selected Raid:|r", raidMatch))
+    OGRH.Msg(string.format("  v1: %s", tostring(v1SelectedRaid)))
+    OGRH.Msg(string.format("  v2: %s", tostring(v2SelectedRaid)))
+    OGRH.Msg(" ")
+    
+    local v1SelectedEnc = (OGRH_SV.ui and OGRH_SV.ui.selectedEncounter) or nil
+    local v2SelectedEnc = (OGRH_SV.v2.ui and OGRH_SV.v2.ui.selectedEncounter) or nil
+    local encMatch = (v1SelectedEnc == v2SelectedEnc) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    
+    OGRH.Msg(string.format("%s |cffffaa00Selected Encounter:|r", encMatch))
+    OGRH.Msg(string.format("  v1: %s", tostring(v1SelectedEnc)))
+    OGRH.Msg(string.format("  v2: %s", tostring(v2SelectedEnc)))
+    OGRH.Msg(" ")
+    
+    -- Sync locked setting
+    local v1SyncLocked = OGRH_SV.syncLocked
+    local v2SyncLocked = OGRH_SV.v2.syncLocked
+    local syncLockedMatch = (v1SyncLocked == v2SyncLocked) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    
+    OGRH.Msg(string.format("%s |cffffaa00Sync Locked:|r", syncLockedMatch))
+    OGRH.Msg(string.format("  v1: %s", tostring(v1SyncLocked)))
+    OGRH.Msg(string.format("  v2: %s", tostring(v2SyncLocked)))
+    OGRH.Msg(" ")
+    
+    -- Compare UI settings
+    if OGRH_SV.ui or OGRH_SV.v2.ui then
+        OGRH.Msg("|cffffaa00UI Settings:|r")
+        local v1UI = OGRH_SV.ui or {}
+        local v2UI = OGRH_SV.v2.ui or {}
+        
+        local uiFields = {"locked", "minimized", "point", "relPoint", "x", "y", "hidden"}
+        for i = 1, table.getn(uiFields) do
+            local field = uiFields[i]
+            local v1Val = v1UI[field]
+            local v2Val = v2UI[field]
+            local match = (v1Val == v2Val) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+            
+            OGRH.Msg(string.format("%s  %s: v1=%s v2=%s", match, field, tostring(v1Val), tostring(v2Val)))
+        end
+        OGRH.Msg(" ")
+    end
+    
+    -- Compare data structure counts
+    local v1TradeItemsCount = 0
+    if OGRH_SV.tradeItems then
+        for k, v in pairs(OGRH_SV.tradeItems) do
+            v1TradeItemsCount = v1TradeItemsCount + 1
+        end
+    end
+    
+    local v2TradeItemsCount = 0
+    if OGRH_SV.v2.tradeItems then
+        for k, v in pairs(OGRH_SV.v2.tradeItems) do
+            v2TradeItemsCount = v2TradeItemsCount + 1
+        end
+    end
+    
+    local tradeMatch = (v1TradeItemsCount == v2TradeItemsCount) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    OGRH.Msg(string.format("%s |cffffaa00Trade Items Count:|r", tradeMatch))
+    OGRH.Msg(string.format("  v1: %d", v1TradeItemsCount))
+    OGRH.Msg(string.format("  v2: %d", v2TradeItemsCount))
+    OGRH.Msg(" ")
+    
+    local v1ConsumesCount = 0
+    if OGRH_SV.consumes then
+        for k, v in pairs(OGRH_SV.consumes) do
+            v1ConsumesCount = v1ConsumesCount + 1
+        end
+    end
+    
+    local v2ConsumesCount = 0
+    if OGRH_SV.v2.consumes then
+        for k, v in pairs(OGRH_SV.v2.consumes) do
+            v2ConsumesCount = v2ConsumesCount + 1
+        end
+    end
+    
+    local consumesMatch = (v1ConsumesCount == v2ConsumesCount) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    OGRH.Msg(string.format("%s |cffffaa00Consumes Count:|r", consumesMatch))
+    OGRH.Msg(string.format("  v1: %d", v1ConsumesCount))
+    OGRH.Msg(string.format("  v2: %d", v2ConsumesCount))
+    OGRH.Msg(" ")
+    
+    OGRH.Msg("======================================")
+    return true
+end
+
+-- Compare message router state
+function OGRH.Migration.CompareMessageRouter()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1 = OGRH_SV.MessageRouter or {}
+    local v2 = OGRH_SV.v2.MessageRouter or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("MESSAGE ROUTER COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Count handlers
+    local v1HandlerCount = 0
+    local v2HandlerCount = 0
+    
+    if v1.handlers then
+        for _ in pairs(v1.handlers) do
+            v1HandlerCount = v1HandlerCount + 1
+        end
+    end
+    
+    if v2.handlers then
+        for _ in pairs(v2.handlers) do
+            v2HandlerCount = v2HandlerCount + 1
+        end
+    end
+    
+    OGRH.Msg(string.format("|cffffaa00Handler Count:|r v1=%d v2=%d", v1HandlerCount, v2HandlerCount))
+    OGRH.Msg(" ")
+    
+    -- Compare state fields
+    if v1.state or v2.state then
+        OGRH.Msg("|cffffaa00State:|r")
+        local v1State = v1.state or {}
+        local v2State = v2.state or {}
+        
+        local stateFields = {"initialized", "ready"}
+        for i = 1, table.getn(stateFields) do
+            local field = stateFields[i]
+            local v1Val = v1State[field]
+            local v2Val = v2State[field]
+            local match = (v1Val == v2Val) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+            
+            OGRH.Msg(string.format("%s  %s: v1=%s v2=%s", match, field, tostring(v1Val), tostring(v2Val)))
+        end
+        OGRH.Msg(" ")
+    end
+    
+    OGRH.Msg("======================================")
+    return true
+end
+
+-- Compare permissions data
+function OGRH.Migration.ComparePermissions()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1 = OGRH_SV.Permissions or {}
+    local v2 = OGRH_SV.v2.Permissions or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("PERMISSIONS COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Compare fields
+    local fields = {
+        {key = "raidAdmin", label = "Raid Admin"},
+        {key = "sessionAdmin", label = "Session Admin"},
+        {key = "adminTimestamp", label = "Admin Timestamp"}
+    }
+    
+    for i = 1, table.getn(fields) do
+        local field = fields[i]
+        local v1Val = v1[field.key]
+        local v2Val = v2[field.key]
+        local match = (v1Val == v2Val) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+        
+        OGRH.Msg(string.format("%s |cffffaa00%s:|r", match, field.label))
+        OGRH.Msg(string.format("  v1: %s", tostring(v1Val)))
+        OGRH.Msg(string.format("  v2: %s", tostring(v2Val)))
+        OGRH.Msg(" ")
+    end
+    
+    -- Count denials
+    local v1DenialCount = 0
+    local v2DenialCount = 0
+    
+    if v1.denials then
+        v1DenialCount = table.getn(v1.denials)
+    end
+    
+    if v2.denials then
+        v2DenialCount = table.getn(v2.denials)
+    end
+    
+    OGRH.Msg(string.format("|cffffaa00Denial Count:|r v1=%d v2=%d", v1DenialCount, v2DenialCount))
+    OGRH.Msg(" ")
+    
+    OGRH.Msg("======================================")
+    return true
+end
+
+-- Compare versioning data
+function OGRH.Migration.CompareVersioning()
+    if not OGRH_SV then
+        OGRH.Msg("[Compare] ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+        OGRH.Msg("[Compare] ERROR: v2 schema not found. Run /ogrh migration create first")
+        return false
+    end
+    
+    local v1 = OGRH_SV.Versioning or {}
+    local v2 = OGRH_SV.v2.Versioning or {}
+    
+    OGRH.Msg("======================================")
+    OGRH.Msg("VERSIONING COMPARISON")
+    OGRH.Msg("======================================")
+    OGRH.Msg(" ")
+    
+    -- Compare global version
+    local v1Global = v1.globalVersion or 0
+    local v2Global = v2.globalVersion or 0
+    local match = (v1Global == v2Global) and "|cff00ff00✓|r" or "|cffff0000✗|r"
+    
+    OGRH.Msg(string.format("%s |cffffaa00Global Version:|r", match))
+    OGRH.Msg(string.format("  v1: %d", v1Global))
+    OGRH.Msg(string.format("  v2: %d", v2Global))
+    OGRH.Msg(" ")
+    
+    -- Count encounter versions
+    local v1EncCount = 0
+    local v2EncCount = 0
+    
+    if v1.encounterVersions then
+        for _ in pairs(v1.encounterVersions) do
+            v1EncCount = v1EncCount + 1
+        end
+    end
+    
+    if v2.encounterVersions then
+        for _ in pairs(v2.encounterVersions) do
+            v2EncCount = v2EncCount + 1
+        end
+    end
+    
+    OGRH.Msg(string.format("|cffffaa00Encounter Version Count:|r v1=%d v2=%d", v1EncCount, v2EncCount))
+    OGRH.Msg(" ")
+    
+    -- Count assignment versions
+    local v1AssignCount = 0
+    local v2AssignCount = 0
+    
+    if v1.assignmentVersions then
+        for _ in pairs(v1.assignmentVersions) do
+            v1AssignCount = v1AssignCount + 1
+        end
+    end
+    
+    if v2.assignmentVersions then
+        for _ in pairs(v2.assignmentVersions) do
+            v2AssignCount = v2AssignCount + 1
+        end
+    end
+    
+    OGRH.Msg(string.format("|cffffaa00Assignment Version Count:|r v1=%d v2=%d", v1AssignCount, v2AssignCount))
+    OGRH.Msg(" ")
+    
+    OGRH.Msg("======================================")
+    return true
+end

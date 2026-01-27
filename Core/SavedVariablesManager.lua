@@ -1,8 +1,9 @@
 --[[
-SavedVariablesManager (SVM) - Write interface for OGRH_SV with integrated sync
+SavedVariablesManager (SVM) - Unified interface for OGRH_SV with integrated sync
 
 USAGE FOR AI AGENTS:
-- Reads: Use direct access (OGRH_SV.key.subkey)
+- Reads: Use OGRH.SVM.GetPath("key.subkey") or OGRH.SVM.Get("key", "subkey")
+         (Direct access works during v1, but MUST migrate to SVM before v2 cutover)
 - Writes: Use OGRH.SVM.Set("key", "subkey", value, syncMetadata)
          or OGRH.SVM.SetPath("key.subkey", value, syncMetadata)
 
@@ -74,7 +75,7 @@ OGRH.SyncLevels = {
 function OGRH.SVM.GetActiveSchema()
     -- Route to v2 if schemaVersion is set to "v2"
     if OGRH_SV.schemaVersion == "v2" then
-        -- Use v2 schema at OGRH_SV.v2.*
+        -- Use v2 schema at OGRH_SV.v2.* (permanent location)
         if not OGRH_SV.v2 then
             OGRH_SV.v2 = {}  -- Initialize if missing
         end
@@ -118,11 +119,48 @@ function OGRH.SVM.Get(key, subkey)
 end
 
 -- ============================================
+-- CORE: Get Value from Deep Path
+-- ============================================
+function OGRH.SVM.GetPath(path)
+    local sv = OGRH.SVM.GetActiveSchema()
+    if not sv then return nil end
+    
+    -- Parse path using string.gfind (WoW 1.12 compatible)
+    local keys = {}
+    local iter = string.gfind(path, "[^.]+")
+    local key = iter()
+    while key do
+        table.insert(keys, key)
+        key = iter()
+    end
+    
+    if table.getn(keys) == 0 then return nil end
+    
+    -- Navigate to value
+    local current = sv
+    for i = 1, table.getn(keys) do
+        local k = keys[i]
+        if not current or type(current) ~= "table" then
+            return nil
+        end
+        current = current[k]
+    end
+    
+    return current
+end
+
+-- ============================================
 -- CORE: Set Value with Integrated Sync
 -- ============================================
 function OGRH.SVM.Set(key, subkey, value, syncMetadata)
     local sv = OGRH.SVM.GetActiveSchema()
     if not sv then return false end
+    
+    -- DEBUG: Show what schema we're writing to
+    local schemaName = (OGRH_SV.schemaVersion == "v2") and "v2" or "v1"
+    if OGRH.Msg and key == "ui" and (subkey == "selectedRaid" or subkey == "selectedEncounter") then
+        OGRH.Msg(string.format("[SVM] Writing %s.%s = %s to schema %s", key, subkey, tostring(value), schemaName))
+    end
     
     -- Write value to active schema only
     if subkey then

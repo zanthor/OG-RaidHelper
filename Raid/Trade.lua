@@ -365,7 +365,7 @@ local function ShowTradeMenu(anchorBtn)
             M.btns = {}
             
             OGRH.EnsureSV()
-            local items = OGRH_SV.tradeItems
+            local items = OGRH.SVM.Get("tradeItems") or {}
             
             local yOffset = -10
             local buttonHeight = 18
@@ -538,6 +538,489 @@ end)
 if TradeFrame then
     ogrhTradeButton = CreateTradeButton()
     tradeFrameHooked = true
+end
+
+-- ============================================
+-- TRADE SETTINGS UI
+-- ============================================
+
+-- Show trade settings window
+function OGRH.ShowTradeSettings()
+  OGRH.EnsureSV()
+  OGRH.CloseAllWindows("OGRH_TradeSettingsFrame")
+  
+  if OGRH_TradeSettingsFrame then
+    OGRH_TradeSettingsFrame:Show()
+    OGRH.RefreshTradeSettings()
+    return
+  end
+  
+  local frame = CreateFrame("Frame", "OGRH_TradeSettingsFrame", UIParent)
+  frame:SetWidth(300)
+  frame:SetHeight(450)
+  frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  frame:SetFrameStrata("DIALOG")
+  frame:EnableMouse(true)
+  frame:SetMovable(true)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetScript("OnDragStart", function() frame:StartMoving() end)
+  frame:SetScript("OnDragStop", function() frame:StopMovingOrSizing() end)
+  
+  -- Backdrop
+  frame:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  frame:SetBackdropColor(0, 0, 0, 0.85)
+  
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(frame, "OGRH_TradeSettingsFrame")
+  
+  -- Title
+  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -15)
+  title:SetText("Trade Settings")
+  
+  -- Close button
+  local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  closeBtn:SetWidth(60)
+  closeBtn:SetHeight(24)
+  closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+  closeBtn:SetText("Close")
+  if OGRH.StyleButton then
+    OGRH.StyleButton(closeBtn)
+  end
+  closeBtn:SetScript("OnClick", function() frame:Hide() end)
+  
+  -- Instructions
+  local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  instructions:SetPoint("TOPLEFT", 20, -45)
+  instructions:SetText("Configure trade items and quantities:")
+  
+  -- Create scroll list using template
+  local listWidth = frame:GetWidth() - 34
+  local listHeight = frame:GetHeight() - 85
+  local outerFrame, scrollFrame, scrollChild, scrollBar, contentWidth = OGRH.CreateStyledScrollList(frame, listWidth, listHeight)
+  outerFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 17, -75)
+  
+  frame.scrollChild = scrollChild
+  frame.scrollFrame = scrollFrame
+  frame.scrollBar = scrollBar
+  
+  frame:Show()
+  OGRH.RefreshTradeSettings()
+end
+
+-- Refresh the trade settings list
+function OGRH.RefreshTradeSettings()
+  if not OGRH_TradeSettingsFrame then return end
+  
+  local scrollChild = OGRH_TradeSettingsFrame.scrollChild
+  
+  -- Clear existing rows
+  if scrollChild.rows then
+    for _, row in ipairs(scrollChild.rows) do
+      row:Hide()
+      row:SetParent(nil)
+    end
+  end
+  scrollChild.rows = {}
+  
+  OGRH.EnsureSV()
+  local items = OGRH.SVM.Get("tradeItems") or {}
+  
+  local yOffset = -5
+  local rowHeight = OGRH.LIST_ITEM_HEIGHT
+  local rowSpacing = OGRH.LIST_ITEM_SPACING
+  
+  local contentWidth = OGRH_TradeSettingsFrame.scrollChild:GetWidth()
+  
+  for i, itemData in ipairs(items) do
+    local row = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
+    row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    
+    local idx = i
+    
+    -- Right-click to edit
+    row:SetScript("OnClick", function()
+      if arg1 == "RightButton" then
+        OGRH.ShowEditTradeItemDialog(idx)
+      end
+    end)
+    
+    -- Add up/down/delete buttons using template
+    local deleteBtn, downBtn, upBtn = OGRH.AddListItemButtons(
+      row,
+      idx,
+      table.getn(items),
+      function()
+        -- Move up
+        local tradeItems = OGRH.SVM.Get("tradeItems") or {}
+        local temp = tradeItems[idx - 1]
+        tradeItems[idx - 1] = tradeItems[idx]
+        tradeItems[idx] = temp
+        OGRH.SVM.Set("tradeItems", nil, tradeItems, {syncLevel = "BATCH", componentType = "tradeItems"})
+        OGRH.RefreshTradeSettings()
+      end,
+      function()
+        -- Move down
+        local tradeItems = OGRH.SVM.Get("tradeItems") or {}
+        local temp = tradeItems[idx + 1]
+        tradeItems[idx + 1] = tradeItems[idx]
+        tradeItems[idx] = temp
+        OGRH.SVM.Set("tradeItems", nil, tradeItems, {syncLevel = "BATCH", componentType = "tradeItems"})
+        OGRH.RefreshTradeSettings()
+      end,
+      function()
+        -- Delete
+        local tradeItems = OGRH.SVM.Get("tradeItems") or {}
+        table.remove(tradeItems, idx)
+        OGRH.SVM.Set("tradeItems", nil, tradeItems, {syncLevel = "BATCH", componentType = "tradeItems"})
+        OGRH.RefreshTradeSettings()
+      end
+    )
+    
+    -- Quantity (positioned 10px from up arrow)
+    local qtyText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    qtyText:SetPoint("RIGHT", upBtn, "LEFT", -10, 0)
+    qtyText:SetText("x" .. (itemData.quantity or 1))
+    
+    -- Item name (fill remaining space)
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    nameText:SetPoint("LEFT", row, "LEFT", 5, 0)
+    nameText:SetPoint("RIGHT", qtyText, "LEFT", -5, 0)
+    nameText:SetJustifyH("LEFT")
+    nameText:SetText(itemData.name or ("Item " .. itemData.itemId))
+    
+    table.insert(scrollChild.rows, row)
+    yOffset = yOffset - rowHeight - rowSpacing
+  end
+  
+  -- Add "Add Item" placeholder row at the bottom
+  local addItemBtn = OGRH.CreateStyledListItem(scrollChild, contentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
+  addItemBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, yOffset)
+  
+  -- Text
+  local addText = addItemBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  addText:SetPoint("CENTER", addItemBtn, "CENTER", 0, 0)
+  addText:SetText("|cff00ff00Add Item|r")
+  
+  addItemBtn:SetScript("OnClick", function()
+    OGRH.ShowAddTradeItemDialog()
+  end)
+  
+  table.insert(scrollChild.rows, addItemBtn)
+  yOffset = yOffset - rowHeight
+  
+  -- Update scroll child height
+  local contentHeight = math.abs(yOffset) + 5
+  scrollChild:SetHeight(math.max(contentHeight, 1))
+  
+  -- Update scrollbar visibility
+  local scrollBar = OGRH_TradeSettingsFrame.scrollBar
+  local scrollFrame = OGRH_TradeSettingsFrame.scrollFrame
+  local scrollFrameHeight = scrollFrame:GetHeight()
+  
+  if contentHeight > scrollFrameHeight then
+    scrollBar:Show()
+    scrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+    scrollBar:SetValue(0)
+  else
+    scrollBar:Hide()
+  end
+  scrollFrame:SetVerticalScroll(0)
+end
+
+-- Show add trade item dialog
+function OGRH.ShowAddTradeItemDialog()
+  if OGRH_AddTradeItemDialog then
+    OGRH_AddTradeItemDialog:Show()
+    return
+  end
+  
+  local dialog = CreateFrame("Frame", "OGRH_AddTradeItemDialog", UIParent)
+  dialog:SetWidth(250)
+  dialog:SetHeight(160)
+  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+  dialog:EnableMouse(true)
+  dialog:SetMovable(true)
+  dialog:RegisterForDrag("LeftButton")
+  dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
+  dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
+  
+  -- Backdrop
+  dialog:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  dialog:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_AddTradeItemDialog")
+  
+  -- Title
+  local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -15)
+  title:SetText("Add Trade Item")
+  
+  -- Item ID label
+  local itemIdLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  itemIdLabel:SetPoint("TOPLEFT", 20, -50)
+  itemIdLabel:SetText("Item ID:")
+  
+  -- Item ID input
+  local itemIdInput = CreateFrame("EditBox", nil, dialog)
+  itemIdInput:SetPoint("LEFT", itemIdLabel, "RIGHT", 10, 0)
+  itemIdInput:SetWidth(120)
+  itemIdInput:SetHeight(25)
+  itemIdInput:SetAutoFocus(false)
+  itemIdInput:SetFontObject(ChatFontNormal)
+  itemIdInput:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  itemIdInput:SetBackdropColor(0, 0, 0, 0.8)
+  itemIdInput:SetTextInsets(8, 8, 0, 0)
+  itemIdInput:SetScript("OnEscapePressed", function() itemIdInput:ClearFocus() end)
+  dialog.itemIdInput = itemIdInput
+  
+  -- Quantity label
+  local qtyLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  qtyLabel:SetPoint("TOPLEFT", 20, -90)
+  qtyLabel:SetText("Quantity:")
+  
+  -- Quantity input
+  local qtyInput = CreateFrame("EditBox", nil, dialog)
+  qtyInput:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
+  qtyInput:SetWidth(120)
+  qtyInput:SetHeight(25)
+  qtyInput:SetAutoFocus(false)
+  qtyInput:SetFontObject(ChatFontNormal)
+  qtyInput:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  qtyInput:SetBackdropColor(0, 0, 0, 0.8)
+  qtyInput:SetTextInsets(8, 8, 0, 0)
+  qtyInput:SetText("1")
+  qtyInput:SetScript("OnEscapePressed", function() qtyInput:ClearFocus() end)
+  dialog.qtyInput = qtyInput
+  
+  -- Cancel button
+  local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  cancelBtn:SetWidth(80)
+  cancelBtn:SetHeight(25)
+  cancelBtn:SetPoint("BOTTOMRIGHT", -20, 15)
+  cancelBtn:SetText("Cancel")
+  cancelBtn:SetScript("OnClick", function()
+    dialog:Hide()
+  end)
+  
+  -- Add button
+  local addBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  addBtn:SetWidth(80)
+  addBtn:SetHeight(25)
+  addBtn:SetPoint("RIGHT", cancelBtn, "LEFT", -10, 0)
+  addBtn:SetText("Add")
+  addBtn:SetScript("OnClick", function()
+    local itemIdText = itemIdInput:GetText()
+    local qtyText = qtyInput:GetText()
+    
+    local itemId = tonumber(itemIdText)
+    local quantity = tonumber(qtyText)
+    
+    if not itemId or itemId <= 0 then
+      OGRH.Msg("Invalid Item ID. Please enter a valid number.")
+      return
+    end
+    
+    if not quantity or quantity <= 0 then
+      OGRH.Msg("Invalid Quantity. Please enter a valid number.")
+      return
+    end
+    
+    -- Get item name from game
+    local itemName, itemLink = GetItemInfo(itemId)
+    
+    -- Add to list
+    OGRH.EnsureSV()
+    local tradeItems = OGRH.SVM.Get("tradeItems") or {}
+    table.insert(tradeItems, {
+      itemId = itemId,
+      name = itemName or ("Item " .. itemId),
+      quantity = quantity
+    })
+    OGRH.SVM.Set("tradeItems", nil, tradeItems, {syncLevel = "BATCH", componentType = "tradeItems"})
+    
+    -- Clear inputs
+    itemIdInput:SetText("")
+    qtyInput:SetText("1")
+    
+    -- Refresh settings window
+    OGRH.RefreshTradeSettings()
+    
+    dialog:Hide()
+    OGRH.Msg("Added trade item: " .. (itemName or ("Item " .. itemId)))
+  end)
+  
+  dialog:Show()
+end
+
+-- Show edit trade item dialog
+function OGRH.ShowEditTradeItemDialog(itemIndex)
+  OGRH.EnsureSV()
+  local tradeItems = OGRH.SVM.Get("tradeItems") or {}
+  local itemData = tradeItems[itemIndex]
+  if not itemData then return end
+  
+  if OGRH_EditTradeItemDialog then
+    OGRH_EditTradeItemDialog.itemIndex = itemIndex
+    OGRH_EditTradeItemDialog.itemIdInput:SetText(tostring(itemData.itemId))
+    OGRH_EditTradeItemDialog.qtyInput:SetText(tostring(itemData.quantity or 1))
+    OGRH_EditTradeItemDialog:Show()
+    return
+  end
+  
+  local dialog = CreateFrame("Frame", "OGRH_EditTradeItemDialog", UIParent)
+  dialog:SetWidth(250)
+  dialog:SetHeight(160)
+  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+  dialog:EnableMouse(true)
+  dialog:SetMovable(true)
+  dialog:RegisterForDrag("LeftButton")
+  dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
+  dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
+  dialog.itemIndex = itemIndex
+  
+  -- Backdrop
+  dialog:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  dialog:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Register ESC key handler
+  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_EditTradeItemDialog")
+  
+  -- Title
+  local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -15)
+  title:SetText("Edit Trade Item")
+  
+  -- Item ID label
+  local itemIdLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  itemIdLabel:SetPoint("TOPLEFT", 20, -50)
+  itemIdLabel:SetText("Item ID:")
+  
+  -- Item ID input
+  local itemIdInput = CreateFrame("EditBox", nil, dialog)
+  itemIdInput:SetPoint("LEFT", itemIdLabel, "RIGHT", 10, 0)
+  itemIdInput:SetWidth(120)
+  itemIdInput:SetHeight(25)
+  itemIdInput:SetAutoFocus(false)
+  itemIdInput:SetFontObject(ChatFontNormal)
+  itemIdInput:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  itemIdInput:SetBackdropColor(0, 0, 0, 0.8)
+  itemIdInput:SetTextInsets(8, 8, 0, 0)
+  itemIdInput:SetText(tostring(itemData.itemId))
+  itemIdInput:SetScript("OnEscapePressed", function() itemIdInput:ClearFocus() end)
+  dialog.itemIdInput = itemIdInput
+  
+  -- Quantity label
+  local qtyLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  qtyLabel:SetPoint("TOPLEFT", 20, -90)
+  qtyLabel:SetText("Quantity:")
+  
+  -- Quantity input
+  local qtyInput = CreateFrame("EditBox", nil, dialog)
+  qtyInput:SetPoint("LEFT", qtyLabel, "RIGHT", 10, 0)
+  qtyInput:SetWidth(120)
+  qtyInput:SetHeight(25)
+  qtyInput:SetAutoFocus(false)
+  qtyInput:SetFontObject(ChatFontNormal)
+  qtyInput:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  qtyInput:SetBackdropColor(0, 0, 0, 0.8)
+  qtyInput:SetTextInsets(8, 8, 0, 0)
+  qtyInput:SetText(tostring(itemData.quantity or 1))
+  qtyInput:SetScript("OnEscapePressed", function() qtyInput:ClearFocus() end)
+  dialog.qtyInput = qtyInput
+  
+  -- Cancel button
+  local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  cancelBtn:SetWidth(80)
+  cancelBtn:SetHeight(25)
+  cancelBtn:SetPoint("BOTTOMRIGHT", -20, 15)
+  cancelBtn:SetText("Cancel")
+  cancelBtn:SetScript("OnClick", function()
+    dialog:Hide()
+  end)
+  
+  -- Save button
+  local saveBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  saveBtn:SetWidth(80)
+  saveBtn:SetHeight(25)
+  saveBtn:SetPoint("RIGHT", cancelBtn, "LEFT", -10, 0)
+  saveBtn:SetText("Save")
+  saveBtn:SetScript("OnClick", function()
+    local itemIdText = itemIdInput:GetText()
+    local qtyText = qtyInput:GetText()
+    
+    local itemId = tonumber(itemIdText)
+    local quantity = tonumber(qtyText)
+    
+    if not itemId or itemId <= 0 then
+      OGRH.Msg("Invalid Item ID. Please enter a valid number.")
+      return
+    end
+    
+    if not quantity or quantity <= 0 then
+      OGRH.Msg("Invalid Quantity. Please enter a valid number.")
+      return
+    end
+    
+    -- Get item name from game
+    local itemName, itemLink = GetItemInfo(itemId)
+    
+    -- Update item
+    local tradeItems = OGRH.SVM.Get("tradeItems") or {}
+    tradeItems[dialog.itemIndex] = {
+      itemId = itemId,
+      name = itemName or ("Item " .. itemId),
+      quantity = quantity
+    }
+    OGRH.SVM.Set("tradeItems", nil, tradeItems, {syncLevel = "BATCH", componentType = "tradeItems"})
+    
+    -- Refresh settings window
+    OGRH.RefreshTradeSettings()
+    
+    dialog:Hide()
+    OGRH.Msg("Updated trade item: " .. (itemName or ("Item " .. itemId)))
+  end)
+  
+  dialog:Show()
 end
 
 -- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Trade module loaded")

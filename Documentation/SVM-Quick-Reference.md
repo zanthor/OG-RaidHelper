@@ -7,10 +7,10 @@
 ## The Golden Rule
 
 ```lua
-// ✅ READS: Direct access
-local value = OGRH_SV.key.subkey
+-- ✅ READS: Use SVM (abstracts v1/v2 schema location)
+local value = OGRH.SVM.GetPath("key.subkey")
 
-// ✅ WRITES: Use SVM
+-- ✅ WRITES: Use SVM (triggers sync)
 OGRH.SVM.SetPath("key.subkey", value, syncMetadata)
 ```
 

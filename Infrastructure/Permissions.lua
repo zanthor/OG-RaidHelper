@@ -145,7 +145,6 @@ function OGRH.SetRaidAdmin(playerName, suppressBroadcast)
     
     -- Save to saved variables
     OGRH.EnsureSV()
-    OGRH_SV.raidLead = playerName
     
     -- Record in history
     table.insert(OGRH.Permissions.State.adminHistory, {

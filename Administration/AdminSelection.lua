@@ -776,7 +776,6 @@ function OGRH.InitRaidLead()
         if OGRH.Permissions and OGRH.Permissions.State then
           OGRH.Permissions.State.currentAdmin = nil
         end
-        OGRH_SV.raidLead = nil
         if OGRH.UpdateRaidLeadUI then
           OGRH.UpdateRaidLeadUI()
         end

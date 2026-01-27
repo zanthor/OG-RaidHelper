@@ -12,12 +12,14 @@ Main:SetBackdrop({bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="I
 Main:SetBackdropColor(0,0,0,0.85)
 Main:EnableMouse(true); Main:SetMovable(true)
 Main:RegisterForDrag("LeftButton")
-Main:SetScript("OnDragStart", function() if not OGRH_SV.ui.locked then Main:StartMoving() end end)
+Main:SetScript("OnDragStart", function() if not OGRH.SVM.Get("ui", "locked") then Main:StartMoving() end end)
 Main:SetScript("OnDragStop", function()
   Main:StopMovingOrSizing()
-  if not OGRH_SV.ui then OGRH_SV.ui = {} end
   local p,_,r,x,y = Main:GetPoint()
-  OGRH_SV.ui.point, OGRH_SV.ui.relPoint, OGRH_SV.ui.x, OGRH_SV.ui.y = p, r, x, y
+  OGRH.SVM.Set("ui", "point", p)
+  OGRH.SVM.Set("ui", "relPoint", r)
+  OGRH.SVM.Set("ui", "x", x)
+  OGRH.SVM.Set("ui", "y", y)
 end)
 
 local H = CreateFrame("Frame", nil, Main)
@@ -253,7 +255,7 @@ announceBtn:SetScript("OnClick", function()
     
     -- Get role configuration
     OGRH.EnsureSV()
-    local roles = OGRH_SV.encounterMgmt.roles
+    local roles = OGRH.SVM.GetPath("encounterMgmt.roles")
     if not roles or not roles[currentRaid] or not roles[currentRaid][currentEncounter] then
       return -- Silently do nothing if no roles configured
     end
@@ -422,6 +424,204 @@ encounterNav.encounterBtn = encounterBtn
 -- Store reference for external access
 OGRH.encounterNav = encounterNav
 
+-- ============================================
+-- ENCOUNTER NAVIGATION FUNCTIONS
+-- ============================================
+
+function OGRH.NavigateToPreviousEncounter()
+  -- Check authorization - must be raid lead, assistant, or designated raid admin
+  if not OGRH.CanNavigateEncounter or not OGRH.CanNavigateEncounter() then
+    OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can change the selected encounter.")
+    return
+  end
+  
+  -- Get current encounter from main UI selection
+  local raidName, currentEncounter = OGRH.GetCurrentEncounter()
+  
+  if not raidName or not currentEncounter then
+    return
+  end
+  
+  local raid = OGRH.FindRaidByName(raidName)
+  if raid and raid.encounters then
+    local encounters = {}
+    for i = 1, table.getn(raid.encounters) do
+      table.insert(encounters, raid.encounters[i].name)
+    end
+    
+    for i = 1, table.getn(encounters) do
+      if encounters[i] == currentEncounter and i > 1 then
+        -- Update encounter using centralized setter (triggers REALTIME sync)
+        OGRH.SetCurrentEncounter(raidName, encounters[i - 1])
+        
+        -- Update UI
+        OGRH.UpdateEncounterNavButton()
+        
+        -- Update consume monitor if enabled
+        if OGRH.ShowConsumeMonitor then
+          OGRH.ShowConsumeMonitor()
+        end
+        
+        break
+      end
+    end
+  end
+end
+
+function OGRH.NavigateToNextEncounter()
+  -- Check authorization - must be raid lead, assistant, or designated raid admin
+  if not OGRH.CanNavigateEncounter or not OGRH.CanNavigateEncounter() then
+    OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can change the selected encounter.")
+    return
+  end
+  
+  -- Get current encounter from main UI selection
+  local raidName, currentEncounter = OGRH.GetCurrentEncounter()
+  
+  if not raidName or not currentEncounter then
+    return
+  end
+  
+  local raid = OGRH.FindRaidByName(raidName)
+  if raid and raid.encounters then
+    local encounters = {}
+    for i = 1, table.getn(raid.encounters) do
+      table.insert(encounters, raid.encounters[i].name)
+    end
+    
+    for i = 1, table.getn(encounters) do
+      if encounters[i] == currentEncounter and i < table.getn(encounters) then
+        -- Update encounter using centralized setter (triggers REALTIME sync)
+        OGRH.SetCurrentEncounter(raidName, encounters[i + 1])
+        
+        -- Update UI
+        OGRH.UpdateEncounterNavButton()
+        
+        -- Update consume monitor if enabled
+        if OGRH.ShowConsumeMonitor then
+          OGRH.ShowConsumeMonitor()
+        end
+        
+        break
+      end
+    end
+  end
+end
+
+-- ============================================
+-- UPDATE ENCOUNTER NAVIGATION BUTTON
+-- ============================================
+
+function OGRH.UpdateEncounterNavButton()
+  if not OGRH.encounterNav then return end
+  
+  local btn = OGRH.encounterNav.encounterBtn
+  local prevBtn = OGRH.encounterNav.prevEncBtn
+  local nextBtn = OGRH.encounterNav.nextEncBtn
+  
+  -- Get raid and encounter from SVM (active schema)
+  local raidName = OGRH.SVM.Get("ui", "selectedRaid")
+  local encounterName = OGRH.SVM.Get("ui", "selectedEncounter")
+  
+  -- Load modules for the selected encounter (main UI only)
+  if OGRH.LoadModulesForRole and OGRH.UnloadAllModules and raidName and encounterName then
+    -- Get roles for this encounter using SVM
+    local rolesPath = string.format("encounterMgmt.roles.%s.%s", raidName, encounterName)
+    local rolesData = OGRH.SVM.GetPath(rolesPath)
+    
+    if rolesData then
+      -- Collect all modules from custom module roles
+      local allModules = {}
+      if rolesData.column1 then
+        for _, role in ipairs(rolesData.column1) do
+          if role.isCustomModule and role.modules then
+            for _, moduleId in ipairs(role.modules) do
+              table.insert(allModules, moduleId)
+            end
+          end
+        end
+      end
+      if rolesData.column2 then
+        for _, role in ipairs(rolesData.column2) do
+          if role.isCustomModule and role.modules then
+            for _, moduleId in ipairs(role.modules) do
+              table.insert(allModules, moduleId)
+            end
+          end
+        end
+      end
+      
+      -- Load the modules
+      if table.getn(allModules) > 0 then
+        OGRH.LoadModulesForRole(allModules)
+      else
+        OGRH.UnloadAllModules()
+      end
+    else
+      OGRH.UnloadAllModules()
+    end
+  end
+  
+  if not raidName then
+    btn:SetText("Select Raid")
+    prevBtn:Disable()
+    nextBtn:Disable()
+    return
+  end
+  
+  if encounterName then
+    -- Truncate encounter name if needed to fit
+    local displayName = encounterName
+    if string.len(displayName) > 15 then
+      displayName = string.sub(displayName, 1, 12) .. "..."
+    end
+    btn:SetText(displayName)
+  else
+    btn:SetText("No Encounter")
+  end
+  
+  -- Enable/disable prev/next buttons
+  local raid = OGRH.FindRaidByName(raidName)
+  if raid and raid.encounters then
+    local encounters = {}
+    for i = 1, table.getn(raid.encounters) do
+      table.insert(encounters, raid.encounters[i].name)
+    end
+    
+    local currentIndex = nil
+    for i = 1, table.getn(encounters) do
+      if encounters[i] == encounterName then
+        currentIndex = i
+        break
+      end
+    end
+    
+    if currentIndex then
+      if currentIndex > 1 then
+        prevBtn:Enable()
+      else
+        prevBtn:Disable()
+      end
+      
+      if currentIndex < table.getn(encounters) then
+        nextBtn:Enable()
+      else
+        nextBtn:Disable()
+      end
+    else
+      prevBtn:Disable()
+      nextBtn:Disable()
+    end
+  else
+    prevBtn:Disable()
+    nextBtn:Disable()
+  end
+end
+
+-- ============================================
+-- UI STATE MANAGEMENT
+-- ============================================
+
 local function applyLocked(lock)
   if lock then
     btnLock:SetText("|cff00ff00L|r")  -- Green when locked
@@ -429,7 +629,7 @@ local function applyLocked(lock)
     btnLock:SetText("|cffffff00L|r")  -- Yellow when unlocked
   end
 end
-btnLock:SetScript("OnClick", function() ensureSV(); OGRH_SV.ui.locked = not OGRH_SV.ui.locked; applyLocked(OGRH_SV.ui.locked) end)
+btnLock:SetScript("OnClick", function() ensureSV(); local locked = not OGRH.SVM.Get("ui", "locked"); OGRH.SVM.Set("ui", "locked", locked); applyLocked(locked) end)
 
 -- ReadyCheck button handler
 readyCheck:SetScript("OnClick", function()
@@ -455,17 +655,18 @@ readyCheck:SetScript("OnClick", function()
       toggleBtn:SetScript("OnClick", function()
         OGRH.EnsureSV()
         -- Toggle the setting
-        OGRH_SV.allowRemoteReadyCheck = not OGRH_SV.allowRemoteReadyCheck
+        local newValue = not OGRH.SVM.Get("allowRemoteReadyCheck")
+        OGRH.SVM.Set("allowRemoteReadyCheck", nil, newValue)
         
         -- Update button text
-        if OGRH_SV.allowRemoteReadyCheck then
+        if newValue then
           fs:SetText("|cff00ff00Allow Remote Readycheck|r")
         else
           fs:SetText("|cffff0000Allow Remote Readycheck|r")
         end
         
         if OGRH and OGRH.Msg then
-          if OGRH_SV.allowRemoteReadyCheck then
+          if newValue then
             OGRH.Msg("Remote ready checks |cff00ff00enabled|r.")
           else
             OGRH.Msg("Remote ready checks |cffff0000disabled|r.")
@@ -489,7 +690,7 @@ readyCheck:SetScript("OnClick", function()
     
     -- Update button text based on current setting
     OGRH.EnsureSV()
-    if OGRH_SV.allowRemoteReadyCheck then
+    if OGRH.SVM.Get("allowRemoteReadyCheck") then
       M.toggleBtn.fs:SetText("|cff00ff00Allow Remote Readycheck|r")
     else
       M.toggleBtn.fs:SetText("|cffff0000Allow Remote Readycheck|r")
@@ -513,9 +714,12 @@ OGRH.syncButton = adminBtn
 
 local function restoreMain()
   ensureSV()
-  local ui=OGRH_SV.ui or {}
-  if ui.point and ui.x and ui.y then Main:ClearAllPoints(); Main:SetPoint(ui.point, UIParent, ui.relPoint or ui.point, ui.x, ui.y) end
-  applyLocked(ui.locked)
+  local point = OGRH.SVM.Get("ui", "point")
+  local relPoint = OGRH.SVM.Get("ui", "relPoint")
+  local x = OGRH.SVM.Get("ui", "x")
+  local y = OGRH.SVM.Get("ui", "y")
+  if point and x and y then Main:ClearAllPoints(); Main:SetPoint(point, UIParent, relPoint or point, x, y) end
+  applyLocked(OGRH.SVM.Get("ui", "locked"))
   
   -- Initialize raid lead system
   if OGRH.InitRaidLead then
@@ -569,12 +773,12 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     local _, _, numStr = string.find(fullMsg, "^%s*%a+%s+(%d+)")
     local speedMs = tonumber(numStr)
     if speedMs then
-      if not OGRH_SV.sorting then OGRH_SV.sorting = {} end
-      OGRH_SV.sorting.speed = speedMs
+      OGRH.SVM.Set("sorting", "speed", speedMs)
       OGRH.Msg("Auto-sort speed set to " .. speedMs .. "ms between moves")
     else
-      if OGRH_SV.sorting and OGRH_SV.sorting.speed then
-        OGRH.Msg("Current auto-sort speed: " .. OGRH_SV.sorting.speed .. "ms")
+      local currentSpeed = OGRH.SVM.Get("sorting", "speed")
+      if currentSpeed then
+        OGRH.Msg("Current auto-sort speed: " .. currentSpeed .. "ms")
       else
         OGRH.Msg("Current auto-sort speed: 250ms (default)")
       end
@@ -816,17 +1020,89 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("|cffff0000[OGRH]|r Usage: /ogrh migration comp announce <raid>/<encounter>")
     end
+  elseif sub == "migration comp recruitment" or sub == "migration comp recruit" then
+    if OGRH.Migration and OGRH.Migration.CompareRecruitment then
+      OGRH.Migration.CompareRecruitment()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp consumes" or sub == "migration comp consumestracking" then
+    if OGRH.Migration and OGRH.Migration.CompareConsumesTracking then
+      OGRH.Migration.CompareConsumesTracking()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp baseconsumes" then
+    if OGRH.Migration and OGRH.Migration.CompareBaseConsumes then
+      OGRH.Migration.CompareBaseConsumes()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp trade" then
+    if OGRH.Migration and OGRH.Migration.CompareTrade then
+      OGRH.Migration.CompareTrade()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp promotes" then
+    if OGRH.Migration and OGRH.Migration.ComparePromotes then
+      OGRH.Migration.ComparePromotes()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp roster" then
+    if OGRH.Migration and OGRH.Migration.CompareRoster then
+      OGRH.Migration.CompareRoster()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp core" then
+    if OGRH.Migration and OGRH.Migration.CompareCore then
+      OGRH.Migration.CompareCore()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp messagerouter" or sub == "migration comp router" then
+    if OGRH.Migration and OGRH.Migration.CompareMessageRouter then
+      OGRH.Migration.CompareMessageRouter()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp permissions" or sub == "migration comp perms" then
+    if OGRH.Migration and OGRH.Migration.ComparePermissions then
+      OGRH.Migration.ComparePermissions()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
+  elseif sub == "migration comp versioning" or sub == "migration comp version" then
+    if OGRH.Migration and OGRH.Migration.CompareVersioning then
+      OGRH.Migration.CompareVersioning()
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
   elseif sub == "migration help" then
     OGRH.Msg("|cff00ff00[OGRH Migration]|r Available commands:")
     OGRH.Msg("  /ogrh migration create - Create v2 schema")
     OGRH.Msg("  /ogrh migration validate - Compare v1 vs v2")
     OGRH.Msg("  /ogrh migration cutover confirm - Switch to v2")
     OGRH.Msg("  /ogrh migration rollback - Revert to v1")
+    OGRH.Msg(" ")
+    OGRH.Msg("|cff00ff00Encounter Comparisons:|r")
     OGRH.Msg("  /ogrh migration comp raid <name> - Compare raid")
     OGRH.Msg("  /ogrh migration comp enc <raid>/<encounter> - Compare encounter")
     OGRH.Msg("  /ogrh migration comp roles <raid>/<enc>/<role> - Compare role data")
     OGRH.Msg("  /ogrh migration comp class <raid>/<enc>/<role> - Compare class priority")
     OGRH.Msg("  /ogrh migration comp announce <raid>/<encounter> - Compare announcements")
+    OGRH.Msg(" ")
+    OGRH.Msg("|cff00ff00Component Comparisons:|r")
+    OGRH.Msg("  /ogrh migration comp recruitment - Compare recruitment settings")
+    OGRH.Msg("  /ogrh migration comp consumes - Compare consumes tracking")
+    OGRH.Msg("  /ogrh migration comp promotes - Compare auto-promotes list")
+    OGRH.Msg("  /ogrh migration comp roster - Compare roster management")
+    OGRH.Msg("  /ogrh migration comp core - Compare core settings")
+    OGRH.Msg("  /ogrh migration comp messagerouter - Compare message router state")
+    OGRH.Msg("  /ogrh migration comp permissions - Compare permissions data")
+    OGRH.Msg("  /ogrh migration comp versioning - Compare versioning data")
   -- Chat Window Cleanup Command
   elseif sub == "chat clean" or sub == "chatclean" then
     if OGRH._ogrhChatFrame and OGRH._ogrhChatFrameIndex then
