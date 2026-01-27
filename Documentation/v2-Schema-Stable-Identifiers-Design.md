@@ -326,6 +326,52 @@ OGRH_SV.encounterAnnouncements = {
 }
 ```
 
+### 6. SR+ Validation Records
+
+**Status:** ⚠️ NEEDS V2 OVERHAUL - Current structure fragile, will be redesigned
+
+```lua
+-- v1 FRAGILE: Uses player names as keys (can change)
+OGRH_SV.srValidation = {
+    records = {
+        ["PlayerName"] = {  -- ❌ Player name as key (fragile)
+            [1] = {
+                date = "2025-11-22",
+                time = "12:27:58",
+                validator = "Tankmedaddy",
+                instance = "Naxxramas",
+                srPlus = 60,
+                items = {
+                    [1] = {
+                        name = "Eye of the Dead",
+                        plus = 60,
+                        itemId = 23047
+                    },
+                    [2] = {
+                        name = "Hammer of the Twisting Nether",
+                        plus = 60,
+                        itemId = 23056
+                    }
+                }
+            }
+        }
+    }
+}
+
+-- v2 TODO: Will be redesigned with stable player identifiers
+-- Current migration: NO CHANGE (preserve as-is, mark for v2 overhaul)
+-- Future v2: Use numeric player IDs or GUIDs as keys
+OGRH_SV.srValidation = {
+    records = {
+        -- TODO: Redesign with stable player IDs
+        -- For now: Keep existing structure but mark as deprecated
+        ["PlayerName"] = { ... }  -- Preserved for migration
+    }
+}
+```
+
+**Note:** SR+ validation system requires complete overhaul in v2 release. Current migration preserves existing data structure but marks it as needing redesign. Future v2 should use stable player identifiers (numeric IDs or GUIDs) instead of player names as keys.
+
 ---
 
 ## Index Lookup System

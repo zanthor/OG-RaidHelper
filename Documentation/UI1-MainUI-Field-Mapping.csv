@@ -1,0 +1,4 @@
+UI Element,V1 Data Field,V2 Data Field,Element Type,Description
+UI1-1,OGRH_SV.encounterMgmt.raids[raidName].name,OGRH_SV.encounterMgmt.raids[raidIdx].name,Text List,"Raid names displayed in left menu (Molten Core, BWL, AQ40, Naxx, K40, ES)"
+UI1-2,OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].name,OGRH_SV.encounterMgmt.raids[raidIdx].encounters[encIdx].name,Text List,"Encounter names displayed in right menu (Tanks and Heals, Incubus, Lucifron, Magmadar, etc.)"
+UI1-3,OGRH_SV.Permissions.currentAdmin == UnitName("player"),OGRH_SV.Permissions.currentAdmin == UnitName("player"),Boolean/Visual State,"Admin status - Green (admin=true) or Yellow (admin=false); determines header color"

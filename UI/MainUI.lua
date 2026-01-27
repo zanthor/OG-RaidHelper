@@ -637,9 +637,16 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
       OGRH.Msg("Permission system not loaded.")
     end
   -- Migration Commands (Phase 1 - SavedVariables v2)
+  -- Check force FIRST before regular create (order matters for string matching)
+  elseif sub == "migration create force" or sub == "migrate force" then
+    if OGRH.Migration and OGRH.Migration.MigrateToV2 then
+      OGRH.Migration.MigrateToV2(true)
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
   elseif sub == "migration create" or sub == "migrate" then
     if OGRH.Migration and OGRH.Migration.MigrateToV2 then
-      OGRH.Migration.MigrateToV2()
+      OGRH.Migration.MigrateToV2(false)
     else
       OGRH.Msg("Migration system not loaded.")
     end

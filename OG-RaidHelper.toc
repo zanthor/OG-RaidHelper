@@ -46,6 +46,8 @@ Infrastructure\MessageTypes.lua
 Infrastructure\Permissions.lua
 Infrastructure\Versioning.lua
 Infrastructure\MessageRouter.lua
+Infrastructure\MigrationMap.lua
+Infrastructure\Migration.lua
 Infrastructure\Sync_v2.lua
 Infrastructure\DataManagement.lua
 Infrastructure\SyncIntegrity.lua
