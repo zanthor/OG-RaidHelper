@@ -163,31 +163,34 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   local assignmentCount = 0
   local processedRoles = {}
   
-  -- Save old assignments for delta sync (to detect clears)
+  -- Save old assignments for delta sync (to detect clears) - v2 schema: nested in roles
   local oldAssignments = {}
-  local assignmentsPath = string.format("encounterAssignments.%s.%s", frame.selectedRaid, frame.selectedEncounter)
-  local existingAssignments = OGRH.SVM.GetPath(assignmentsPath)
-  if existingAssignments then
-    for roleIdx, roleAssignments in pairs(existingAssignments) do
-      oldAssignments[roleIdx] = {}
-      for slotIdx, playerName in pairs(roleAssignments) do
-        oldAssignments[roleIdx][slotIdx] = playerName
+  if encounter.roles then
+    for roleIdx = 1, table.getn(encounter.roles) do
+      local role = encounter.roles[roleIdx]
+      if role.assignedPlayers then
+        oldAssignments[roleIdx] = {}
+        for slotIdx = 1, table.getn(role.assignedPlayers) do
+          if role.assignedPlayers[slotIdx] then
+            oldAssignments[roleIdx][slotIdx] = role.assignedPlayers[slotIdx]
+          end
+        end
       end
     end
   end
   
-  -- Clear existing assignments for this encounter using SVM
-  local path = string.format("encounterAssignments.%s.%s", frame.selectedRaid, frame.selectedEncounter)
-  OGRH.SVM.SetPath(path, {}, {
-    syncLevel = "REALTIME",
-    componentType = "assignments",
-    scope = {
-      raid = frame.selectedRaid,
-      encounter = frame.selectedEncounter
-    }
-  })
+  -- Clear existing assignments for this encounter - v2 schema: clear within each role
+  if encounter.roles then
+    for roleIdx = 1, table.getn(encounter.roles) do
+      encounter.roles[roleIdx].assignedPlayers = {}
+    end
+  end
   
-  local assignments = OGRH.SVM.GetPath(path)
+  -- Write back cleared assignments
+  OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
+  
+  -- Build assignments table for tracking (maps roleIdx -> slotIdx -> playerName)
+  local assignments = {}
   
   -- Check if any role has both invertFillOrder AND allowOtherRoles
   local needsThreePass = false
@@ -396,6 +399,21 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
       end
     end
   end
+  
+  -- Write assignments back to v2 schema (nested in roles)
+  for roleIdx, roleAssignments in pairs(assignments) do
+    if encounter.roles[roleIdx] then
+      if not encounter.roles[roleIdx].assignedPlayers then
+        encounter.roles[roleIdx].assignedPlayers = {}
+      end
+      for slotIdx, playerName in pairs(roleAssignments) do
+        encounter.roles[roleIdx].assignedPlayers[slotIdx] = playerName
+      end
+    end
+  end
+  
+  -- Write back to saved variables
+  OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
   
   -- Refresh display
   if frame.RefreshRoleContainers then
@@ -4056,25 +4074,27 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
   dialog.slotIndex = slotIndex
   dialog.selectedConsume = nil
   
-  -- Load existing consume data for this slot
+  -- Load existing consume data for this slot from v2 schema
   local existingConsumeData = nil
-  if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and
-     OGRH_SV.encounterMgmt.roles[raidName] and
-     OGRH_SV.encounterMgmt.roles[raidName][encounterName] then
-    local encounterRoles = OGRH_SV.encounterMgmt.roles[raidName][encounterName]
-    local column1 = encounterRoles.column1 or {}
-    local column2 = encounterRoles.column2 or {}
-    
-    local role = nil
-    if roleIndex <= table.getn(column1) then
-      role = column1[roleIndex]
-    else
-      role = column2[roleIndex - table.getn(column1)]
-    end
-    
-    if role and role.consumes and role.consumes[slotIndex] then
-      existingConsumeData = role.consumes[slotIndex]
-      dialog.selectedConsume = existingConsumeData
+  local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
+  if allRaids then
+    for i = 1, table.getn(allRaids) do
+      if allRaids[i].name == raidName and allRaids[i].encounters then
+        for j = 1, table.getn(allRaids[i].encounters) do
+          if allRaids[i].encounters[j].name == encounterName then
+            local encounter = allRaids[i].encounters[j]
+            if encounter.roles and encounter.roles[roleIndex] then
+              local role = encounter.roles[roleIndex]
+              if role.consumes and role.consumes[slotIndex] then
+                existingConsumeData = role.consumes[slotIndex]
+                dialog.selectedConsume = existingConsumeData
+              end
+            end
+            break
+          end
+        end
+        break
+      end
     end
   end
   
@@ -4099,30 +4119,26 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
     end
     
     -- Get the encounter data (stored in encounterMgmt.roles)
-    OGRH.EnsureSV()
-    if not OGRH_SV.encounterMgmt then
-      OGRH_SV.encounterMgmt = {raids = {}, encounters = {}, roles = {}}
-    end
-    if not OGRH_SV.encounterMgmt.roles then
-      OGRH_SV.encounterMgmt.roles = {}
-    end
-    if not OGRH_SV.encounterMgmt.roles[dialog.raidName] then
-      OGRH_SV.encounterMgmt.roles[dialog.raidName] = {}
-    end
-    if not OGRH_SV.encounterMgmt.roles[dialog.raidName][dialog.encounterName] then
-      OGRH_SV.encounterMgmt.roles[dialog.raidName][dialog.encounterName] = {column1 = {}, column2 = {}}
-    end
-    
-    local encounterRoles = OGRH_SV.encounterMgmt.roles[dialog.raidName][dialog.encounterName]
-    local column1 = encounterRoles.column1 or {}
-    local column2 = encounterRoles.column2 or {}
-    
-    -- Find the role based on roleIndex (1-based across both columns)
+    -- Find encounter and role in v2 schema
+    local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
+    local encounter = nil
     local role = nil
-    if dialog.roleIndex <= table.getn(column1) then
-      role = column1[dialog.roleIndex]
-    else
-      role = column2[dialog.roleIndex - table.getn(column1)]
+    
+    if allRaids then
+      for i = 1, table.getn(allRaids) do
+        if allRaids[i].name == dialog.raidName and allRaids[i].encounters then
+          for j = 1, table.getn(allRaids[i].encounters) do
+            if allRaids[i].encounters[j].name == dialog.encounterName then
+              encounter = allRaids[i].encounters[j]
+              if encounter.roles and encounter.roles[dialog.roleIndex] then
+                role = encounter.roles[dialog.roleIndex]
+              end
+              break
+            end
+          end
+          break
+        end
+      end
     end
     
     if not role then
@@ -4166,6 +4182,9 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
         {consume = oldConsume, consumeData = consumeData}
       )
     end
+    
+    -- Write back to saved variables
+    OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
     
     -- Refresh the Encounter Planning UI
     if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then
@@ -4282,24 +4301,31 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
   
   -- announcements will be checked below when we read from nested structure
   
-  -- Get role data for tag processing
+  -- Get role data for tag processing from v2 schema
   local orderedRoles = {}
-  local roles = OGRH_SV.encounterMgmt.roles
-  if roles and roles[selectedRaid] and 
-     roles[selectedRaid][selectedEncounter] then
-    local encounterRoles = roles[selectedRaid][selectedEncounter]
-    local column1 = encounterRoles.column1 or {}
-    local column2 = encounterRoles.column2 or {}
-    
-    -- Build roles array indexed by roleId (not by position)
-    for i = 1, table.getn(column1) do
-      local role = column1[i]
-      local roleId = role.roleId or i
-      orderedRoles[roleId] = role
+  
+  -- Find encounter in v2 schema
+  local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
+  local encounter = nil
+  if allRaids then
+    for i = 1, table.getn(allRaids) do
+      if allRaids[i].name == selectedRaid and allRaids[i].encounters then
+        for j = 1, table.getn(allRaids[i].encounters) do
+          if allRaids[i].encounters[j].name == selectedEncounter then
+            encounter = allRaids[i].encounters[j]
+            break
+          end
+        end
+        break
+      end
     end
-    for i = 1, table.getn(column2) do
-      local role = column2[i]
-      local roleId = role.roleId or (table.getn(column1) + i)
+  end
+  
+  if encounter and encounter.roles then
+    -- Build roles array indexed by roleId from v2 schema
+    for i = 1, table.getn(encounter.roles) do
+      local role = encounter.roles[i]
+      local roleId = role.roleId or i
       orderedRoles[roleId] = role
     end
   end
@@ -4540,16 +4566,39 @@ function OGRH.MarkPlayersFromMainUI()
     return
   end
   
-  -- Get role configuration
-  local roles = OGRH_SV.encounterMgmt.roles
-  if not roles or not roles[selectedRaid] or not roles[selectedRaid][selectedEncounter] then
+  -- Get role configuration from v2 schema
+  local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
+  local encounter = nil
+  if allRaids then
+    for i = 1, table.getn(allRaids) do
+      if allRaids[i].name == selectedRaid and allRaids[i].encounters then
+        for j = 1, table.getn(allRaids[i].encounters) do
+          if allRaids[i].encounters[j].name == selectedEncounter then
+            encounter = allRaids[i].encounters[j]
+            break
+          end
+        end
+        break
+      end
+    end
+  end
+  
+  if not encounter or not encounter.roles then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
     return
   end
   
-  local encounterRoles = roles[selectedRaid][selectedEncounter]
-  local column1 = encounterRoles.column1 or {}
-  local column2 = encounterRoles.column2 or {}
+  -- Build column1 and column2 from roles array
+  local column1 = {}
+  local column2 = {}
+  for i = 1, table.getn(encounter.roles) do
+    local role = encounter.roles[i]
+    if role.column == 1 then
+      table.insert(column1, role)
+    elseif role.column == 2 then
+      table.insert(column2, role)
+    end
+  end
   
   -- Build ordered list of all roles using stable roleId
   local allRoles = {}
@@ -4774,21 +4823,11 @@ function OGRH.ShowExportRaidWindow(raidName)
     
     if announcementData then
       
-      -- Get role configuration
+      -- Get role configuration from v2 schema (already have encounter from above)
       local orderedRoles = {}
-      if OGRH_SV.encounterMgmt.roles and 
-         OGRH_SV.encounterMgmt.roles[raidName] and 
-         OGRH_SV.encounterMgmt.roles[raidName][encounterName] then
-        
-        local encounterRoles = OGRH_SV.encounterMgmt.roles[raidName][encounterName]
-        local column1 = encounterRoles.column1 or {}
-        local column2 = encounterRoles.column2 or {}
-        
-        for j = 1, table.getn(column1) do
-          table.insert(orderedRoles, column1[j])
-        end
-        for j = 1, table.getn(column2) do
-          table.insert(orderedRoles, column2[j])
+      if encounter.roles then
+        for j = 1, table.getn(encounter.roles) do
+          table.insert(orderedRoles, encounter.roles[j])
         end
       end
       encounterData.roles = orderedRoles
