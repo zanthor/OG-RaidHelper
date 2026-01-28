@@ -12,7 +12,7 @@ The SavedVariablesManager (SVM) is the **unified write interface** for all OG-Ra
 - ✅ **Automatic sync propagation** - Writes trigger appropriate sync based on metadata
 - ✅ **Intelligent batching** - Groups rapid changes to reduce network traffic
 - ✅ **Offline queue** - Queues changes during combat/zoning/offline
-- ✅ **Dual-write support** - Maintains v1 and v2 schemas during migration
+- ✅ **No Dual-write support** - Migration does not look back - once code is updated it only writes to v2.
 - ✅ **Checksum integration** - Automatically invalidates checksums on writes
 
 ---
