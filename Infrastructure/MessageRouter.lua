@@ -24,12 +24,12 @@ OGRH.MessageRouter.State = {
 -- handler: Function(sender, data, channel) to handle the message
 function OGRH.MessageRouter.RegisterHandler(messageType, handler)
     if not messageType or not handler then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-MessageRouter]|r Invalid handler registration")
+        OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Invalid handler registration")
         return false
     end
     
     if not OGRH.IsValidMessageType(messageType) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff8800[RH-MessageRouter]|r Registering unknown message type: %s", messageType))
+        OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter]|r Registering unknown message type: %s", messageType))
     end
     
     OGRH.MessageRouter.State.handlers[messageType] = handler
@@ -61,7 +61,7 @@ end
 -- @return messageId or nil
 function OGRH.MessageRouter.Send(messageType, data, options)
     if not messageType then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-MessageRouter]|r No message type specified")
+        OGRH.Msg("|cff00ccff[RH-MessageRouter]|r No message type specified")
         return nil
     end
     
@@ -73,7 +73,7 @@ function OGRH.MessageRouter.Send(messageType, data, options)
     end
     
     if not OGRH.IsValidMessageType(baseMessageType) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff8800[RH-MessageRouter]|r Sending unknown message type: %s", baseMessageType))
+        OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter]|r Sending unknown message type: %s", baseMessageType))
     end
     
     -- Check permissions based on message category
@@ -103,7 +103,7 @@ function OGRH.MessageRouter.Send(messageType, data, options)
     
     -- Ensure OGAddonMsg is available
     if not OGAddonMsg or not OGAddonMsg.Send then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-MessageRouter]|r OGAddonMsg not available")
+        OGRH.Msg("|cff00ccff[RH-MessageRouter]|r OGAddonMsg not available")
         return nil
     end
     
@@ -214,7 +214,7 @@ function OGRH.MessageRouter.OnMessageReceived(sender, messageType, data, channel
     local success, err = pcall(handler, sender, data, channel)
     
     if not success then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-MessageRouter]|r Handler error for %s: %s", messageType, tostring(err)))
+        OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter]|r Handler error for %s: %s", messageType, tostring(err)))
     end
 end
 
@@ -225,7 +225,7 @@ end
 -- Initialize OGAddonMsg message listener
 function OGRH.MessageRouter.InitializeOGAddonMsg()
     if not OGAddonMsg or not OGAddonMsg.RegisterWildcard then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-MessageRouter]|r OGAddonMsg not available for initialization")
+        OGRH.Msg("|cff00ccff[RH-MessageRouter]|r OGAddonMsg not available for initialization")
         return false
     end
     
@@ -237,7 +237,7 @@ function OGRH.MessageRouter.InitializeOGAddonMsg()
         end
     end)
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-MessageRouter]|r Registered wildcard handler with OGAddonMsg")
+    OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Registered wildcard handler with OGAddonMsg")
     return true
 end
 
@@ -269,7 +269,7 @@ function OGRH.SendAddonMessage(msg, channel, target)
     if not newMessageType then
         -- No translation available - use original format with prefix
         newMessageType = "OGRH_LEGACY_" .. messageType
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff8800[RH-MessageRouter]|r Untranslated legacy message: %s", messageType))
+        OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter]|r Untranslated legacy message: %s", messageType))
     end
     
     -- Send via MessageRouter
@@ -289,13 +289,13 @@ end
 -- Initialize message router
 function OGRH.MessageRouter.Initialize()
     if OGRH.MessageRouter.State.isInitialized then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff8800[RH-MessageRouter]|r Already initialized")
+        OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Already initialized")
         return false
     end
     
     -- Initialize OGAddonMsg integration
     if not OGRH.MessageRouter.InitializeOGAddonMsg() then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-MessageRouter]|r Failed to initialize OGAddonMsg")
+        OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Failed to initialize OGAddonMsg")
         return false
     end
     
@@ -303,7 +303,7 @@ function OGRH.MessageRouter.Initialize()
     OGRH.MessageRouter.RegisterDefaultHandlers()
     
     OGRH.MessageRouter.State.isInitialized = true
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-MessageRouter]|r Initialized")
+    OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Initialized")
     
     return true
 end
@@ -314,14 +314,14 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.TAKEOVER, function(sender, data, channel)
         if data and data.newAdmin then
             OGRH.SetRaidAdmin(data.newAdmin)
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH]|r %s is now the raid admin", data.newAdmin))
+            OGRH.Msg(string.format("|cff00ccff[RH]|r %s is now the raid admin", data.newAdmin))
         end
     end)
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.ASSIGN, function(sender, data, channel)
         if data and data.newAdmin then
             OGRH.SetRaidAdmin(data.newAdmin)
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH]|r %s assigned %s as raid admin", data.assignedBy or sender, data.newAdmin))
+            OGRH.Msg(string.format("|cff00ccff[RH]|r %s assigned %s as raid admin", data.assignedBy or sender, data.newAdmin))
         end
     end)
     
@@ -343,7 +343,7 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         -- Receive admin info from query response
         if data and data.currentAdmin then
             OGRH.SetRaidAdmin(data.currentAdmin)
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH]|r Raid admin is %s", data.currentAdmin))
+            OGRH.Msg(string.format("|cff00ccff[RH]|r Raid admin is %s", data.currentAdmin))
         end
     end)
     
@@ -362,8 +362,7 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         -- Only process if we are the raid leader
         if IsRaidLeader and IsRaidLeader() == 1 then
             -- Check if remote ready checks are allowed
-            OGRH.EnsureSV()
-            if OGRH_SV.allowRemoteReadyCheck then
+            if OGRH.SVM.Get("allowRemoteReadyCheck") then
                 -- Set flag to capture ready check responses
                 OGRH.readyCheckInProgress = true
                 OGRH.readyCheckResponses = {
@@ -403,9 +402,8 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         
         -- Update local UI to match encounter selection
         if encounterData.raidName and encounterData.encounterName then
-            OGRH.EnsureSV()
-            OGRH_SV.ui.selectedRaid = encounterData.raidName
-            OGRH_SV.ui.selectedEncounter = encounterData.encounterName
+            OGRH.SVM.SetPath("ui.selectedRaid", encounterData.raidName)
+            OGRH.SVM.SetPath("ui.selectedEncounter", encounterData.encounterName)
             
             -- Update UI button if available
             if OGRH.UpdateEncounterNavButton then
@@ -460,31 +458,37 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                     if data1.raid and data1.encounter and data1.roleIndex and data1.slotIndex and
                        data2.raid and data2.encounter and data2.roleIndex and data2.slotIndex then
                         
+                        -- Get current encounterAssignments table
+                        local encounterAssignments = OGRH.SVM.Get("encounterAssignments") or {}
+                        
                         -- Initialize nested tables
-                        if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
-                        if not OGRH_SV.encounterAssignments[data1.raid] then 
-                            OGRH_SV.encounterAssignments[data1.raid] = {} 
+                        if not encounterAssignments[data1.raid] then 
+                            encounterAssignments[data1.raid] = {} 
                         end
-                        if not OGRH_SV.encounterAssignments[data1.raid][data1.encounter] then 
-                            OGRH_SV.encounterAssignments[data1.raid][data1.encounter] = {} 
+                        if not encounterAssignments[data1.raid][data1.encounter] then 
+                            encounterAssignments[data1.raid][data1.encounter] = {} 
                         end
-                        if not OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data1.roleIndex] then 
-                            OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data1.roleIndex] = {} 
+                        if not encounterAssignments[data1.raid][data1.encounter][data1.roleIndex] then 
+                            encounterAssignments[data1.raid][data1.encounter][data1.roleIndex] = {} 
                         end
-                        if not OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data2.roleIndex] then 
-                            OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data2.roleIndex] = {} 
+                        if not encounterAssignments[data1.raid][data1.encounter][data2.roleIndex] then 
+                            encounterAssignments[data1.raid][data1.encounter][data2.roleIndex] = {} 
                         end
                         
                         -- Apply BOTH assignments atomically (no UI refresh between)
-                        OGRH_SV.encounterAssignments[data1.raid][data1.encounter][data1.roleIndex][data1.slotIndex] = change.player1
-                        OGRH_SV.encounterAssignments[data2.raid][data2.encounter][data2.roleIndex][data2.slotIndex] = change.player2  -- nil for empty slot
+                        encounterAssignments[data1.raid][data1.encounter][data1.roleIndex][data1.slotIndex] = change.player1
+                        encounterAssignments[data2.raid][data2.encounter][data2.roleIndex][data2.slotIndex] = change.player2  -- nil for empty slot
+                        
+                        -- Save back to SVM
+                        OGRH.SVM.Set("encounterAssignments", encounterAssignments)
                     end
                 end
                 
             elseif change.type == "ROLE" then
                 -- Apply role change (RolesUI bucket assignments)
-                if not OGRH_SV.roles then OGRH_SV.roles = {} end
-                OGRH_SV.roles[change.player] = change.newValue
+                local roles = OGRH.SVM.Get("roles") or {}
+                roles[change.player] = change.newValue
+                OGRH.SVM.Set("roles", roles)
                 
             elseif change.type == "ASSIGNMENT" then
                 -- Apply assignment changes (check assignmentType to determine what kind)
@@ -494,21 +498,26 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                     if change.newValue and type(change.newValue) == "table" and change.newValue.assignData then
                         local assignData = change.newValue.assignData
                         if assignData.raid and assignData.encounter and assignData.roleIndex and assignData.slotIndex then
+                            -- Get current encounterRaidMarks table
+                            local encounterRaidMarks = OGRH.SVM.Get("encounterRaidMarks") or {}
+                            
                             -- Initialize nested tables
-                            if not OGRH_SV.encounterRaidMarks then OGRH_SV.encounterRaidMarks = {} end
-                            if not OGRH_SV.encounterRaidMarks[assignData.raid] then 
-                                OGRH_SV.encounterRaidMarks[assignData.raid] = {} 
+                            if not encounterRaidMarks[assignData.raid] then 
+                                encounterRaidMarks[assignData.raid] = {} 
                             end
-                            if not OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter] then 
-                                OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter] = {} 
+                            if not encounterRaidMarks[assignData.raid][assignData.encounter] then 
+                                encounterRaidMarks[assignData.raid][assignData.encounter] = {} 
                             end
-                            if not OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex] then 
-                                OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
+                            if not encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex] then 
+                                encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
                             end
                             
                             -- Apply the mark
                             local markValue = change.newValue.mark or 0
-                            OGRH_SV.encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = markValue
+                            encounterRaidMarks[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = markValue
+                            
+                            -- Save back to SVM
+                            OGRH.SVM.Set("encounterRaidMarks", encounterRaidMarks)
                         end
                     end
                     
@@ -517,21 +526,26 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                     if change.newValue and type(change.newValue) == "table" and change.newValue.assignData then
                         local assignData = change.newValue.assignData
                         if assignData.raid and assignData.encounter and assignData.roleIndex and assignData.slotIndex then
+                            -- Get current encounterAssignmentNumbers table
+                            local encounterAssignmentNumbers = OGRH.SVM.Get("encounterAssignmentNumbers") or {}
+                            
                             -- Initialize nested tables
-                            if not OGRH_SV.encounterAssignmentNumbers then OGRH_SV.encounterAssignmentNumbers = {} end
-                            if not OGRH_SV.encounterAssignmentNumbers[assignData.raid] then 
-                                OGRH_SV.encounterAssignmentNumbers[assignData.raid] = {} 
+                            if not encounterAssignmentNumbers[assignData.raid] then 
+                                encounterAssignmentNumbers[assignData.raid] = {} 
                             end
-                            if not OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter] then 
-                                OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter] = {} 
+                            if not encounterAssignmentNumbers[assignData.raid][assignData.encounter] then 
+                                encounterAssignmentNumbers[assignData.raid][assignData.encounter] = {} 
                             end
-                            if not OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex] then 
-                                OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
+                            if not encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex] then 
+                                encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
                             end
                             
                             -- Apply the number
                             local numberValue = change.newValue.number or 0
-                            OGRH_SV.encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = numberValue
+                            encounterAssignmentNumbers[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = numberValue
+                            
+                            -- Save back to SVM
+                            OGRH.SVM.Set("encounterAssignmentNumbers", encounterAssignmentNumbers)
                         end
                     end
                     
@@ -540,18 +554,23 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                     if change.newValue and type(change.newValue) == "table" and change.newValue.announcementData then
                         local announcementData = change.newValue.announcementData
                         if announcementData.raid and announcementData.encounter and announcementData.lineIndex then
+                            -- Get current encounterAnnouncements table
+                            local encounterAnnouncements = OGRH.SVM.Get("encounterAnnouncements") or {}
+                            
                             -- Initialize nested tables
-                            if not OGRH_SV.encounterAnnouncements then OGRH_SV.encounterAnnouncements = {} end
-                            if not OGRH_SV.encounterAnnouncements[announcementData.raid] then 
-                                OGRH_SV.encounterAnnouncements[announcementData.raid] = {} 
+                            if not encounterAnnouncements[announcementData.raid] then 
+                                encounterAnnouncements[announcementData.raid] = {} 
                             end
-                            if not OGRH_SV.encounterAnnouncements[announcementData.raid][announcementData.encounter] then 
-                                OGRH_SV.encounterAnnouncements[announcementData.raid][announcementData.encounter] = {} 
+                            if not encounterAnnouncements[announcementData.raid][announcementData.encounter] then 
+                                encounterAnnouncements[announcementData.raid][announcementData.encounter] = {} 
                             end
                             
                             -- Apply the announcement text
                             local textValue = change.newValue.text or ""
-                            OGRH_SV.encounterAnnouncements[announcementData.raid][announcementData.encounter][announcementData.lineIndex] = textValue
+                            encounterAnnouncements[announcementData.raid][announcementData.encounter][announcementData.lineIndex] = textValue
+                            
+                            -- Save back to SVM
+                            OGRH.SVM.Set("encounterAnnouncements", encounterAnnouncements)
                         end
                     end
                     
@@ -561,17 +580,16 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         local consumeData = change.newValue.consumeData
                         if consumeData.raid and consumeData.encounter and consumeData.roleIndex and consumeData.slotIndex then
                             -- Get the role from encounterMgmt.roles
-                            OGRH.EnsureSV()
-                            if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, roles = {}} end
-                            if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
-                            if not OGRH_SV.encounterMgmt.roles[consumeData.raid] then 
-                                OGRH_SV.encounterMgmt.roles[consumeData.raid] = {} 
+                            local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                            if not encounterMgmt.roles then encounterMgmt.roles = {} end
+                            if not encounterMgmt.roles[consumeData.raid] then 
+                                encounterMgmt.roles[consumeData.raid] = {} 
                             end
-                            if not OGRH_SV.encounterMgmt.roles[consumeData.raid][consumeData.encounter] then 
-                                OGRH_SV.encounterMgmt.roles[consumeData.raid][consumeData.encounter] = {column1 = {}, column2 = {}} 
+                            if not encounterMgmt.roles[consumeData.raid][consumeData.encounter] then 
+                                encounterMgmt.roles[consumeData.raid][consumeData.encounter] = {column1 = {}, column2 = {}} 
                             end
                             
-                            local encounterRoles = OGRH_SV.encounterMgmt.roles[consumeData.raid][consumeData.encounter]
+                            local encounterRoles = encounterMgmt.roles[consumeData.raid][consumeData.encounter]
                             local column1 = encounterRoles.column1 or {}
                             local column2 = encounterRoles.column2 or {}
                             
@@ -591,6 +609,9 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                                 
                                 -- Apply the consume selection
                                 role.consumes[consumeData.slotIndex] = change.newValue.consume
+                                
+                                -- Save back to SVM
+                                OGRH.SVM.Set("encounterMgmt", encounterMgmt)
                             end
                         end
                     end
@@ -601,20 +622,25 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                     if type(assignData) == "table" and assignData.raid and assignData.encounter and 
                        assignData.roleIndex and assignData.slotIndex then
                         
+                        -- Get current encounterAssignments table
+                        local encounterAssignments = OGRH.SVM.Get("encounterAssignments") or {}
+                        
                         -- Initialize nested tables
-                        if not OGRH_SV.encounterAssignments then OGRH_SV.encounterAssignments = {} end
-                        if not OGRH_SV.encounterAssignments[assignData.raid] then 
-                            OGRH_SV.encounterAssignments[assignData.raid] = {} 
+                        if not encounterAssignments[assignData.raid] then 
+                            encounterAssignments[assignData.raid] = {} 
                         end
-                        if not OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter] then 
-                            OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter] = {} 
+                        if not encounterAssignments[assignData.raid][assignData.encounter] then 
+                            encounterAssignments[assignData.raid][assignData.encounter] = {} 
                         end
-                        if not OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex] then 
-                            OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
+                        if not encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex] then 
+                            encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex] = {} 
                         end
                         
                         -- Apply the assignment
-                        OGRH_SV.encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = assignData.playerName
+                        encounterAssignments[assignData.raid][assignData.encounter][assignData.roleIndex][assignData.slotIndex] = assignData.playerName
+                        
+                        -- Save back to SVM
+                        OGRH.SVM.Set("encounterAssignments", encounterAssignments)
                     end
                 else
                     -- Generic assignment (fallback for other types)
@@ -634,22 +660,21 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                 -- Apply structure changes (raid/encounter/role CRUD operations)
                 
                 if change.structureType == "RAID" then
-                    OGRH.EnsureSV()
-                    if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, roles = {}} end
-                    if not OGRH_SV.encounterMgmt.raids then OGRH_SV.encounterMgmt.raids = {} end
+                    local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                    if not encounterMgmt.raids then encounterMgmt.raids = {} end
                     
                     if change.operation == "ADD" and change.details and change.details.raidName then
                         -- Add new raid
                         local raidName = change.details.raidName
                         local exists = false
-                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                        for i = 1, table.getn(encounterMgmt.raids) do
+                            if encounterMgmt.raids[i].name == raidName then
                                 exists = true
                                 break
                             end
                         end
                         if not exists then
-                            table.insert(OGRH_SV.encounterMgmt.raids, {
+                            table.insert(encounterMgmt.raids, {
                                 name = raidName,
                                 encounters = {},
                                 advancedSettings = {
@@ -666,16 +691,20 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                                 }
                             })
                         end
+                        -- Save after ADD
+                        OGRH.SVM.Set("encounterMgmt", encounterMgmt)
                         
                     elseif change.operation == "DELETE" and change.details and change.details.raidName then
                         -- Delete raid
                         local raidName = change.details.raidName
-                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
-                                table.remove(OGRH_SV.encounterMgmt.raids, i)
+                        for i = 1, table.getn(encounterMgmt.raids) do
+                            if encounterMgmt.raids[i].name == raidName then
+                                table.remove(encounterMgmt.raids, i)
                                 break
                             end
                         end
+                        -- Save after DELETE
+                        OGRH.SVM.Set("encounterMgmt", encounterMgmt)
                         
                     elseif change.operation == "RENAME" and change.details and change.details.oldName and change.details.newName then
                         -- Rename raid
@@ -683,34 +712,53 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         local newName = change.details.newName
                         
                         -- Update raid name in raids list
-                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                            if OGRH_SV.encounterMgmt.raids[i].name == oldName then
-                                OGRH_SV.encounterMgmt.raids[i].name = newName
+                        for i = 1, table.getn(encounterMgmt.raids) do
+                            if encounterMgmt.raids[i].name == oldName then
+                                encounterMgmt.raids[i].name = newName
                                 break
                             end
                         end
                         
                         -- Update all related data structures
-                        if OGRH_SV.encounterMgmt.roles and OGRH_SV.encounterMgmt.roles[oldName] then
-                            OGRH_SV.encounterMgmt.roles[newName] = OGRH_SV.encounterMgmt.roles[oldName]
-                            OGRH_SV.encounterMgmt.roles[oldName] = nil
+                        if encounterMgmt.roles and encounterMgmt.roles[oldName] then
+                            encounterMgmt.roles[newName] = encounterMgmt.roles[oldName]
+                            encounterMgmt.roles[oldName] = nil
                         end
-                        if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[oldName] then
-                            OGRH_SV.encounterAssignments[newName] = OGRH_SV.encounterAssignments[oldName]
-                            OGRH_SV.encounterAssignments[oldName] = nil
+                        
+                        -- Handle encounterAssignments rename
+                        local encounterAssignments = OGRH.SVM.Get("encounterAssignments") or {}
+                        if encounterAssignments[oldName] then
+                            encounterAssignments[newName] = encounterAssignments[oldName]
+                            encounterAssignments[oldName] = nil
+                            OGRH.SVM.Set("encounterAssignments", encounterAssignments)
                         end
-                        if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[oldName] then
-                            OGRH_SV.encounterRaidMarks[newName] = OGRH_SV.encounterRaidMarks[oldName]
-                            OGRH_SV.encounterRaidMarks[oldName] = nil
+                        
+                        -- Handle encounterRaidMarks rename
+                        local encounterRaidMarks = OGRH.SVM.Get("encounterRaidMarks") or {}
+                        if encounterRaidMarks[oldName] then
+                            encounterRaidMarks[newName] = encounterRaidMarks[oldName]
+                            encounterRaidMarks[oldName] = nil
+                            OGRH.SVM.Set("encounterRaidMarks", encounterRaidMarks)
                         end
-                        if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[oldName] then
-                            OGRH_SV.encounterAssignmentNumbers[newName] = OGRH_SV.encounterAssignmentNumbers[oldName]
-                            OGRH_SV.encounterAssignmentNumbers[oldName] = nil
+                        
+                        -- Handle encounterAssignmentNumbers rename
+                        local encounterAssignmentNumbers = OGRH.SVM.Get("encounterAssignmentNumbers") or {}
+                        if encounterAssignmentNumbers[oldName] then
+                            encounterAssignmentNumbers[newName] = encounterAssignmentNumbers[oldName]
+                            encounterAssignmentNumbers[oldName] = nil
+                            OGRH.SVM.Set("encounterAssignmentNumbers", encounterAssignmentNumbers)
                         end
-                        if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[oldName] then
-                            OGRH_SV.encounterAnnouncements[newName] = OGRH_SV.encounterAnnouncements[oldName]
-                            OGRH_SV.encounterAnnouncements[oldName] = nil
+                        
+                        -- Handle encounterAnnouncements rename
+                        local encounterAnnouncements = OGRH.SVM.Get("encounterAnnouncements") or {}
+                        if encounterAnnouncements[oldName] then
+                            encounterAnnouncements[newName] = encounterAnnouncements[oldName]
+                            encounterAnnouncements[oldName] = nil
+                            OGRH.SVM.Set("encounterAnnouncements", encounterAnnouncements)
                         end
+                        
+                        -- Save encounterMgmt after RENAME
+                        OGRH.SVM.Set("encounterMgmt", encounterMgmt)
                     
                     elseif change.operation == "REORDER" and change.details and change.details.raidName and change.details.oldPosition and change.details.newPosition then
                         -- Reorder raid in list
@@ -720,8 +768,8 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         
                         -- Find raid by name and position
                         local raidIndex = nil
-                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
+                        for i = 1, table.getn(encounterMgmt.raids) do
+                            if encounterMgmt.raids[i].name == raidName then
                                 raidIndex = i
                                 break
                             end
@@ -729,15 +777,18 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         
                         if raidIndex and raidIndex == oldPos then
                             -- Swap elements
-                            local temp = OGRH_SV.encounterMgmt.raids[newPos]
-                            OGRH_SV.encounterMgmt.raids[newPos] = OGRH_SV.encounterMgmt.raids[oldPos]
-                            OGRH_SV.encounterMgmt.raids[oldPos] = temp
+                            local temp = encounterMgmt.raids[newPos]
+                            encounterMgmt.raids[newPos] = encounterMgmt.raids[oldPos]
+                            encounterMgmt.raids[oldPos] = temp
                         end
+                        
+                        -- Save after REORDER
+                        OGRH.SVM.Set("encounterMgmt", encounterMgmt)
                     end
                     
                 elseif change.structureType == "ENCOUNTER" then
-                    OGRH.EnsureSV()
-                    if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then return end
+                    local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                    if not encounterMgmt or not encounterMgmt.raids then return end
                     
                     if change.operation == "ADD" and change.details and change.details.raidName and change.details.encounterName then
                         -- Add new encounter
@@ -746,9 +797,9 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         
                         -- Find raid
                         local raidObj = nil
-                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
-                                raidObj = OGRH_SV.encounterMgmt.raids[i]
+                        for i = 1, table.getn(encounterMgmt.raids) do
+                            if encounterMgmt.raids[i].name == raidName then
+                                raidObj = encounterMgmt.raids[i]
                                 break
                             end
                         end
@@ -789,11 +840,14 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         local raidName = change.details.raidName
                         local encounterName = change.details.encounterName
                         
+                        -- Get encounterMgmt from SVM
+                        local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                        
                         -- Find raid
                         local raidObj = nil
-                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
-                                raidObj = OGRH_SV.encounterMgmt.raids[i]
+                        for i = 1, table.getn(encounterMgmt.raids) do
+                            if encounterMgmt.raids[i].name == raidName then
+                                raidObj = encounterMgmt.raids[i]
                                 break
                             end
                         end
@@ -807,17 +861,27 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                             end
                         end
                         
+                        -- Save back to SVM
+                        OGRH.SVM.Set("encounterMgmt", encounterMgmt)
+                        
                     elseif change.operation == "RENAME" and change.details and change.details.raidName and change.details.oldName and change.details.newName then
                         -- Rename encounter
                         local raidName = change.details.raidName
                         local oldName = change.details.oldName
                         local newName = change.details.newName
                         
+                        -- Get all related tables from SVM
+                        local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                        local encounterAssignments = OGRH.SVM.Get("encounterAssignments") or {}
+                        local encounterRaidMarks = OGRH.SVM.Get("encounterRaidMarks") or {}
+                        local encounterAssignmentNumbers = OGRH.SVM.Get("encounterAssignmentNumbers") or {}
+                        local encounterAnnouncements = OGRH.SVM.Get("encounterAnnouncements") or {}
+                        
                         -- Find raid
                         local raidObj = nil
-                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
-                                raidObj = OGRH_SV.encounterMgmt.raids[i]
+                        for i = 1, table.getn(encounterMgmt.raids) do
+                            if encounterMgmt.raids[i].name == raidName then
+                                raidObj = encounterMgmt.raids[i]
                                 break
                             end
                         end
@@ -832,27 +896,34 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                             end
                             
                             -- Update all related data structures
-                            if OGRH_SV.encounterMgmt.roles and OGRH_SV.encounterMgmt.roles[raidName] and OGRH_SV.encounterMgmt.roles[raidName][oldName] then
-                                OGRH_SV.encounterMgmt.roles[raidName][newName] = OGRH_SV.encounterMgmt.roles[raidName][oldName]
-                                OGRH_SV.encounterMgmt.roles[raidName][oldName] = nil
+                            if encounterMgmt.roles and encounterMgmt.roles[raidName] and encounterMgmt.roles[raidName][oldName] then
+                                encounterMgmt.roles[raidName][newName] = encounterMgmt.roles[raidName][oldName]
+                                encounterMgmt.roles[raidName][oldName] = nil
                             end
-                            if OGRH_SV.encounterAssignments and OGRH_SV.encounterAssignments[raidName] and OGRH_SV.encounterAssignments[raidName][oldName] then
-                                OGRH_SV.encounterAssignments[raidName][newName] = OGRH_SV.encounterAssignments[raidName][oldName]
-                                OGRH_SV.encounterAssignments[raidName][oldName] = nil
+                            if encounterAssignments[raidName] and encounterAssignments[raidName][oldName] then
+                                encounterAssignments[raidName][newName] = encounterAssignments[raidName][oldName]
+                                encounterAssignments[raidName][oldName] = nil
                             end
-                            if OGRH_SV.encounterRaidMarks and OGRH_SV.encounterRaidMarks[raidName] and OGRH_SV.encounterRaidMarks[raidName][oldName] then
-                                OGRH_SV.encounterRaidMarks[raidName][newName] = OGRH_SV.encounterRaidMarks[raidName][oldName]
-                                OGRH_SV.encounterRaidMarks[raidName][oldName] = nil
+                            if encounterRaidMarks[raidName] and encounterRaidMarks[raidName][oldName] then
+                                encounterRaidMarks[raidName][newName] = encounterRaidMarks[raidName][oldName]
+                                encounterRaidMarks[raidName][oldName] = nil
                             end
-                            if OGRH_SV.encounterAssignmentNumbers and OGRH_SV.encounterAssignmentNumbers[raidName] and OGRH_SV.encounterAssignmentNumbers[raidName][oldName] then
-                                OGRH_SV.encounterAssignmentNumbers[raidName][newName] = OGRH_SV.encounterAssignmentNumbers[raidName][oldName]
-                                OGRH_SV.encounterAssignmentNumbers[raidName][oldName] = nil
+                            if encounterAssignmentNumbers[raidName] and encounterAssignmentNumbers[raidName][oldName] then
+                                encounterAssignmentNumbers[raidName][newName] = encounterAssignmentNumbers[raidName][oldName]
+                                encounterAssignmentNumbers[raidName][oldName] = nil
                             end
-                            if OGRH_SV.encounterAnnouncements and OGRH_SV.encounterAnnouncements[raidName] and OGRH_SV.encounterAnnouncements[raidName][oldName] then
-                                OGRH_SV.encounterAnnouncements[raidName][newName] = OGRH_SV.encounterAnnouncements[raidName][oldName]
-                                OGRH_SV.encounterAnnouncements[raidName][oldName] = nil
+                            if encounterAnnouncements[raidName] and encounterAnnouncements[raidName][oldName] then
+                                encounterAnnouncements[raidName][newName] = encounterAnnouncements[raidName][oldName]
+                                encounterAnnouncements[raidName][oldName] = nil
                             end
                         end
+                        
+                        -- Save all modified tables back to SVM
+                        OGRH.SVM.Set("encounterMgmt", encounterMgmt)
+                        OGRH.SVM.Set("encounterAssignments", encounterAssignments)
+                        OGRH.SVM.Set("encounterRaidMarks", encounterRaidMarks)
+                        OGRH.SVM.Set("encounterAssignmentNumbers", encounterAssignmentNumbers)
+                        OGRH.SVM.Set("encounterAnnouncements", encounterAnnouncements)
                     
                     elseif change.operation == "REORDER" and change.details and change.details.raidName and change.details.encounterName and change.details.oldPosition and change.details.newPosition then
                         -- Reorder encounter in list
@@ -861,11 +932,14 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         local oldPos = change.details.oldPosition
                         local newPos = change.details.newPosition
                         
+                        -- Get encounterMgmt from SVM
+                        local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                        
                         -- Find raid
                         local raidObj = nil
-                        for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                            if OGRH_SV.encounterMgmt.raids[i].name == raidName then
-                                raidObj = OGRH_SV.encounterMgmt.raids[i]
+                        for i = 1, table.getn(encounterMgmt.raids) do
+                            if encounterMgmt.raids[i].name == raidName then
+                                raidObj = encounterMgmt.raids[i]
                                 break
                             end
                         end
@@ -887,6 +961,9 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                                 raidObj.encounters[oldPos] = temp
                             end
                         end
+                        
+                        -- Save back to SVM
+                        OGRH.SVM.Set("encounterMgmt", encounterMgmt)
                     end
                     
                 elseif change.structureType == "ROLE" then
@@ -895,17 +972,17 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         return
                     end
                     
-                    OGRH.EnsureSV()
-                    if not OGRH_SV.encounterMgmt then OGRH_SV.encounterMgmt = {raids = {}, roles = {}} end
-                    if not OGRH_SV.encounterMgmt.roles then OGRH_SV.encounterMgmt.roles = {} end
-                    if not OGRH_SV.encounterMgmt.roles[change.details.raidName] then 
-                        OGRH_SV.encounterMgmt.roles[change.details.raidName] = {} 
+                    -- Get encounterMgmt from SVM
+                    local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                    if not encounterMgmt.roles then encounterMgmt.roles = {} end
+                    if not encounterMgmt.roles[change.details.raidName] then 
+                        encounterMgmt.roles[change.details.raidName] = {} 
                     end
-                    if not OGRH_SV.encounterMgmt.roles[change.details.raidName][change.details.encounterName] then 
-                        OGRH_SV.encounterMgmt.roles[change.details.raidName][change.details.encounterName] = {column1 = {}, column2 = {}} 
+                    if not encounterMgmt.roles[change.details.raidName][change.details.encounterName] then 
+                        encounterMgmt.roles[change.details.raidName][change.details.encounterName] = {column1 = {}, column2 = {}} 
                     end
                     
-                    local encounterRoles = OGRH_SV.encounterMgmt.roles[change.details.raidName][change.details.encounterName]
+                    local encounterRoles = encounterMgmt.roles[change.details.raidName][change.details.encounterName]
                     if not encounterRoles.column1 then encounterRoles.column1 = {} end
                     if not encounterRoles.column2 then encounterRoles.column2 = {} end
                     
@@ -1028,11 +1105,14 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         end
                     end
                 end
+                
+                -- Save encounterMgmt back to SVM after role operations
+                OGRH.SVM.Set("encounterMgmt", encounterMgmt)
             
             elseif change.type == "SETTINGS" then
                 -- Apply settings changes (raid or encounter advanced settings)
-                OGRH.EnsureSV()
-                if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then return end
+                local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                if not encounterMgmt.raids then return end
                 
                 if not change.raidName or not change.settings then
                     return
@@ -1040,9 +1120,9 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                 
                 -- Find raid
                 local raidObj = nil
-                for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-                    if OGRH_SV.encounterMgmt.raids[i].name == change.raidName then
-                        raidObj = OGRH_SV.encounterMgmt.raids[i]
+                for i = 1, table.getn(encounterMgmt.raids) do
+                    if encounterMgmt.raids[i].name == change.raidName then
+                        raidObj = encounterMgmt.raids[i]
                         break
                     end
                 end
@@ -1070,21 +1150,24 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                         encounterObj.advancedSettings = change.settings
                     end
                 end
+                
+                -- Save back to SVM
+                OGRH.SVM.Set("encounterMgmt", encounterMgmt)
             
             elseif change.type == "CLASSPRIORITY" then
                 -- Apply class priority changes (slot-level class priority and role flags)
-                OGRH.EnsureSV()
-                if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.roles then return end
+                local encounterMgmt = OGRH.SVM.Get("encounterMgmt") or {raids = {}, roles = {}}
+                if not encounterMgmt.roles then return end
                 
                 if not change.raidName or not change.encounterName or not change.roleIndex or not change.slotIndex then
                     return
                 end
                 
                 -- Find role in encounterMgmt.roles structure
-                if not OGRH_SV.encounterMgmt.roles[change.raidName] then return end
-                if not OGRH_SV.encounterMgmt.roles[change.raidName][change.encounterName] then return end
+                if not encounterMgmt.roles[change.raidName] then return end
+                if not encounterMgmt.roles[change.raidName][change.encounterName] then return end
                 
-                local encounterRoles = OGRH_SV.encounterMgmt.roles[change.raidName][change.encounterName]
+                local encounterRoles = encounterMgmt.roles[change.raidName][change.encounterName]
                 local column1 = encounterRoles.column1 or {}
                 local column2 = encounterRoles.column2 or {}
                 
@@ -1123,6 +1206,9 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                     end
                     targetRole.classPriorityRoles[change.slotIndex] = change.classPriorityRoles
                 end
+                
+                -- Save encounterMgmt back to SVM after class priority changes
+                OGRH.SVM.Set("encounterMgmt", encounterMgmt)
             end
         end
     
@@ -1299,8 +1385,9 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             return
         end
         
-        if not OGRH_SV.roles then OGRH_SV.roles = {} end
-        OGRH_SV.roles[changeData.player] = changeData.newValue
+        local roles = OGRH.SVM.Get("roles") or {}
+        roles[changeData.player] = changeData.newValue
+        OGRH.SVM.Set("roles", roles)
         
         -- Update UI if open
         local frame = OGRH.rolesFrame or _G["OGRH_RolesFrame"]
@@ -1386,7 +1473,7 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             local name, rank = GetRaidRosterInfo(i)
             if name == playerToPromote and rank == 0 then
                 PromoteToAssistant(playerToPromote)
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00OGRH:|r Auto-promoted %s to assistant (requested by %s).", playerToPromote, sender))
+                OGRH.Msg(string.format("|cff00ccffOGRH:|r Auto-promoted %s to assistant (requested by %s).", playerToPromote, sender))
                 break
             end
         end
@@ -1401,31 +1488,31 @@ end
 
 -- Debug: Print registered handlers
 function OGRH.MessageRouter.DebugPrintHandlers()
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === Registered Message Handlers ===")
+    OGRH.Msg("|cff00ccff[OGRH] === Registered Message Handlers ===")
     
     local count = 0
     for messageType, handler in pairs(OGRH.MessageRouter.State.handlers) do
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH]   %s", messageType))
+        OGRH.Msg(string.format("|cff00ccff[OGRH]   %s", messageType))
         count = count + 1
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] Total: %d handlers", count))
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === End Handlers ===")
+    OGRH.Msg(string.format("|cff00ccff[OGRH] Total: %d handlers", count))
+    OGRH.Msg("|cff00ccff[OGRH] === End Handlers ===")
 end
 
 -- Debug: Print recent received messages
 function OGRH.MessageRouter.DebugPrintReceivedMessages()
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === Recent Received Messages ===")
+    OGRH.Msg("|cff00ccff[OGRH] === Recent Received Messages ===")
     
     if table.getn(OGRH.MessageRouter.State.receivedMessages) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("[OGRH] No messages received")
+        OGRH.Msg("|cff00ccff[OGRH] No messages received")
     else
         for i = 1, table.getn(OGRH.MessageRouter.State.receivedMessages) do
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH]   %s", OGRH.MessageRouter.State.receivedMessages[i]))
+            OGRH.Msg(string.format("|cff00ccff[OGRH]   %s", OGRH.MessageRouter.State.receivedMessages[i]))
         end
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === End Messages ===")
+    OGRH.Msg("|cff00ccff[OGRH] === End Messages ===")
 end
 
 OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Loaded")

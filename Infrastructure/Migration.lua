@@ -488,8 +488,8 @@ OGRH.Msg("\n[Phase 5] Applying semantic transformations...")
     end
     
     -- Phase 6: Copy simple data structures not in migration map
-OGRH.Msg("\n[Phase 6] Copying unmapped data (consumes, tradeItems)...")
-    local simpleCopyFields = {"consumes", "tradeItems", "pollTime", "allowRemoteReadyCheck", "monitorConsumes", "syncLocked"}
+OGRH.Msg("\n[Phase 6] Copying unmapped data (consumes, tradeItems, recruitment)...")
+    local simpleCopyFields = {"consumes", "tradeItems", "recruitment", "pollTime", "allowRemoteReadyCheck", "monitorConsumes", "syncLocked"}
     for _, field in ipairs(simpleCopyFields) do
         if OGRH_SV[field] ~= nil then
             v2[field] = DeepCopy(OGRH_SV[field])

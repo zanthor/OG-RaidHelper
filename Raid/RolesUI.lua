@@ -201,9 +201,6 @@ local function CreateRolesFrame()
                                     table.insert(roleColumn.players, draggedName)
                                     
                                     -- Save the role change
-                                    if not OGRH_SV then OGRH_SV = {} end
-                                    if not OGRH_SV.roles then OGRH_SV.roles = {} end
-                                    
                                     local newRole
                                     if colIndex == 1 then newRole = "TANKS"
                                     elseif colIndex == 2 then newRole = "HEALERS"
@@ -211,16 +208,18 @@ local function CreateRolesFrame()
                                     else newRole = "RANGED" end
                                     
                                     -- Store old role for delta sync
-                                    local oldRole = OGRH_SV.roles[draggedName]
+                                    local roles = OGRH.SVM.Get("roles") or {}
+                                    local oldRole = roles[draggedName]
                                     
-                                    OGRH_SV.roles[draggedName] = newRole
+                                    roles[draggedName] = newRole
+                                    OGRH.SVM.Set("roles", nil, roles)
                                     
                                     -- Use delta sync for role change (Phase 3A)
                                     if OGRH.SyncDelta and OGRH.SyncDelta.RecordRoleChange then
                                         OGRH.SyncDelta.RecordRoleChange(draggedName, newRole, oldRole)
                                     else
                                         -- Delta sync not available - this indicates addon load order problem
-                                        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[OGRH-Error]|r Delta sync system not loaded! Role change not synced.")
+                                        OGRH.Msg("|cffff0000[RolesUI]|r Delta sync system not loaded! Role change not synced")
                                     end
                                     
                                     -- Sync tank and healer status to Puppeteer and pfUI
@@ -300,11 +299,11 @@ local function CreateRolesFrame()
             frame:ClearAllPoints()
             frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
         else
-            print("Error: Failed to create OGRH_RolesFrame")
+            OGRH.Msg("|cffff6666[RolesUI]|r Error: Failed to create OGRH_RolesFrame")
             return
         end
     else
-        print("Error: UIParent not available")
+        OGRH.Msg("|cffff6666[RolesUI]|r Error: UIParent not available")
         return
     end
     frame:EnableMouse(true)
@@ -328,13 +327,14 @@ local function CreateRolesFrame()
     frame:SetScript("OnMouseUp", function()
         frame:StopMovingOrSizing()
         -- Save position
-        if not OGRH_SV then OGRH_SV = {} end
-        if not OGRH_SV.rolesUI then OGRH_SV.rolesUI = {} end
         local point, _, relPoint, x, y = frame:GetPoint()
-        OGRH_SV.rolesUI.point = point
-        OGRH_SV.rolesUI.relPoint = relPoint
-        OGRH_SV.rolesUI.x = x
-        OGRH_SV.rolesUI.y = y
+        local posData = {
+            point = point,
+            relPoint = relPoint,
+            x = x,
+            y = y
+        }
+        OGRH.SVM.Set("rolesUI", nil, posData)
     end)
     
     -- Create buttons
@@ -523,8 +523,9 @@ local function CreateRolesFrame()
                         knownPlayers[name] = true
                         
                         -- Priority 1: Use manually saved role assignment (if exists and not forcing sync)
-                        if not forceSyncRollFor and OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
-                            local savedRole = OGRH_SV.roles[name]
+                        local roles = OGRH.SVM.Get("roles") or {}
+                        if not forceSyncRollFor and roles[name] then
+                            local savedRole = roles[name]
                             if savedRole == "TANKS" then roleIndex = 1
                             elseif savedRole == "HEALERS" then roleIndex = 2
                             elseif savedRole == "MELEE" then roleIndex = 3
@@ -550,16 +551,17 @@ local function CreateRolesFrame()
                                 end
                                 
                                 -- Save the invite role so it persists
-                                if not OGRH_SV then OGRH_SV = {} end
-                                if not OGRH_SV.roles then OGRH_SV.roles = {} end
-                                OGRH_SV.roles[name] = inviteRole
+                                roles = OGRH.SVM.Get("roles") or {}
+                                roles[name] = inviteRole
+                                OGRH.SVM.Set("roles", nil, roles)
                             else
                                 -- No invite data for this player
                                 if forceSyncRollFor then
                                     -- Forced sync but player not in invite roster - do nothing, keep current position
                                     -- Check if they have a saved role assignment to preserve
-                                    if OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[name] then
-                                        local savedRole = OGRH_SV.roles[name]
+                                    roles = OGRH.SVM.Get("roles") or {}
+                                    if roles[name] then
+                                        local savedRole = roles[name]
                                         if savedRole == "TANKS" then roleIndex = 1
                                         elseif savedRole == "HEALERS" then roleIndex = 2
                                         elseif savedRole == "MELEE" then roleIndex = 3
@@ -575,10 +577,10 @@ local function CreateRolesFrame()
                                             roleIndex = 3  -- Melee
                                         end
                                         -- Save the default role assignment
-                                        if not OGRH_SV then OGRH_SV = {} end
-                                        if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                                        roles = OGRH.SVM.Get("roles") or {}
                                         local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
-                                        OGRH_SV.roles[name] = roleNames[roleIndex]
+                                        roles[name] = roleNames[roleIndex]
+                                        OGRH.SVM.Set("roles", nil, roles)
                                     end
                                 else
                                     -- First join and not in invite roster - fall back to class defaults
@@ -590,10 +592,10 @@ local function CreateRolesFrame()
                                         roleIndex = 3  -- Melee
                                     end
                                     -- Save the default role assignment
-                                    if not OGRH_SV then OGRH_SV = {} end
-                                    if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                                    roles = OGRH.SVM.Get("roles") or {}
                                     local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
-                                    OGRH_SV.roles[name] = roleNames[roleIndex]
+                                    roles[name] = roleNames[roleIndex]
+                                    OGRH.SVM.Set("roles", nil, roles)
                                 end
                             end
                         else
@@ -606,10 +608,10 @@ local function CreateRolesFrame()
                                 roleIndex = 3  -- Melee
                             end
                             -- Save the default role assignment
-                            if not OGRH_SV then OGRH_SV = {} end
-                            if not OGRH_SV.roles then OGRH_SV.roles = {} end
+                            roles = OGRH.SVM.Get("roles") or {}
                             local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
-                            OGRH_SV.roles[name] = roleNames[roleIndex]
+                            roles[name] = roleNames[roleIndex]
+                            OGRH.SVM.Set("roles", nil, roles)
                         end
                         
                         table.insert(ROLE_COLUMNS[roleIndex].players, name)
@@ -789,9 +791,9 @@ function OGRH.RolesUI.SetPlayerRole(playerName, roleBucket)
   end
   
   -- Save to SV
-  if not OGRH_SV then OGRH_SV = {} end
-  if not OGRH_SV.roles then OGRH_SV.roles = {} end
-  OGRH_SV.roles[playerName] = roleBucket
+  local roles = OGRH.SVM.Get("roles") or {}
+  roles[playerName] = roleBucket
+  OGRH.SVM.Set("roles", nil, roles)
   
   -- Refresh UI if window is open
   if OGRH_RolesFrame and OGRH_RolesFrame:IsVisible() and OGRH.RenderRoles then
@@ -812,15 +814,16 @@ end
 -- Global helper functions for external addon integration (e.g., RABuffs)
 -- Get a player's current role assignment
 function OGRH_GetPlayerRole(playerName)
-    if not OGRH_SV or not OGRH_SV.roles then
+    local roles = OGRH.SVM.Get("roles")
+    if not roles then
         return nil
     end
-    return OGRH_SV.roles[playerName]
+    return roles[playerName]
 end
 
 -- Check if role system is available
 function OGRH_IsRoleSystemAvailable()
-    return (OGRH and OGRH_SV and OGRH_SV.roles) and true or false
+    return (OGRH and OGRH.SVM and OGRH.SVM.Get("roles")) and true or false
 end
 
 -- Get all players in a specific role
@@ -838,6 +841,6 @@ _loader:SetScript("OnEvent", function()
     if OGRH then
         CreateRolesFrame()
     else
-        print("Error: OGRH_RolesUI requires OGRH_Core to be loaded first!")
+        OGRH.Msg("|cffff6666[RolesUI]|r Error: OGRH_RolesUI requires OGRH_Core to be loaded first!")
     end
 end)

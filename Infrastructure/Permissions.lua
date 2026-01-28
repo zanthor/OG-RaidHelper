@@ -209,7 +209,7 @@ function OGRH.RequestAdminRole()
     local playerName = UnitName("player")
     
     if not OGRH.IsRaidOfficer(playerName) and not OGRH.Permissions.IsSessionAdmin(playerName) then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH]|r Only Raid Lead or Assist can request admin role")
+        OGRH.Msg("|cffff0000[Permissions]|r Only Raid Lead or Assist can request admin role")
         return false
     end
     
@@ -226,14 +226,14 @@ function OGRH.RequestAdminRole()
                 priority = "HIGH",
                 onSuccess = function()
                     OGRH.SetRaidAdmin(playerName)
-                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r You are now the raid admin")
+                    OGRH.Msg("|cff00ff00[Permissions]|r You are now the raid admin")
                 end
             }
         )
     else
         -- Fallback if MessageRouter not available
         OGRH.SetRaidAdmin(playerName)
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH]|r You are now the raid admin")
+        OGRH.Msg("|cff00ff00[Permissions]|r You are now the raid admin")
     end
     
     return true
@@ -275,8 +275,8 @@ function OGRH.SetSessionAdmin(playerName)
         OGRH.UpdateRaidLeadUI()
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[OGRH]|r %s granted session admin (temporary)", playerName))
-    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[OGRH]|r Session admin will be cleared when another admin is selected")
+    OGRH.Msg(string.format("|cff00ff00[Permissions]|r %s granted session admin (temporary)", playerName))
+    OGRH.Msg("|cffffff00[Permissions]|r Session admin will be cleared when another admin is selected")
     
     return true
 end
@@ -286,12 +286,12 @@ function OGRH.AssignAdminRole(targetPlayer)
     local playerName = UnitName("player")
     
     if not OGRH.CanModifyStructure(playerName) and not OGRH.IsRaidOfficer(playerName) then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH]|r Only admin or Raid Lead/Assist can assign admin role")
+        OGRH.Msg("|cffff0000[Permissions]|r Only admin or Raid Lead/Assist can assign admin role")
         return false
     end
     
     if not OGRH.IsRaidOfficer(targetPlayer) and not OGRH.Permissions.IsSessionAdmin(targetPlayer) then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH]|r Can only assign admin to Raid Lead or Assist")
+        OGRH.Msg("|cffff0000[Permissions]|r Can only assign admin to Raid Lead or Assist")
         return false
     end
     
@@ -306,13 +306,13 @@ function OGRH.AssignAdminRole(targetPlayer)
             priority = "HIGH",
             onSuccess = function()
                 OGRH.SetRaidAdmin(targetPlayer)
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[OGRH]|r %s is now the raid admin", targetPlayer))
+                OGRH.Msg(string.format("|cff00ff00[Permissions]|r %s is now the raid admin", targetPlayer))
             end
         })
     else
         -- Fallback if OGAddonMsg not available
         OGRH.SetRaidAdmin(targetPlayer)
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH]|r %s is now the raid admin", targetPlayer))
+        OGRH.Msg(string.format("|cff00ff00[Permissions]|r %s is now the raid admin", targetPlayer))
     end
     
     return true
@@ -346,8 +346,8 @@ function OGRH.HandlePermissionDenied(playerName, operation)
     
     -- Notify the player
     if playerName == UnitName("player") then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH]|r Permission denied: %s", operation))
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH]|r Your level: %s", OGRH.GetPermissionLevel(playerName)))
+        OGRH.Msg(string.format("|cffff0000[Permissions]|r Permission denied: %s", operation))
+        OGRH.Msg(string.format("|cffff0000[Permissions]|r Your level: %s", OGRH.GetPermissionLevel(playerName)))
     end
     
     -- Broadcast permission denial (optional, for audit purposes)
@@ -370,8 +370,9 @@ end
 -- Initialize permission system
 function OGRH.Permissions.Initialize()
     -- Load from SavedVariables if available
-    if OGRH_SV and OGRH_SV.Permissions then
-        OGRH.Permissions.State = OGRH_SV.Permissions
+    local storedState = OGRH.SVM.Get("permissions")
+    if storedState then
+        OGRH.Permissions.State = storedState
     end
     
     -- Auto-detect admin if not set (raid leader becomes admin)
@@ -383,21 +384,19 @@ function OGRH.Permissions.Initialize()
                 if rank == 2 then
                     -- Raid leader found
                     OGRH.SetRaidAdmin(name)
-                    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH]|r Auto-assigned %s as raid admin", name))
+                    OGRH.Msg(string.format("|cff00ff00[Permissions]|r Auto-assigned %s as raid admin", name))
                     break
                 end
             end
         end
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-Permissions]|r System initialized")
+    OGRH.Msg("|cff00ccff[Permissions]|r System initialized")
 end
 
 -- Save permission state to SavedVariables
 function OGRH.Permissions.Save()
-    if OGRH_SV then
-        OGRH_SV.Permissions = OGRH.Permissions.State
-    end
+    OGRH.SVM.Set("permissions", nil, OGRH.Permissions.State)
 end
 
 --[[
@@ -406,12 +405,12 @@ end
 
 -- Debug: Print permission info for all raid members
 function OGRH.Permissions.DebugPrintRaidPermissions()
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === Raid Permissions ===")
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] Current Admin: %s", OGRH.Permissions.State.currentAdmin or "None"))
+    OGRH.Msg("|cff00ccff[Permissions]|r === Raid Permissions ===")
+    OGRH.Msg(string.format("|cff00ccff[Permissions]|r Current Admin: %s", OGRH.Permissions.State.currentAdmin or "None"))
     
     local numRaidMembers = GetNumRaidMembers()
     if numRaidMembers == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("[OGRH] Not in a raid")
+        OGRH.Msg("|cff00ccff[Permissions]|r Not in a raid")
         return
     end
     
@@ -426,31 +425,31 @@ function OGRH.Permissions.DebugPrintRaidPermissions()
             rankStr = "Assist"
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] %s - Rank: %s, Permission: %s", name, rankStr, level))
+        OGRH.Msg(string.format("|cff00ccff[Permissions]|r %s - Rank: %s, Permission: %s", name, rankStr, level))
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === End Permissions ===")
+    OGRH.Msg("|cff00ccff[Permissions]|r === End Permissions ===")
 end
 
 -- Debug: Print permission denial log
 function OGRH.Permissions.DebugPrintDenials()
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === Permission Denials ===")
+    OGRH.Msg("|cff00ccff[Permissions]|r === Permission Denials ===")
     
     if table.getn(OGRH.Permissions.State.permissionDenials) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("[OGRH] No denials recorded")
+        OGRH.Msg("|cff00ccff[Permissions]|r No denials recorded")
         return
     end
     
     for i = 1, table.getn(OGRH.Permissions.State.permissionDenials) do
         local denial = OGRH.Permissions.State.permissionDenials[i]
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] [%s] %s attempted %s - %s", 
+        OGRH.Msg(string.format("|cff00ccff[Permissions]|r [%s] %s attempted %s - %s", 
             date("%H:%M:%S", denial.timestamp),
             denial.player,
             denial.operation,
             denial.reason))
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === End Denials ===")
+    OGRH.Msg("|cff00ccff[Permissions]|r === End Denials ===")
 end
 
 OGRH.Msg("|cff00ccff[RH-Permissions]|r Loaded")

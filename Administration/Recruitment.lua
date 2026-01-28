@@ -1,11 +1,6 @@
 -- OGRH_Recruitment.lua
 -- Guild recruitment advertising and contact tracking module
 
-if not OGRH then
-  DEFAULT_CHAT_FRAME:AddMessage("|cffff0000Error: OGRH_Recruitment requires OGRH_Core to be loaded first!|r")
-  return
-end
-
 -- Module registration
 OGRH.RegisterModule({
   id = "recruitment",
@@ -20,8 +15,8 @@ OGRH.RegisterModule({
 function OGRH.EnsureRecruitmentSV()
   OGRH.EnsureSV()
   
-  if not OGRH_SV.recruitment then
-    OGRH_SV.recruitment = {
+  if not OGRH.SVM.Get("recruitment") then
+    OGRH.SVM.Set("recruitment", nil, {
       enabled = false,
       message = "",
       messages = {"", "", "", "", ""}, -- 5 preset messages
@@ -38,57 +33,63 @@ function OGRH.EnsureRecruitmentSV()
       isRecruiting = false, -- Currently recruiting
       rotateMessages = {false, false, false, false, false}, -- Which messages to include in rotation
       lastRotationIndex = 0 -- Last message index sent in rotation
-    }
+    }, {syncLevel = "MANUAL", componentType = "settings"})
   end
   
   -- Ensure whisperHistory, playerCache, and deletedContacts exist (for migration)
-  if not OGRH_SV.recruitment.whisperHistory then
-    OGRH_SV.recruitment.whisperHistory = {}
+  if not OGRH.SVM.GetPath("recruitment.whisperHistory") then
+    OGRH.SVM.SetPath("recruitment.whisperHistory", {}, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.recruitment.playerCache then
-    OGRH_SV.recruitment.playerCache = {}
+  if not OGRH.SVM.GetPath("recruitment.playerCache") then
+    OGRH.SVM.SetPath("recruitment.playerCache", {}, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.recruitment.deletedContacts then
-    OGRH_SV.recruitment.deletedContacts = {}
+  if not OGRH.SVM.GetPath("recruitment.deletedContacts") then
+    OGRH.SVM.SetPath("recruitment.deletedContacts", {}, {syncLevel = "MANUAL", componentType = "settings"})
   end
   
   -- Ensure messages array exists (for migration)
-  if not OGRH_SV.recruitment.messages then
-    OGRH_SV.recruitment.messages = {"", "", "", "", ""}
+  local messages = OGRH.SVM.GetPath("recruitment.messages")
+  if not messages then
+    messages = {"", "", "", "", ""}
     -- Migrate old single message to Message 1
-    if OGRH_SV.recruitment.message and OGRH_SV.recruitment.message ~= "" then
-      OGRH_SV.recruitment.messages[1] = OGRH_SV.recruitment.message
+    local oldMessage = OGRH.SVM.GetPath("recruitment.message")
+    if oldMessage and oldMessage ~= "" then
+      messages[1] = oldMessage
     end
+    OGRH.SVM.SetPath("recruitment.messages", messages, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.recruitment.messages2 then
-    OGRH_SV.recruitment.messages2 = {"", "", "", "", ""}
+  if not OGRH.SVM.GetPath("recruitment.messages2") then
+    OGRH.SVM.SetPath("recruitment.messages2", {"", "", "", "", ""}, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.recruitment.selectedMessageIndex then
-    OGRH_SV.recruitment.selectedMessageIndex = 1
+  if not OGRH.SVM.GetPath("recruitment.selectedMessageIndex") then
+    OGRH.SVM.SetPath("recruitment.selectedMessageIndex", 1, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.recruitment.rotateMessages then
-    OGRH_SV.recruitment.rotateMessages = {false, false, false, false, false}
+  if not OGRH.SVM.GetPath("recruitment.rotateMessages") then
+    OGRH.SVM.SetPath("recruitment.rotateMessages", {false, false, false, false, false}, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.recruitment.lastRotationIndex then
-    OGRH_SV.recruitment.lastRotationIndex = 0
+  if not OGRH.SVM.GetPath("recruitment.lastRotationIndex") then
+    OGRH.SVM.SetPath("recruitment.lastRotationIndex", 0, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH_SV.recruitment.targetTime then
-    OGRH_SV.recruitment.targetTime = ""
+  if not OGRH.SVM.GetPath("recruitment.targetTime") then
+    OGRH.SVM.SetPath("recruitment.targetTime", "", {syncLevel = "MANUAL", componentType = "settings"})
   end
   
   -- Migrate old channels format to new selectedChannel format
-  if OGRH_SV.recruitment.channels then
+  local oldChannels = OGRH.SVM.GetPath("recruitment.channels")
+  if oldChannels then
+    local selectedChannel = "general" -- default
     -- Pick the first checked channel as the selected one
-    if OGRH_SV.recruitment.channels.general then
-      OGRH_SV.recruitment.selectedChannel = "general"
-    elseif OGRH_SV.recruitment.channels.trade then
-      OGRH_SV.recruitment.selectedChannel = "trade"
-    elseif OGRH_SV.recruitment.channels.world then
-      OGRH_SV.recruitment.selectedChannel = "world"
-    elseif OGRH_SV.recruitment.channels.localdefense then
-      OGRH_SV.recruitment.selectedChannel = "general" -- Map old localdefense to general
+    if oldChannels.general then
+      selectedChannel = "general"
+    elseif oldChannels.trade then
+      selectedChannel = "trade"
+    elseif oldChannels.world then
+      selectedChannel = "world"
+    elseif oldChannels.localdefense then
+      selectedChannel = "general" -- Map old localdefense to general
     end
-    OGRH_SV.recruitment.channels = nil -- Remove old format
+    OGRH.SVM.SetPath("recruitment.selectedChannel", selectedChannel, {syncLevel = "MANUAL", componentType = "settings"})
+    OGRH.SVM.SetPath("recruitment.channels", nil, {syncLevel = "MANUAL", componentType = "settings"})
   end
 end
 
@@ -227,7 +228,7 @@ function OGRH.ShowRecruitmentWindow()
     yOffset = yOffset - (OGRH.LIST_ITEM_HEIGHT + OGRH.LIST_ITEM_SPACING)
     
     -- Contact entries
-    local whisperHistory = OGRH_SV.recruitment.whisperHistory
+    local whisperHistory = OGRH.SVM.GetPath("recruitment.whisperHistory") or {}
     local contacts = {}
     for name, data in pairs(whisperHistory) do
       table.insert(contacts, {name = name, lastContact = data.lastContact or 0})
@@ -259,8 +260,12 @@ function OGRH.ShowRecruitmentWindow()
       
       -- Add standard delete button
       OGRH.AddListItemButtons(row, i, table.getn(contacts), nil, nil, function()
-        OGRH_SV.recruitment.whisperHistory[contactName] = nil
-        OGRH_SV.recruitment.deletedContacts[contactName] = true
+        local wh = OGRH.SVM.GetPath("recruitment.whisperHistory") or {}
+        wh[contactName] = nil
+        OGRH.SVM.SetPath("recruitment.whisperHistory", wh, {syncLevel = "MANUAL", componentType = "settings"})
+        local dc = OGRH.SVM.GetPath("recruitment.deletedContacts") or {}
+        dc[contactName] = true
+        OGRH.SVM.SetPath("recruitment.deletedContacts", dc, {syncLevel = "MANUAL", componentType = "settings"})
         frame.PopulateLeftList()
       end, true)
       
@@ -317,7 +322,8 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   messageSelectorBtn:SetPoint("LEFT", messageLabel, "RIGHT", 10, 0)
   messageSelectorBtn:SetWidth(100)
   messageSelectorBtn:SetHeight(22)
-  messageSelectorBtn:SetText("Message " .. OGRH_SV.recruitment.selectedMessageIndex)
+  local selectedIdx = OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1
+  messageSelectorBtn:SetText("Message " .. selectedIdx)
   if OGRH.StyleButton then
     OGRH.StyleButton(messageSelectorBtn)
   end
@@ -366,7 +372,7 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
       text:SetText("Message " .. i)
       
       -- Highlight current selection
-      if i == OGRH_SV.recruitment.selectedMessageIndex then
+      if i == (OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1) then
         text:SetTextColor(1, 0.82, 0)
       end
       
@@ -382,16 +388,8 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
       end)
       
       btn:SetScript("OnClick", function()
-        -- Save current messages before switching
-        if detailPanel.messageBox then
-          OGRH_SV.recruitment.messages[OGRH_SV.recruitment.selectedMessageIndex] = detailPanel.messageBox:GetText()
-        end
-        if detailPanel.messageBox2 then
-          OGRH_SV.recruitment.messages2[OGRH_SV.recruitment.selectedMessageIndex] = detailPanel.messageBox2:GetText()
-        end
-        
-        -- Switch to new message
-        OGRH_SV.recruitment.selectedMessageIndex = messageIndex
+        -- Switch to new message (don't auto-save current one)
+        OGRH.SVM.SetPath("recruitment.selectedMessageIndex", messageIndex, {syncLevel = "MANUAL", componentType = "settings"})
         
         -- Update dropdown button text
         if detailPanel.messageSelectorBtn then
@@ -400,7 +398,7 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
         
         -- Load new message text
         if detailPanel.messageBox then
-          local newMessage = OGRH_SV.recruitment.messages[messageIndex] or ""
+          local newMessage = (OGRH.SVM.GetPath("recruitment.messages") or {})[messageIndex] or ""
           detailPanel.messageBox:SetText(newMessage)
           -- Update character count
           if detailPanel.messageLabel then
@@ -408,7 +406,7 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
           end
         end
         if detailPanel.messageBox2 then
-          local newMessage2 = OGRH_SV.recruitment.messages2[messageIndex] or ""
+          local newMessage2 = (OGRH.SVM.GetPath("recruitment.messages2") or {})[messageIndex] or ""
           detailPanel.messageBox2:SetText(newMessage2)
           -- Update character count
           if detailPanel.messageLabel2 then
@@ -481,18 +479,31 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   messageBox:SetTextInsets(5, 5, 3, 3)
   messageBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
   messageBox:SetScript("OnTextChanged", function()
+    -- Only update character count, don't save
     local text = this:GetText()
     local len = string.len(text)
-    -- Save to current selected message slot
-    OGRH_SV.recruitment.messages[OGRH_SV.recruitment.selectedMessageIndex] = text
-    -- Also update legacy message field for backward compatibility
-    OGRH_SV.recruitment.message = text
-    -- Update character count in label
     messageLabel:SetText("Recruitment Message (" .. len .. "/255 characters):")
+  end)
+  messageBox:SetScript("OnEnterPressed", function()
+    local text = this:GetText()
+    local messages = OGRH.SVM.GetPath("recruitment.messages") or {}
+    local selectedIdx = OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1
+    messages[selectedIdx] = text
+    OGRH.SVM.SetPath("recruitment.messages", messages, {syncLevel = "MANUAL", componentType = "settings"})
+    OGRH.SVM.SetPath("recruitment.message", text, {syncLevel = "MANUAL", componentType = "settings"})
+    this:ClearFocus()
+  end)
+  messageBox:SetScript("OnEditFocusLost", function()
+    local text = this:GetText()
+    local messages = OGRH.SVM.GetPath("recruitment.messages") or {}
+    local selectedIdx = OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1
+    messages[selectedIdx] = text
+    OGRH.SVM.SetPath("recruitment.messages", messages, {syncLevel = "MANUAL", componentType = "settings"})
+    OGRH.SVM.SetPath("recruitment.message", text, {syncLevel = "MANUAL", componentType = "settings"})
   end)
   
   -- Load text from selected message slot
-  local currentMessage = OGRH_SV.recruitment.messages[OGRH_SV.recruitment.selectedMessageIndex] or ""
+  local currentMessage = (OGRH.SVM.GetPath("recruitment.messages") or {})[(OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1)] or ""
   messageBox:SetText(currentMessage)
   
   -- Store references for dropdown handler
@@ -546,16 +557,29 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   messageBox2:SetTextInsets(5, 5, 3, 3)
   messageBox2:SetScript("OnEscapePressed", function() this:ClearFocus() end)
   messageBox2:SetScript("OnTextChanged", function()
+    -- Only update character count, don't save
     local text = this:GetText()
     local len = string.len(text)
-    -- Save to current selected message slot
-    OGRH_SV.recruitment.messages2[OGRH_SV.recruitment.selectedMessageIndex] = text
-    -- Update character count in label
     messageLabel2:SetText("Second Message (" .. len .. "/255 characters):")
+  end)
+  messageBox2:SetScript("OnEnterPressed", function()
+    local text = this:GetText()
+    local messages2 = OGRH.SVM.GetPath("recruitment.messages2") or {}
+    local selectedIdx = OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1
+    messages2[selectedIdx] = text
+    OGRH.SVM.SetPath("recruitment.messages2", messages2, {syncLevel = "MANUAL", componentType = "settings"})
+    this:ClearFocus()
+  end)
+  messageBox2:SetScript("OnEditFocusLost", function()
+    local text = this:GetText()
+    local messages2 = OGRH.SVM.GetPath("recruitment.messages2") or {}
+    local selectedIdx = OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1
+    messages2[selectedIdx] = text
+    OGRH.SVM.SetPath("recruitment.messages2", messages2, {syncLevel = "MANUAL", componentType = "settings"})
   end)
   
   -- Load text from selected message slot
-  local currentMessage2 = OGRH_SV.recruitment.messages2[OGRH_SV.recruitment.selectedMessageIndex] or ""
+  local currentMessage2 = (OGRH.SVM.GetPath("recruitment.messages2") or {})[(OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1)] or ""
   messageBox2:SetText(currentMessage2)
   
   -- Store references for dropdown handler
@@ -584,7 +608,7 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
     radio:SetPoint("TOPLEFT", channelLabel, "BOTTOMLEFT", xOffset, -8)
     radio:SetWidth(24)
     radio:SetHeight(24)
-    radio:SetChecked(OGRH_SV.recruitment.selectedChannel == channel.key)
+    radio:SetChecked((OGRH.SVM.GetPath("recruitment.selectedChannel")) == channel.key)
     
     -- Capture channel key in local variable to avoid closure issue
     local channelKey = channel.key
@@ -595,7 +619,7 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
       end
       -- Check this one
       this:SetChecked(true)
-      OGRH_SV.recruitment.selectedChannel = channelKey
+      OGRH.SVM.SetPath("recruitment.selectedChannel", channelKey, {syncLevel = "MANUAL", componentType = "settings"})
     end)
     table.insert(detailPanel.content, radio)
     table.insert(radioButtons, radio)
@@ -632,10 +656,10 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   intervalBox:SetScript("OnTextChanged", function()
     local value = tonumber(this:GetText())
     if value and value > 0 then
-      OGRH_SV.recruitment.interval = value * 60
+      OGRH.SVM.SetPath("recruitment.interval", value * 60, {syncLevel = "MANUAL", componentType = "settings"})
     end
   end)
-  intervalBox:SetText(tostring(math.floor((OGRH_SV.recruitment.interval or 600) / 60)))
+  intervalBox:SetText(tostring(math.floor(((OGRH.SVM.GetPath("recruitment.interval") or 600) or 600) / 60)))
   table.insert(detailPanel.content, intervalBox)
   
   -- Target Time setting
@@ -666,13 +690,13 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
     if text and string.len(text) > 0 then
       local value = tonumber(text)
       if value and value >= 0 and value <= 2359 then
-        OGRH_SV.recruitment.targetTime = text
+        OGRH.SVM.SetPath("recruitment.targetTime", text, {syncLevel = "MANUAL", componentType = "settings"})
       end
     else
-      OGRH_SV.recruitment.targetTime = ""
+      OGRH.SVM.SetPath("recruitment.targetTime", "", {syncLevel = "MANUAL", componentType = "settings"})
     end
   end)
-  targetTimeBox:SetText(OGRH_SV.recruitment.targetTime or "")
+  targetTimeBox:SetText((OGRH.SVM.GetPath("recruitment.targetTime")) or "")
   table.insert(detailPanel.content, targetTimeBox)
   
   -- Rotate Message section
@@ -688,12 +712,14 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
     checkbox:SetPoint("TOPLEFT", rotateLabel, "BOTTOMLEFT", (i-1) * 50, -8)
     checkbox:SetWidth(24)
     checkbox:SetHeight(24)
-    checkbox:SetChecked(OGRH_SV.recruitment.rotateMessages[i])
+    checkbox:SetChecked((OGRH.SVM.GetPath("recruitment.rotateMessages") or {})[i])
     
     -- Capture index for closure
     local messageIndex = i
     checkbox:SetScript("OnClick", function()
-      OGRH_SV.recruitment.rotateMessages[messageIndex] = this:GetChecked()
+      local rotateMessages = OGRH.SVM.GetPath("recruitment.rotateMessages") or {}
+      rotateMessages[messageIndex] = this:GetChecked()
+      OGRH.SVM.SetPath("recruitment.rotateMessages", rotateMessages, {syncLevel = "MANUAL", componentType = "settings"})
     end)
     table.insert(detailPanel.content, checkbox)
     table.insert(rotateCheckboxes, checkbox)
@@ -708,12 +734,12 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   recruitBtn:SetWidth(140)
   recruitBtn:SetHeight(24)
   recruitBtn:SetPoint("BOTTOM", detailPanel, "BOTTOM", 0, 15)
-  recruitBtn:SetText(OGRH_SV.recruitment.isRecruiting and "Stop Recruiting" or "Start Recruiting")
+  recruitBtn:SetText((OGRH.SVM.GetPath("recruitment.isRecruiting")) and "Stop Recruiting" or "Start Recruiting")
   if OGRH.StyleButton then
     OGRH.StyleButton(recruitBtn)
   end
   recruitBtn:SetScript("OnClick", function()
-    if OGRH_SV.recruitment.isRecruiting then
+    if (OGRH.SVM.GetPath("recruitment.isRecruiting")) then
       OGRH.StopRecruiting()
     else
       OGRH.StartRecruiting()
@@ -733,7 +759,7 @@ function OGRH.SendRecruitmentAd()
   OGRH.EnsureRecruitmentSV()
   
   -- Check if rotation is enabled (more than one message checked)
-  local rotateMessages = OGRH_SV.recruitment.rotateMessages
+  local rotateMessages = (OGRH.SVM.GetPath("recruitment.rotateMessages") or {})
   local checkedMessages = {}
   local checkedCount = 0
   for i = 1, 5 do
@@ -749,7 +775,7 @@ function OGRH.SendRecruitmentAd()
   
   if checkedCount > 1 then
     -- Rotation mode: cycle through checked messages
-    local lastIndex = OGRH_SV.recruitment.lastRotationIndex
+    local lastIndex = (OGRH.SVM.GetPath("recruitment.lastRotationIndex"))
     
     -- Find next message in rotation
     local nextIndex = nil
@@ -766,19 +792,19 @@ function OGRH.SendRecruitmentAd()
     end
     
     messageIndex = nextIndex
-    message = OGRH_SV.recruitment.messages[nextIndex]
-    message2 = OGRH_SV.recruitment.messages2[nextIndex]
-    OGRH_SV.recruitment.lastRotationIndex = nextIndex
+    message = (OGRH.SVM.GetPath("recruitment.messages") or {})[nextIndex]
+    message2 = (OGRH.SVM.GetPath("recruitment.messages2") or {})[nextIndex]
+    OGRH.SVM.SetPath("recruitment.lastRotationIndex", nextIndex, {syncLevel = "MANUAL", componentType = "settings"})
   else
     -- Single message mode: use current selected message
-    messageIndex = OGRH_SV.recruitment.selectedMessageIndex
-    message = OGRH_SV.recruitment.messages[messageIndex]
-    message2 = OGRH_SV.recruitment.messages2[messageIndex]
+    messageIndex = (OGRH.SVM.GetPath("recruitment.selectedMessageIndex") or 1)
+    message = (OGRH.SVM.GetPath("recruitment.messages") or {})[messageIndex]
+    message2 = (OGRH.SVM.GetPath("recruitment.messages2") or {})[messageIndex]
   end
   
   -- Replace [TTP] tag with minutes until target time
-  if OGRH_SV.recruitment.targetTime and OGRH_SV.recruitment.targetTime ~= "" then
-    local targetTime = OGRH_SV.recruitment.targetTime
+  if (OGRH.SVM.GetPath("recruitment.targetTime")) and (OGRH.SVM.GetPath("recruitment.targetTime")) ~= "" then
+    local targetTime = (OGRH.SVM.GetPath("recruitment.targetTime"))
     local targetHour = math.floor(tonumber(targetTime) / 100)
     local targetMin = math.mod(tonumber(targetTime), 100)
     
@@ -812,7 +838,7 @@ function OGRH.SendRecruitmentAd()
     return
   end
   
-  local selectedChannel = OGRH_SV.recruitment.selectedChannel
+  local selectedChannel = (OGRH.SVM.GetPath("recruitment.selectedChannel"))
   if not selectedChannel then
     OGRH.Msg("No channel selected for recruitment advertising.")
     return
@@ -857,7 +883,7 @@ function OGRH.SendRecruitmentAd()
     end
   end
   
-  OGRH_SV.recruitment.lastAdTime = GetTime()
+  OGRH.SVM.SetPath("recruitment.lastAdTime", GetTime(), {syncLevel = "MANUAL", componentType = "settings"})
 end
 
 -- ========================================
@@ -973,12 +999,12 @@ function OGRH.HideRecruitingPanel()
 end
 
 function OGRH.UpdateRecruitingPanel()
-  if not recruitingPanelFrame or not OGRH_SV.recruitment.isRecruiting then
+  if not recruitingPanelFrame or not (OGRH.SVM.GetPath("recruitment.isRecruiting")) then
     return
   end
   
-  local interval = OGRH_SV.recruitment.interval or 600
-  local lastAdTime = OGRH_SV.recruitment.lastAdTime or 0
+  local interval = (OGRH.SVM.GetPath("recruitment.interval") or 600) or 600
+  local lastAdTime = (OGRH.SVM.GetPath("recruitment.lastAdTime") or 0) or 0
   local currentTime = GetTime()
   local timeSinceLastAd = currentTime - lastAdTime
   local timeUntilNext = math.max(0, interval - timeSinceLastAd)
@@ -1006,19 +1032,19 @@ end
 function OGRH.StartRecruiting()
   OGRH.EnsureRecruitmentSV()
   
-  local message = OGRH_SV.recruitment.message
+  local message = (OGRH.SVM.GetPath("recruitment.message"))
   if not message or message == "" then
     OGRH.Msg("Please set a recruitment message first.")
     return
   end
   
-  local selectedChannel = OGRH_SV.recruitment.selectedChannel
+  local selectedChannel = (OGRH.SVM.GetPath("recruitment.selectedChannel"))
   if not selectedChannel then
     OGRH.Msg("No channel selected for recruitment advertising.")
     return
   end
   
-  OGRH_SV.recruitment.isRecruiting = true
+  OGRH.SVM.SetPath("recruitment.isRecruiting", true, {syncLevel = "MANUAL", componentType = "settings"})
   
   -- Send first ad immediately
   OGRH.SendRecruitmentAd()
@@ -1029,14 +1055,14 @@ function OGRH.StartRecruiting()
   -- Update button text in window if open
   OGRH.UpdateRecruitmentButton()
   
-  OGRH.Msg("Started recruiting. Ads will be sent every " .. math.floor(OGRH_SV.recruitment.interval / 60) .. " minutes.")
+  OGRH.Msg("Started recruiting. Ads will be sent every " .. math.floor((OGRH.SVM.GetPath("recruitment.interval") or 600) / 60) .. " minutes.")
 end
 
 -- Stop recruiting
 function OGRH.StopRecruiting()
   OGRH.EnsureRecruitmentSV()
   
-  OGRH_SV.recruitment.isRecruiting = false
+  OGRH.SVM.SetPath("recruitment.isRecruiting", false, {syncLevel = "MANUAL", componentType = "settings"})
   
   -- Hide recruiting panel
   OGRH.HideRecruitingPanel()
@@ -1062,7 +1088,7 @@ function OGRH.UpdateRecruitmentButton()
   -- Find the button
   local btn = recruitmentFrame.detailPanel and recruitmentFrame.detailPanel.recruitBtn
   if btn then
-    btn:SetText(OGRH_SV.recruitment.isRecruiting and "Stop Recruiting" or "Start Recruiting")
+    btn:SetText((OGRH.SVM.GetPath("recruitment.isRecruiting")) and "Stop Recruiting" or "Start Recruiting")
   end
 end
 
@@ -1086,8 +1112,8 @@ function OGRH.GetRecruitmentPlayerClass(name)
   end
   
   -- Check our cache
-  if OGRH_SV.recruitment.playerCache[name] and OGRH_SV.recruitment.playerCache[name].class then
-    local class = OGRH_SV.recruitment.playerCache[name].class
+  if (OGRH.SVM.GetPath("recruitment.playerCache") or {})[name] and (OGRH.SVM.GetPath("recruitment.playerCache") or {})[name].class then
+    local class = (OGRH.SVM.GetPath("recruitment.playerCache") or {})[name].class
     if RAID_CLASS_COLORS[class] then
       return RAID_CLASS_COLORS[class].r, RAID_CLASS_COLORS[class].g, RAID_CLASS_COLORS[class].b, class
     end
@@ -1122,11 +1148,14 @@ local function UpdatePlayerCache()
   for i = 1, GetNumWhoResults() do
     local name, guild, level, _, class = GetWhoInfo(i)
     if name and class then
-      OGRH_SV.recruitment.playerCache[name] = {
+      local playerCache = OGRH.SVM.GetPath("recruitment.playerCache") or {}
+      playerCache[name] = {
         class = class,
         level = level,
-        guild = guild
+        guild = guild,
+        lastUpdate = GetTime()
       }
+      OGRH.SVM.SetPath("recruitment.playerCache", playerCache, {syncLevel = "MANUAL", componentType = "settings"})
     end
   end
   
@@ -1221,7 +1250,7 @@ end
 -- Display chat history for a contact
 function OGRH.ShowContactChat(chatBg, contactName)
   OGRH.EnsureRecruitmentSV()
-  local history = OGRH_SV.recruitment.whisperHistory[contactName]
+  local history = (OGRH.SVM.GetPath("recruitment.whisperHistory") or {})[contactName]
   
   if not history or not history.messages then
     chatBg.chatHistory:SetText("|cff888888No messages with " .. contactName .. "|r")
@@ -1250,29 +1279,30 @@ function OGRH.TrackWhisper(sender, message, incoming)
   OGRH.EnsureRecruitmentSV()
   
   -- Don't track if this contact was explicitly deleted
-  if OGRH_SV.recruitment.deletedContacts[sender] then
+  if (OGRH.SVM.GetPath("recruitment.deletedContacts") or {})[sender] then
     return
   end
   
   -- Only track whispers if:
   -- 1. Currently recruiting, OR
   -- 2. This contact already exists in history (has not been deleted)
-  local contactExists = OGRH_SV.recruitment.whisperHistory[sender] ~= nil
-  local isRecruiting = OGRH_SV.recruitment.isRecruiting
+  local contactExists = (OGRH.SVM.GetPath("recruitment.whisperHistory") or {})[sender] ~= nil
+  local isRecruiting = (OGRH.SVM.GetPath("recruitment.isRecruiting"))
   
   if not isRecruiting and not contactExists then
     -- Don't track this whisper
     return
   end
   
-  if not OGRH_SV.recruitment.whisperHistory[sender] then
-    OGRH_SV.recruitment.whisperHistory[sender] = {
+  local whisperHistory = OGRH.SVM.GetPath("recruitment.whisperHistory") or {}
+  if not whisperHistory[sender] then
+    whisperHistory[sender] = {
       messages = {},
       lastContact = time()
     }
   end
   
-  local history = OGRH_SV.recruitment.whisperHistory[sender]
+  local history = whisperHistory[sender]
   local myCharacter = UnitName("player")
   table.insert(history.messages, {
     text = message,
@@ -1283,6 +1313,9 @@ function OGRH.TrackWhisper(sender, message, incoming)
     toCharacter = incoming and myCharacter or sender
   })
   history.lastContact = time()
+  
+  -- Save the updated history back to SVM
+  OGRH.SVM.SetPath("recruitment.whisperHistory", whisperHistory, {syncLevel = "MANUAL", componentType = "settings"})
   
   -- Always refresh left list if window is open (use scheduled update to avoid spam)
   if recruitmentFrame and recruitmentFrame:IsVisible() then
@@ -1324,7 +1357,7 @@ initFrame:SetScript("OnEvent", function()
   if event == "ADDON_LOADED" and arg1 == "OG-RaidHelper" then
     OGRH.EnsureRecruitmentSV()
     -- If we were recruiting when we reloaded, show the panel
-    if OGRH_SV.recruitment.isRecruiting then
+    if (OGRH.SVM.GetPath("recruitment.isRecruiting")) then
       OGRH.ShowRecruitingPanel()
     end
   elseif event == "CHAT_MSG_WHISPER" then
@@ -1346,3 +1379,6 @@ end)
 initFrame:SetScript("OnUpdate", function()
   ProcessWhoQueue()
 end)
+
+
+

@@ -330,26 +330,26 @@ end
 -- Initialize versioning system
 function OGRH.Versioning.Initialize()
     -- Load from SavedVariables if available
-    if OGRH_SV and OGRH_SV.Versioning then
-        OGRH.Versioning.State.globalVersion = OGRH_SV.Versioning.globalVersion or 0
-        OGRH.Versioning.State.encounterVersions = OGRH_SV.Versioning.encounterVersions or {}
-        OGRH.Versioning.State.assignmentVersions = OGRH_SV.Versioning.assignmentVersions or {}
+    local versioningData = OGRH.SVM.Get("versioning")
+    if versioningData then
+        OGRH.Versioning.State.globalVersion = versioningData.globalVersion or 0
+        OGRH.Versioning.State.encounterVersions = versioningData.encounterVersions or {}
+        OGRH.Versioning.State.assignmentVersions = versioningData.assignmentVersions or {}
         -- Don't load changeLog (session only)
     end
     
-    OGRH.Msg(string.format("|cff00ccff[RH-Versioning]|r Initialized (v%d)", OGRH.Versioning.State.globalVersion))
+    OGRH.Msg(string.format("|cff00ccff[Versioning]|r Initialized (v%d)", OGRH.Versioning.State.globalVersion))
 end
 
 -- Save versioning state to SavedVariables
 function OGRH.Versioning.Save()
-    if OGRH_SV then
-        OGRH_SV.Versioning = {
-            globalVersion = OGRH.Versioning.State.globalVersion,
-            encounterVersions = OGRH.Versioning.State.encounterVersions,
-            assignmentVersions = OGRH.Versioning.State.assignmentVersions
-            -- Don't save changeLog (session only)
-        }
-    end
+    local versioningData = {
+        globalVersion = OGRH.Versioning.State.globalVersion,
+        encounterVersions = OGRH.Versioning.State.encounterVersions,
+        assignmentVersions = OGRH.Versioning.State.assignmentVersions
+        -- Don't save changeLog (session only)
+    }
+    OGRH.SVM.Set("versioning", nil, versioningData)
 end
 
 --[[
@@ -358,43 +358,43 @@ end
 
 -- Debug: Print version state
 function OGRH.Versioning.DebugPrintState()
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === Version State ===")
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] Global Version: %d", OGRH.Versioning.State.globalVersion))
+    OGRH.Msg("|cff00ccff[Versioning]|r === Version State ===")
+    OGRH.Msg(string.format("|cff00ccff[Versioning]|r Global Version: %d", OGRH.Versioning.State.globalVersion))
     
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] Encounter Versions:")
+    OGRH.Msg("|cff00ccff[Versioning]|r Encounter Versions:")
     for encounterId, versionData in pairs(OGRH.Versioning.State.encounterVersions) do
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH]   %s: v%d by %s at %s", 
+        OGRH.Msg(string.format("|cff00ccff[Versioning]|r   %s: v%d by %s at %s", 
             encounterId, 
             versionData.version,
             versionData.lastModifiedBy,
             date("%H:%M:%S", versionData.lastModifiedAt)))
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] Assignment Versions:")
+    OGRH.Msg("|cff00ccff[Versioning]|r Assignment Versions:")
     for assignmentId, versionData in pairs(OGRH.Versioning.State.assignmentVersions) do
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH]   %s: v%d by %s at %s", 
+        OGRH.Msg(string.format("|cff00ccff[Versioning]|r   %s: v%d by %s at %s", 
             assignmentId, 
             versionData.version,
             versionData.lastModifiedBy,
             date("%H:%M:%S", versionData.lastModifiedAt)))
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === End Version State ===")
+    OGRH.Msg("|cff00ccff[Versioning]|r === End Version State ===")
 end
 
 -- Debug: Print recent changes
 function OGRH.Versioning.DebugPrintChanges(count)
     count = count or 10
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] === Recent Changes (last %d) ===", count))
+    OGRH.Msg(string.format("|cff00ccff[Versioning]|r === Recent Changes (last %d) ===", count))
     
     local changes = OGRH.GetRecentChanges(count)
     
     if table.getn(changes) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("[OGRH] No changes recorded")
+        OGRH.Msg("|cff00ccff[Versioning]|r No changes recorded")
     else
         for i = 1, table.getn(changes) do
             local change = changes[i]
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("[OGRH] [v%d] %s: %s by %s at %s", 
+            OGRH.Msg(string.format("|cff00ccff[Versioning]|r [v%d] %s: %s by %s at %s", 
                 change.version,
                 change.type,
                 change.target,
@@ -403,7 +403,7 @@ function OGRH.Versioning.DebugPrintChanges(count)
         end
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage("[OGRH] === End Changes ===")
+    OGRH.Msg("|cff00ccff[Versioning]|r === End Changes ===")
 end
 
 --[[
