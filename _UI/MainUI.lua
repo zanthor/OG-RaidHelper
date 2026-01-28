@@ -742,7 +742,7 @@ local function restoreMain()
   end
   
   -- Check if window should be hidden
-  if ui.hidden then
+  if OGRH.SVM.Get("ui", "hidden") then
     Main:Hide()
   end
 end

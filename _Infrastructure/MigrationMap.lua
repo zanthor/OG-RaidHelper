@@ -805,27 +805,27 @@ local MIGRATION_MAP = {
     },
     { -- [81]
         v1Path = 'OGRH_SV.encounterAssignmentNumbers[raidName]',
-        v2Path = 'encounterAssignmentNumbers[raidIdx]',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].assignmentNumbers',
         transformType = 'STRING KEY -> NUMERIC INDEX',
         breaking = true,
         uiBindings = '',
         controlName = '',
         fileLocation = 'Infrastructure/MessageRouter.lua:465-617',
-        notes = 'Same transformation as encounterAssignments'
+        notes = 'Nested within encounter object for data cohesion'
     },
     { -- [82]
         v1Path = 'OGRH_SV.encounterRaidMarks[raidName]',
-        v2Path = 'encounterRaidMarks[raidIdx]',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].raidMarks',
         transformType = 'STRING KEY -> NUMERIC INDEX',
         breaking = true,
         uiBindings = '',
         controlName = '',
         fileLocation = 'Infrastructure/MessageRouter.lua:465-617',
-        notes = 'Same transformation as encounterAssignments'
+        notes = 'Nested within encounter object for data cohesion'
     },
     { -- [83]
         v1Path = 'OGRH_SV.encounterAnnouncements[raidName]',
-        v2Path = 'encounterAnnouncements[raidIdx]',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].announcements',
         transformType = 'STRING KEY -> NUMERIC INDEX',
         breaking = true,
         uiBindings = '',
@@ -835,17 +835,17 @@ local MIGRATION_MAP = {
     },
     { -- [84]
         v1Path = 'OGRH_SV.encounterAnnouncements[raidName][encounterName]',
-        v2Path = 'encounterAnnouncements[raidIdx][encIdx]',
-        transformType = 'STRING KEY -> NUMERIC INDEX (NESTED)',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].announcements',
+        transformType = 'INTERMEDIATE PATH (see detail rows)',
         breaking = true,
         uiBindings = '',
         controlName = '',
         fileLocation = 'Infrastructure/MessageRouter.lua:465-617',
-        notes = 'Announcements follow same index structure'
+        notes = 'Intermediate-level path; actual data at announcements[announcementIdx]'
     },
     { -- [85]
         v1Path = 'OGRH_SV.encounterAnnouncements[raidName][encounterName][announcementIdx].enabled',
-        v2Path = 'encounterAnnouncements[raidIdx][encIdx][announcementIdx].enabled',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].announcements[announcementIdx].enabled',
         transformType = 'PATH CHANGE',
         breaking = true,
         uiBindings = '',
@@ -855,7 +855,7 @@ local MIGRATION_MAP = {
     },
     { -- [86]
         v1Path = 'OGRH_SV.encounterAnnouncements[raidName][encounterName][announcementIdx].channel',
-        v2Path = 'encounterAnnouncements[raidIdx][encIdx][announcementIdx].channel',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].announcements[announcementIdx].channel',
         transformType = 'PATH CHANGE',
         breaking = true,
         uiBindings = '',
@@ -865,23 +865,23 @@ local MIGRATION_MAP = {
     },
     { -- [87]
         v1Path = 'OGRH_SV.encounterAssignments[raidName]',
-        v2Path = 'encounterAssignments[raidIdx]',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].assignedPlayers',
         transformType = 'STRING KEY -> NUMERIC INDEX',
         breaking = true,
         uiBindings = '',
         controlName = '',
         fileLocation = 'Infrastructure/MessageRouter.lua:465-617',
-        notes = 'Raid name \'MC\' becomes numeric index (e.g., 1); FIXES SPACES IN NAMES BUG'
+        notes = 'Parent-level transformation renamed to assignedPlayers; nested within encounter'
     },
     { -- [88]
         v1Path = 'OGRH_SV.encounterAssignments[raidName][encounterName]',
-        v2Path = 'encounterAssignments[raidIdx][encIdx]',
-        transformType = 'STRING KEY -> NUMERIC INDEX (NESTED)',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx]',
+        transformType = 'INTERMEDIATE PATH (see detail rows)',
         breaking = true,
         uiBindings = '',
         controlName = '',
         fileLocation = 'Infrastructure/MessageRouter.lua:468-617',
-        notes = 'Encounter name \'Tanks and Heals\' becomes numeric index (e.g., 5); FIXES SPACES BUG'
+        notes = 'Intermediate-level path; actual data nested in roles[roleIdx].assignedPlayers[slotIdx]'
     },
     { -- [89]
         v1Path = 'OGRH_SV.Permissions.adminHistory[idx]',
@@ -1135,7 +1135,7 @@ local MIGRATION_MAP = {
     },
     { -- [114]
         v1Path = 'OGRH_SV.encounterAnnouncements[raidName][encounterName][announcementIdx].text',
-        v2Path = 'encounterAnnouncements[raidIdx][encIdx][announcementIdx].text',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].announcements[announcementIdx].text',
         transformType = 'PATH CHANGE',
         breaking = true,
         uiBindings = 'UI2-4',
@@ -1145,33 +1145,33 @@ local MIGRATION_MAP = {
     },
     { -- [115]
         v1Path = 'OGRH_SV.encounterRaidMarks[raidName][encounterName][roleIdx][slotIdx]',
-        v2Path = 'encounterRaidMarks[raidIdx][encIdx][roleIdx][slotIdx]',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].raidMarks[slotIdx]',
         transformType = 'STRING KEYS -> NUMERIC INDICES',
         breaking = true,
         uiBindings = 'UI2-1',
         controlName = 'slot.iconBtn',
         fileLocation = 'Raid/EncounterMgmt.lua:1862-1863',
-        notes = 'Raid marks follow same index structure'
+        notes = 'Raid marks nested in role object; Example: [1][5][1][4] = 3 (skull icon)'
     },
     { -- [116]
         v1Path = 'OGRH_SV.encounterAssignments[raidName][encounterName][roleIdx][slotIdx]',
-        v2Path = 'encounterAssignments[raidIdx][encIdx][roleIdx][slotIdx]',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].assignedPlayers[slotIdx]',
         transformType = 'STRING KEYS -> NUMERIC INDICES',
         breaking = true,
         uiBindings = 'UI2-2',
         controlName = 'slot.assignBtn (text)',
         fileLocation = 'Raid/EncounterMgmt.lua:1866-1867',
-        notes = 'Role/slot already numeric but raid/encounter become indices; Example: [1][5][1][4] = \'Kinduosen\''
+        notes = 'Assigned players nested in role object; Example: [1][5][1][4] = \'Kinduosen\''
     },
     { -- [117]
         v1Path = 'OGRH_SV.encounterAssignmentNumbers[raidName][encounterName][roleIdx][slotIdx]',
-        v2Path = 'encounterAssignmentNumbers[raidIdx][encIdx][roleIdx][slotIdx]',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].assignmentNumbers[slotIdx]',
         transformType = 'STRING KEYS -> NUMERIC INDICES',
         breaking = true,
         uiBindings = 'UI2-3',
         controlName = 'slot.assignBtn.assignIndex',
         fileLocation = 'Raid/EncounterMgmt.lua:3112-3130',
-        notes = 'Assignment numbers follow same index structure'
+        notes = 'Assignment numbers nested in role object; Example: [1][5][1][4] = 2'
     },
     { -- [118]
         v1Path = 'OGRH_SV.encounterMgmt.raids[raidName]',

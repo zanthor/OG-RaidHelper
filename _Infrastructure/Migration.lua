@@ -341,30 +341,74 @@ OGRH.Msg(string.format("[Migration] Migrated %d roles for %s > %s", table.getn(v
 end
 
 -- ============================================
--- SPECIAL: Migrate encounterAssignments/Marks/Numbers/Announcements (STRING KEY -> NUMERIC INDEX)
+-- SPECIAL: Migrate encounterAssignments/Marks/Numbers (nested in roles) and Announcements (at encounter level)
 -- ============================================
 local function MigrateEncounterData(v1Data, v2Data, raidNameToIndex, encounterNameToIndex, dataKey)
     if not v1Data[dataKey] then return end
     
-    v2Data[dataKey] = {}
+    -- Determine target key name for v2
+    local targetKey
+    if dataKey == "encounterAssignments" then
+        targetKey = "assignedPlayers"
+    elseif dataKey == "encounterRaidMarks" then
+        targetKey = "raidMarks"
+    elseif dataKey == "encounterAssignmentNumbers" then
+        targetKey = "assignmentNumbers"
+    elseif dataKey == "encounterAnnouncements" then
+        targetKey = "announcements"
+    else
+        targetKey = dataKey
+    end
     
     for raidName, raidData in pairs(v1Data[dataKey]) do
         local raidIdx = raidNameToIndex[raidName]
-        if raidIdx then
-            v2Data[dataKey][raidIdx] = {}
-            
-            if type(raidData) == "table" then
-                for encounterName, encounterData in pairs(raidData) do
-                    local encIdx = encounterNameToIndex[raidName] and encounterNameToIndex[raidName][encounterName]
-                    if encIdx then
-                        v2Data[dataKey][raidIdx][encIdx] = DeepCopy(encounterData)
+        if raidIdx and type(raidData) == "table" then
+            for encounterName, encounterData in pairs(raidData) do
+                local encIdx = encounterNameToIndex[raidName] and encounterNameToIndex[raidName][encounterName]
+                if encIdx and v2Data.encounterMgmt and v2Data.encounterMgmt.raids[raidIdx] and v2Data.encounterMgmt.raids[raidIdx].encounters[encIdx] then
+                    local encounter = v2Data.encounterMgmt.raids[raidIdx].encounters[encIdx]
+                    
+                    -- Announcements go directly at encounter level
+                    if dataKey == "encounterAnnouncements" then
+                        encounter[targetKey] = DeepCopy(encounterData)
+                    else
+                        -- assignedPlayers, raidMarks, assignmentNumbers nest within each role
+                        -- encounterData structure: [roleIdx][slotIdx] = value
+                        if type(encounterData) == "table" then
+                            -- Ensure roles array exists
+                            if not encounter.roles then
+                                encounter.roles = {}
+                            end
+                            
+                            -- Iterate through roleIdx in the v1 data
+                            for roleIdx, roleData in pairs(encounterData) do
+                                if type(roleIdx) == "number" and type(roleData) == "table" then
+                                    -- Ensure this role exists in v2
+                                    if not encounter.roles[roleIdx] then
+                                        encounter.roles[roleIdx] = {}
+                                    end
+                                    
+                                    -- Create the target array within this role
+                                    if not encounter.roles[roleIdx][targetKey] then
+                                        encounter.roles[roleIdx][targetKey] = {}
+                                    end
+                                    
+                                    -- Copy slot data: [slotIdx] = value
+                                    for slotIdx, value in pairs(roleData) do
+                                        if type(slotIdx) == "number" then
+                                            encounter.roles[roleIdx][targetKey][slotIdx] = value
+                                        end
+                                    end
+                                end
+                            end
+                        end
                     end
                 end
             end
         end
     end
     
-OGRH.Msg(string.format("[Migration] Migrated %s with numeric indices", dataKey))
+OGRH.Msg(string.format("[Migration] Migrated %s (renamed to %s) with numeric indices", dataKey, targetKey))
 end
 
 -- ============================================
