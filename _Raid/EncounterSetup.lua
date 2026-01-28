@@ -90,7 +90,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       
       -- Open Encounter Planning with the selected raid and encounter
       if OGRH.ShowEncounterPlanning then
-        OGRH.ShowEncounterPlanning(selectedRaid, selectedEncounter)
+        OGRH.ShowEncounterPlanning()
       end
     end)
     
