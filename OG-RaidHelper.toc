@@ -8,10 +8,10 @@
 ## ===================================================================
 ## Phase 0: Compatibility & External Libraries
 ## ===================================================================
-Core\Backport.lua
+_Core\Backport.lua
 
 ## Chat Window - Load FIRST before any messages
-Core\ChatWindow.lua
+_Core\ChatWindow.lua
 
 Libs\LibStub\LibStub.lua
 Libs\Libs.xml
@@ -33,74 +33,74 @@ Libs\OGAddonMsg\Commands.lua
 ## ===================================================================
 ## Phase 1: Core System - Namespace & Utilities
 ## ===================================================================
-Core\Core.lua
-Core\SavedVariablesManager.lua
-Core\Utilities.lua
-Core\Defaults.lua
-Core\ConTrack_Defaults.lua
+_Core\Core.lua
+_Core\SavedVariablesManager.lua
+_Core\Utilities.lua
+_Core\Defaults.lua
+_Core\ConTrack_Defaults.lua
 
 ## ===================================================================
 ## Phase 2: Infrastructure - Communication & Sync
 ## ===================================================================
-Infrastructure\MessageTypes.lua
-Infrastructure\Permissions.lua
-Infrastructure\Versioning.lua
-Infrastructure\MessageRouter.lua
-Infrastructure\MigrationMap.lua
-Infrastructure\Migration.lua
-Infrastructure\Sync_v2.lua
-Infrastructure\DataManagement.lua
-Infrastructure\SyncIntegrity.lua
-Infrastructure\SyncDelta.lua
-Infrastructure\SyncGranular.lua
-Infrastructure\SyncUI.lua
+_Infrastructure\MessageTypes.lua
+_Infrastructure\Permissions.lua
+_Infrastructure\Versioning.lua
+_Infrastructure\MessageRouter.lua
+_Infrastructure\MigrationMap.lua
+_Infrastructure\Migration.lua
+_Infrastructure\Sync_v2.lua
+_Infrastructure\DataManagement.lua
+_Infrastructure\SyncIntegrity.lua
+_Infrastructure\SyncDelta.lua
+_Infrastructure\SyncGranular.lua
+_Infrastructure\SyncUI.lua
 
 ## ===================================================================
 ## Phase 3: Configuration - Roster & Consumables
 ## ===================================================================
-Configuration\Invites.lua
-Configuration\Invites_Test.lua
-Configuration\Roster.lua
-Configuration\Promotes.lua
-Configuration\Consumes.lua
-Configuration\ConsumesTracking.lua
+_Configuration\Invites.lua
+_Configuration\Invites_Test.lua
+_Configuration\Roster.lua
+_Configuration\Promotes.lua
+_Configuration\Consumes.lua
+_Configuration\ConsumesTracking.lua
 
 ## ===================================================================
 ## Phase 4: Raid - Encounters & Roles
 ## ===================================================================
-Raid\EncounterMgmt.lua
-Raid\EncounterSetup.lua
-Raid\RolesUI.lua
-Raid\ClassPriority.lua
-Raid\LinkRole.lua
-Raid\Poll.lua
-Raid\Announce.lua
-Raid\AdvancedSettings.lua
-Raid\BigWigs.lua
-Raid\Trade.lua
+_Raid\EncounterMgmt.lua
+_Raid\EncounterSetup.lua
+_Raid\RolesUI.lua
+_Raid\ClassPriority.lua
+_Raid\LinkRole.lua
+_Raid\Poll.lua
+_Raid\Announce.lua
+_Raid\AdvancedSettings.lua
+_Raid\BigWigs.lua
+_Raid\Trade.lua
 
 ## ===================================================================
 ## Phase 5: Administration - Guild & Validation
 ## ===================================================================
-Administration\AdminSelection.lua
-Administration\Recruitment.lua
-Administration\SRValidation.lua
-Administration\AddonAudit.lua
+_Administration\AdminSelection.lua
+_Administration\Recruitment.lua
+_Administration\SRValidation.lua
+_Administration\AddonAudit.lua
 
 ## ===================================================================
 ## Phase 6: UI - Main Interface
 ## ===================================================================
-UI\MainUI.lua
+_UI\MainUI.lua
 
 ## ===================================================================
 ## Phase 7: Modules - Encounter-Specific
 ## ===================================================================
 
-Modules\cthun.lua
-Modules\OGRH-ConsumeHelperDefaults.lua
-Modules\OGRH-ConsumeHelper.lua
+_Modules\cthun.lua
+_Modules\OGRH-ConsumeHelperDefaults.lua
+_Modules\OGRH-ConsumeHelper.lua
 
 ## ===================================================================
 ## Phase 8: Tests (Debug Mode Only)
 ## ===================================================================
-Tests\test_svm.lua
+_Tests\test_svm.lua
