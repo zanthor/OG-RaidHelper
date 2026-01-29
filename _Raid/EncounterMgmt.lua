@@ -343,62 +343,7 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
     end
   end
   
-  -- Record delta changes for all assignments (both cleared and newly assigned)
-  -- First, record clears for any slots that had assignments but now don't
-  for roleIdx, roleAssignments in pairs(oldAssignments) do
-    for slotIdx, oldPlayerName in pairs(roleAssignments) do
-      local newPlayerName = assignments[roleIdx] and assignments[roleIdx][slotIdx]
-      if newPlayerName ~= oldPlayerName then
-        -- Assignment changed or cleared
-        if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
-          local assignData = {
-            raid = frame.selectedRaid,
-            encounter = frame.selectedEncounter,
-            roleIndex = roleIdx,
-            slotIndex = slotIdx,
-            playerName = newPlayerName  -- nil if cleared
-          }
-          OGRH.SyncDelta.RecordAssignmentChange(
-            newPlayerName,
-            "ENCOUNTER_ROLE",
-            assignData,
-            {
-              raid = frame.selectedRaid,
-              encounter = frame.selectedEncounter,
-              roleIndex = roleIdx,
-              slotIndex = slotIdx,
-              playerName = oldPlayerName
-            }
-          )
-        end
-      end
-    end
-  end
-  
-  -- Then, record any NEW assignments (slots that didn't exist before)
-  for roleIdx, roleAssignments in pairs(assignments) do
-    for slotIdx, newPlayerName in pairs(roleAssignments) do
-      local hadOldAssignment = oldAssignments[roleIdx] and oldAssignments[roleIdx][slotIdx]
-      if not hadOldAssignment then
-        -- This is a new assignment
-        if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
-          local assignData = {
-            raid = frame.selectedRaid,
-            encounter = frame.selectedEncounter,
-            roleIndex = roleIdx,
-            slotIndex = slotIdx,
-            playerName = newPlayerName
-          }
-          OGRH.SyncDelta.RecordAssignmentChange(
-            newPlayerName,
-            "ENCOUNTER_ROLE",
-            assignData,
-            nil  -- No old value for new assignments
-          )
-        end
-      end
-    end
-  end
+  -- Note: Change tracking now handled automatically by SVM sync levels
   
   -- Write assignments back to v2 schema (nested in roles)
   for roleIdx, roleAssignments in pairs(assignments) do
@@ -2157,23 +2102,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
           local newText = this:GetText()
           encounter.announcements[capturedIndex] = newText
           
-          -- Write back the entire raids structure via SVM
+          -- Write back the entire raids structure via SVM (change tracking handled automatically)
           OGRH.SVM.SetPath('encounterMgmt.raids', raids)
-          
-          -- Delta sync for announcement change (only if text actually changed)
-          if newText ~= oldText and OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
-            local announcementData = {
-              raid = frame.selectedRaid,
-              encounter = frame.selectedEncounter,
-              lineIndex = capturedIndex
-            }
-            OGRH.SyncDelta.RecordAssignmentChange(
-              nil,  -- playerName (not applicable for announcements)
-              "ANNOUNCEMENT",
-              {text = newText, announcementData = announcementData},
-              {text = oldText, announcementData = announcementData}
-            )
-          end
         end
       end)
       
@@ -3031,7 +2961,24 @@ function OGRH.ShowEncounterPlanning(encounterName)
               capturedRole,
               allRoles,
               function()
-                -- Refresh callback
+                -- Write modified roles back to SVM
+                local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
+                if raids and frame.selectedRaidIdx and frame.selectedEncounterIdx then
+                  if raids[frame.selectedRaidIdx] and
+                     raids[frame.selectedRaidIdx].encounters and
+                     raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
+                    -- Update with modified roles
+                    raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx].roles = allRoles
+                    
+                    OGRH.SVM.SetPath('encounterMgmt.raids', raids, {
+                      syncLevel = "MANUAL",
+                      componentType = "settings",
+                      scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                    })
+                  end
+                end
+                
+                -- Refresh UI
                 if frame.RefreshRoleContainers then
                   frame.RefreshRoleContainers()
                 end
@@ -3153,24 +3100,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 local oldMark = encounter.roles[capturedRoleIndex].raidMarks[capturedSlotIndex] or 0
                 encounter.roles[capturedRoleIndex].raidMarks[capturedSlotIndex] = currentIndex
                 
-                -- Write back via SVM
+                -- Write back via SVM (change tracking handled automatically)
                 OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
-                
-                -- Delta sync for raid mark change
-                if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
-                  local assignData = {
-                    raid = frame.selectedRaid,
-                    encounter = frame.selectedEncounter,
-                    roleIndex = capturedRoleIndex,
-                    slotIndex = capturedSlotIndex
-                  }
-                  OGRH.SyncDelta.RecordAssignmentChange(
-                    nil,  -- playerName (not applicable for marks)
-                    "RAID_MARK",
-                    {mark = currentIndex, assignData = assignData},
-                    {mark = oldMark, assignData = assignData}
-                  )
-                end
               end
               
               if currentIndex == 0 then
@@ -3311,24 +3242,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 local oldNumber = encounter.roles[capturedRoleIndex].assignmentNumbers[capturedSlotIndex] or 0
                 encounter.roles[capturedRoleIndex].assignmentNumbers[capturedSlotIndex] = currentIndex
                 
-                -- Write back via SVM
+                -- Write back via SVM (change tracking handled automatically)
                 OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
-                
-                -- Delta sync for assignment number change
-                if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
-                  local assignData = {
-                    raid = frame.selectedRaid,
-                    encounter = frame.selectedEncounter,
-                    roleIndex = capturedRoleIndex,
-                    slotIndex = capturedSlotIndex
-                  }
-                  OGRH.SyncDelta.RecordAssignmentChange(
-                    nil,  -- playerName (not applicable for numbers)
-                    "ASSIGNMENT_NUMBER",
-                    {number = currentIndex, assignData = assignData},
-                    {number = oldNumber, assignData = assignData}
-                  )
-                end
               end
               
               -- Update display

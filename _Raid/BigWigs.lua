@@ -82,40 +82,14 @@ function OGRH.BigWigs.OnEncounterDetected(moduleName)
     
     -- Set the main UI selection (not planning window)
     OGRH.EnsureSV()
-    if not OGRH_SV.ui then
-      OGRH_SV.ui = {}
+    -- Use centralized API to set current encounter (handles sync automatically)
+    if OGRH.SetCurrentEncounter then
+      OGRH.SetCurrentEncounter(raidName, encounterName)
     end
-    
-    OGRH_SV.ui.selectedRaid = raidName
-    OGRH_SV.ui.selectedEncounter = encounterName
     
     -- Refresh main UI if it exists
     if OGRH.UpdateEncounterNavButton then
       OGRH.UpdateEncounterNavButton()
-    end
-    
-    -- Broadcast encounter selection to raid (so everyone switches)
-    if GetNumRaidMembers() > 0 and OGRH.MessageRouter then
-      OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, {
-        raidName = raidName,
-        encounterName = encounterName
-      }, {
-        priority = "NORMAL"
-      })
-      
-      -- Broadcast full sync if admin, request sync if not
-      if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin() then
-        if OGRH.BroadcastFullEncounterSync then
-          OGRH.BroadcastFullEncounterSync()
-        end
-      else
-        OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.SYNC.REQUEST_PARTIAL, {
-          raidName = raidName,
-          encounterName = encounterName
-        }, {
-          priority = "NORMAL"
-        })
-      end
     end
     
     -- Notify user

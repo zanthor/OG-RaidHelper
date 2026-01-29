@@ -288,7 +288,7 @@ function OGRH.ShowLinkRoleDialog(raidName, encounterName, roleIndex, roleData, a
       end
     end
     
-    -- Refresh the parent display
+    -- Refresh the parent display (caller handles write-back)
     if refreshCallback then
       refreshCallback()
     end
