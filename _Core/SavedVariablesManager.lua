@@ -109,14 +109,25 @@ function OGRH.SVM.Get(key, subkey)
     local sv = OGRH.SVM.GetActiveSchema()
     if not sv then return nil end
     
+    local value
     if subkey then
         if sv[key] then
-            return sv[key][subkey]
+            value = sv[key][subkey]
+        else
+            value = nil
         end
-        return nil
     else
-        return sv[key]
+        value = sv[key]
     end
+    
+    -- DEBUG: Show what we're reading
+    if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+        local path = subkey and (key .. "." .. subkey) or key
+        local valuePreview = (type(value) == "table") and "{table}" or tostring(value)
+        OGRH.Msg(string.format("|cff66ccff[RH-SVM]|r Reading from [%s] = %s", path, valuePreview))
+    end
+    
+    return value
 end
 
 -- ============================================
@@ -141,10 +152,24 @@ function OGRH.SVM.GetPath(path)
     local current = sv
     for i = 1, table.getn(keys) do
         local k = keys[i]
+        -- Convert numeric string keys to numbers for array access
+        local numKey = tonumber(k)
+        if numKey then k = numKey end
+        
         if not current or type(current) ~= "table" then
+            -- DEBUG: Show failed read
+            if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+                OGRH.Msg(string.format("|cff66ccff[RH-SVM]|r Reading from [%s] = nil (path not found)", path))
+            end
             return nil
         end
         current = current[k]
+    end
+    
+    -- DEBUG: Show what we're reading
+    if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+        local valuePreview = (type(current) == "table") and "{table}" or tostring(current)
+        OGRH.Msg(string.format("|cff66ccff[RH-SVM]|r Reading from [%s] = %s", path, valuePreview))
     end
     
     return current
@@ -214,12 +239,20 @@ function OGRH.SVM.SetPath(path, value, syncMetadata)
     local current = sv
     for i = 1, table.getn(keys) - 1 do
         local k = keys[i]
+        -- Convert numeric string keys to numbers for array access
+        local numKey = tonumber(k)
+        if numKey then k = numKey end
+        
         if not current[k] then current[k] = {} end
         current = current[k]
     end
     
     -- Set value in active schema only
     local finalKey = keys[table.getn(keys)]
+    -- Convert numeric string keys to numbers for array access
+    local numFinalKey = tonumber(finalKey)
+    if numFinalKey then finalKey = numFinalKey end
+    
     current[finalKey] = value
     
     -- Handle sync if metadata provided

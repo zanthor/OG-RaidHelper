@@ -18,13 +18,14 @@ local lastConsumeTrackingTime = 0
 
 -- Function to check if BigWigs module name matches any configured encounter
 local function FindMatchingEncounter(bigwigsModuleName)
-  if not OGRH_SV or not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then
+  local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+  if not encounterMgmt or not encounterMgmt.raids then
     return nil, nil
   end
   
   -- Iterate through all raids
-  for i = 1, table.getn(OGRH_SV.encounterMgmt.raids) do
-    local raid = OGRH_SV.encounterMgmt.raids[i]
+  for i = 1, table.getn(encounterMgmt.raids) do
+    local raid = encounterMgmt.raids[i]
     
     -- Ensure raid has encounters
     if raid.encounters then
@@ -99,27 +100,23 @@ function OGRH.BigWigs.OnEncounterDetected(moduleName)
     if OGRH.MarkPlayersFromMainUI and GetNumRaidMembers() > 0 then
       -- Check if this encounter has any marks configured
       local hasMarks = false
-      if OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles and
-         OGRH_SV.encounterMgmt.roles[raidName] and
-         OGRH_SV.encounterMgmt.roles[raidName][encounterName] then
-        
-        local encounterRoles = OGRH_SV.encounterMgmt.roles[raidName][encounterName]
-        local column1 = encounterRoles.column1 or {}
-        local column2 = encounterRoles.column2 or {}
-        
-        -- Check if any role has markPlayer enabled
-        for i = 1, table.getn(column1) do
-          if column1[i].markPlayer then
-            hasMarks = true
-            break
-          end
-        end
-        
-        if not hasMarks then
-          for i = 1, table.getn(column2) do
-            if column2[i].markPlayer then
-              hasMarks = true
-              break
+      
+      -- Find raid and encounter indices
+      local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(raidName, encounterName)
+      if raidIdx and encIdx then
+        local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+        if encounterMgmt and encounterMgmt.raids[raidIdx] and 
+           encounterMgmt.raids[raidIdx].encounters[encIdx] then
+          
+          local encounter = encounterMgmt.raids[raidIdx].encounters[encIdx]
+          
+          -- Check if any role has markPlayer enabled (v2: roles is flat array)
+          if encounter.roles then
+            for i = 1, table.getn(encounter.roles) do
+              if encounter.roles[i].markPlayer then
+                hasMarks = true
+                break
+              end
             end
           end
         end
@@ -179,37 +176,21 @@ local function HookBigWigs()
           -- Call original
           originalOnEnable(self)
           
-          -- Detect encounter
-          if self.translatedName then
-            OGRH.BigWigs.OnEncounterDetected(self.translatedName)
+          -- DEBUG: Log what properties are available
+          OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r Module enabled:")
+          OGRH.Msg("  name: " .. tostring(name))
+          OGRH.Msg("  self.name: " .. tostring(self.name))
+          OGRH.Msg("  self.translatedName: " .. tostring(self.translatedName))
+          OGRH.Msg("  self.displayName: " .. tostring(self.displayName))
+          
+          -- Try different properties to find the right one
+          local moduleName = self.translatedName or self.name or name
+          if moduleName then
+            OGRH.Msg("  Using: " .. tostring(moduleName))
+            OGRH.BigWigs.OnEncounterDetected(moduleName)
           end
         end
         count = count + 1
-      end
-      
-      -- Hook Engage function for consume tracking trigger
-      if module.Engage then
-        local originalEngage = module.Engage
-        module.Engage = function(self)
-          -- Call original
-          originalEngage(self)
-          
-          -- Trigger consume tracking (like /pull does at 2 seconds)
-          if self.translatedName then
-            local now = GetTime()
-            -- Only trigger if it's been more than 10 seconds since last consume tracking
-            if (now - lastConsumeTrackingTime) > 10 then
-              lastConsumeTrackingTime = now
-              
-              -- Schedule consume tracking after 2 seconds (like /pull)
-              OGRH.ScheduleTimer(function()
-                if OGRH.StartConsumeCountdown then
-                  OGRH.StartConsumeCountdown()
-                end
-              end, 2)
-            end
-          end
-        end
       end
     end
     

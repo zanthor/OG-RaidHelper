@@ -182,12 +182,11 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   -- Clear existing assignments for this encounter - v2 schema: clear within each role
   if encounter.roles then
     for roleIdx = 1, table.getn(encounter.roles) do
-      encounter.roles[roleIdx].assignedPlayers = {}
+      if encounter.roles[roleIdx].assignedPlayers then
+        encounter.roles[roleIdx].assignedPlayers = {}
+      end
     end
   end
-  
-  -- Write back cleared assignments
-  OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
   
   -- Build assignments table for tracking (maps roleIdx -> slotIdx -> playerName)
   local assignments = {}
@@ -345,7 +344,7 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   
   -- Note: Change tracking now handled automatically by SVM sync levels
   
-  -- Write assignments back to v2 schema (nested in roles)
+  -- Write assignments back to v2 schema (nested in roles) - modify directly
   for roleIdx, roleAssignments in pairs(assignments) do
     if encounter.roles[roleIdx] then
       if not encounter.roles[roleIdx].assignedPlayers then
@@ -356,9 +355,6 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
       end
     end
   end
-  
-  -- Write back to saved variables
-  OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
   
   -- Refresh display
   if frame.RefreshRoleContainers then
@@ -666,7 +662,10 @@ local function InitializeSavedVars()
   
   -- Ensure raids array exists
   if not encounterMgmt.raids then
-    OGRH.SVM.SetPath("encounterMgmt.raids", {})
+    OGRH.SVM.SetPath("encounterMgmt.raids", {}, {
+      syncLevel = "MANUAL",
+      componentType = "structure"
+    })
     encounterMgmt = OGRH.SVM.Get("encounterMgmt")
   end
   
@@ -681,6 +680,29 @@ local function InitializeSavedVars()
     -- Has old encounters table but no raids - upgrade
     OGRH.UpgradeEncounterDataStructure()
   end
+end
+
+-- Helper function to find raid and encounter indices by name
+function OGRH.FindRaidAndEncounterIndices(raidName, encounterName)
+  local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
+  if not raids then
+    return nil, nil
+  end
+  
+  for raidIdx = 1, table.getn(raids) do
+    if raids[raidIdx].name == raidName then
+      if encounterName and raids[raidIdx].encounters then
+        for encIdx = 1, table.getn(raids[raidIdx].encounters) do
+          if raids[raidIdx].encounters[encIdx].name == encounterName then
+            return raidIdx, encIdx
+          end
+        end
+      end
+      return raidIdx, nil
+    end
+  end
+  
+  return nil, nil
 end
 
 -- Function to show Encounter Planning Window
@@ -1619,255 +1641,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
       end
     end)
     
-    -- Announce button (below Auto Assign, reduced height)
-    local announceBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    announceBtn:SetWidth(120)
-    announceBtn:SetHeight(24)
-    announceBtn:SetPoint("TOPLEFT", autoAssignBtn, "BOTTOMLEFT", 0, -6)
-    announceBtn:SetText("Announce")
-    OGRH.StyleButton(announceBtn)
-    frame.announceBtn = announceBtn
-
-    -- Enable right-click on announce button
-    announceBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    
-    -- Announce functionality
-    announceBtn:SetScript("OnClick", function()
-      local button = arg1 or "LeftButton"
-      
-      if not frame.selectedRaid or not frame.selectedEncounter then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
-        return
-      end
-      
-      -- Right-click: Announce consumes
-      if button == "RightButton" then
-        -- Get role configuration from v2 via SVM
-        local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
-        if not raids then
-          return -- Silently do nothing if no raids configured
-        end
-        
-        -- Use stored indices to access encounter directly
-        if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then
-          return
-        end
-        
-        if not raids[frame.selectedRaidIdx] or not raids[frame.selectedRaidIdx].encounters then
-          return
-        end
-        
-        local encounter = raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
-        
-        if not encounter or not encounter.roles then
-          return
-        end
-        
-        -- Build column1/column2 structure from roles array
-        local column1 = {}
-        local column2 = {}
-        for i = 1, table.getn(encounter.roles) do
-          local role = encounter.roles[i]
-          if role.column == 1 then
-            table.insert(column1, role)
-          elseif role.column == 2 then
-            table.insert(column2, role)
-          end
-        end
-        
-        -- Find consume check role
-        local consumeRole = nil
-        for i = 1, table.getn(column1) do
-          if column1[i].isConsumeCheck then
-            consumeRole = column1[i]
-            break
-          end
-        end
-        if not consumeRole then
-          for i = 1, table.getn(column2) do
-            if column2[i].isConsumeCheck then
-              consumeRole = column2[i]
-              break
-            end
-          end
-        end
-        
-        -- If no consume role found, do nothing
-        if not consumeRole or not consumeRole.consumes then
-          return
-        end
-        
-        -- Check if in raid
-        if GetNumRaidMembers() == 0 then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to announce.")
-          return
-        end
-        
-        -- Build consume announcement using helper function
-        local announceLines = OGRH.Announcements.BuildConsumeAnnouncement(frame.selectedEncounter, consumeRole)
-        
-        -- Send to raid warning
-        for _, line in ipairs(announceLines) do
-          SendChatMessage(line, "RAID_WARNING")
-        end
-        
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Consumes announced to raid warning.")
-        return
-      end
-      
-      -- Left-click: Normal announcement
-      
-      -- Use unified announcement function
-      if OGRH.Announcements and OGRH.Announcements.SendEncounterAnnouncement then
-        OGRH.Announcements.SendEncounterAnnouncement(frame.selectedRaid, frame.selectedEncounter)
-      end
-    end)
-    
-    -- Mark Players button (below Announce, reduced height)
-    local markPlayersBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    markPlayersBtn:SetWidth(120)
-    markPlayersBtn:SetHeight(24)
-    markPlayersBtn:SetPoint("TOPLEFT", announceBtn, "BOTTOMLEFT", 0, -6)
-    markPlayersBtn:SetText("Mark Players")
-    OGRH.StyleButton(markPlayersBtn)
-    frame.markPlayersBtn = markPlayersBtn
-    
-    -- Mark Players functionality
-    markPlayersBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    markPlayersBtn:SetScript("OnClick", function()
-      local button = arg1 or "LeftButton"
-      
-      -- Check if in raid
-      if GetNumRaidMembers() == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to mark players.")
-        return
-      end
-      
-      -- Clear all raid marks first
-      local clearedCount = 0
-      for j = 1, GetNumRaidMembers() do
-        SetRaidTarget("raid"..j, 0)
-        clearedCount = clearedCount + 1
-      end
-      
-      -- Right click: just clear marks and exit
-      if button == "RightButton" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Cleared marks on " .. clearedCount .. " raid members.")
-        return
-      end
-      
-      -- Left click: clear then apply marks
-      if not frame.selectedRaid or not frame.selectedEncounter then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
-        return
-      end
-      
-      -- Get role configuration from v2 via SVM
-      local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
-      if not raids then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
-        return
-      end
-      
-      -- Find the raid by name
-      local raid = nil
-      -- Use stored indices to access encounter directly
-      if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No encounter selected.")
-        return
-      end
-      
-      if not raids[frame.selectedRaidIdx] or not raids[frame.selectedRaidIdx].encounters then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
-        return
-      end
-      
-      local encounter = raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
-      
-      if not encounter or not encounter.roles then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
-        return
-      end
-      
-      -- Build column1/column2 structure from roles array
-      local column1 = {}
-      local column2 = {}
-      for i = 1, table.getn(encounter.roles) do
-        local role = encounter.roles[i]
-        if role.column == 1 then
-          table.insert(column1, role)
-        elseif role.column == 2 then
-          table.insert(column2, role)
-        end
-      end
-      
-      -- Build ordered list of all roles using stable roleId
-      local allRoles = {}
-      
-      for i = 1, table.getn(column1) do
-        table.insert(allRoles, {role = column1[i], roleIndex = column1[i].roleId or (table.getn(allRoles) + 1)})
-      end
-      for i = 1, table.getn(column2) do
-        table.insert(allRoles, {role = column2[i], roleIndex = column2[i].roleId or (table.getn(allRoles) + 1)})
-      end
-      
-      -- Get assignments and raid marks from nested role objects
-      local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
-      local encounter = nil
-      
-      -- Use stored indices to access encounter data directly
-      if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-        if allRaids and
-           allRaids[frame.selectedRaidIdx] and
-           allRaids[frame.selectedRaidIdx].encounters and
-           allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
-          encounter = allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
-        end
-      end
-      
-      -- Iterate through roles and apply marks
-      local markedCount = 0
-      
-      for _, roleData in ipairs(allRoles) do
-        local role = roleData.role
-        local roleIndex = roleData.roleIndex
-        
-        -- Get assigned players for this role from nested role object
-        local assignedPlayers = {}
-        local roleMarks = {}
-        if encounter and encounter.roles and encounter.roles[roleIndex] then
-          assignedPlayers = encounter.roles[roleIndex].assignedPlayers or {}
-          roleMarks = encounter.roles[roleIndex].raidMarks or {}
-        end
-        
-        -- Iterate through slots
-        for slotIndex = 1, table.getn(assignedPlayers) do
-          local playerName = assignedPlayers[slotIndex]
-          local markIndex = roleMarks[slotIndex]
-          
-          if playerName and markIndex and markIndex ~= 0 then
-            -- Find player in raid and apply mark
-            for j = 1, GetNumRaidMembers() do
-              local name = GetRaidRosterInfo(j)
-              if name == playerName then
-                -- Set raid target icon (1-8)
-                SetRaidTarget("raid"..j, markIndex)
-                markedCount = markedCount + 1
-                break
-              end
-            end
-          end
-        end
-      end
-      
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Marked " .. markedCount .. " players.")
-    end)
-    
-    -- Edit toggle button (below Mark Players)
+    -- Edit toggle button (below Auto Assign)
     local editToggleBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
     editToggleBtn:SetWidth(120)
     editToggleBtn:SetHeight(24)
-    editToggleBtn:SetPoint("TOPLEFT", markPlayersBtn, "BOTTOMLEFT", 0, -6)
+    editToggleBtn:SetPoint("TOPLEFT", autoAssignBtn, "BOTTOMLEFT", 0, -6)
     editToggleBtn:SetText("|cffff0000Edit: Locked|r")
     OGRH.StyleButton(editToggleBtn)
     frame.editToggleBtn = editToggleBtn
@@ -2082,28 +1860,20 @@ function OGRH.ShowEncounterPlanning(encounterName)
       local capturedIndex = i
       editBox:SetScript("OnEditFocusLost", function()
         if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-          -- Use stored indices to access encounter directly
-          local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
-          if not raids or
-             not raids[frame.selectedRaidIdx] or
-             not raids[frame.selectedRaidIdx].encounters or
-             not raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
-            return
-          end
+          local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+          if not encounterMgmt then return end
           
-          local encounter = raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+          local encounter = encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+          if not encounter then return end
           
-          -- Ensure announcements array exists
+          -- Initialize announcements array if needed
           if not encounter.announcements then
             encounter.announcements = {}
           end
           
-          local oldText = encounter.announcements[capturedIndex] or ""
           local newText = this:GetText()
+          -- Modify directly - changes persist because this is the actual SavedVariables reference
           encounter.announcements[capturedIndex] = newText
-          
-          -- Write back the entire raids structure via SVM (change tracking handled automatically)
-          OGRH.SVM.SetPath('encounterMgmt.raids', raids)
         end
       end)
       
@@ -2485,31 +2255,21 @@ function OGRH.ShowEncounterPlanning(encounterName)
             
             -- Assign player to slot if we found a target
             if foundTarget and targetRoleIndex and targetSlotIndex then
-              -- Use stored indices to access encounter directly
+              -- Get encounterMgmt and navigate with bracket notation
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-                local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
-                if raids and
-                   raids[frame.selectedRaidIdx] and
-                   raids[frame.selectedRaidIdx].encounters and
-                   raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
-                  local encounter = raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+                local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+                if encounterMgmt and encounterMgmt.raids and
+                   encounterMgmt.raids[frame.selectedRaidIdx] and
+                   encounterMgmt.raids[frame.selectedRaidIdx].encounters and
+                   encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
                   
-                  -- Ensure roles structure exists
-                  if not encounter.roles or not encounter.roles[targetRoleIndex] then
-                    OGRH.Msg("Cannot assign player - role does not exist")
-                    return
+                  local encounter = encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+                  if encounter.roles and encounter.roles[targetRoleIndex] then
+                    if not encounter.roles[targetRoleIndex].assignedPlayers then
+                      encounter.roles[targetRoleIndex].assignedPlayers = {}
+                    end
+                    encounter.roles[targetRoleIndex].assignedPlayers[targetSlotIndex] = frame.draggedPlayerName
                   end
-                  
-                  -- Ensure assignedPlayers array exists within role
-                  if not encounter.roles[targetRoleIndex].assignedPlayers then
-                    encounter.roles[targetRoleIndex].assignedPlayers = {}
-                  end
-                  
-                  -- Assign player
-                  encounter.roles[targetRoleIndex].assignedPlayers[targetSlotIndex] = frame.draggedPlayerName
-                  
-                  -- Write back the entire raids structure
-                  OGRH.SVM.SetPath('encounterMgmt.raids', raids)
                 end
               end
               
@@ -2568,8 +2328,6 @@ function OGRH.ShowEncounterPlanning(encounterName)
         
         -- Hide bottom panel controls when no encounter is selected
         frame.autoAssignBtn:Hide()
-        frame.announceBtn:Hide()
-        frame.markPlayersBtn:Hide()
         frame.editToggleBtn:Hide()
         announcementLabel:Hide()
         announcementScrollFrame:Hide()
@@ -2589,8 +2347,6 @@ function OGRH.ShowEncounterPlanning(encounterName)
       
       -- Show bottom panel controls when encounter is selected
       frame.autoAssignBtn:Show()
-      frame.announceBtn:Show()
-      frame.markPlayersBtn:Show()
       frame.editToggleBtn:Show()
       announcementLabel:Show()
       announcementScrollFrame:Show()
@@ -2719,8 +2475,15 @@ function OGRH.ShowEncounterPlanning(encounterName)
               end
             end
             
-            -- Write back cleaned raids structure via SVM
-            OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
+            -- Write back cleaned raids structure via SVM (batch cleanup operation)
+            OGRH.SVM.SetPath('encounterMgmt.raids', allRaids, {
+              syncLevel = "MANUAL",
+              componentType = "structure",
+              scope = {
+                raidIdx = frame.selectedRaidIdx,
+                encounterIdx = frame.selectedEncounterIdx
+              }
+            })
             end
           end
         end
@@ -2754,8 +2517,15 @@ function OGRH.ShowEncounterPlanning(encounterName)
               end
             end
             
-            -- Write back cleaned raids structure via SVM
-            OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
+            -- Write back cleaned raids structure via SVM (batch cleanup operation)
+            OGRH.SVM.SetPath('encounterMgmt.raids', allRaids, {
+              syncLevel = "MANUAL",
+              componentType = "structure",
+              scope = {
+                raidIdx = frame.selectedRaidIdx,
+                encounterIdx = frame.selectedEncounterIdx
+              }
+            })
             end
           end
         end
@@ -2878,7 +2648,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
             -- Click to select consume
             local capturedSlotIndex = i
             consumeBtn:SetScript("OnClick", function()
-              OGRH.ShowConsumeSelectionDialog(frame.selectedRaid, frame.selectedEncounter, capturedRoleIndex, capturedSlotIndex)
+              OGRH.ShowConsumeSelectionDialog(frame.selectedRaidIdx, frame.selectedEncounterIdx, capturedRoleIndex, capturedSlotIndex)
             end)
             
             table.insert(container.slots, slot)
@@ -3078,14 +2848,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
               
               -- Save the raid mark assignment via SVM - write to nested role.raidMarks
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-                local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids') or {}
+                local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+                if not encounterMgmt then return end
                 
-                -- Ensure structure exists
-                if not allRaids[frame.selectedRaidIdx] then return end
-                if not allRaids[frame.selectedRaidIdx].encounters then return end
-                if not allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then return end
-                
-                local encounter = allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+                local encounter = encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+                if not encounter then return end
                 
                 -- Don't initialize empty roles - they should already exist from setup
                 if not encounter.roles or not encounter.roles[capturedRoleIndex] then 
@@ -3097,11 +2864,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
                   encounter.roles[capturedRoleIndex].raidMarks = {}
                 end
                 
+                -- Store old mark for delta sync
                 local oldMark = encounter.roles[capturedRoleIndex].raidMarks[capturedSlotIndex] or 0
-                encounter.roles[capturedRoleIndex].raidMarks[capturedSlotIndex] = currentIndex
                 
-                -- Write back via SVM (change tracking handled automatically)
-                OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
+                -- Modify directly - changes persist because this is the actual SavedVariables reference
+                encounter.roles[capturedRoleIndex].raidMarks[capturedSlotIndex] = currentIndex
               end
               
               if currentIndex == 0 then
@@ -3220,14 +2987,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
               
               -- Save the assignment number via SVM - write to nested encounter.assignmentNumbers
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-                local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids') or {}
+                local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+                if not encounterMgmt then return end
                 
-                -- Ensure structure exists
-                if not allRaids[frame.selectedRaidIdx] then return end
-                if not allRaids[frame.selectedRaidIdx].encounters then return end
-                if not allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then return end
-                
-                local encounter = allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+                local encounter = encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+                if not encounter then return end
                 
                 -- Don't initialize empty roles - they should already exist from setup
                 if not encounter.roles or not encounter.roles[capturedRoleIndex] then
@@ -3235,15 +2999,13 @@ function OGRH.ShowEncounterPlanning(encounterName)
                   return
                 end
                 
+                -- Initialize assignmentNumbers array if needed
                 if not encounter.roles[capturedRoleIndex].assignmentNumbers then
                   encounter.roles[capturedRoleIndex].assignmentNumbers = {}
                 end
                 
-                local oldNumber = encounter.roles[capturedRoleIndex].assignmentNumbers[capturedSlotIndex] or 0
+                -- Modify directly - changes persist because this is the actual SavedVariables reference
                 encounter.roles[capturedRoleIndex].assignmentNumbers[capturedSlotIndex] = currentIndex
-                
-                -- Write back via SVM (change tracking handled automatically)
-                OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
               end
               
               -- Update display
@@ -3429,15 +3191,16 @@ function OGRH.ShowEncounterPlanning(encounterName)
             if foundTarget and targetRoleIndex and targetSlotIndex then
               if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then return end
               
-              -- Get the entire raids structure to modify
-              local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids') or {}
+              -- Get encounterMgmt and navigate with bracket notation
+              local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+              if not encounterMgmt or not encounterMgmt.raids or 
+                 not encounterMgmt.raids[frame.selectedRaidIdx] or
+                 not encounterMgmt.raids[frame.selectedRaidIdx].encounters or
+                 not encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
+                return
+              end
               
-              -- Ensure structure exists
-              if not allRaids[frame.selectedRaidIdx] then return end
-              if not allRaids[frame.selectedRaidIdx].encounters then return end
-              if not allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then return end
-              
-              local encounter = allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+              local encounter = encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
               
               -- Ensure roles exist
               if not encounter.roles then
@@ -3446,27 +3209,17 @@ function OGRH.ShowEncounterPlanning(encounterName)
               end
               
               if isDraggingFromPlayerList then
-                -- Dragging from players list - just assign
+                -- Dragging from players list - assign directly
                 if not encounter.roles[targetRoleIndex] then
-                  OGRH.Msg("Cannot assign - target role does not exist")
+                  OGRH.Msg("Cannot assign - role does not exist")
                   return
                 end
                 if not encounter.roles[targetRoleIndex].assignedPlayers then
                   encounter.roles[targetRoleIndex].assignedPlayers = {}
                 end
                 encounter.roles[targetRoleIndex].assignedPlayers[targetSlotIndex] = frame.draggedPlayerName
-                
-                -- Write back via SVM
-                OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
               else
                 -- Dragging from another slot - swap or move
-                -- Get current player at target position (if any)
-                local targetPlayer = nil
-                if encounter.roles[targetRoleIndex] and 
-                   encounter.roles[targetRoleIndex].assignedPlayers then
-                  targetPlayer = encounter.roles[targetRoleIndex].assignedPlayers[targetSlotIndex]
-                end
-                
                 -- Ensure target and source roles exist
                 if not encounter.roles[targetRoleIndex] then
                   OGRH.Msg("Cannot assign - target role does not exist")
@@ -3476,29 +3229,23 @@ function OGRH.ShowEncounterPlanning(encounterName)
                   OGRH.Msg("Cannot move - source role does not exist")
                   return
                 end
+                
+                -- Ensure assignedPlayers arrays exist
                 if not encounter.roles[targetRoleIndex].assignedPlayers then
                   encounter.roles[targetRoleIndex].assignedPlayers = {}
                 end
                 if not encounter.roles[frame.draggedFromRole].assignedPlayers then
                   encounter.roles[frame.draggedFromRole].assignedPlayers = {}
                 end
-                if not encounter.roles[frame.draggedFromRole].assignedPlayers then
-                  encounter.roles[frame.draggedFromRole].assignedPlayers = {}
-                end
                 
-                -- Move player to target
+                -- Get current player at target position (if any)
+                local targetPlayer = encounter.roles[targetRoleIndex].assignedPlayers[targetSlotIndex]
+                
+                -- Move player to target position
                 encounter.roles[targetRoleIndex].assignedPlayers[targetSlotIndex] = frame.draggedPlayer
                 
-                if targetPlayer then
-                  -- Swap: put target player in source position
-                  encounter.roles[frame.draggedFromRole].assignedPlayers[frame.draggedFromSlot] = targetPlayer
-                else
-                  -- Just move: clear source position
-                  encounter.roles[frame.draggedFromRole].assignedPlayers[frame.draggedFromSlot] = nil
-                end
-                
-                -- Write back via SVM
-                OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
+                -- Update source position (swap or clear)
+                encounter.roles[frame.draggedFromRole].assignedPlayers[frame.draggedFromSlot] = targetPlayer
               end
             end
             
@@ -3539,29 +3286,26 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 return
               end
               
-              -- Right click: Unassign player using SVM - clear from nested encounter.assignedPlayers
+              -- Right click: Unassign player by modifying SavedVariables directly
               if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then return end
               
-              local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
-              if allRaids and
-                 allRaids[frame.selectedRaidIdx] and
-                 allRaids[frame.selectedRaidIdx].encounters and
-                 allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
-                local encounter = allRaids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
-                if encounter.roles and
-                   encounter.roles[slotRoleIndex] and
+              -- Get encounterMgmt and navigate with bracket notation
+              local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+              if encounterMgmt and encounterMgmt.raids and
+                 encounterMgmt.raids[frame.selectedRaidIdx] and
+                 encounterMgmt.raids[frame.selectedRaidIdx].encounters and
+                 encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
+                
+                local encounter = encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+                if encounter.roles and encounter.roles[slotRoleIndex] and
                    encounter.roles[slotRoleIndex].assignedPlayers then
-                  
                   encounter.roles[slotRoleIndex].assignedPlayers[slotSlotIndex] = nil
-                  
-                  -- Write back via SVM
-                  OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
-                  
-                  -- Refresh display
-                  if frame.RefreshRoleContainers then
-                    frame.RefreshRoleContainers()
-                  end
                 end
+              end
+              
+              -- Refresh display
+              if frame.RefreshRoleContainers then
+                frame.RefreshRoleContainers()
               end
             end
             -- Left click: Do nothing (edit button handles class priority)
@@ -3768,21 +3512,24 @@ function OGRH.ShowEncounterPlanning(encounterName)
     RefreshRaidsList()
     
     -- Restore saved raid and encounter selection
-    if OGRH_SV.ui.selectedRaid then
-      frame.selectedRaid = OGRH_SV.ui.selectedRaid
+    local savedRaid = OGRH.SVM.Get("ui", "selectedRaid")
+    local savedEncounter = OGRH.SVM.Get("ui", "selectedEncounter")
+    
+    if savedRaid then
+      frame.selectedRaid = savedRaid
       
       -- Find the raid index by name
       local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
       if raids then
         for i = 1, table.getn(raids) do
-          if raids[i].name == OGRH_SV.ui.selectedRaid then
+          if raids[i].name == savedRaid then
             frame.selectedRaidIdx = i
             
             -- If there's a saved encounter, find its index too
-            if OGRH_SV.ui.selectedEncounter and raids[i].encounters then
-              frame.selectedEncounter = OGRH_SV.ui.selectedEncounter
+            if savedEncounter and raids[i].encounters then
+              frame.selectedEncounter = savedEncounter
               for j = 1, table.getn(raids[i].encounters) do
-                if raids[i].encounters[j].name == OGRH_SV.ui.selectedEncounter then
+                if raids[i].encounters[j].name == savedEncounter then
                   frame.selectedEncounterIdx = j
                   break
                 end
@@ -3862,7 +3609,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
 end
 
 -- Function to show consume selection dialog
-function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slotIndex)
+function OGRH.ShowConsumeSelectionDialog(raidIdx, encounterIdx, roleIndex, slotIndex)
   -- Create or reuse dialog
   if not OGRH_ConsumeSelectionDialog then
     local dialog = CreateFrame("Frame", "OGRH_ConsumeSelectionDialog", UIParent)
@@ -3983,34 +3730,16 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
   local dialog = OGRH_ConsumeSelectionDialog
   
   -- Store parameters for OK button
-  dialog.raidName = raidName
-  dialog.encounterName = encounterName
+  dialog.raidIdx = raidIdx
+  dialog.encounterIdx = encounterIdx
   dialog.roleIndex = roleIndex
   dialog.slotIndex = slotIndex
   dialog.selectedConsume = nil
   
-  -- Load existing consume data for this slot from v2 schema
-  local existingConsumeData = nil
-  local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
-  if allRaids then
-    for i = 1, table.getn(allRaids) do
-      if allRaids[i].name == raidName and allRaids[i].encounters then
-        for j = 1, table.getn(allRaids[i].encounters) do
-          if allRaids[i].encounters[j].name == encounterName then
-            local encounter = allRaids[i].encounters[j]
-            if encounter.roles and encounter.roles[roleIndex] then
-              local role = encounter.roles[roleIndex]
-              if role.consumes and role.consumes[slotIndex] then
-                existingConsumeData = role.consumes[slotIndex]
-                dialog.selectedConsume = existingConsumeData
-              end
-            end
-            break
-          end
-        end
-        break
-      end
-    end
+  -- Load existing consume data for this slot from v2 schema using numeric path
+  local existingConsumeData = OGRH.SVM.GetPath('encounterMgmt.raids.' .. raidIdx .. '.encounters.' .. encounterIdx .. '.roles.' .. roleIndex .. '.consumes.' .. slotIndex)
+  if existingConsumeData then
+    dialog.selectedConsume = existingConsumeData
   end
   
   -- Set checkbox state from existing data
@@ -4033,47 +3762,23 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
       return
     end
     
-    -- Get the encounter data (stored in encounterMgmt.roles)
-    -- Find encounter and role in v2 schema
-    local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
-    local encounter = nil
-    local role = nil
+    -- Get encounterMgmt and navigate to the consume slot
+    local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+    if not encounterMgmt then return end
     
-    if allRaids then
-      for i = 1, table.getn(allRaids) do
-        if allRaids[i].name == dialog.raidName and allRaids[i].encounters then
-          for j = 1, table.getn(allRaids[i].encounters) do
-            if allRaids[i].encounters[j].name == dialog.encounterName then
-              encounter = allRaids[i].encounters[j]
-              if encounter.roles and encounter.roles[dialog.roleIndex] then
-                role = encounter.roles[dialog.roleIndex]
-              end
-              break
-            end
-          end
-          break
-        end
-      end
-    end
-    
-    if not role then
-      DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Role not found.")
-      dialog:Hide()
-      return
-    end
-    
-    -- Initialize consumes array if needed
-    if not role.consumes then
-      role.consumes = {}
-    end
+    local encounter = encounterMgmt.raids[dialog.raidIdx].encounters[dialog.encounterIdx]
+    if not encounter or not encounter.roles or not encounter.roles[dialog.roleIndex] then return end
     
     -- Save old consume data for delta sync
-    local oldConsume = role.consumes[dialog.slotIndex]
+    local oldConsume = nil
+    if encounter.roles[dialog.roleIndex].consumes then
+      oldConsume = encounter.roles[dialog.roleIndex].consumes[dialog.slotIndex]
+    end
     
-    -- Save consume selection
+    -- Build new consume data
     local allowAlt = dialog.allowAltCheckbox:GetChecked()
     local checkCombat = dialog.combatCheckbox:GetChecked()
-    role.consumes[dialog.slotIndex] = {
+    local newConsumeData = {
       primaryId = dialog.selectedConsume.primaryId,
       primaryName = dialog.selectedConsume.primaryName,
       secondaryId = dialog.selectedConsume.secondaryId,
@@ -4082,24 +3787,29 @@ function OGRH.ShowConsumeSelectionDialog(raidName, encounterName, roleIndex, slo
       checkDuringCombat = checkCombat
     }
     
+    -- Initialize consumes array if needed
+    if not encounter.roles[dialog.roleIndex].consumes then
+      encounter.roles[dialog.roleIndex].consumes = {}
+    end
+    
+    -- Modify directly - changes persist because this is the actual SavedVariables reference
+    encounter.roles[dialog.roleIndex].consumes[dialog.slotIndex] = newConsumeData
+    
     -- Delta sync for consume selection change
     if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
       local consumeData = {
-        raid = dialog.raidName,
-        encounter = dialog.encounterName,
+        raidIdx = dialog.raidIdx,
+        encounterIdx = dialog.encounterIdx,
         roleIndex = dialog.roleIndex,
         slotIndex = dialog.slotIndex
       }
       OGRH.SyncDelta.RecordAssignmentChange(
         nil,  -- playerName (not applicable for consume selection)
         "CONSUME_SELECTION",
-        {consume = role.consumes[dialog.slotIndex], consumeData = consumeData},
+        {consume = newConsumeData, consumeData = consumeData},
         {consume = oldConsume, consumeData = consumeData}
       )
     end
-    
-    -- Write back to saved variables
-    OGRH.SVM.SetPath('encounterMgmt.raids', allRaids)
     
     -- Refresh the Encounter Planning UI
     if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then
@@ -4214,29 +3924,24 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
     return
   end
   
-  -- announcements will be checked below when we read from nested structure
+  -- Find raid and encounter indices from names
+  local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(selectedRaid, selectedEncounter)
+  if not raidIdx or not encIdx then
+    return
+  end
+  
+  -- Get encounterMgmt and navigate with bracket notation
+  local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+  if not encounterMgmt or not encounterMgmt.raids or not encounterMgmt.raids[raidIdx] or 
+     not encounterMgmt.raids[raidIdx].encounters or not encounterMgmt.raids[raidIdx].encounters[encIdx] then
+    return
+  end
+  
+  local encounter = encounterMgmt.raids[raidIdx].encounters[encIdx]
   
   -- Get role data for tag processing from v2 schema
   local orderedRoles = {}
-  
-  -- Find encounter in v2 schema
-  local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
-  local encounter = nil
-  if allRaids then
-    for i = 1, table.getn(allRaids) do
-      if allRaids[i].name == selectedRaid and allRaids[i].encounters then
-        for j = 1, table.getn(allRaids[i].encounters) do
-          if allRaids[i].encounters[j].name == selectedEncounter then
-            encounter = allRaids[i].encounters[j]
-            break
-          end
-        end
-        break
-      end
-    end
-  end
-  
-  if encounter and encounter.roles then
+  if encounter.roles then
     -- Build roles array indexed by roleId from v2 schema
     for i = 1, table.getn(encounter.roles) do
       local role = encounter.roles[i]
@@ -4245,30 +3950,12 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
     end
   end
   
-  -- Get encounter data from nested structure via SVM
+  -- Collect data from roles within encounter
   local assignments = {}
   local raidMarks = {}
   local assignmentNumbers = {}
   
-  -- Find raid and encounter by name (v2 schema uses numeric indices but stores names)
-  local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
-  local encounter = nil
-  if allRaids then
-    for raidIdx = 1, table.getn(allRaids) do
-      if allRaids[raidIdx].name == selectedRaid and allRaids[raidIdx].encounters then
-        for encIdx = 1, table.getn(allRaids[raidIdx].encounters) do
-          if allRaids[raidIdx].encounters[encIdx].name == selectedEncounter then
-            encounter = allRaids[raidIdx].encounters[encIdx]
-            break
-          end
-        end
-        if encounter then break end
-      end
-    end
-  end
-  
-  -- Collect data from roles within encounter
-  if encounter and encounter.roles then
+  if encounter.roles then
     for roleIdx = 1, table.getn(encounter.roles) do
       local role = encounter.roles[roleIdx]
       if role then
@@ -4285,11 +3972,7 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
     end
   end
   
-  local announcementData = nil
-  if encounter then
-    announcementData = encounter.announcements
-  end
-  
+  local announcementData = encounter.announcements
   if not announcementData then
     return
   end
@@ -4395,12 +4078,11 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
       -- Reset yOffset for rebuilding
       menu.yOffset = -5
       
-      if not OGRH_SV.encounterMgmt or not OGRH_SV.encounterMgmt.raids then
+      local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
+      if not raids then
         menu:Finalize()
         return
       end
-      
-      local raids = OGRH_SV.encounterMgmt.raids
       
       for i = 1, table.getn(raids) do
         local raid = raids[i]
@@ -4481,23 +4163,15 @@ function OGRH.MarkPlayersFromMainUI()
     return
   end
   
-  -- Get role configuration from v2 schema
-  local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
-  local encounter = nil
-  if allRaids then
-    for i = 1, table.getn(allRaids) do
-      if allRaids[i].name == selectedRaid and allRaids[i].encounters then
-        for j = 1, table.getn(allRaids[i].encounters) do
-          if allRaids[i].encounters[j].name == selectedEncounter then
-            encounter = allRaids[i].encounters[j]
-            break
-          end
-        end
-        break
-      end
-    end
+  -- Find raid and encounter indices from names
+  local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(selectedRaid, selectedEncounter)
+  if not raidIdx or not encIdx then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Encounter not found.")
+    return
   end
   
+  -- Get encounter data using v2 numeric path
+  local encounter = OGRH.SVM.GetPath('encounterMgmt.raids.' .. raidIdx .. '.encounters.' .. encIdx)
   if not encounter or not encounter.roles then
     DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
     return
@@ -4548,29 +4222,12 @@ function OGRH.MarkPlayersFromMainUI()
     return
   end
   
-  -- Get assignments and raidMarks from nested role objects
+  -- Get assignments and raidMarks from nested role objects (already have encounter from above)
   local assignments = {}
   local raidMarks = {}
   
-  -- Find raid and encounter by name (v2 schema)
-  local allRaids = OGRH.SVM.GetPath('encounterMgmt.raids')
-  local encounter = nil
-  if allRaids then
-    for raidIdx = 1, table.getn(allRaids) do
-      if allRaids[raidIdx].name == selectedRaid and allRaids[raidIdx].encounters then
-        for encIdx = 1, table.getn(allRaids[raidIdx].encounters) do
-          if allRaids[raidIdx].encounters[encIdx].name == selectedEncounter then
-            encounter = allRaids[raidIdx].encounters[encIdx]
-            break
-          end
-        end
-        if encounter then break end
-      end
-    end
-  end
-  
   -- Collect data from roles within encounter
-  if encounter and encounter.roles then
+  if encounter.roles then
     for roleIdx = 1, table.getn(encounter.roles) do
       local role = encounter.roles[roleIdx]
       if role then
@@ -5194,13 +4851,25 @@ function OGRH.SaveCurrentRaidAdvancedSettings(settings)
     return false
   end
   
-  local raid = OGRH.FindRaidByName(frame.selectedRaid)
-  if not raid then
+  local raidIdx = OGRH.FindRaidAndEncounterIndices(frame.selectedRaid)
+  if not raidIdx then
     DEFAULT_CHAT_FRAME:AddMessage("[OGRH Debug] Save failed: raid not found")
     return false
   end
   
-  raid.advancedSettings = settings
+  -- Use SetPath with numeric indices (SVM now handles this correctly)
+  if settings.bigwigs then
+    for k, v in pairs(settings.bigwigs) do
+      OGRH.SVM.SetPath(string.format("encounterMgmt.raids.%d.advancedSettings.bigwigs.%s", raidIdx, k), v)
+    end
+  end
+  
+  if settings.consumeTracking then
+    for k, v in pairs(settings.consumeTracking) do
+      OGRH.SVM.SetPath(string.format("encounterMgmt.raids.%d.advancedSettings.consumeTracking.%s", raidIdx, k), v)
+    end
+  end
+  
   return true
 end
 
@@ -5230,15 +4899,24 @@ function OGRH.SaveCurrentEncounterAdvancedSettings(settings)
     return false
   end
   
-  local raid = OGRH.FindRaidByName(frame.selectedRaid)
-  if not raid then return false end
-  
-  local encounter = OGRH.FindEncounterByName(raid, frame.selectedEncounter)
-  if not encounter then
+  local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(frame.selectedRaid, frame.selectedEncounter)
+  if not raidIdx or not encIdx then
     return false
   end
   
-  encounter.advancedSettings = settings
+  -- Use SetPath with numeric indices (SVM now handles this correctly)
+  if settings.bigwigs then
+    for k, v in pairs(settings.bigwigs) do
+      OGRH.SVM.SetPath(string.format("encounterMgmt.raids.%d.encounters.%d.advancedSettings.bigwigs.%s", raidIdx, encIdx, k), v)
+    end
+  end
+  
+  if settings.consumeTracking then
+    for k, v in pairs(settings.consumeTracking) do
+      OGRH.SVM.SetPath(string.format("encounterMgmt.raids.%d.encounters.%d.advancedSettings.consumeTracking.%s", raidIdx, encIdx, k), v)
+    end
+  end
+  
   return true
 end
 

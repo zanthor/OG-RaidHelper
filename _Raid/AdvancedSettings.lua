@@ -956,22 +956,14 @@ function OGRH.SaveAdvancedSettingsDialog()
   local success = false
   if isRaid then
     success = OGRH.SaveCurrentRaidAdvancedSettings(newSettings)
-    
-    -- Record delta sync change
-    if success and OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordSettingsChange then
-      OGRH.SyncDelta.RecordSettingsChange(frame.selectedRaid, nil, newSettings)
-    end
   else
     success = OGRH.SaveCurrentEncounterAdvancedSettings(newSettings)
-    
-    -- Record delta sync change
-    if success and OGRH and OGRH.SyncDelta and OGRH.SyncDelta.RecordSettingsChange then
-      OGRH.SyncDelta.RecordSettingsChange(frame.selectedRaid, frame.selectedEncounter, newSettings)
-    end
   end
   
   if not success then
     OGRH.Msg("Failed to save settings.")
+  else
+    OGRH.Msg("Settings saved successfully.")
   end
 end
 

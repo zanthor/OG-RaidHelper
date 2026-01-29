@@ -37,9 +37,8 @@ function OGRH.EnsureRecruitmentSV()
   end
   
   -- Ensure whisperHistory, playerCache, and deletedContacts exist (for migration)
-  if not OGRH.SVM.GetPath("recruitment.whisperHistory") then
-    OGRH.SVM.SetPath("recruitment.whisperHistory", {}, {syncLevel = "MANUAL", componentType = "settings"})
-  end
+  -- TEMPORARILY DISABLED: Clear history and don't track until module gets more attention
+  OGRH.SVM.SetPath("recruitment.whisperHistory", {}, {syncLevel = "MANUAL", componentType = "settings"})
   if not OGRH.SVM.GetPath("recruitment.playerCache") then
     OGRH.SVM.SetPath("recruitment.playerCache", {}, {syncLevel = "MANUAL", componentType = "settings"})
   end
@@ -962,9 +961,14 @@ function OGRH.CreateRecruitingPanel()
   progressText:SetText("0:00")
   frame.progressText = progressText
   
-  -- Update script
+  -- Update script (throttled to once per second)
+  frame.lastUpdate = 0
   frame:SetScript("OnUpdate", function()
-    OGRH.UpdateRecruitingPanel()
+    local now = GetTime()
+    if now - this.lastUpdate >= 1.0 then
+      this.lastUpdate = now
+      OGRH.UpdateRecruitingPanel()
+    end
   end)
   
   -- Register with auxiliary panel system (priority 15 - between consume monitor and ready check)
@@ -1276,6 +1280,12 @@ end
 
 -- Track incoming/outgoing whispers
 function OGRH.TrackWhisper(sender, message, incoming)
+  -- TEMPORARILY DISABLED: Not tracking whispers until this module gets more attention
+  return
+end
+
+--[[ DISABLED WHISPER TRACKING CODE
+function OGRH.TrackWhisper_DISABLED(sender, message, incoming)
   OGRH.EnsureRecruitmentSV()
   
   -- Don't track if this contact was explicitly deleted
@@ -1339,6 +1349,7 @@ function OGRH.TrackWhisper(sender, message, incoming)
     end
   end
 end
+--]] -- END DISABLED WHISPER TRACKING CODE
 
 -- ========================================
 -- MODULE INITIALIZATION

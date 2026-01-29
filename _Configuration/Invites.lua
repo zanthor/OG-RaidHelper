@@ -2577,24 +2577,33 @@ local function GetRollForDataHash()
 end
 
 rollForCheckFrame:SetScript("OnUpdate", function()
+  -- Early exit if window not visible or wrong source - don't even accumulate time
+  if not OGRH_InvitesFrame or not OGRH_InvitesFrame:IsVisible() then
+    rollForTimeSinceCheck = 0
+    return
+  end
+  
+  local currentSource = OGRH.SVM.GetPath("invites.currentSource")
+  if currentSource ~= OGRH.Invites.SOURCE_TYPE.ROLLFOR then
+    rollForTimeSinceCheck = 0
+    return
+  end
+  
+  -- Only accumulate time if we should be checking
   rollForTimeSinceCheck = rollForTimeSinceCheck + arg1
   
   if rollForTimeSinceCheck >= rollForCheckInterval then
     rollForTimeSinceCheck = 0
     
-    -- Only check if RollFor is the current source and window is open
-    local currentSource = OGRH.SVM.GetPath("invites.currentSource")
-    if currentSource == OGRH.Invites.SOURCE_TYPE.ROLLFOR and OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
-      local currentHash = GetRollForDataHash()
+    local currentHash = GetRollForDataHash()
+    
+    if currentHash and currentHash ~= rollForLastHash then
+      rollForLastHash = currentHash
       
-      if currentHash and currentHash ~= rollForLastHash then
-        rollForLastHash = currentHash
-        
-        -- Refresh the player list
-        if OGRH.Invites.RefreshPlayerList then
-          OGRH.Invites.RefreshPlayerList()
-          ChatFrame4:AddMessage("[OGRH] RollFor data updated - refreshing player list.", 0, 1, 1)
-        end
+      -- Refresh the player list
+      if OGRH.Invites.RefreshPlayerList then
+        OGRH.Invites.RefreshPlayerList()
+        ChatFrame4:AddMessage("[OGRH] RollFor data updated - refreshing player list.", 0, 1, 1)
       end
     end
   end

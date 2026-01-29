@@ -690,37 +690,6 @@ function OGRH.Announcements.ReplaceTags(text, roles, assignments, raidMarks, ass
   return finalResult
 end
 
--- Build consume announcement lines from a consume check role
--- Parameters:
---   encounterName: Name of the encounter for the title
---   consumeRole: Role definition with consumes array
--- Returns: Array of announcement lines ready to send
-function OGRH.Announcements.BuildConsumeAnnouncement(encounterName, consumeRole)
-  if not consumeRole or not consumeRole.consumes then
-    return {}
-  end
-  
-  local announceLines = {}
-  local titleColor = OGRH.COLOR.HEADER or "|cFFFFD100"
-  table.insert(announceLines, titleColor .. "Consumes for " .. encounterName .. OGRH.COLOR.RESET)
-  
-  for i = 1, (consumeRole.slots or 1) do
-    if consumeRole.consumes[i] then
-      local consumeData = consumeRole.consumes[i]
-      
-      -- Use the existing FormatConsumeItemLinks function from Core
-      if OGRH.FormatConsumeItemLinks then
-        local lineText = OGRH.FormatConsumeItemLinks(consumeData, false)
-        if lineText and lineText ~= "" then
-          table.insert(announceLines, lineText)
-        end
-      end
-    end
-  end
-  
-  return announceLines
-end
-
 -- Unified function to send encounter announcements
 -- Parameters:
 --   selectedRaid: The raid name (e.g., "Molten Core")
@@ -738,62 +707,65 @@ function OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEnco
     return false
   end
   
-  -- Get announcement text from saved variables
-  if not OGRH_SV.encounterAnnouncements or 
-     not OGRH_SV.encounterAnnouncements[selectedRaid] or
-     not OGRH_SV.encounterAnnouncements[selectedRaid][selectedEncounter] then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No announcement text configured for this encounter.")
+  -- Find raid and encounter indices (v2 schema uses numeric indices)
+  local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(selectedRaid, selectedEncounter)
+  if not raidIdx or not encIdx then
+    OGRH.Msg("Could not find indices for " .. selectedRaid .. " / " .. selectedEncounter)
     return false
   end
   
-  local announcementData = OGRH_SV.encounterAnnouncements[selectedRaid][selectedEncounter]
-  
-  -- Get role configuration
-  local roles = OGRH_SV.encounterMgmt.roles
-  if not roles or not roles[selectedRaid] or not roles[selectedRaid][selectedEncounter] then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No roles configured for this encounter.")
+  -- Get encounterMgmt and navigate directly with indices
+  local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+  if not encounterMgmt or not encounterMgmt.raids or not encounterMgmt.raids[raidIdx] or 
+     not encounterMgmt.raids[raidIdx].encounters or not encounterMgmt.raids[raidIdx].encounters[encIdx] then
+    OGRH.Msg("Could not load encounter data for raid " .. raidIdx .. ", encounter " .. encIdx)
     return false
   end
   
-  local encounterRoles = roles[selectedRaid][selectedEncounter]
-  local column1 = encounterRoles.column1 or {}
-  local column2 = encounterRoles.column2 or {}
+  local encounter = encounterMgmt.raids[raidIdx].encounters[encIdx]
   
-  -- Build roles array indexed by roleId (not by position)
+  -- Get announcements from encounter
+  local announcementData = encounter.announcements
+  if not announcementData or table.getn(announcementData) == 0 then
+    OGRH.Msg("No announcement text configured for this encounter.")
+    return false
+  end
+  
+  -- Get role configuration from v2 schema
+  local encounterRoles = encounter.roles
+  if not encounterRoles then
+    OGRH.Msg("No roles configured for this encounter.")
+    return false
+  end
+  
+  -- Build roles array indexed by roleId
+  -- v2 schema: roles is flat array, each role has column field (1 or 2)
   local orderedRoles = {}
-  for i = 1, table.getn(column1) do
-    local role = column1[i]
-    local roleId = role.roleId or i
-    orderedRoles[roleId] = role
-  end
-  for i = 1, table.getn(column2) do
-    local role = column2[i]
-    local roleId = role.roleId or (table.getn(column1) + i)
-    orderedRoles[roleId] = role
+  for i = 1, table.getn(encounterRoles) do
+    local role = encounterRoles[i]
+    if role and role.roleId then
+      orderedRoles[role.roleId] = role
+    end
   end
   
-  -- Get assignments
+  -- Collect data from roles within encounter (v2 schema: nested in roles)
   local assignments = {}
-  if OGRH_SV.encounterAssignments and 
-     OGRH_SV.encounterAssignments[selectedRaid] and
-     OGRH_SV.encounterAssignments[selectedRaid][selectedEncounter] then
-    assignments = OGRH_SV.encounterAssignments[selectedRaid][selectedEncounter]
-  end
-  
-  -- Get raid marks
   local raidMarks = {}
-  if OGRH_SV.encounterRaidMarks and
-     OGRH_SV.encounterRaidMarks[selectedRaid] and
-     OGRH_SV.encounterRaidMarks[selectedRaid][selectedEncounter] then
-    raidMarks = OGRH_SV.encounterRaidMarks[selectedRaid][selectedEncounter]
-  end
-  
-  -- Get assignment numbers
   local assignmentNumbers = {}
-  if OGRH_SV.encounterAssignmentNumbers and
-     OGRH_SV.encounterAssignmentNumbers[selectedRaid] and
-     OGRH_SV.encounterAssignmentNumbers[selectedRaid][selectedEncounter] then
-    assignmentNumbers = OGRH_SV.encounterAssignmentNumbers[selectedRaid][selectedEncounter]
+  
+  for roleIdx = 1, table.getn(encounterRoles) do
+    local role = encounterRoles[roleIdx]
+    if role then
+      if role.assignedPlayers then
+        assignments[roleIdx] = role.assignedPlayers
+      end
+      if role.raidMarks then
+        raidMarks[roleIdx] = role.raidMarks
+      end
+      if role.assignmentNumbers then
+        assignmentNumbers[roleIdx] = role.assignmentNumbers
+      end
+    end
   end
   
   -- Process announcement lines using ReplaceTags
@@ -810,7 +782,7 @@ function OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEnco
   
   -- Send announcements to raid chat
   if table.getn(announcementLines) == 0 then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No announcement text to send.")
+    OGRH.Msg("No announcement text to send.")
     return false
   end
   
@@ -825,12 +797,6 @@ function OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEnco
   end
   
   return true
-end
-
--- Global wrapper function for backward compatibility
--- This allows existing code to call OGRH.ReplaceAnnouncementTags()
-function OGRH.ReplaceAnnouncementTags(text, roles, assignments, raidMarks, assignmentNumbers)
-  return OGRH.Announcements.ReplaceTags(text, roles, assignments, raidMarks, assignmentNumbers)
 end
 
 -- Module initialization message
