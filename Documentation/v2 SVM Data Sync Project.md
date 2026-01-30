@@ -5,11 +5,72 @@
 **Created:** January 30, 2026  
 **Target:** Phase 7 (Post-Migration)
 
+**CRITICAL CLARIFICATIONS:**
+- **Planning Tool Only** - This is NOT a combat execution tool. All features designed for out-of-combat raid planning.
+- **BigWigs Timing** - BigWigs activates encounter modules on room entry/proximity, NOT on boss pull.
+- **Combat Safety** - Checksum broadcasts and sync operations never run while raid admin is in combat.
+
+---
+
+## ⚠️ IMPLEMENTATION REQUIREMENTS
+
+**BEFORE IMPLEMENTING ANY PHASE, THE AI AGENT MUST:**
+
+1. **Read ALL documentation listed below** using `read_file` tool
+2. **Comply with ALL constraints** in Design Philosophy document
+3. **Follow SVM patterns** exactly as specified in API documentation
+4. **Validate against V2 Schema** before making structural changes
+
+**DO NOT rely on memory or references alone - actively read the files before coding.**
+
+### Required Documentation (Must Read Before Each Phase)
+
+| Document | Path | Required For | Purpose |
+|----------|------|--------------|---------|
+| **Design Philosophy** | `! OG-RaidHelper Design Philososphy.md` | ALL phases | Lua 5.0/5.1 constraints, OGST patterns, coding standards |
+| **SVM Quick Reference** | `! SVM-Quick-Reference.md` | ALL phases | Copy-paste code patterns for SVM usage |
+| **SVM API Documentation** | `! SVM-API-Documentation.md` | Phase 1-3 | Complete SVM API reference and sync metadata schema |
+| **V2 Schema Specification** | `! V2 Schema Specification.md` | Phase 1-3 | Data structure authority, schema validation |
+| **Existing Sync Files** | `_Infrastructure/Sync*.lua` | Phase 4 | Understanding current sync architecture before refactoring |
+
+### Pre-Implementation Checklist
+
+**Phase 1: Core Infrastructure**
+- [ ] Read Design Philosophy (Lua 5.0/5.1 constraints)
+- [ ] Read SVM API Documentation (SetPath, sync metadata)
+- [ ] Read V2 Schema Specification (encounterMgmt structure)
+- [ ] Verify OGST availability for any UI components
+
+**Phase 2: UI Implementation**
+- [ ] Read Design Philosophy (OGST component requirements)
+- [ ] Read SVM Quick Reference (permission check patterns)
+- [ ] Review existing Main UI code for right-click menu patterns
+
+**Phase 3: Sync Integration**
+- [ ] Read all existing Sync*.lua files to understand current implementation
+- [ ] Read SVM API Documentation (sync levels, batching, priorities)
+- [ ] Review checksum computation in SyncIntegrity.lua
+
+**Phase 4: Code Consolidation**
+- [ ] Audit ALL files using `grep_search` for sync-related calls
+- [ ] Read existing sync files before refactoring
+- [ ] Ensure no sync logic remains outside SVM/SyncRouter/SyncChecksum/SyncRepair
+
+**Phase 5: BigWigs Integration**
+- [ ] Review existing BigWigs module integration code
+- [ ] Understand BigWigs activation timing (NOT boss pull)
+
+**Phase 6: Testing & Polish**
+- [ ] Review all phase documentation
+- [ ] Validate against V2 Schema Specification
+
 ---
 
 ## Executive Summary
 
-This project redesigns OG-RaidHelper's sync system around an "Active Raid" buffer concept. The Active Raid (always at `encounterMgmt.raids[1]`) acts as a staging area for current operations, allowing clean sync without local data conflicts. All sync logic is centralized through SVM with intelligent sync-level routing based on context (active vs non-active, EncounterSetup vs EncounterMgmt).
+This project redesigns OG-RaidHelper's sync system around an "Active Raid" buffer concept. The Active Raid (always at `encounterMgmt.raids[1]`) acts as a staging area for raid planning, allowing clean sync without local data conflicts. All sync logic is centralized through SVM with intelligent sync-level routing based on context (active vs non-active, EncounterSetup vs EncounterMgmt).
+
+**IMPORTANT:** This is a **PLANNING TOOL**, not a combat execution tool. All sync operations are designed for out-of-combat raid preparation.
 
 **Key Benefits:**
 - ✅ Eliminates sync conflicts from local data changes
@@ -17,7 +78,7 @@ This project redesigns OG-RaidHelper's sync system around an "Active Raid" buffe
 - ✅ Enables pre-planning with player assignments
 - ✅ Centralizes all sync logic (no scattered calls)
 - ✅ Unified checksum validation system
-- ✅ Supports both planning mode and live raid execution
+- ✅ Supports raid planning workflows
 
 ---
 
@@ -78,10 +139,12 @@ The **Active Raid** is a special raid slot at `encounterMgmt.raids[1]` that acts
 | Property | Value |
 |----------|-------|
 | Location | `OGRH_SV.v2.encounterMgmt.raids[1]` |
-| Name | `"[ACTIVE RAID]"` (display name shows source) |
+| Name | `"__active__"` (semantic identifier) |
+| Display Name | `"[AR] Source Raid Name"` (e.g., "[AR] Molten Core") |
 | ID | `"__active__"` (semantic identifier) |
 | Sync | REALTIME (EncounterMgmt) / BATCH (EncounterSetup) |
 | Source | Copy of any saved raid + assignments |
+| Context | **Planning tool** - not for use during combat |
 
 ### Initialization
 
@@ -100,15 +163,20 @@ function OGRH.EncounterMgmt.EnsureActiveRaid()
             OGRH_SV.v2.encounterMgmt.raids[i + 1] = OGRH_SV.v2.encounterMgmt.raids[i]
         end
         
-        -- Create empty active raid
+        -- Require user to select a source raid
+        -- Active raid slot created but must be populated via "Set Active Raid"
         OGRH_SV.v2.encounterMgmt.raids[1] = {
             id = "__active__",
-            name = "[ACTIVE RAID]",
-            displayName = "[ACTIVE RAID]",
+            name = "__active__",
+            displayName = "[AR] No Raid Selected",
             sortOrder = 0,
             encounters = {},
-            advancedSettings = {}
+            advancedSettings = {},
+            sourceRaidId = nil  -- Must select source via UI
         }
+        
+        -- Show prompt to user
+        OGRH.Msg("|cffff9900[RH]|r Right-click Encounter button and select 'Set Active Raid' to begin")
     end
 end
 ```
@@ -156,8 +224,8 @@ Selecting a raid prompts:
 │  raid slot and overwrite current active     │
 │  raid data.                                 │
 │                                             │
-│  Player assignments will be copied for      │
-│  pre-planning purposes.                     │
+│  Existing player assignments in the active  │
+│  raid will be PRESERVED (not overwritten).  │
 │                                             │
 │  Continue?                                  │
 │                                             │
@@ -166,10 +234,11 @@ Selecting a raid prompts:
 ```
 
 **On "Yes":**
-1. Deep copy selected raid → `encounterMgmt.raids[1]`
-2. Include all player assignments
-3. Set `ui.selectedRaid = 1` (always active)
-4. Sync active raid to all clients (BATCH sync)
+1. Deep copy selected raid structure → `encounterMgmt.raids[1]`
+2. Set `displayName = "[AR] " .. sourceRaid.name`
+3. Preserve existing player assignments (do NOT overwrite)
+4. Set `ui.selectedRaid = 1` (always active)
+5. Sync active raid to all clients (BATCH sync)
 
 **On selecting "Active Raid" → Encounter:**
 1. Set `ui.selectedEncounter` to selected encounter name
@@ -249,11 +318,11 @@ Is the data being modified in Active Raid (index 1)?
 │       │
 │       ├─ EncounterMgmt.lua (Main UI)
 │       │   └─ syncLevel = "REALTIME"
-│       │      (Combat-critical: assignments, swaps, etc.)
+│       │      (Immediate propagation: assignments, swaps, etc.)
 │       │
 │       └─ EncounterSetup.lua (Planning UI)
 │           └─ syncLevel = "BATCH"
-│              (Planning: role configs, priorities, etc.)
+│              (Batched: role configs, priorities, etc.)
 │
 └─ NO → Non-active raid (always allowed, local only)
     └─ syncLevel = "MANUAL"
@@ -432,15 +501,26 @@ end
 
 #### Admin Broadcast (Every 30 seconds + after changes)
 ```lua
--- Message format
-{
-    type = "CHECKSUM_BROADCAST",
-    activeRaid = "a1b2c3d4",           -- Structure checksum
-    activeEncounter = 5,                -- Current encounter index
-    assignments = "e5f6g7h8",          -- Assignments for current encounter
-    rolesUI = "i9j0k1l2",              -- Global roles
-    version = 123                       -- Global version number
-}
+-- Broadcast function (called by timer or after changes)
+function OGRH.SyncChecksum.BroadcastChecksums()
+    -- NEVER broadcast if admin is in combat
+    if UnitAffectingCombat("player") then
+        return  -- Skip this broadcast cycle
+    end
+    
+    -- Message format
+    local message = {
+        type = "CHECKSUM_BROADCAST",
+        activeRaid = "a1b2c3d4",           -- Structure checksum
+        activeEncounter = 5,                -- Current encounter index
+        assignments = "e5f6g7h8",          -- Assignments for current encounter
+        rolesUI = "i9j0k1l2",              -- Global roles
+        version = 123                       -- Global version number
+    }
+    
+    -- Broadcast to raid
+    OGRH.SendAddonMessage(message, "RAID")
+end
 ```
 
 #### Client Validation
@@ -554,7 +634,9 @@ end
 ## BigWigs Integration
 
 ### Current Behavior
-BigWigs calls `OGRH.SetEncounter()` when boss pull detected.
+BigWigs calls `OGRH.SetEncounter()` when **BigWigs module activates** (typically when entering boss room or proximity triggers).
+
+**IMPORTANT:** This is NOT triggered on boss pull - it activates earlier when BigWigs loads the encounter module.
 
 ### Required Changes
 
@@ -585,7 +667,7 @@ end
 ```
 
 **Testing Required:**
-- [ ] Pull boss → verify encounter switches
+- [ ] Enter boss room → verify BigWigs module activates → verify encounter switches
 - [ ] Verify all clients follow admin's encounter selection
 - [ ] Verify no crashes if encounter not in active raid
 
@@ -671,14 +753,15 @@ function OGRH.Migration.MigrateToActiveRaid()
         raids[i + 1] = raids[i]
     end
     
-    -- Create empty active raid
+    -- Create active raid slot (requires user to set source)
     raids[1] = {
         id = "__active__",
-        name = "[ACTIVE RAID]",
-        displayName = "[No Active Raid]",
+        name = "__active__",
+        displayName = "[AR] No Raid Selected",
         sortOrder = 0,
         encounters = {},
-        advancedSettings = {}
+        advancedSettings = {},
+        sourceRaidId = nil
     }
     
     -- Update UI references
@@ -700,14 +783,14 @@ end
 
 ## Implementation Phases
 
-### Phase 1: Core Infrastructure (Week 1)
+### Phase 1: Core Infrastructure
 - [ ] Create `SyncChecksum.lua` with all checksum functions
 - [ ] Create `SyncRouter.lua` for sync level routing
 - [ ] Update `SavedVariablesManager.lua` with context-aware routing
 - [ ] Implement Active Raid initialization in Core.lua
 - [ ] Write migration function for Active Raid insertion
 
-### Phase 2: UI Implementation (Week 2)
+### Phase 2: UI Implementation
 - [ ] Modify right-click menu on Encounter button (Main UI)
 - [ ] Add "Active Raid" submenu for quick encounter navigation
 - [ ] Add "Set Active Raid" section below with raid list
@@ -716,27 +799,27 @@ end
 - [ ] Test raid copying with assignments
 - [ ] Add permission checks to EncounterSetup for active raid edits
 
-### Phase 3: Sync Integration (Week 3)
+### Phase 3: Sync Integration
 - [ ] Update EncounterMgmt.lua to use SVM with REALTIME metadata
 - [ ] Update EncounterSetup.lua to use SVM with BATCH metadata
 - [ ] Implement checksum broadcast (30s + after changes)
 - [ ] Implement client validation and repair requests
 - [ ] Implement admin repair buffer (1-second delay)
 
-### Phase 4: Code Consolidation (Week 4)
+### Phase 4: Code Consolidation
 - [ ] Audit all sync calls (grep search)
 - [ ] Migrate scattered calls to SVM
 - [ ] Refactor SyncGranular → SyncRepair
 - [ ] Move checksum logic from SyncIntegrity → SyncChecksum
 - [ ] Delete deprecated files (SyncDelta, SyncUI, Sync_v2)
 
-### Phase 5: BigWigs Integration (Week 5)
+### Phase 5: BigWigs Integration
 - [ ] Update OGRH.SetEncounter() for active raid only
-- [ ] Test boss pull detection
+- [ ] Test BigWigs module activation (entering boss room)
 - [ ] Test encounter auto-selection
 - [ ] Verify sync to all clients
 
-### Phase 6: Testing & Polish (Week 6)
+### Phase 6: Testing & Polish
 - [ ] Unit tests for checksum functions
 - [ ] Integration tests for sync flow
 - [ ] Raid testing (10+ players)
@@ -754,7 +837,7 @@ end
 function OGRH.Test.ActiveRaidInit()
     OGRH.EncounterMgmt.EnsureActiveRaid()
     assert(OGRH_SV.v2.encounterMgmt.raids[1].id == "__active__")
-    assert(OGRH_SV.v2.encounterMgmt.raids[1].name == "[ACTIVE RAID]")
+    assert(OGRH_SV.v2.encounterMgmt.raids[1].name == "__active__")
 end
 
 -- Test raid copying
@@ -763,7 +846,7 @@ function OGRH.Test.CopyRaidToActive()
     OGRH.EncounterMgmt.SetActiveRaid(2)
     
     local activeRaid = OGRH_SV.v2.encounterMgmt.raids[1]
-    assert(activeRaid.displayName == sourceRaid.name)
+    assert(activeRaid.displayName == "[AR] " .. sourceRaid.name)
     assert(table.getn(activeRaid.encounters) == table.getn(sourceRaid.encounters))
 end
 
@@ -956,25 +1039,29 @@ grep -rn "MessageRouter.Broadcast\|OGAddonMsg.SendAddonMessage" --include="*.lua
 
 ## Open Questions & Feedback
 
-### Questions for User
+### Design Decisions (User Confirmed)
 
 1. **Active Raid Display Name:**
-   - Should active raid show source name (e.g., "[ACTIVE] Molten Core")?
-   - Or generic name (e.g., "[ACTIVE RAID]")?
+   - ✅ Format: `"[AR] Source Raid Name"` (e.g., "[AR] Molten Core")
+   - The `[AR]` prefix clearly indicates active raid status
 
 2. **Multiple Admins:**
-   - What happens if multiple people have admin and set different active raids?
-   - Proposal: Last admin change wins (include timestamp in checksum broadcast)
+   - ❌ **Cannot occur** - addon enforces single admin
+   - Multiple admins would be a configuration error
+   - Last write wins if somehow multiple admins exist (error recovery)
 
 3. **Empty Active Raid:**
-   - Should empty active raid be allowed?
-   - Or require selecting a source raid immediately?
+   - ❌ **Not allowed** - Active raid with no encounters is allowed, but must have source raid selected
+   - User must select source via "Set Active Raid" on first use
+   - Display shows `"[AR] No Raid Selected"` until configured
 
 4. **Saved Raid Changes:**
-   - If user edits a saved raid (index 2+), should we prompt "Set as active to share changes"?
+   - ✅ No prompts - saved raid edits are local only
+   - User explicitly uses "Set Active Raid" when ready to sync
 
 5. **Assignment Pre-Planning:**
-   - When copying raid to active, should we preserve existing assignments or clear them?
+   - ✅ **Preserved** - When setting active raid, existing assignments are kept
+   - Allows incremental planning without losing work
 
 ### Potential Issues Identified
 
@@ -982,19 +1069,15 @@ grep -rn "MessageRouter.Broadcast\|OGAddonMsg.SendAddonMessage" --include="*.lua
 **Problem:** Existing code may reference raid indices directly  
 **Solution:** Audit all `encounterMgmt.raids[n]` references, ensure they're relative or use semantic IDs
 
-#### Issue 2: BigWigs Encounter Names
-**Problem:** BigWigs may use different encounter names than active raid  
-**Solution:** Implement fuzzy matching or maintain name mapping table
-
-#### Issue 3: Sync Loops
+#### Issue 2: Sync Loops
 **Problem:** Client repair request → Admin broadcast → Client validates → Repeat  
 **Solution:** Include checksum in repair broadcast so clients skip validation if already synced
 
-#### Issue 4: Combat Sync Blocking
+#### Issue 3: Combat Sync Blocking
 **Problem:** Active raid changes during combat may be blocked by SVM  
 **Solution:** Queue changes and flush after combat (already implemented in SVM.SyncConfig.offlineQueue)
 
-#### Issue 5: Checksum Performance
+#### Issue 4: Checksum Performance
 **Problem:** Computing checksums for large raids may cause lag  
 **Solution:** Cache checksums, invalidate only on write, compute asynchronously
 
