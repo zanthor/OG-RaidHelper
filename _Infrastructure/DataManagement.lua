@@ -63,27 +63,15 @@ function OGRH.DataManagement.LoadDefaults()
     return
   end
   
-  -- Import all encounter management data via SVM
-  if OGRH.FactoryDefaults.encounterMgmt then
-    OGRH.SVM.Set("encounterMgmt", OGRH.FactoryDefaults.encounterMgmt)
-  end
-  if OGRH.FactoryDefaults.encounterRaidMarks then
-    OGRH.SVM.Set("encounterRaidMarks", OGRH.FactoryDefaults.encounterRaidMarks)
-  end
-  if OGRH.FactoryDefaults.encounterAssignmentNumbers then
-    OGRH.SVM.Set("encounterAssignmentNumbers", OGRH.FactoryDefaults.encounterAssignmentNumbers)
-  end
-  if OGRH.FactoryDefaults.encounterAnnouncements then
-    OGRH.SVM.Set("encounterAnnouncements", OGRH.FactoryDefaults.encounterAnnouncements)
+  -- Load factory defaults (v2 format: consumes, tradeItems, encounterMgmt)
+  if OGRH.FactoryDefaults.consumes then
+    OGRH.SVM.Set("consumes", nil, OGRH.FactoryDefaults.consumes)
   end
   if OGRH.FactoryDefaults.tradeItems then
-    OGRH.SVM.Set("tradeItems", OGRH.FactoryDefaults.tradeItems)
+    OGRH.SVM.Set("tradeItems", nil, OGRH.FactoryDefaults.tradeItems)
   end
-  if OGRH.FactoryDefaults.consumes then
-    OGRH.SVM.Set("consumes", OGRH.FactoryDefaults.consumes)
-  end
-  if OGRH.FactoryDefaults.rgo then
-    OGRH.SVM.Set("rgo", OGRH.FactoryDefaults.rgo)
+  if OGRH.FactoryDefaults.encounterMgmt then
+    OGRH.SVM.Set("encounterMgmt", nil, OGRH.FactoryDefaults.encounterMgmt)
   end
   
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Factory defaults loaded successfully!")
@@ -98,22 +86,13 @@ function OGRH.DataManagement.LoadDefaults()
 end
 
 function OGRH.DataManagement.GetCurrentChecksum()
-  if OGRH.Sync and OGRH.Sync.ComputeCurrentChecksum then
-    return tostring(OGRH.Sync.ComputeCurrentChecksum())
-  end
-  return "UNAVAILABLE"
+  -- TODO: Revisit checksum implementation
+  return "STUB_CURRENT"
 end
 
 function OGRH.DataManagement.GetDefaultsChecksum()
-  if not OGRH.FactoryDefaults then
-    return "NO_DEFAULTS"
-  end
-  
-  if OGRH.Versioning and OGRH.Versioning.ComputeChecksum then
-    return tostring(OGRH.Versioning.ComputeChecksum(OGRH.FactoryDefaults))
-  end
-  
-  return "UNAVAILABLE"
+  -- TODO: Revisit checksum implementation
+  return "STUB_DEFAULTS"
 end
 
 -------------------------------------------------------------------------------
