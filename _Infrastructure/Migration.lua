@@ -532,8 +532,8 @@ OGRH.Msg("\n[Phase 5] Applying semantic transformations...")
     end
     
     -- Phase 6: Copy simple data structures not in migration map
-OGRH.Msg("\n[Phase 6] Copying unmapped data (consumes, tradeItems, recruitment)...")
-    local simpleCopyFields = {"consumes", "tradeItems", "recruitment", "pollTime", "allowRemoteReadyCheck", "monitorConsumes", "syncLocked"}
+OGRH.Msg("\n[Phase 6] Copying unmapped data (consumes, tradeItems, recruitment, rosterManagement)...")
+    local simpleCopyFields = {"consumes", "tradeItems", "recruitment", "rosterManagement", "pollTime", "allowRemoteReadyCheck", "monitorConsumes", "syncLocked"}
     for _, field in ipairs(simpleCopyFields) do
         if OGRH_SV[field] ~= nil then
             v2[field] = DeepCopy(OGRH_SV[field])
@@ -555,6 +555,12 @@ OGRH.Msg(string.format("  Copied %s: %s", field, tostring(OGRH_SV[field])))
 OGRH.Msg(string.format("  Copied ui state"))
     end
     
+    -- Record migration metadata
+    OGRH_SV.v2.migrationMeta = {
+        migrationDate = time(),
+        version = 2
+    }
+    
 OGRH.Msg("\n" .. string.rep("=", 72))
 OGRH.Msg("[Migration] ✓ Migration Complete!")
 OGRH.Msg(string.rep("=", 72))
@@ -571,6 +577,7 @@ OGRH.Msg(string.format("  ERRORS:          %d", stats.errors))
 OGRH.Msg(string.rep("=", 72))
 OGRH.Msg("\nOriginal data preserved in OGRH_SV (v1)")
 OGRH.Msg("Migrated data available in OGRH_SV.v2")
+OGRH.Msg("Migration timestamp: " .. date("%Y-%m-%d %H:%M:%S", time()))
 OGRH.Msg("\nNext steps:")
 OGRH.Msg("  1. Run /ogrh migration validate to compare schemas")
 OGRH.Msg("  2. Test addon functionality with v2 data")
@@ -2489,6 +2496,67 @@ function OGRH.Migration.ComparePermissions()
     OGRH.Msg(" ")
     
     OGRH.Msg("======================================")
+    return true
+end
+
+-- ============================================
+-- PURGE V1 DATA
+-- ============================================
+function OGRH.Migration.PurgeV1Data(silent)
+    if not OGRH_SV then
+OGRH.Msg("|cffff0000[RH-Migration]|r ERROR: OGRH_SV not found")
+        return false
+    end
+    
+    if not OGRH_SV.v2 then
+OGRH.Msg("|cffff0000[RH-Migration]|r ERROR: v2 schema not found. Cannot purge without active v2 data.")
+        return false
+    end
+    
+    -- Ensure encounterMgmt.schemaVersion is set to v2
+    if not OGRH_SV.v2.encounterMgmt or OGRH_SV.v2.encounterMgmt.schemaVersion ~= 2 then
+OGRH.Msg("|cffff0000[RH-Migration]|r ERROR: v2 schema not active. Run /ogrh migration cutover confirm first.")
+        return false
+    end
+    
+    if not silent then
+OGRH.Msg("|cff00ccff[RH-Migration]|r Purging v1 data from SavedVariables...")
+    end
+    
+    -- List of keys to preserve (v2 and essential top-level keys)
+    local preserveKeys = {
+        v2 = true,
+        schemaVersion = true,  -- Top-level schema marker
+        pollTime = true,        -- Core setting
+        firstRun = true,        -- First run flag
+        ui = true,              -- UI state
+        allowRemoteReadyCheck = true,
+        consumeMonitoringActive = true,
+        raidLead = true,
+        lockSync = true
+    }
+    
+    -- Count keys purged
+    local purgedCount = 0
+    local purgedKeys = {}
+    
+    -- Purge all v1 keys except preserved ones
+    for key, _ in pairs(OGRH_SV) do
+        if not preserveKeys[key] then
+            OGRH_SV[key] = nil
+            purgedCount = purgedCount + 1
+            table.insert(purgedKeys, key)
+        end
+    end
+    
+    if not silent then
+OGRH.Msg(string.format("|cff00ff00[RH-Migration]|r ✓ Purged %d v1 keys from SavedVariables", purgedCount))
+        if purgedCount > 0 and purgedCount <= 20 then
+OGRH.Msg("|cff00ccff[RH-Migration]|r Purged keys: " .. table.concat(purgedKeys, ", "))
+        end
+OGRH.Msg("|cff00ccff[RH-Migration]|r All addon data now resides in OGRH_SV.v2")
+    end
+    
     return true
 end
 

@@ -144,6 +144,59 @@ _svf:SetScript("OnEvent", function()
   OGRH.EnsureSV()
   OGRH.MigrateRGOSettings()  -- Migrate and clean up deprecated RGO settings
   
+  -- ============================================
+  -- AUTO-MIGRATION: Check schema version
+  -- ============================================
+  if OGRH.Migration and OGRH.Migration.MigrateToV2 then
+    -- Check if v2 exists and is active
+    local needsMigration = false
+    
+    if not OGRH_SV.v2 then
+      -- No v2 at all - needs migration
+      needsMigration = true
+    elseif not OGRH_SV.v2.encounterMgmt or OGRH_SV.v2.encounterMgmt.schemaVersion ~= 2 then
+      -- v2 exists but not active - needs migration
+      needsMigration = true
+    end
+    
+    if needsMigration then
+OGRH.Msg("|cffffaa00[RH-Migration]|r Detected v1 schema. Auto-migrating to v2...")
+      OGRH.Migration.MigrateToV2(false)
+      
+      -- Auto-cutover to v2
+      if OGRH_SV.v2 and OGRH.Migration.CutoverToV2 then
+OGRH.Msg("|cffffaa00[RH-Migration]|r Auto-activating v2 schema...")
+        OGRH.Migration.CutoverToV2()
+      end
+    end
+    
+    -- ============================================
+    -- AUTO-PURGE: Remove v1 data after 15 days
+    -- ============================================
+    if OGRH_SV.v2 and OGRH_SV.v2.migrationMeta and OGRH_SV.v2.migrationMeta.migrationDate then
+      local migrationDate = OGRH_SV.v2.migrationMeta.migrationDate
+      local currentTime = time()
+      local daysSinceMigration = (currentTime - migrationDate) / 86400  -- 86400 seconds in a day
+      
+      if daysSinceMigration >= 15 then
+        -- Check if v1 data still exists
+        local hasV1Data = false
+        local preserveKeys = {v2=true, schemaVersion=true, pollTime=true, firstRun=true, ui=true, allowRemoteReadyCheck=true, consumeMonitoringActive=true, raidLead=true, lockSync=true}
+        for key, _ in pairs(OGRH_SV) do
+          if not preserveKeys[key] then
+            hasV1Data = true
+            break
+          end
+        end
+        
+        if hasV1Data and OGRH.Migration.PurgeV1Data then
+OGRH.Msg("|cffffaa00[RH-Migration]|r v1 data is 15+ days old. Auto-purging...")
+          OGRH.Migration.PurgeV1Data(false)
+        end
+      end
+    end
+  end
+  
   -- Upgrade encounter data structure if needed (must happen early before any UI access)
   if OGRH.UpgradeEncounterDataStructure then
     OGRH.UpgradeEncounterDataStructure()

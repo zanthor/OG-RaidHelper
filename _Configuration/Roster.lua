@@ -79,10 +79,17 @@ end
 
 -- Initialize saved variables
 function RosterMgmt.EnsureSV()
-  OGRH.EnsureSV()
+  -- Validate SVM is available
+  if not OGRH.SVM then
+    OGRH.Msg("|cffff0000[RH-Roster]|r Error: SavedVariablesManager (SVM) not loaded. Cannot initialize.")
+    return false
+  end
   
-  if not OGRH_SV.rosterManagement then
-    OGRH_SV.rosterManagement = {
+  local rosterManagement = OGRH.SVM.GetPath("rosterManagement")
+  
+  if not rosterManagement then
+    -- Initialize with default structure
+    OGRH.SVM.SetPath("rosterManagement", {
       players = {},
       rankingHistory = {},
       config = {
@@ -106,8 +113,14 @@ function RosterMgmt.EnsureSV()
         lastSync = 0,
         syncChecksum = ""
       }
-    }
+    }, {
+      syncLevel = "MANUAL",
+      componentType = "settings"
+    })
+    OGRH.Msg("|cffffaa00[RH-Roster]|r Initialized default settings")
   end
+  
+  return true
 end
 
 -- Get class color
@@ -122,8 +135,9 @@ end
 -- Get player class (detect from roster or online)
 local function GetPlayerClass(playerName)
   -- Check if player is in roster
-  if OGRH_SV.rosterManagement.players[playerName] then
-    return OGRH_SV.rosterManagement.players[playerName].class
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  if allPlayers[playerName] then
+    return allPlayers[playerName].class
   end
   
   -- Try to detect from raid
@@ -148,7 +162,9 @@ end
 
 -- Add or update player
 function RosterMgmt.AddPlayer(playerName, class)
-  RosterMgmt.EnsureSV()
+  if not RosterMgmt.EnsureSV() then
+    return false
+  end
   
   if not playerName or playerName == "" then
     return false
@@ -162,7 +178,8 @@ function RosterMgmt.AddPlayer(playerName, class)
     return false
   end
   
-  local startingRating = OGRH_SV.rosterManagement.config.eloSettings.startingRating
+  local config = OGRH.SVM.GetPath("rosterManagement.config") or {}
+  local startingRating = (config.eloSettings and config.eloSettings.startingRating) or 1000
   
   -- Determine default primary role based on class
   local defaultPrimaryRole = "MELEE"  -- Safe default for all classes
@@ -179,7 +196,8 @@ function RosterMgmt.AddPlayer(playerName, class)
     defaultPrimaryRole = "RANGED"
   end
   
-  OGRH_SV.rosterManagement.players[playerName] = {
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  allPlayers[playerName] = {
     class = class,
     primaryRole = defaultPrimaryRole,
     secondaryRoles = {},
@@ -193,28 +211,52 @@ function RosterMgmt.AddPlayer(playerName, class)
     lastUpdated = time()
   }
   
+  OGRH.SVM.SetPath("rosterManagement.players", allPlayers, {
+    syncLevel = "MANUAL",
+    componentType = "roster",
+    source = "Roster"
+  })
+  
   return true
 end
 
 -- Remove player
 function RosterMgmt.RemovePlayer(playerName)
-  RosterMgmt.EnsureSV()
-  
-  if not OGRH_SV.rosterManagement.players[playerName] then
+  if not RosterMgmt.EnsureSV() then
     return false
   end
   
-  OGRH_SV.rosterManagement.players[playerName] = nil
-  OGRH_SV.rosterManagement.rankingHistory[playerName] = nil
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  if not allPlayers[playerName] then
+    return false
+  end
+  
+  allPlayers[playerName] = nil
+  OGRH.SVM.SetPath("rosterManagement.players", allPlayers, {
+    syncLevel = "MANUAL",
+    componentType = "roster",
+    source = "Roster"
+  })
+  
+  local allHistory = OGRH.SVM.GetPath("rosterManagement.rankingHistory") or {}
+  allHistory[playerName] = nil
+  OGRH.SVM.SetPath("rosterManagement.rankingHistory", allHistory, {
+    syncLevel = "MANUAL",
+    componentType = "roster",
+    source = "Roster"
+  })
   
   return true
 end
 
 -- Adjust ELO ranking
 function RosterMgmt.AdjustElo(playerName, role, adjustment)
-  RosterMgmt.EnsureSV()
+  if not RosterMgmt.EnsureSV() then
+    return false
+  end
   
-  local player = OGRH_SV.rosterManagement.players[playerName]
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  local player = allPlayers[playerName]
   if not player then
     return false
   end
@@ -222,14 +264,23 @@ function RosterMgmt.AdjustElo(playerName, role, adjustment)
   player.rankings[role] = player.rankings[role] + adjustment
   player.lastUpdated = time()
   
+  OGRH.SVM.SetPath("rosterManagement.players." .. playerName, player, {
+    syncLevel = "MANUAL",
+    componentType = "roster",
+    source = "Roster"
+  })
+  
   return true
 end
 
 -- Set ELO ranking
 function RosterMgmt.SetElo(playerName, role, newValue)
-  RosterMgmt.EnsureSV()
+  if not RosterMgmt.EnsureSV() then
+    return false
+  end
   
-  local player = OGRH_SV.rosterManagement.players[playerName]
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  local player = allPlayers[playerName]
   if not player then
     return false
   end
@@ -237,16 +288,25 @@ function RosterMgmt.SetElo(playerName, role, newValue)
   player.rankings[role] = newValue
   player.lastUpdated = time()
   
+  OGRH.SVM.SetPath("rosterManagement.players." .. playerName, player, {
+    syncLevel = "MANUAL",
+    componentType = "roster",
+    source = "Roster"
+  })
+  
   return true
 end
 
 -- Get players for role (sorted by ranking)
 function RosterMgmt.GetPlayersForRole(role)
-  RosterMgmt.EnsureSV()
+  if not RosterMgmt.EnsureSV() then
+    return {}
+  end
   
   local players = {}
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
   
-  for name, data in pairs(OGRH_SV.rosterManagement.players) do
+  for name, data in pairs(allPlayers) do
     -- Include if primary or secondary role matches
     local isInRole = (data.primaryRole == role)
     if not isInRole and data.secondaryRoles then
@@ -283,11 +343,14 @@ end
 
 -- Get all players
 function RosterMgmt.GetAllPlayers()
-  RosterMgmt.EnsureSV()
+  if not RosterMgmt.EnsureSV() then
+    return {}
+  end
   
   local players = {}
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
   
-  for name, data in pairs(OGRH_SV.rosterManagement.players) do
+  for name, data in pairs(allPlayers) do
     table.insert(players, {
       name = name,
       class = data.class,
@@ -537,8 +600,9 @@ function RosterMgmt.RefreshPlayerList()
       
       -- Get player's full data for role checking
       local fullPlayerData = nil
-      if OGRH_SV and OGRH_SV.rosterManagement and OGRH_SV.rosterManagement.players then
-        fullPlayerData = OGRH_SV.rosterManagement.players[playerData.name]
+      if OGRH.SVM then
+        local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+        fullPlayerData = allPlayers[playerData.name]
       end
       
       if fullPlayerData then
@@ -653,7 +717,8 @@ end
 
 -- Adjust player ranking (increase/decrease ELO)
 function RosterMgmt.AdjustPlayerRank(playerName, adjustment)
-  local playerData = OGRH_SV.rosterManagement.players[playerName]
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  local playerData = allPlayers[playerName]
   if not playerData then return end
   
   -- Determine which role to adjust
@@ -677,15 +742,25 @@ function RosterMgmt.AdjustPlayerRank(playerName, adjustment)
   -- Update timestamp
   playerData.lastUpdated = time()
   
+  -- Write back via SVM
+  OGRH.SVM.SetPath("rosterManagement.players." .. playerName, playerData, {
+    syncLevel = "MANUAL",
+    componentType = "roster",
+    source = "Roster"
+  })
+  
   -- Refresh the list (will resort by ELO)
   RosterMgmt.RefreshUI()
 end
 
 -- Toggle player role assignment
 function RosterMgmt.TogglePlayerRole(playerName, role)
-  RosterMgmt.EnsureSV()
+  if not RosterMgmt.EnsureSV() then
+    return
+  end
   
-  local player = OGRH_SV.rosterManagement.players[playerName]
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  local player = allPlayers[playerName]
   if not player then return end
   
   -- Check if this role is valid for the player's class
@@ -745,6 +820,13 @@ function RosterMgmt.TogglePlayerRole(playerName, role)
   end
   
   player.lastUpdated = time()
+  
+  -- Write back via SVM
+  OGRH.SVM.SetPath("rosterManagement.players." .. playerName, player, {
+    syncLevel = "MANUAL",
+    componentType = "roster",
+    source = "Roster"
+  })
   
   -- Refresh the list and details panel to update role icons and rankings display
   RosterMgmt.RefreshUI()
@@ -833,7 +915,8 @@ function RosterMgmt.CreateDetailsPanel(parent)
     roleButton:SetScript("OnClick", function()
       -- Filter menu based on currently selected player's class
       if RosterMgmt.selectedPlayer then
-        local playerData = OGRH_SV.rosterManagement.players[RosterMgmt.selectedPlayer]
+        local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+        local playerData = allPlayers[RosterMgmt.selectedPlayer]
         if playerData and playerData.class then
           local validRoles = RosterMgmt.GetValidRolesForClass(playerData.class)
           
@@ -957,7 +1040,8 @@ function RosterMgmt.CreateDetailsPanel(parent)
         if value and RosterMgmt.editingPlayer then
           -- Update the ranking
           local playerName = RosterMgmt.editingPlayer.name
-          local playerData = OGRH_SV.rosterManagement.players[playerName]
+          local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+          local playerData = allPlayers[playerName]
           if playerData then
             -- Initialize rankings table if it doesn't exist
             if not playerData.rankings then
@@ -965,6 +1049,13 @@ function RosterMgmt.CreateDetailsPanel(parent)
             end
             playerData.rankings[currentRole] = value
             playerData.lastUpdated = time()
+            
+            OGRH.SVM.SetPath("rosterManagement.players." .. playerName, playerData, {
+              syncLevel = "MANUAL",
+              componentType = "roster",
+              source = "Roster"
+            })
+            
             -- Refresh UI to resort the list
             RosterMgmt.RefreshUI()
           end
@@ -977,7 +1068,8 @@ function RosterMgmt.CreateDetailsPanel(parent)
         -- Restore original value
         if RosterMgmt.editingPlayer then
           local playerName = RosterMgmt.editingPlayer.name
-          local playerData = OGRH_SV.rosterManagement.players[playerName]
+          local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+          local playerData = allPlayers[playerName]
           if playerData and playerData.rankings then
             editBox:SetText(tostring(playerData.rankings[currentRole] or 1000))
           end
@@ -1027,7 +1119,8 @@ function RosterMgmt.RefreshDetailsPanel()
     return
   end
   
-  local playerData = OGRH_SV.rosterManagement.players[RosterMgmt.selectedPlayer]
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  local playerData = allPlayers[RosterMgmt.selectedPlayer]
   if not playerData then
     -- Player not found - hide all controls
     parent.nameText:SetText("Player not found")
@@ -1140,7 +1233,8 @@ function RosterMgmt.SavePlayerDetails()
   if not RosterMgmt.editingPlayer then return end
   
   local playerName = RosterMgmt.editingPlayer.name
-  local playerData = OGRH_SV.rosterManagement.players[playerName]
+  local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+  local playerData = allPlayers[playerName]
   
   if not playerData then return end
   
@@ -1154,6 +1248,12 @@ function RosterMgmt.SavePlayerDetails()
   end
   
   playerData.lastUpdated = time()
+  
+  OGRH.SVM.SetPath("rosterManagement.players." .. playerName, playerData, {
+    syncLevel = "MANUAL",
+    componentType = "roster",
+    source = "Roster"
+  })
   
   RosterMgmt.RefreshUI()
 end
@@ -1275,8 +1375,11 @@ function RosterMgmt.ShowAddPlayerDialog()
             playerName = string.upper(string.sub(playerName, 1, 1)) .. string.lower(string.sub(playerName, 2))
             
             -- Check if player already exists
-            RosterMgmt.EnsureSV()
-            if OGRH_SV.rosterManagement.players[playerName] then
+            if not RosterMgmt.EnsureSV() then
+              return
+            end
+            local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+            if allPlayers[playerName] then
               return
             end
             
@@ -1557,12 +1660,13 @@ function RosterMgmt.ShowManualImportDialog()
         
         -- Determine role: check roster data first, then RolesUI saved data, then default
         local role = "RANGED"  -- Default fallback
-        if OGRH_SV.rosterManagement.players[name] then
+        local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+        if allPlayers[name] then
           -- Player exists in roster management
-          role = OGRH_SV.rosterManagement.players[name].primaryRole
-        elseif OGRH_SV.roles and OGRH_SV.roles[name] then
-          -- Player has saved role from RolesUI
-          role = OGRH_SV.roles[name]
+          role = allPlayers[name].primaryRole
+        elseif OGRH_GetPlayerRole and OGRH_GetPlayerRole(name) then
+          -- Player has saved role from RolesUI (via SVM)
+          role = OGRH_GetPlayerRole(name)
         else
           -- Use default role for class
           role = RosterMgmt.GetDefaultRoleForClass(class)
@@ -1570,10 +1674,10 @@ function RosterMgmt.ShowManualImportDialog()
         
         -- Get current ELO or default
         local currentElo = 1000
-        if OGRH_SV.rosterManagement.players[name] and 
-           OGRH_SV.rosterManagement.players[name].rankings and
-           OGRH_SV.rosterManagement.players[name].rankings[role] then
-          currentElo = OGRH_SV.rosterManagement.players[name].rankings[role]
+        if allPlayers[name] and 
+           allPlayers[name].rankings and
+           allPlayers[name].rankings[role] then
+          currentElo = allPlayers[name].rankings[role]
         end
         
         -- TODO: Calculate adjustment (placeholder)
@@ -1662,15 +1766,18 @@ function RosterMgmt.ShowManualImportDialog()
     rankEloBtn:Disable()
     rankEloText:SetTextColor(0.5, 0.5, 0.5, 1)
     
-    DEFAULT_CHAT_FRAME:AddMessage("ELO rankings calculated. Use 'Update ELO' to save these rankings.")
+    OGRH.Msg("|cffffaa00[RH-Roster]|r ELO rankings calculated. Use 'Update ELO' to save these rankings.")
   end)
   
   -- Update ELO button - saves current rankings to player records
   updateEloBtn:SetScript("OnClick", function()
-    RosterMgmt.EnsureSV()
+    if not RosterMgmt.EnsureSV() then
+      return
+    end
     
     local updateCount = 0
     local addCount = 0
+    local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
     
     for _, role in ipairs(ROLES) do
       -- Only process roles that have their Include checkbox checked
@@ -1680,17 +1787,19 @@ function RosterMgmt.ShowManualImportDialog()
           local playerName = player.name
           
           -- Check if player exists in database
-          if OGRH_SV.rosterManagement.players[playerName] then
+          if allPlayers[playerName] then
             -- Update existing player's ranking for this role
-            OGRH_SV.rosterManagement.players[playerName].rankings[role] = player.elo
-            OGRH_SV.rosterManagement.players[playerName].lastUpdated = time()
+            allPlayers[playerName].rankings[role] = player.elo
+            allPlayers[playerName].lastUpdated = time()
             updateCount = updateCount + 1
           else
             -- Add new player with this role as primary
             if RosterMgmt.AddPlayer(playerName, player.class) then
+              -- Reload allPlayers after adding
+              allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
               -- Set this role as primary and update its ranking
-              OGRH_SV.rosterManagement.players[playerName].primaryRole = role
-              OGRH_SV.rosterManagement.players[playerName].rankings[role] = player.elo
+              allPlayers[playerName].primaryRole = role
+              allPlayers[playerName].rankings[role] = player.elo
               addCount = addCount + 1
             end
           end
@@ -1698,10 +1807,17 @@ function RosterMgmt.ShowManualImportDialog()
       end
     end
     
+    -- Write back all changes
+    OGRH.SVM.SetPath("rosterManagement.players", allPlayers, {
+      syncLevel = "MANUAL",
+      componentType = "roster",
+      source = "Roster"
+    })
+    
     if addCount > 0 then
-      DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00Added %d new players, updated %d players|r", addCount, updateCount))
+      OGRH.Msg(string.format("|cff00ff00[RH-Roster]|r Added %d new players, updated %d players", addCount, updateCount))
     else
-      DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00Updated ELO ratings for %d players|r", updateCount))
+      OGRH.Msg(string.format("|cff00ff00[RH-Roster]|r Updated ELO ratings for %d players", updateCount))
     end
     
     -- Refresh the main roster display if it's open

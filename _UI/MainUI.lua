@@ -872,6 +872,12 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Migration system not loaded.")
     end
+  elseif sub == "migration purge" then
+    if OGRH.Migration and OGRH.Migration.PurgeV1Data then
+      OGRH.Migration.PurgeV1Data(false)
+    else
+      OGRH.Msg("Migration system not loaded.")
+    end
   elseif string.find(sub, "^migration comp raid") then
     local _, _, raidName = string.find(fullMsg, "^%s*migration%s+comp%s+raid%s+(.+)$")
     if not raidName or raidName == "" then

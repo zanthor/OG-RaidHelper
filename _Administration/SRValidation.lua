@@ -14,67 +14,84 @@ local selectedPlayer = nil
 
 -- Initialize saved variables
 function OGRH.SRValidation.EnsureSV()
-  OGRH_SV = OGRH_SV or {}
-  OGRH_SV.srValidation = OGRH_SV.srValidation or {}
-  OGRH_SV.srValidation.records = OGRH_SV.srValidation.records or {}
-  -- Structure: records[playerName] = { {date, time, validator, instance, srData}, ... }
+  -- Validate SVM is available
+  if not OGRH.SVM then
+    OGRH.Msg("|cffff0000[RH-SRValidation]|r Error: SavedVariablesManager (SVM) not loaded. Cannot initialize.")
+    return false
+  end
+  
+  local srValidation = OGRH.SVM.GetPath("srValidation")
+  
+  if not srValidation then
+    -- Initialize with default structure
+    OGRH.SVM.SetPath("srValidation", {
+      records = {}
+      -- Structure: records[playerName] = { {date, time, validator, instance, srData}, ... }
+    }, {
+      syncLevel = "MANUAL",
+      componentType = "settings"
+    })
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Initialized default settings")
+  end
+  
+  return true
 end
 
 -- Debug command to check SR+ for a specific player/item
 function OGRH.SRValidation.DebugSRPlus(playerName, itemId)
   if not RollForCharDb or not RollForCharDb.softres or not RollForCharDb.softres.data then
-    OGRH.Msg("No RollFor data available")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r No RollFor data available")
     return
   end
   
   local encodedData = RollForCharDb.softres.data
-  OGRH.Msg("Encoded data length: " .. string.len(encodedData))
+  OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Encoded data length: " .. string.len(encodedData))
   
   local decodedData = RollFor.SoftRes.decode(encodedData)
   if not decodedData then
-    OGRH.Msg("Failed to decode RollFor data")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Failed to decode RollFor data")
     return
   end
   
-  OGRH.Msg("Decoded data successfully")
+  OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Decoded data successfully")
   
   -- Debug: Show structure of decoded data
   if decodedData.softreserves and type(decodedData.softreserves) == "table" then
-    OGRH.Msg("Found softreserves table")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Found softreserves table")
     
     -- Find the specific player
     for idx, srEntry in ipairs(decodedData.softreserves) do
       if srEntry.name == playerName then
-        OGRH.Msg("Found player: " .. playerName .. " at index " .. idx)
+        OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Found player: " .. playerName .. " at index " .. idx)
         if srEntry.items and type(srEntry.items) == "table" then
-          OGRH.Msg("  Items table exists (is array: " .. tostring(table.getn(srEntry.items) > 0) .. ")")
+          OGRH.Msg("|cffcc99ff[RH-SRValidation]|r   Items table exists (is array: " .. tostring(table.getn(srEntry.items) > 0) .. ")")
           for itemIdx, itemEntry in ipairs(srEntry.items) do
             if type(itemEntry) == "table" then
-              OGRH.Msg("    Item [" .. itemIdx .. "]:")
+              OGRH.Msg("|cffcc99ff[RH-SRValidation]|r     Item [" .. itemIdx .. "]:")
               for k, v in pairs(itemEntry) do
-                OGRH.Msg("      " .. tostring(k) .. " = " .. tostring(v) .. " (type: " .. type(v) .. ")")
+                OGRH.Msg("|cffcc99ff[RH-SRValidation]|r       " .. tostring(k) .. " = " .. tostring(v) .. " (type: " .. type(v) .. ")")
               end
             else
-              OGRH.Msg("    Item [" .. itemIdx .. "] = " .. tostring(itemEntry))
+              OGRH.Msg("|cffcc99ff[RH-SRValidation]|r     Item [" .. itemIdx .. "] = " .. tostring(itemEntry))
             end
           end
         else
-          OGRH.Msg("  No items table or not a table")
+          OGRH.Msg("|cffcc99ff[RH-SRValidation]|r   No items table or not a table")
         end
         break
       end
     end
   else
-    OGRH.Msg("No softreserves key found or not a table")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r No softreserves key found or not a table")
   end
   
   local softresData = RollFor.SoftResDataTransformer.transform(decodedData)
   if not softresData then
-    OGRH.Msg("Failed to transform RollFor data")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Failed to transform RollFor data")
     return
   end
   
-  OGRH.Msg("Transformed data successfully")
+  OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Transformed data successfully")
   
   -- Search for the player/item combination
   local found = false
@@ -83,7 +100,7 @@ function OGRH.SRValidation.DebugSRPlus(playerName, itemId)
       for _, roller in ipairs(itemData.rollers) do
         if roller and roller.name == playerName then
           local itemName = GetItemInfo(sItemId) or "Item " .. sItemId
-          OGRH.Msg("Found: " .. playerName .. " - " .. itemName .. " (" .. sItemId .. ") - SR+: " .. (roller.sr_plus or 0))
+          OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Found: " .. playerName .. " - " .. itemName .. " (" .. sItemId .. ") - SR+: " .. (roller.sr_plus or 0))
           found = true
           if itemId then break end
         end
@@ -94,17 +111,17 @@ function OGRH.SRValidation.DebugSRPlus(playerName, itemId)
   
   if not found then
     if itemId then
-      OGRH.Msg("No SR data found for " .. playerName .. " and item " .. itemId)
+      OGRH.Msg("|cffcc99ff[RH-SRValidation]|r No SR data found for " .. playerName .. " and item " .. itemId)
     else
-      OGRH.Msg("No SR data found for " .. playerName)
+      OGRH.Msg("|cffcc99ff[RH-SRValidation]|r No SR data found for " .. playerName)
     end
   end
   
   -- Also check RollFor.Db if it exists
   if RollFor and RollFor.Db and RollFor.Db.softres then
-    OGRH.Msg("RollFor.Db.softres exists")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r RollFor.Db.softres exists")
   else
-    OGRH.Msg("RollFor.Db.softres does NOT exist")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r RollFor.Db.softres does NOT exist")
   end
 end
 
@@ -115,7 +132,7 @@ SlashCmdList["OGRHSRDEBUG"] = function(msg)
   end
   
   if table.getn(args) < 1 then
-    OGRH.Msg("Usage: /ogrhsr <playerName> [itemId]")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Usage: /ogrhsr <playerName> [itemId]")
     return
   end
   
@@ -227,14 +244,17 @@ end
 -- Edit an item's SR+ value
 function OGRH.SRValidation.EditItemPlus(playerName, itemId, currentPlus)
   if not RollForCharDb or not RollForCharDb.softres or not RollForCharDb.softres.data then
-    OGRH.Msg("No RollFor data available")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r No RollFor data available")
     return
   end
   
   -- Get expected value from last validation record (last validated + 10)
   local expectedPlus = 10
-  OGRH.SRValidation.EnsureSV()
-  local records = OGRH_SV.srValidation.records[playerName]
+  if not OGRH.SRValidation.EnsureSV() then
+    return
+  end
+  local allRecords = OGRH.SVM.GetPath("srValidation.records") or {}
+  local records = allRecords[playerName]
   if records and table.getn(records) > 0 then
     local lastRecord = records[table.getn(records)]
     if lastRecord.items then
@@ -318,13 +338,13 @@ function OGRH.SRValidation.EditItemPlus(playerName, itemId, currentPlus)
   editBox:SetScript("OnEnterPressed", function()
     local newValue = tonumber(editBox:GetText())
     if not newValue or newValue < 0 then
-      OGRH.Msg("Invalid SR+ value")
+      OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Invalid SR+ value")
       return
     end
     
     -- Get the encoded data
     if not RollForCharDb or not RollForCharDb.softres or not RollForCharDb.softres.data then
-      OGRH.Msg("RollFor data not available")
+      OGRH.Msg("|cffcc99ff[RH-SRValidation]|r RollFor data not available")
       editFrame:Hide()
       return
     end
@@ -332,7 +352,7 @@ function OGRH.SRValidation.EditItemPlus(playerName, itemId, currentPlus)
     local encodedData = RollForCharDb.softres.data
     local decodedData = RollFor.SoftRes.decode(encodedData)
     if not decodedData or type(decodedData) ~= "table" then
-      OGRH.Msg("Failed to decode RollFor data")
+      OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Failed to decode RollFor data")
       editFrame:Hide()
       return
     end
@@ -364,9 +384,9 @@ function OGRH.SRValidation.EditItemPlus(playerName, itemId, currentPlus)
       if RollFor.SoftRes.encode and type(RollFor.SoftRes.encode) == "function" then
         newEncodedData = RollFor.SoftRes.encode(decodedData)
         RollForCharDb.softres.data = newEncodedData
-        OGRH.Msg("Updated " .. playerName .. "'s SR+ from " .. oldValue .. " to " .. newValue .. " for item " .. itemId .. " (encoded)")
+        OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Updated " .. playerName .. "'s SR+ from " .. oldValue .. " to " .. newValue .. " for item " .. itemId .. " (encoded)")
       else
-        OGRH.Msg("Updated " .. playerName .. "'s SR+ from " .. oldValue .. " to " .. newValue .. " for item " .. itemId .. " (no encode)")
+        OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Updated " .. playerName .. "'s SR+ from " .. oldValue .. " to " .. newValue .. " for item " .. itemId .. " (no encode)")
       end
       
       -- Clear RollFor's cache so it reloads the data
@@ -382,7 +402,7 @@ function OGRH.SRValidation.EditItemPlus(playerName, itemId, currentPlus)
         OGRH.SRValidation.RefreshPlayerList()
       end
     else
-      OGRH.Msg("Could not find item in decoded data")
+      OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Could not find item in decoded data")
     end
     
     editFrame:Hide()
@@ -424,12 +444,15 @@ end
 -- Validate player's SR+ (check if it increased by more than 10 from last validation)
 -- Get validation status: "Validated", "Passed", or "Error"
 function OGRH.SRValidation.GetValidationStatus(playerName, currentSRPlus)
-  OGRH.SRValidation.EnsureSV()
+  if not OGRH.SRValidation.EnsureSV() then
+    return "Error"
+  end
   
   -- Normalize currentSRPlus
   currentSRPlus = currentSRPlus or 0
   
-  local records = OGRH_SV.srValidation.records[playerName]
+  local allRecords = OGRH.SVM.GetPath("srValidation.records") or {}
+  local records = allRecords[playerName]
   if not records or table.getn(records) == 0 then
     -- No previous records - check all items are at +0
     local currentItems = OGRH.SRValidation.GetPlayerItems(playerName)
@@ -483,12 +506,15 @@ function OGRH.SRValidation.GetValidationStatus(playerName, currentSRPlus)
 end
 
 function OGRH.SRValidation.ValidatePlayer(playerName, currentSRPlus)
-  OGRH.SRValidation.EnsureSV()
+  if not OGRH.SRValidation.EnsureSV() then
+    return false, "SVM not available", {}
+  end
   
   -- Normalize currentSRPlus (treat nil as 0)
   currentSRPlus = currentSRPlus or 0
   
-  local records = OGRH_SV.srValidation.records[playerName]
+  local allRecords = OGRH.SVM.GetPath("srValidation.records") or {}
+  local records = allRecords[playerName]
   if not records or table.getn(records) == 0 then
     -- No previous records - only pass if SR+ is 0
     if currentSRPlus == 0 then
@@ -555,7 +581,9 @@ end
 
 -- Save validation record
 function OGRH.SRValidation.SaveValidation(playerName, currentSRPlus, instance)
-  OGRH.SRValidation.EnsureSV()
+  if not OGRH.SRValidation.EnsureSV() then
+    return false
+  end
   
   -- Get current items for the player
   local items = OGRH.SRValidation.GetPlayerItems(playerName)
@@ -564,7 +592,8 @@ function OGRH.SRValidation.SaveValidation(playerName, currentSRPlus, instance)
   local dateStr = date("%Y-%m-%d")
   local timeStr = date("%H:%M:%S")
   
-  OGRH_SV.srValidation.records[playerName] = OGRH_SV.srValidation.records[playerName] or {}
+  local allRecords = OGRH.SVM.GetPath("srValidation.records") or {}
+  allRecords[playerName] = allRecords[playerName] or {}
   
   -- Build item data for the record
   local itemData = {}
@@ -577,7 +606,7 @@ function OGRH.SRValidation.SaveValidation(playerName, currentSRPlus, instance)
   end
   
   -- Check if this exact data already exists in the last record
-  local records = OGRH_SV.srValidation.records[playerName]
+  local records = allRecords[playerName]
   if table.getn(records) > 0 then
     local lastRecord = records[table.getn(records)]
     
@@ -600,7 +629,7 @@ function OGRH.SRValidation.SaveValidation(playerName, currentSRPlus, instance)
       end
       
       if itemsMatch then
-        OGRH.Msg("Validation for " .. playerName .. " already saved (no changes)")
+        OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Validation for " .. playerName .. " already saved (no changes)")
         return false
       end
     end
@@ -615,7 +644,7 @@ function OGRH.SRValidation.SaveValidation(playerName, currentSRPlus, instance)
     items = itemData
   }
   
-  table.insert(OGRH_SV.srValidation.records[playerName], record)
+  table.insert(allRecords[playerName], record)
   
   -- If all items are at +0, purge older records but keep this final +0 record
   local allZero = true
@@ -628,24 +657,34 @@ function OGRH.SRValidation.SaveValidation(playerName, currentSRPlus, instance)
   
   if allZero and currentSRPlus == 0 then
     -- Keep only the latest (just added) record
-    local latestRecord = OGRH_SV.srValidation.records[playerName][table.getn(OGRH_SV.srValidation.records[playerName])]
-    OGRH_SV.srValidation.records[playerName] = {latestRecord}
-    OGRH.Msg("Purged old SR validation records for " .. playerName .. " (all items at +0, keeping current)")
+    local latestRecord = allRecords[playerName][table.getn(allRecords[playerName])]
+    allRecords[playerName] = {latestRecord}
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Purged old SR validation records for " .. playerName .. " (all items at +0, keeping current)")
   else
     -- Keep only last 10 records per player
-    while table.getn(OGRH_SV.srValidation.records[playerName]) > 10 do
-      table.remove(OGRH_SV.srValidation.records[playerName], 1)
+    while table.getn(allRecords[playerName]) > 10 do
+      table.remove(allRecords[playerName], 1)
     end
   end
+  
+  -- Write back to SVM
+  OGRH.SVM.SetPath("srValidation.records", allRecords, {
+    syncLevel = "MANUAL",
+    componentType = "settings",
+    source = "SRValidation"
+  })
   
   return true
 end
 
 -- Get last N validation records for a player
 function OGRH.SRValidation.GetPlayerRecords(playerName, count)
-  OGRH.SRValidation.EnsureSV()
+  if not OGRH.SRValidation.EnsureSV() then
+    return {}
+  end
   
-  local records = OGRH_SV.srValidation.records[playerName]
+  local allRecords = OGRH.SVM.GetPath("srValidation.records") or {}
+  local records = allRecords[playerName]
   if not records or table.getn(records) == 0 then
     return {}
   end
@@ -686,9 +725,9 @@ function OGRH.SRValidation.ValidateAllPassed()
   end
   
   if validatedCount > 0 then
-    DEFAULT_CHAT_FRAME:AddMessage("SR+ Validation: Saved records for " .. validatedCount .. " players", 0, 1, 0)
+    OGRH.Msg("|cff00ff00[RH-SRValidation]|r Saved records for " .. validatedCount .. " players")
   else
-    DEFAULT_CHAT_FRAME:AddMessage("SR+ Validation: No new records to save", 1, 1, 0)
+    OGRH.Msg("|cffffaa00[RH-SRValidation]|r No new records to save")
   end
   
   -- Refresh the display
@@ -1043,15 +1082,17 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
       if hasIncrease then
         -- Get expected value from last validation
         local expectedPlus = 0
-        OGRH.SRValidation.EnsureSV()
-        local records = OGRH_SV.srValidation.records[playerName]
-        if records and table.getn(records) > 0 then
-          local lastRecord = records[table.getn(records)]
-          if lastRecord.items then
-            for _, lastItem in ipairs(lastRecord.items) do
-              if tonumber(lastItem.itemId) == tonumber(item.itemId) then
-                expectedPlus = (lastItem.plus or 0) + 10
-                break
+        if OGRH.SRValidation.EnsureSV() then
+          local allRecords = OGRH.SVM.GetPath("srValidation.records") or {}
+          local records = allRecords[playerName]
+          if records and table.getn(records) > 0 then
+            local lastRecord = records[table.getn(records)]
+            if lastRecord.items then
+              for _, lastItem in ipairs(lastRecord.items) do
+                if tonumber(lastItem.itemId) == tonumber(item.itemId) then
+                  expectedPlus = (lastItem.plus or 0) + 10
+                  break
+                end
               end
             end
           end
@@ -1214,7 +1255,7 @@ function OGRH.SRValidation.SelectPlayer(playerName, playerData, currentSRPlus)
     local instance = metadata and metadata.instance or 0
     local saved = OGRH.SRValidation.SaveValidation(playerName, currentSRPlus, instance)
     if saved then
-      OGRH.Msg("Validation saved for " .. playerName)
+      OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Validation saved for " .. playerName)
       OGRH.SRValidation.RefreshPlayerList()
       
       -- Auto-select the next player that needs review
@@ -1234,13 +1275,13 @@ end
 function OGRH.SRValidation.ShowWindow()
   -- Check if RollFor is available
   if not OGRH.ROLLFOR_AVAILABLE then
-    OGRH.Msg("SR Validation requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r SR Validation requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
     return
   end
   
   -- Check if RollFor data is loaded
   if not RollFor or not RollFor.SoftRes or not RollForCharDb or not RollForCharDb.softres then
-    OGRH.Msg("RollFor addon not found or no soft-res data available.")
+    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r RollFor addon not found or no soft-res data available.")
     return
   end
   
@@ -1316,7 +1357,7 @@ function OGRH.SRValidation.ShowWindow()
     if RollFor and RollFor.key_bindings and RollFor.key_bindings.softres_toggle then
       RollFor.key_bindings.softres_toggle()
     else
-      OGRH.Msg("RollFor addon not found or not loaded.")
+      OGRH.Msg("|cffcc99ff[RH-SRValidation]|r RollFor addon not found or not loaded.")
     end
   end)
   

@@ -19,8 +19,11 @@ local CT = OGRH.ConsumesTracking
 
 -- Initialize saved variables on first load
 function CT.EnsureSavedVariables()
-  if not OGRH_SV.consumesTracking then
-    OGRH_SV.consumesTracking = {
+  local consumesTracking = OGRH.SVM.GetPath("consumesTracking")
+  
+  if not consumesTracking then
+    -- Initialize with default structure
+    OGRH.SVM.SetPath("consumesTracking", {
       enabled = true,
       trackOnPull = false,
       trackingProfiles = {},
@@ -36,37 +39,63 @@ function CT.EnsureSavedVariables()
       },
       conflicts = {},
       mapping = {},
-      weights = {}
-    }
-  end
-  
-  -- Ensure trackOnPull exists for existing saves
-  if OGRH_SV.consumesTracking.trackOnPull == nil then
-    OGRH_SV.consumesTracking.trackOnPull = false
-  end
-  
-  -- Ensure secondsBeforePull exists for existing saves
-  if not OGRH_SV.consumesTracking.secondsBeforePull then
-    OGRH_SV.consumesTracking.secondsBeforePull = 2
-  end
-  
-  -- Ensure logToCombatLog exists for existing saves
-  if OGRH_SV.consumesTracking.logToCombatLog == nil then
-    OGRH_SV.consumesTracking.logToCombatLog = false
-  end
-  
-  -- Ensure sub-tables exist
-  if not OGRH_SV.consumesTracking.conflicts then
-    OGRH_SV.consumesTracking.conflicts = {}
-  end
-  if not OGRH_SV.consumesTracking.mapping then
-    OGRH_SV.consumesTracking.mapping = {}
-  end
-  if not OGRH_SV.consumesTracking.weights then
-    OGRH_SV.consumesTracking.weights = {}
-  end
-  if not OGRH_SV.consumesTracking.history then
-    OGRH_SV.consumesTracking.history = {}
+      weights = {},
+      history = {}
+    }, {
+      syncLevel = "MANUAL",
+      componentType = "settings"
+    })
+    OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r Initialized default settings")
+  else
+    -- Ensure trackOnPull exists for existing saves
+    if OGRH.SVM.GetPath("consumesTracking.trackOnPull") == nil then
+      OGRH.SVM.SetPath("consumesTracking.trackOnPull", false, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
+    end
+    
+    -- Ensure secondsBeforePull exists for existing saves
+    if not OGRH.SVM.GetPath("consumesTracking.secondsBeforePull") then
+      OGRH.SVM.SetPath("consumesTracking.secondsBeforePull", 2, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
+    end
+    
+    -- Ensure logToCombatLog exists for existing saves
+    if OGRH.SVM.GetPath("consumesTracking.logToCombatLog") == nil then
+      OGRH.SVM.SetPath("consumesTracking.logToCombatLog", false, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
+    end
+    
+    -- Ensure sub-tables exist
+    if not OGRH.SVM.GetPath("consumesTracking.conflicts") then
+      OGRH.SVM.SetPath("consumesTracking.conflicts", {}, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
+    end
+    if not OGRH.SVM.GetPath("consumesTracking.mapping") then
+      OGRH.SVM.SetPath("consumesTracking.mapping", {}, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
+    end
+    if not OGRH.SVM.GetPath("consumesTracking.weights") then
+      OGRH.SVM.SetPath("consumesTracking.weights", {}, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
+    end
+    if not OGRH.SVM.GetPath("consumesTracking.history") then
+      OGRH.SVM.SetPath("consumesTracking.history", {}, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
+    end
   end
   
   -- Set default weights for common buffs (only if not already set)
@@ -77,9 +106,13 @@ function CT.EnsureSavedVariables()
     ["Flask of Chromatic Resistance"] = 3
   }
   
+  local currentWeights = OGRH.SVM.GetPath("consumesTracking.weights")
   for buffKey, weight in pairs(defaultWeights) do
-    if not OGRH_SV.consumesTracking.weights[buffKey] then
-      OGRH_SV.consumesTracking.weights[buffKey] = weight
+    if not currentWeights[buffKey] then
+      OGRH.SVM.SetPath("consumesTracking.weights." .. buffKey, weight, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
     end
   end
 end
@@ -235,9 +268,12 @@ function CT.UpdateDetailPanel(actionName)
     -- Track on Pull checkbox using OGST
     local enableCheckbox, checkButton, checkLabel = OGST.CreateCheckbox(detailPanel, {
       label = "Track on Pull",
-      checked = OGRH_SV.consumesTracking.trackOnPull,
+      checked = OGRH.SVM.GetPath("consumesTracking.trackOnPull"),
       onChange = function(isChecked)
-        OGRH_SV.consumesTracking.trackOnPull = isChecked
+        OGRH.SVM.SetPath("consumesTracking.trackOnPull", isChecked, {
+          syncLevel = "MANUAL",
+          componentType = "settings"
+        })
       end
     })
     OGST.AnchorElement(enableCheckbox, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
@@ -256,22 +292,28 @@ function CT.UpdateDetailPanel(actionName)
       onChange = function(text)
         local value = tonumber(text)
         if value and value >= 0 and value <= 99 then
-          OGRH_SV.consumesTracking.secondsBeforePull = value
+          OGRH.SVM.SetPath("consumesTracking.secondsBeforePull", value, {
+            syncLevel = "MANUAL",
+            componentType = "settings"
+          })
         end
       end
     })
     -- Set initial text
-    secondsEditBox:SetText(tostring(OGRH_SV.consumesTracking.secondsBeforePull or 2))
+    secondsEditBox:SetText(tostring(OGRH.SVM.GetPath("consumesTracking.secondsBeforePull") or 2))
     OGST.AnchorElement(secondsContainer, enableCheckbox, {position = "right", align = "center", offsetX = 5})
     
     -- Combat Log checkbox (disabled if SuperWoW not available)
     local hasSuperWoW = CT.IsSuperWoWAvailable()
     local combatLogCheckbox, combatLogCheckButton, combatLogLabel = OGST.CreateCheckbox(detailPanel, {
       label = "Combat Log",
-      checked = OGRH_SV.consumesTracking.logToCombatLog and hasSuperWoW,
+      checked = OGRH.SVM.GetPath("consumesTracking.logToCombatLog") and hasSuperWoW,
       onChange = function(isChecked)
         if hasSuperWoW then
-          OGRH_SV.consumesTracking.logToCombatLog = isChecked
+          OGRH.SVM.SetPath("consumesTracking.logToCombatLog", isChecked, {
+            syncLevel = "MANUAL",
+            componentType = "settings"
+          })
         end
       end
     })
@@ -425,7 +467,8 @@ function CT.UpdateDetailPanel(actionName)
       if bar.buffKey and RAB_Buffs[bar.buffKey] then
         local buffData = RAB_Buffs[bar.buffKey]
         local buffKey = bar.buffKey
-        local weight = OGRH_SV.consumesTracking.weights[buffKey] or 1
+        local weights = OGRH.SVM.GetPath("consumesTracking.weights") or {}
+        local weight = weights[buffKey] or 1
         table.insert(consumables, {
           buffKey = buffKey,
           buffName = buffData.name or buffKey,
@@ -464,7 +507,10 @@ function CT.UpdateDetailPanel(actionName)
           if newWeight > 10 then newWeight = 10 end  -- Max 10
           item.currentWeight = newWeight
           item.weightText:SetText(tostring(newWeight))
-          OGRH_SV.consumesTracking.weights[item.buffKey] = newWeight
+          OGRH.SVM.SetPath("consumesTracking.weights." .. item.buffKey, newWeight, {
+            syncLevel = "MANUAL",
+            componentType = "settings"
+          })
         end
       })
       plusBtn:SetPoint("RIGHT", item, "RIGHT", -5, 0)
@@ -479,7 +525,10 @@ function CT.UpdateDetailPanel(actionName)
           if newWeight < 0 then newWeight = 0 end  -- Min 0
           item.currentWeight = newWeight
           item.weightText:SetText(tostring(newWeight))
-          OGRH_SV.consumesTracking.weights[item.buffKey] = newWeight
+          OGRH.SVM.SetPath("consumesTracking.weights." .. item.buffKey, newWeight, {
+            syncLevel = "MANUAL",
+            componentType = "settings"
+          })
         end
       })
       minusBtn:SetPoint("RIGHT", plusBtn, "LEFT", -5, 0)
@@ -550,21 +599,14 @@ function CT.UpdateDetailPanel(actionName)
     local mappingList = OGST.CreateStyledScrollList(detailPanel, listWidth, listHeight)
     OGST.AnchorElement(mappingList, desc, {position = "below", padding = 10})
     
-    -- Initialize role mapping storage
-    if not OGRH_SV.consumesTracking then
-      OGRH_SV.consumesTracking = {}
-    end
-    if not OGRH_SV.consumesTracking.roleMapping then
-      OGRH_SV.consumesTracking.roleMapping = {}
-    end
-    
     -- Add each consumable as a list item
     for i, consumable in ipairs(consumables) do
       -- Create unique mapping key using buffKey and profile index
       local mappingKey = consumable.buffKey .. "_" .. consumable.index
       
       -- Initialize role mapping for this consumable if not exists
-      if not OGRH_SV.consumesTracking.roleMapping[mappingKey] then
+      local roleMapping = OGRH.SVM.GetPath("consumesTracking.roleMapping") or {}
+      if not roleMapping[mappingKey] then
         -- Get the label from RABuffs profile and parse it to determine initial checked state
         local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
         local profileBars = RABui_Settings.Layout[profileKey]
@@ -579,7 +621,10 @@ function CT.UpdateDetailPanel(actionName)
           end
         end
         
-        OGRH_SV.consumesTracking.roleMapping[mappingKey] = initialMapping
+        OGRH.SVM.SetPath("consumesTracking.roleMapping." .. mappingKey, initialMapping, {
+          syncLevel = "MANUAL",
+          componentType = "settings"
+        })
       end
       
       -- Create item with index appended to name
@@ -634,7 +679,8 @@ function CT.UpdateDetailPanel(actionName)
         checkbox:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
         
         -- Set initial checked state
-        checkbox:SetChecked(OGRH_SV.consumesTracking.roleMapping[mappingKey][role])
+        local currentMapping = OGRH.SVM.GetPath("consumesTracking.roleMapping." .. mappingKey) or {}
+        checkbox:SetChecked(currentMapping[role])
         
         -- Store reference for closure
         checkbox.buffKey = consumable.buffKey
@@ -644,10 +690,13 @@ function CT.UpdateDetailPanel(actionName)
         
         -- Click handler
         checkbox:SetScript("OnClick", function()
-          OGRH_SV.consumesTracking.roleMapping[this.mappingKey][this.role] = this:GetChecked()
+          OGRH.SVM.SetPath("consumesTracking.roleMapping." .. this.mappingKey .. "." .. this.role, this:GetChecked(), {
+            syncLevel = "MANUAL",
+            componentType = "settings"
+          })
           
           -- Update RABuffs label based on new role mapping
-          local roleMapping = OGRH_SV.consumesTracking.roleMapping[this.mappingKey]
+          local roleMapping = OGRH.SVM.GetPath("consumesTracking.roleMapping." .. this.mappingKey) or {}
           local newLabel = CT.GenerateLabelFromRoles(roleMapping)
           CT.UpdateRABuffsLabel(this.buffKey, newLabel, this.profileIndex)
         end)
@@ -674,21 +723,30 @@ function CT.UpdateDetailPanel(actionName)
     OGST.AnchorElement(desc, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
     
     -- Initialize conflict storage
-    if not OGRH_SV.consumesTracking.conflicts then
-      OGRH_SV.consumesTracking.conflicts = {}
+    local conflicts = OGRH.SVM.GetPath("consumesTracking.conflicts")
+    if not conflicts then
+      OGRH.SVM.SetPath("consumesTracking.conflicts", {}, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
+      conflicts = {}
     end
     
     -- Migration: Add profileIndex to old conflicts that don't have it
     local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
     local profileBars = RABui_Settings and RABui_Settings.Layout and RABui_Settings.Layout[profileKey]
     if profileBars then
-      for i = 1, table.getn(OGRH_SV.consumesTracking.conflicts) do
-        local conflict = OGRH_SV.consumesTracking.conflicts[i]
+      for i = 1, table.getn(conflicts) do
+        local conflict = conflicts[i]
         if conflict and conflict.buffKey and not conflict.profileIndex then
           -- Find the first occurrence of this buffKey in the profile
           for j, bar in ipairs(profileBars) do
             if bar.buffKey == conflict.buffKey then
               conflict.profileIndex = j
+              OGRH.SVM.SetPath("consumesTracking.conflicts." .. i, conflict, {
+                syncLevel = "MANUAL",
+                componentType = "settings"
+              })
               break
             end
           end
@@ -710,7 +768,8 @@ function CT.UpdateDetailPanel(actionName)
     
     -- Function to update controls panel based on selected conflict
     local function UpdateControlsForConflict(conflictIndex)
-      if not conflictIndex or conflictIndex < 1 or conflictIndex > table.getn(OGRH_SV.consumesTracking.conflicts) then
+      local conflicts = OGRH.SVM.GetPath("consumesTracking.conflicts") or {}
+      if not conflictIndex or conflictIndex < 1 or conflictIndex > table.getn(conflicts) then
         -- No valid conflict selected, clear all controls
         for name, checkbox in pairs(typeCheckboxes) do
           checkbox:SetChecked(false)
@@ -724,12 +783,16 @@ function CT.UpdateDetailPanel(actionName)
         return
       end
       
-      local conflict = OGRH_SV.consumesTracking.conflicts[conflictIndex]
+      local conflict = conflicts[conflictIndex]
       if not conflict then return end
       
       -- Initialize conflictType if not present
       if not conflict.conflictType then
         conflict.conflictType = "Concoction"
+        OGRH.SVM.SetPath("consumesTracking.conflicts." .. conflictIndex .. ".conflictType", "Concoction", {
+          syncLevel = "MANUAL",
+          componentType = "settings"
+        })
       end
       
       -- Update checkboxes based on conflict type
@@ -764,7 +827,7 @@ function CT.UpdateDetailPanel(actionName)
       conflictList:Clear()
       
       -- Build sortable list with buff names
-      local conflicts = OGRH_SV.consumesTracking.conflicts
+      local conflicts = OGRH.SVM.GetPath("consumesTracking.conflicts") or {}
       local sortedConflicts = {}
       for i = 1, table.getn(conflicts) do
         local conflict = conflicts[i]
@@ -806,7 +869,12 @@ function CT.UpdateDetailPanel(actionName)
             UpdateControlsForConflict(capturedIndex)
           end,
           onDelete = function()
-            table.remove(OGRH_SV.consumesTracking.conflicts, capturedIndex)
+            local currentConflicts = OGRH.SVM.GetPath("consumesTracking.conflicts") or {}
+            table.remove(currentConflicts, capturedIndex)
+            OGRH.SVM.SetPath("consumesTracking.conflicts", currentConflicts, {
+              syncLevel = "MANUAL",
+              componentType = "settings"
+            })
             selectedConflictIndex = nil
             RefreshConflictList()
             UpdateControlsForConflict(nil)
@@ -837,8 +905,11 @@ function CT.UpdateDetailPanel(actionName)
     -- Function to handle radio button behavior
     local function OnTypeCheckboxClick(checkboxName)
       -- Save to selected conflict
-      if selectedConflictIndex and OGRH_SV.consumesTracking.conflicts[selectedConflictIndex] then
-        OGRH_SV.consumesTracking.conflicts[selectedConflictIndex].conflictType = checkboxName
+      if selectedConflictIndex then
+        OGRH.SVM.SetPath("consumesTracking.conflicts." .. selectedConflictIndex .. ".conflictType", checkboxName, {
+          syncLevel = "MANUAL",
+          componentType = "settings"
+        })
       end
       
       for name, checkbox in pairs(typeCheckboxes) do
@@ -934,10 +1005,13 @@ function CT.UpdateDetailPanel(actionName)
       align = "CENTER",
       onChange = function(text)
         -- Save group number to selected conflict
-        if selectedConflictIndex and OGRH_SV.consumesTracking.conflicts[selectedConflictIndex] then
+        if selectedConflictIndex then
           local num = tonumber(text)
           if num then
-            OGRH_SV.consumesTracking.conflicts[selectedConflictIndex].groupNumber = num
+            OGRH.SVM.SetPath("consumesTracking.conflicts." .. selectedConflictIndex .. ".groupNumber", num, {
+              syncLevel = "MANUAL",
+              componentType = "settings"
+            })
           end
         end
       end
@@ -970,7 +1044,7 @@ function CT.ShowAddConflictDialog()
   -- Get list of available consumables from RABuffs profile
   local profileKey = GetCVar("realmName") .. "." .. UnitName("player") .. ".OGRH_Consumables"
   if not RABui_Settings or not RABui_Settings.Layout or not RABui_Settings.Layout[profileKey] then
-    OGRH.Msg("RABuffs profile 'OGRH_Consumables' not found. Please enable tracking first.")
+    OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r RABuffs profile 'OGRH_Consumables' not found. Please enable tracking first.")
     return
   end
   
@@ -1030,14 +1104,12 @@ function CT.ShowAddConflictDialog()
       text = string.format("[%d] %s", capturedIndex, capturedBuffName),
       onClick = function()
         -- Create new conflict entry
-        if not OGRH_SV.consumesTracking.conflicts then
-          OGRH_SV.consumesTracking.conflicts = {}
-        end
+        local conflicts = OGRH.SVM.GetPath("consumesTracking.conflicts") or {}
         
         -- Check if conflict already exists for this buff at this index
         local exists = false
-        for j = 1, table.getn(OGRH_SV.consumesTracking.conflicts) do
-          local conflict = OGRH_SV.consumesTracking.conflicts[j]
+        for j = 1, table.getn(conflicts) do
+          local conflict = conflicts[j]
           if conflict.buffKey == capturedBuffKey and conflict.profileIndex == capturedIndex then
             exists = true
             break
@@ -1045,10 +1117,14 @@ function CT.ShowAddConflictDialog()
         end
         
         if not exists then
-          table.insert(OGRH_SV.consumesTracking.conflicts, {
+          table.insert(conflicts, {
             buffKey = capturedBuffKey,
             profileIndex = capturedIndex,
             conflictsWith = {}
+          })
+          OGRH.SVM.SetPath("consumesTracking.conflicts", conflicts, {
+            syncLevel = "MANUAL",
+            componentType = "settings"
           })
           
           -- Refresh the Conflicts panel if it's visible
@@ -1092,11 +1168,12 @@ end
 
 -- Helper: Get conflict data for a buff at a specific profile index
 local function GetBuffConflict(buffKey, profileIndex)
-  if not OGRH_SV or not OGRH_SV.consumesTracking or not OGRH_SV.consumesTracking.conflicts then
+  local conflicts = OGRH.SVM.GetPath("consumesTracking.conflicts")
+  if not conflicts then
     return nil
   end
   
-  for _, conflict in ipairs(OGRH_SV.consumesTracking.conflicts) do
+  for _, conflict in ipairs(conflicts) do
     if conflict.buffKey == buffKey then
       -- If profileIndex is provided, check it; otherwise match any
       if profileIndex and conflict.profileIndex then
@@ -1337,7 +1414,8 @@ function CT.CalculatePlayerScore(playerName, playerClass, raidData, raidName, en
   
   -- Helper function: Get weight for a buff (default 1)
   local function GetBuffWeight(buffKey)
-    local weight = OGRH_SV.consumesTracking.weights[buffKey]
+    local weights = OGRH.SVM.GetPath("consumesTracking.weights") or {}
+    local weight = weights[buffKey]
     if weight and weight > 0 then
       return weight
     end
@@ -1776,7 +1854,7 @@ function CT.PollConsumes(editBox, scrollBar, scrollFrame)
   end
   
   -- TESTING: Write to combat log if enabled
-  if OGRH_SV.consumesTracking.logToCombatLog and CT.IsSuperWoWAvailable() then
+  if OGRH.SVM.GetPath("consumesTracking.logToCombatLog") and CT.IsSuperWoWAvailable() then
     -- Get raid/encounter selection
     local raid, encounter = OGRH.GetSelectedRaidAndEncounter()
     if raid and encounter then
@@ -1819,12 +1897,12 @@ end
 -- Announce top 10 consumables scores to raid chat
 function CT.AnnounceConsumes()
   if not CT.IsRABuffsAvailable() then
-    OGRH.Msg("Error: RABuffs addon not found.")
+    OGRH.Msg("|cffff0000[RH-ConsumesTracking]|r Error: RABuffs addon not found.")
     return
   end
   
   if not CT.CheckForOGRHProfile() then
-    OGRH.Msg("Error: OGRH_Consumables profile not found.")
+    OGRH.Msg("|cffff0000[RH-ConsumesTracking]|r Error: OGRH_Consumables profile not found.")
     return
   end
   
@@ -1833,7 +1911,7 @@ function CT.AnnounceConsumes()
   local profileBars = RABui_Settings.Layout[profileKey]
   
   if not profileBars or table.getn(profileBars) == 0 then
-    OGRH.Msg("Error: OGRH_Consumables profile has no bars configured.")
+    OGRH.Msg("|cffff0000[RH-ConsumesTracking]|r Error: OGRH_Consumables profile has no bars configured.")
     return
   end
   
@@ -1969,12 +2047,13 @@ function CT.InitializeRABuffsIntegration()
     
     local success = RAB_ImportProfile("OGRH_Consumables", profileData)
     if success then
-      OGRH.Msg("OGRH_Consumables profile created in RABuffs.")
+      OGRH.Msg("|cff00ff00[RH-ConsumesTracking]|r OGRH_Consumables profile created in RABuffs.")
       
       -- Clear any existing role mapping data to force reload from new profile defaults
-      if OGRH_SV.consumesTracking then
-        OGRH_SV.consumesTracking.roleMapping = {}
-      end
+      OGRH.SVM.SetPath("consumesTracking.roleMapping", {}, {
+        syncLevel = "MANUAL",
+        componentType = "settings"
+      })
     else
       OGRH.Msg("|cffff0000Error:|r Failed to create OGRH_Consumables profile.")
       return false
@@ -2162,7 +2241,7 @@ end
 
 -- Detect raid pull announcements
 function CT.OnChatMessage(msg, sender)
-  if not OGRH_SV.consumesTracking.enabled then
+  if not OGRH.SVM.GetPath("consumesTracking.enabled") then
     return
   end
   
@@ -2175,6 +2254,12 @@ end
 
 -- Initialize the module
 function CT.Initialize()
+  -- Validate SVM is available
+  if not OGRH.SVM then
+    OGRH.Msg("|cffff0000[RH-ConsumesTracking]|r Error: SavedVariablesManager (SVM) not loaded. Cannot initialize.")
+    return false
+  end
+  
   CT.EnsureSavedVariables()
   
   -- Register for BigWigs pull timer detection (Phase 3)
@@ -2275,13 +2360,13 @@ function CT.CaptureConsumesSnapshot()
   -- TODO: This function needs to be implemented in the main UI module
   local raid, encounter = OGRH.GetSelectedRaidAndEncounter()
   if not raid or not encounter then
-    OGRH.Msg("Cannot capture consume scores: No raid/encounter selected.")
+    OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r Cannot capture consume scores: No raid/encounter selected.")
     return
   end
   
   -- Check if OGRH_Consumables profile exists
   if not CT.CheckForOGRHProfile() then
-    OGRH.Msg("Cannot capture consume scores: OGRH_Consumables profile not found in RABuffs.")
+    OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r Cannot capture consume scores: OGRH_Consumables profile not found in RABuffs.")
     return
   end
   
@@ -2290,7 +2375,7 @@ function CT.CaptureConsumesSnapshot()
   local profileBars = RABui_Settings.Layout[profileKey]
   
   if not profileBars or table.getn(profileBars) == 0 then
-    OGRH.Msg("Cannot capture consume scores: OGRH_Consumables profile has no bars configured.")
+    OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r Cannot capture consume scores: OGRH_Consumables profile has no bars configured.")
     return
   end
   
@@ -2351,7 +2436,7 @@ function CT.CaptureConsumesSnapshot()
   }
   
   -- Write to combat log if enabled and SuperWoW available
-  if OGRH_SV.consumesTracking.logToCombatLog and CT.IsSuperWoWAvailable() then
+  if OGRH.SVM.GetPath("consumesTracking.logToCombatLog") and CT.IsSuperWoWAvailable() then
     local success, err = CT.WriteConsumesToCombatLog(record)
     if not success then
       OGRH.Msg("|cffff8800Warning:|r Failed to write to combat log: " .. (err or "Unknown error"))
@@ -2359,18 +2444,24 @@ function CT.CaptureConsumesSnapshot()
   end
   
   -- Insert at beginning of history (newest first)
-  table.insert(OGRH_SV.consumesTracking.history, 1, record)
+  local history = OGRH.SVM.GetPath("consumesTracking.history") or {}
+  table.insert(history, 1, record)
   
   -- Trim to 50 records max
-  while table.getn(OGRH_SV.consumesTracking.history) > 50 do
-    table.remove(OGRH_SV.consumesTracking.history)
+  while table.getn(history) > 50 do
+    table.remove(history)
   end
+  
+  OGRH.SVM.SetPath("consumesTracking.history", history, {
+    syncLevel = "MANUAL",
+    componentType = "consumes"
+  })
   
   -- Refresh UI if tracking panel is open
   CT.RefreshTrackingHistoryLists()
   
   -- Announce to chat
-  OGRH.Msg(string.format("Captured consume scores for %s - %s (%d players)", 
+  OGRH.Msg(string.format("|cff00ff00[RH-ConsumesTracking]|r Captured consume scores for %s - %s (%d players)", 
     raid, encounter, table.getn(players)))
 end
 
@@ -2381,7 +2472,7 @@ end
 -- Schedule a capture timer based on pull duration
 -- @param pullDuration number: Total pull timer duration in seconds
 function CT.ScheduleCaptureTimer(pullDuration)
-  local secondsBeforePull = OGRH_SV.consumesTracking.secondsBeforePull or 2
+  local secondsBeforePull = OGRH.SVM.GetPath("consumesTracking.secondsBeforePull") or 2
   local captureDelay = pullDuration - secondsBeforePull
   
   -- If pull is too short, capture immediately
@@ -2416,11 +2507,8 @@ end
 function CT.OnPullTimerDetected()
   if event ~= "CHAT_MSG_ADDON" then return end
   
-  -- Ensure saved variables exist
-  if not OGRH_SV or not OGRH_SV.consumesTracking then return end
-  
   -- Check if track on pull is enabled
-  if not OGRH_SV.consumesTracking.trackOnPull then return end
+  if not OGRH.SVM.GetPath("consumesTracking.trackOnPull") then return end
   
   -- Prevent duplicate captures for the same pull
   if CT.captureScheduled then return end
@@ -2471,7 +2559,8 @@ end
 -- Delete a history record (with confirmation)
 -- @param recordIndex number: Index in the history array
 function CT.DeleteHistoryRecord(recordIndex)
-  local record = OGRH_SV.consumesTracking.history[recordIndex]
+  local history = OGRH.SVM.GetPath("consumesTracking.history") or {}
+  local record = history[recordIndex]
   if not record then return end
   
   -- Show confirmation dialog
@@ -2503,7 +2592,12 @@ end
 -- @param recordIndex number: Index in the history array
 function CT.ConfirmDeleteRecord(recordIndex)
   -- Remove record from history
-  table.remove(OGRH_SV.consumesTracking.history, recordIndex)
+  local history = OGRH.SVM.GetPath("consumesTracking.history") or {}
+  table.remove(history, recordIndex)
+  OGRH.SVM.SetPath("consumesTracking.history", history, {
+    syncLevel = "MANUAL",
+    componentType = "consumes"
+  })
   
   -- Clear selection
   CT.selectedRecordIndex = nil
@@ -2511,7 +2605,7 @@ function CT.ConfirmDeleteRecord(recordIndex)
   -- Refresh both lists
   CT.RefreshTrackingHistoryLists()
   
-  OGRH.Msg("Tracking record deleted.")
+  OGRH.Msg("|cff00ff00[RH-ConsumesTracking]|r Tracking record deleted.")
 end
 
 -- Refresh the history list (left panel)
@@ -2523,7 +2617,7 @@ function CT.RefreshHistoryList()
   CT.historyListFrame:Clear()
   
   -- Get history records
-  local history = OGRH_SV.consumesTracking.history
+  local history = OGRH.SVM.GetPath("consumesTracking.history") or {}
   if not history or table.getn(history) == 0 then
     -- Show empty message using OGST API
     local emptyItem = CT.historyListFrame:AddItem({
@@ -2582,7 +2676,8 @@ function CT.RefreshPlayerScoresList(recordIndex)
   end
   
   -- Get the selected record
-  local record = OGRH_SV.consumesTracking.history[recordIndex]
+  local history = OGRH.SVM.GetPath("consumesTracking.history") or {}
+  local record = history[recordIndex]
   if not record or not record.players then
     CT.ClearPlayerScoresList()
     return
@@ -2668,7 +2763,7 @@ end
 function OGRH.ConsumesTracking.TestListHistory()
   CT.EnsureSavedVariables()
   
-  local history = OGRH_SV.consumesTracking.history
+  local history = OGRH.SVM.GetPath("consumesTracking.history") or {}
   local count = table.getn(history)
   
   OGRH.Msg(string.format("=== Tracking History (%d records) ===", count))
@@ -2690,7 +2785,7 @@ end
 function OGRH.ConsumesTracking.TestDeleteRecord(index)
   CT.EnsureSavedVariables()
   
-  local history = OGRH_SV.consumesTracking.history
+  local history = OGRH.SVM.GetPath("consumesTracking.history") or {}
   if not history[index] then
     OGRH.Msg(string.format("Error: Record %d does not exist.", index))
     return
@@ -2701,6 +2796,10 @@ function OGRH.ConsumesTracking.TestDeleteRecord(index)
     index, record.date, record.time, record.raid, record.encounter))
   
   table.remove(history, index)
+  OGRH.SVM.SetPath("consumesTracking.history", history, {
+    syncLevel = "MANUAL",
+    componentType = "consumes"
+  })
   OGRH.Msg("Record deleted.")
 end
 
@@ -2709,8 +2808,12 @@ end
 function OGRH.ConsumesTracking.TestClearHistory()
   CT.EnsureSavedVariables()
   
-  local count = table.getn(OGRH_SV.consumesTracking.history)
-  OGRH_SV.consumesTracking.history = {}
+  local history = OGRH.SVM.GetPath("consumesTracking.history") or {}
+  local count = table.getn(history)
+  OGRH.SVM.SetPath("consumesTracking.history", {}, {
+    syncLevel = "MANUAL",
+    componentType = "consumes"
+  })
   
   OGRH.Msg(string.format("Cleared %d history records.", count))
 end
