@@ -828,6 +828,22 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("SyncIntegrity not loaded.")
     end
+  elseif sub == "debug svm read" or sub == "svm read" then
+    if OGRH.SVM and OGRH.SVM.SyncConfig then
+      OGRH.SVM.SyncConfig.debugRead = not OGRH.SVM.SyncConfig.debugRead
+      local status = OGRH.SVM.SyncConfig.debugRead and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+      OGRH.Msg("SVM read debug: " .. status)
+    else
+      OGRH.Msg("SavedVariablesManager not loaded.")
+    end
+  elseif sub == "debug svm write" or sub == "svm write" then
+    if OGRH.SVM and OGRH.SVM.SyncConfig then
+      OGRH.SVM.SyncConfig.debugWrite = not OGRH.SVM.SyncConfig.debugWrite
+      local status = OGRH.SVM.SyncConfig.debugWrite and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+      OGRH.Msg("SVM write debug: " .. status)
+    else
+      OGRH.Msg("SavedVariablesManager not loaded.")
+    end
   elseif sub == "admin take" or sub == "takeadmin" then
     if OGRH.RequestAdminRole then
       OGRH.RequestAdminRole()

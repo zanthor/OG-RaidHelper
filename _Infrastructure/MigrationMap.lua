@@ -884,8 +884,8 @@ local MIGRATION_MAP = {
         notes = 'Intermediate-level path; actual data nested in roles[roleIdx].assignedPlayers[slotIdx]'
     },
     { -- [89]
-        v1Path = 'OGRH_SV.Permissions.adminHistory[idx]',
-        v2Path = 'Permissions.adminHistory[idx]',
+        v1Path = 'OGRH_SV.permissions.adminHistory[idx]',
+        v2Path = 'permissions.adminHistory[idx]',
         transformType = 'NO CHANGE',
         breaking = false,
         uiBindings = '',
@@ -894,8 +894,8 @@ local MIGRATION_MAP = {
         notes = 'Admin change history log'
     },
     { -- [90]
-        v1Path = 'OGRH_SV.Permissions.permissionDenials',
-        v2Path = 'Permissions.permissionDenials',
+        v1Path = 'OGRH_SV.permissions.permissionDenials',
+        v2Path = 'permissions.permissionDenials',
         transformType = 'NO CHANGE',
         breaking = false,
         uiBindings = '',
@@ -904,8 +904,8 @@ local MIGRATION_MAP = {
         notes = 'Permission denial log for debugging'
     },
     { -- [91]
-        v1Path = 'OGRH_SV.Versioning.globalVersion',
-        v2Path = 'Versioning.globalVersion',
+        v1Path = 'OGRH_SV.versioning.globalVersion',
+        v2Path = 'versioning.globalVersion',
         transformType = 'NO CHANGE',
         breaking = false,
         uiBindings = '',
@@ -914,8 +914,8 @@ local MIGRATION_MAP = {
         notes = 'Global version counter for sync'
     },
     { -- [92]
-        v1Path = 'OGRH_SV.Versioning.encounterVersions',
-        v2Path = 'Versioning.encounterVersions',
+        v1Path = 'OGRH_SV.versioning.encounterVersions',
+        v2Path = 'versioning.encounterVersions',
         transformType = 'NO CHANGE',
         breaking = false,
         uiBindings = '',
@@ -924,8 +924,8 @@ local MIGRATION_MAP = {
         notes = 'Per-encounter version tracking'
     },
     { -- [93]
-        v1Path = 'OGRH_SV.Versioning.assignmentVersions',
-        v2Path = 'Versioning.assignmentVersions',
+        v1Path = 'OGRH_SV.versioning.assignmentVersions',
+        v2Path = 'versioning.assignmentVersions',
         transformType = 'NO CHANGE',
         breaking = false,
         uiBindings = '',
@@ -1513,46 +1513,46 @@ local MIGRATION_MAP = {
         fileLocation = 'Raid/RolesUI.lua:1-100',
         notes = 'Roles window y position'
     },
-    { -- [152]
-        v1Path = 'OGRH_SV.order.HEALERS',
-        v2Path = 'order.HEALERS',
-        transformType = 'NO CHANGE',
-        breaking = false,
-        uiBindings = '',
-        controlName = '',
-        fileLocation = 'Raid/RolesUI.lua:1-100',
-        notes = 'Healers display sort order'
-    },
-    { -- [153]
-        v1Path = 'OGRH_SV.order.TANKS',
-        v2Path = 'order.TANKS',
-        transformType = 'NO CHANGE',
-        breaking = false,
-        uiBindings = '',
-        controlName = '',
-        fileLocation = 'Raid/RolesUI.lua:1-100',
-        notes = 'Tanks display sort order'
-    },
-    { -- [154]
-        v1Path = 'OGRH_SV.order.MELEE',
-        v2Path = 'order.MELEE',
-        transformType = 'NO CHANGE',
-        breaking = false,
-        uiBindings = '',
-        controlName = '',
-        fileLocation = 'Raid/RolesUI.lua:1-100',
-        notes = 'Melee DPS display sort order'
-    },
-    { -- [155]
-        v1Path = 'OGRH_SV.order.RANGED',
-        v2Path = 'order.RANGED',
-        transformType = 'NO CHANGE',
-        breaking = false,
-        uiBindings = '',
-        controlName = '',
-        fileLocation = 'Raid/RolesUI.lua:1-100',
-        notes = 'Ranged DPS display sort order'
-    },
+    -- { -- [152] DEPRECATED - order field unused, excluded from migration
+    --     v1Path = 'OGRH_SV.order.HEALERS',
+    --     v2Path = 'order.HEALERS',
+    --     transformType = 'NO CHANGE',
+    --     breaking = false,
+    --     uiBindings = '',
+    --     controlName = '',
+    --     fileLocation = 'Raid/RolesUI.lua:1-100',
+    --     notes = 'Healers display sort order - DEPRECATED'
+    -- },
+    -- { -- [153] DEPRECATED - order field unused, excluded from migration
+    --     v1Path = 'OGRH_SV.order.TANKS',
+    --     v2Path = 'order.TANKS',
+    --     transformType = 'NO CHANGE',
+    --     breaking = false,
+    --     uiBindings = '',
+    --     controlName = '',
+    --     fileLocation = 'Raid/RolesUI.lua:1-100',
+    --     notes = 'Tanks display sort order - DEPRECATED'
+    -- },
+    -- { -- [154] DEPRECATED - order field unused, excluded from migration
+    --     v1Path = 'OGRH_SV.order.MELEE',
+    --     v2Path = 'order.MELEE',
+    --     transformType = 'NO CHANGE',
+    --     breaking = false,
+    --     uiBindings = '',
+    --     controlName = '',
+    --     fileLocation = 'Raid/RolesUI.lua:1-100',
+    --     notes = 'Melee DPS display sort order - DEPRECATED'
+    -- },
+    -- { -- [155] DEPRECATED - order field unused, excluded from migration
+    --     v1Path = 'OGRH_SV.order.RANGED',
+    --     v2Path = 'order.RANGED',
+    --     transformType = 'NO CHANGE',
+    --     breaking = false,
+    --     uiBindings = '',
+    --     controlName = '',
+    --     fileLocation = 'Raid/RolesUI.lua:1-100',
+    --     notes = 'Ranged DPS display sort order - DEPRECATED'
+    -- },
     { -- [156]
         v1Path = 'OGRH_SV.sorting.speed',
         v2Path = 'sorting.speed',
@@ -1664,8 +1664,8 @@ local MIGRATION_MAP = {
         notes = 'Store encounter INDEX instead of name; prevents lookup on every access'
     },
     { -- [167]
-        v1Path = 'OGRH_SV.Permissions.currentAdmin',
-        v2Path = 'Permissions.currentAdmin',
+        v1Path = 'OGRH_SV.permissions.currentAdmin',
+        v2Path = 'permissions.currentAdmin',
         transformType = 'NO CHANGE',
         breaking = false,
         uiBindings = 'UI1-3',

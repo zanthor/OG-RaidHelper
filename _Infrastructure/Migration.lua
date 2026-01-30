@@ -532,8 +532,8 @@ OGRH.Msg("\n[Phase 5] Applying semantic transformations...")
     end
     
     -- Phase 6: Copy simple data structures not in migration map
-OGRH.Msg("\n[Phase 6] Copying unmapped data (consumes, tradeItems, recruitment, rosterManagement)...")
-    local simpleCopyFields = {"consumes", "tradeItems", "recruitment", "rosterManagement", "pollTime", "allowRemoteReadyCheck", "monitorConsumes", "syncLocked"}
+OGRH.Msg("\n[Phase 6] Copying unmapped data (consumes, consumesTracking, tradeItems, recruitment, rosterManagement, autoPromotes, invites)...")
+    local simpleCopyFields = {"consumes", "consumesTracking", "tradeItems", "recruitment", "rosterManagement", "autoPromotes", "invites", "pollTime", "allowRemoteReadyCheck", "monitorConsumes", "syncLocked"}
     for _, field in ipairs(simpleCopyFields) do
         if OGRH_SV[field] ~= nil then
             v2[field] = DeepCopy(OGRH_SV[field])
@@ -681,6 +681,20 @@ OGRH.Msg("[Cutover] Switching to v2 schema...")
     -- Simply set schema version to v2
     -- SVM will now read/write to OGRH_SV.v2.* instead of OGRH_SV.*
     OGRH_SV.schemaVersion = "v2"
+    
+    -- Remove deprecated fields from v2 schema
+    if OGRH_SV.v2.order then
+        OGRH_SV.v2.order = nil
+OGRH.Msg("[Cutover] Removed deprecated 'order' field from v2")
+    end
+    if OGRH_SV.v2.Permissions then
+        OGRH_SV.v2.Permissions = nil
+OGRH.Msg("[Cutover] Removed deprecated 'Permissions' field from v2 (use lowercase 'permissions')")
+    end
+    if OGRH_SV.v2.Versioning then
+        OGRH_SV.v2.Versioning = nil
+OGRH.Msg("[Cutover] Removed deprecated 'Versioning' field from v2 (use lowercase 'versioning')")
+    end
     
 OGRH.Msg("=" .. string.rep("=", 70))
 OGRH.Msg("[Cutover] ✓ Cutover Complete!")
@@ -2453,8 +2467,8 @@ function OGRH.Migration.ComparePermissions()
         return false
     end
     
-    local v1 = OGRH_SV.Permissions or {}
-    local v2 = OGRH_SV.v2.Permissions or {}
+    local v1 = OGRH_SV.permissions or {}
+    local v2 = OGRH_SV.v2.permissions or {}
     
     OGRH.Msg("======================================")
     OGRH.Msg("PERMISSIONS COMPARISON")
@@ -2523,9 +2537,10 @@ OGRH.Msg("|cffff0000[RH-Migration]|r ERROR: v2 schema not active. Run /ogrh migr
 OGRH.Msg("|cff00ccff[RH-Migration]|r Purging v1 data from SavedVariables...")
     end
     
-    -- List of keys to preserve (only v2 - everything else is inside it)
+    -- List of keys to preserve (v2 schema and schemaVersion flag)
     local preserveKeys = {
-        v2 = true  -- v2 schema contains all addon data
+        v2 = true,  -- v2 schema contains all addon data
+        schemaVersion = true  -- Need to preserve schema routing flag
     }
     
     -- Count keys purged
@@ -2538,6 +2553,26 @@ OGRH.Msg("|cff00ccff[RH-Migration]|r Purging v1 data from SavedVariables...")
             OGRH_SV[key] = nil
             purgedCount = purgedCount + 1
             table.insert(purgedKeys, key)
+        end
+    end
+    
+    -- Also remove deprecated fields from v2 schema
+    if OGRH_SV.v2.order then
+        OGRH_SV.v2.order = nil
+        if not silent then
+OGRH.Msg("|cff00ccff[RH-Migration]|r Removed deprecated 'order' field from v2")
+        end
+    end
+    if OGRH_SV.v2.Permissions then
+        OGRH_SV.v2.Permissions = nil
+        if not silent then
+OGRH.Msg("|cff00ccff[RH-Migration]|r Removed deprecated 'Permissions' field from v2 (use lowercase 'permissions')")
+        end
+    end
+    if OGRH_SV.v2.Versioning then
+        OGRH_SV.v2.Versioning = nil
+        if not silent then
+OGRH.Msg("|cff00ccff[RH-Migration]|r Removed deprecated 'Versioning' field from v2 (use lowercase 'versioning')")
         end
     end
     
@@ -2564,8 +2599,8 @@ function OGRH.Migration.CompareVersioning()
         return false
     end
     
-    local v1 = OGRH_SV.Versioning or {}
-    local v2 = OGRH_SV.v2.Versioning or {}
+    local v1 = OGRH_SV.versioning or {}
+    local v2 = OGRH_SV.v2.versioning or {}
     
     OGRH.Msg("======================================")
     OGRH.Msg("VERSIONING COMPARISON")

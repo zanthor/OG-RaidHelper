@@ -274,6 +274,7 @@ function CT.UpdateDetailPanel(actionName)
           syncLevel = "MANUAL",
           componentType = "settings"
         })
+        CT.trackOnPullEnabled = isChecked  -- Update cache
       end
     })
     OGST.AnchorElement(enableCheckbox, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
@@ -2262,6 +2263,9 @@ function CT.Initialize()
   
   CT.EnsureSavedVariables()
   
+  -- Cache trackOnPull setting to avoid repeated SVM reads on every CHAT_MSG_ADDON event
+  CT.trackOnPullEnabled = OGRH.SVM.GetPath("consumesTracking.trackOnPull") or false
+  
   -- Register for BigWigs pull timer detection (Phase 3)
   if not eventHandlerFrame then
     eventHandlerFrame = CreateFrame("Frame", "OGRH_ConsumesTrackingEventFrame")
@@ -2320,6 +2324,9 @@ CT.currentPullRequester = "Unknown"
 CT.currentPullStartTime = 0
 CT.captureScheduled = false
 CT.captureTimerFrame = nil
+
+-- Cache trackOnPull setting to avoid excessive SVM reads
+CT.trackOnPullEnabled = false
 
 -- Sort players by role and score for display
 -- @param players table: Array of player records {name, class, role, score}
@@ -2507,8 +2514,8 @@ end
 function CT.OnPullTimerDetected()
   if event ~= "CHAT_MSG_ADDON" then return end
   
-  -- Check if track on pull is enabled
-  if not OGRH.SVM.GetPath("consumesTracking.trackOnPull") then return end
+  -- Check cached trackOnPull setting (updated via UI checkbox)
+  if not CT.trackOnPullEnabled then return end
   
   -- Prevent duplicate captures for the same pull
   if CT.captureScheduled then return end

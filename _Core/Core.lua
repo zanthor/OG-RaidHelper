@@ -83,6 +83,41 @@ function OGRH.EnsureSV()
     end
   end
   
+  -- ============================================
+  -- AUTO-PURGE: Remove v1 data after 15 days
+  -- ============================================
+  if OGRH_SV.v2 and OGRH_SV.v2.migrationMeta and OGRH_SV.v2.migrationMeta.migrationDate then
+    local migrationDate = OGRH_SV.v2.migrationMeta.migrationDate
+    local currentTime = time()
+    local daysSinceMigration = (currentTime - migrationDate) / 86400  -- 86400 seconds in a day
+    
+    if daysSinceMigration >= 15 then
+      -- Check if v1 data still exists (anything except v2 and schemaVersion)
+      local hasV1Data = false
+      local purgedKeys = {}
+      for key, _ in pairs(OGRH_SV) do
+        if key ~= "v2" and key ~= "schemaVersion" then
+          hasV1Data = true
+          table.insert(purgedKeys, key)
+        end
+      end
+      
+      if hasV1Data then
+OGRH.Msg("|cffffaa00[RH-Migration]|r v1 data is 15+ days old. Auto-purging...")
+OGRH.Msg("|cff00ff00[RH-Migration]|r Purging keys: " .. table.concat(purgedKeys, ", "))
+        -- Direct deletion (bypass PurgeV1Data checks)
+        for i = 1, table.getn(purgedKeys) do
+          OGRH_SV[purgedKeys[i]] = nil
+        end
+        -- Clean up deprecated v2 fields
+        if OGRH_SV.v2.order then OGRH_SV.v2.order = nil end
+        if OGRH_SV.v2.Permissions then OGRH_SV.v2.Permissions = nil end
+        if OGRH_SV.v2.Versioning then OGRH_SV.v2.Versioning = nil end
+OGRH.Msg(string.format("|cff00ff00[RH-Migration]|r Auto-purged %d v1 keys", table.getn(purgedKeys)))
+      end
+    end
+  end
+  
   -- Bootstrap schema-specific data based on active version
   if OGRH_SV.schemaVersion == "v2" then
     -- Initialize v2 schema
@@ -104,11 +139,6 @@ function OGRH.EnsureSV()
   else
     -- Initialize v1 schema (legacy)
     if not OGRH_SV.roles then OGRH_SV.roles = {} end
-    if not OGRH_SV.order then OGRH_SV.order = {} end
-    if not OGRH_SV.order.TANKS then OGRH_SV.order.TANKS = {} end
-    if not OGRH_SV.order.HEALERS then OGRH_SV.order.HEALERS = {} end
-    if not OGRH_SV.order.MELEE then OGRH_SV.order.MELEE = {} end
-    if not OGRH_SV.order.RANGED then OGRH_SV.order.RANGED = {} end
     if OGRH_SV.pollTime == nil then OGRH_SV.pollTime = 5 end
     if not OGRH_SV.tankCategory then OGRH_SV.tankCategory = {} end
     if not OGRH_SV.healerBoss then OGRH_SV.healerBoss = {} end
@@ -150,6 +180,7 @@ _svf:SetScript("OnEvent", function()
   if OGRH.Migration and OGRH.Migration.MigrateToV2 then
     -- Check if v2 exists and is active
     local needsMigration = false
+    local isCleanInstall = false
     
     if not OGRH_SV.v2 then
       -- No v2 at all - needs migration
@@ -157,10 +188,27 @@ _svf:SetScript("OnEvent", function()
     elseif not OGRH_SV.v2.encounterMgmt or OGRH_SV.v2.encounterMgmt.schemaVersion ~= 2 then
       -- v2 exists but not active - needs migration
       needsMigration = true
+      -- Check if this is a clean install (v2 exists but empty, no v1 data)
+      if OGRH_SV.schemaVersion == "v2" then
+        local hasV1Data = false
+        for key, _ in pairs(OGRH_SV) do
+          if key ~= "v2" and key ~= "schemaVersion" then
+            hasV1Data = true
+            break
+          end
+        end
+        if not hasV1Data then
+          isCleanInstall = true
+        end
+      end
     end
     
     if needsMigration then
+      if isCleanInstall then
+OGRH.Msg("|cffffaa00[RH-Migration]|r First-time setup detected. Initializing v2 schema...")
+      else
 OGRH.Msg("|cffffaa00[RH-Migration]|r Detected v1 schema. Auto-migrating to v2...")
+      end
       OGRH.Migration.MigrateToV2(false)
       
       -- Auto-cutover to v2
@@ -168,30 +216,21 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Detected v1 schema. Auto-migrating to v2...
 OGRH.Msg("|cffffaa00[RH-Migration]|r Auto-activating v2 schema...")
         OGRH.Migration.CutoverToV2()
       end
-    end
-    
-    -- ============================================
-    -- AUTO-PURGE: Remove v1 data after 15 days
-    -- ============================================
-    if OGRH_SV.v2 and OGRH_SV.v2.migrationMeta and OGRH_SV.v2.migrationMeta.migrationDate then
-      local migrationDate = OGRH_SV.v2.migrationMeta.migrationDate
-      local currentTime = time()
-      local daysSinceMigration = (currentTime - migrationDate) / 86400  -- 86400 seconds in a day
       
-      if daysSinceMigration >= 15 then
-        -- Check if v1 data still exists (anything except v2)
-        local hasV1Data = false
-        for key, _ in pairs(OGRH_SV) do
-          if key ~= "v2" then
-            hasV1Data = true
-            break
-          end
-        end
-        
-        if hasV1Data and OGRH.Migration.PurgeV1Data then
-OGRH.Msg("|cffffaa00[RH-Migration]|r v1 data is 15+ days old. Auto-purging...")
-          OGRH.Migration.PurgeV1Data(false)
-        end
+      -- Refresh ConsumesTracking cache after migration
+      if OGRH.ConsumesTracking and OGRH.ConsumesTracking.trackOnPullEnabled ~= nil then
+        OGRH.ConsumesTracking.trackOnPullEnabled = OGRH.SVM.GetPath("consumesTracking.trackOnPull") or false
+      end
+      
+      -- Refresh Invites cache after migration
+      if OGRH.Invites and OGRH.Invites.cachedCurrentSource then
+        OGRH.Invites.cachedCurrentSource = OGRH.SVM.GetPath("invites.currentSource")
+      end
+      
+      -- Load defaults on clean install
+      if isCleanInstall and OGRH.Sync and OGRH.Sync.LoadDefaults then
+OGRH.Msg("|cffffaa00[RH-Migration]|r Loading factory defaults...")
+        OGRH.Sync.LoadDefaults()
       end
     end
   end
@@ -244,6 +283,30 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r v1 data is 15+ days old. Auto-purging...")
   end
   
   elseif event == "PLAYER_ENTERING_WORLD" then
+    -- Clean up v1 keys if we're in v2 mode (after all modules have loaded)
+    if OGRH_SV.schemaVersion == "v2" and OGRH_SV.v2 then
+      local v1KeysFound = {}
+      for key, _ in pairs(OGRH_SV) do
+        if key ~= "v2" and key ~= "schemaVersion" then
+          table.insert(v1KeysFound, key)
+        end
+      end
+      if table.getn(v1KeysFound) > 0 then
+OGRH.Msg("|cffffaa00[RH-Cleanup]|r Removing " .. table.getn(v1KeysFound) .. " legacy v1 keys: " .. table.concat(v1KeysFound, ", "))
+        for i = 1, table.getn(v1KeysFound) do
+          OGRH_SV[v1KeysFound[i]] = nil
+        end
+        -- Clean up deprecated v2 fields too
+        local deprecatedCount = 0
+        if OGRH_SV.v2.order then OGRH_SV.v2.order = nil deprecatedCount = deprecatedCount + 1 end
+        if OGRH_SV.v2.Permissions then OGRH_SV.v2.Permissions = nil deprecatedCount = deprecatedCount + 1 end
+        if OGRH_SV.v2.Versioning then OGRH_SV.v2.Versioning = nil deprecatedCount = deprecatedCount + 1 end
+        if deprecatedCount > 0 then
+OGRH.Msg("|cffffaa00[RH-Cleanup]|r Removed " .. deprecatedCount .. " deprecated v2 fields")
+        end
+      end
+    end
+    
     -- Start integrity checks if we're the current admin (after login/reload)
     if OGRH.GetRaidAdmin and OGRH.StartIntegrityChecks then
       local currentAdmin = OGRH.GetRaidAdmin()
@@ -4013,33 +4076,14 @@ function OGRH.InAnyBucket(nm)
   local r,_
   for r,_ in pairs(OGRH.Roles.buckets) do if OGRH.Roles.buckets[r][nm] then return true end end
 end
-
-function OGRH.EnsureOrderContiguous(role, present)
-  OGRH.EnsureSV()
-  local o = OGRH_SV.order[role] or {}
-  local k
-  for k,_ in pairs(o) do if not present[k] then o[k] = nil end end
-  local max = 0
-  local _,v; for _,v in pairs(o) do if v>max then max=v end end
-  local nm; for nm,_ in pairs(present) do if not o[nm] then max=max+1; o[nm]=max end end
-  local arr = {}; for name,idx in pairs(o) do arr[idx]=name end
-  local newIndex, j = {}, 1
-  local i; for i=1,table.getn(arr) do if arr[i] then newIndex[arr[i]]=j; j=j+1 end end
-  OGRH_SV.order[role]=newIndex
-end
-
 function OGRH.AddTo(role, name)
   OGRH.EnsureSV()
   if not name or name=="" or not OGRH.Roles.buckets[role] then return end
   if not OGRH.Roles.testing and not OGRH.Roles.raidNames[name] then OGRH.Msg("Cannot assign "..name.." (not in raid)."); return end
-  local k,_; for k,_ in pairs(OGRH.Roles.buckets) do OGRH.Roles.buckets[k][name]=nil; if OGRH_SV.order[k] then OGRH_SV.order[k][name]=nil end end
+  local k,_; for k,_ in pairs(OGRH.Roles.buckets) do OGRH.Roles.buckets[k][name]=nil end
   OGRH.Roles.buckets[role][name]=true
   OGRH_SV.roles[name]=role
   OGRH_SV.tankCategory[name]=nil; OGRH_SV.healerBoss[name]=nil
-  local present = {}; local nm; for nm,_ in pairs(OGRH.Roles.buckets[role]) do if OGRH.Roles.testing or OGRH.Roles.raidNames[nm] then present[nm]=true end end
-  OGRH.EnsureOrderContiguous(role, present)
-  local o = OGRH_SV.order[role] or {}; local max = 0; local _,v; for _,v in pairs(o) do if v>max then max=v end end
-  if not o[name] then o[name]=max+1 end; OGRH_SV.order[role]=o
 end
 
 OGRH.CLASS_RGB = OGRH.CLASS_RGB
@@ -4050,28 +4094,6 @@ ensureSV = OGRH.EnsureSV
 colorName = OGRH.ColorName
 sayRW = OGRH.SayRW
 msg = OGRH.Msg
-
-
--- Return an array of names in a role, sorted by saved order, filtering to current raid unless testing
-function OGRH.SortedRoleNamesRaw(role)
-  OGRH.EnsureSV()
-  local out = {}
-  local bucket = OGRH.Roles.buckets[role] or {}
-  local name,_
-  for name,_ in pairs(bucket) do
-    if OGRH.Roles.testing or OGRH.Roles.raidNames[name] then
-      table.insert(out, name)
-    end
-  end
-  local ord = OGRH_SV.order[role] or {}
-  table.sort(out, function(a,b)
-    local ia = ord[a] or 9999
-    local ib = ord[b] or 9999
-    if ia ~= ib then return ia < ib else return a < b end
-  end)
-  return out
-end
-
 
 -- === MIGRATION: icon index mapping old->blizzard (run once) ===
 function OGRH.MigrateIconOrder()
@@ -4840,12 +4862,14 @@ local function CreateMinimapButton()
   
   -- Position
   OGRH.EnsureSV()
-  if not OGRH_SV.minimap then
-    OGRH_SV.minimap = {angle = 200}
+  local minimap = OGRH.SVM.GetPath("minimap")
+  if not minimap then
+    OGRH.SVM.SetPath("minimap", {angle = 200})
   end
   
   local function UpdatePosition()
-    local angle = OGRH_SV.minimap.angle
+    local minimap = OGRH.SVM.GetPath("minimap")
+    local angle = minimap and minimap.angle or 200
     local x = 80 * math.cos(angle)
     local y = 80 * math.sin(angle)
     button:SetPoint("CENTER", Minimap, "CENTER", x, y)

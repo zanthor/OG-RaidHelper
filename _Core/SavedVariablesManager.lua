@@ -59,7 +59,8 @@ OGRH.SVM.SyncConfig = {
     batchTimer = nil,
     offlineQueue = {},
     enabled = true,
-    debug = true
+    debugRead = false,   -- Toggle with /ogrh debug svm read
+    debugWrite = false   -- Toggle with /ogrh debug svm write
 }
 
 -- Sync level definitions (priorities must match OGAddonMsg queue levels: CRITICAL, HIGH, NORMAL, LOW)
@@ -121,7 +122,7 @@ function OGRH.SVM.Get(key, subkey)
     end
     
     -- DEBUG: Show what we're reading
-    if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+    if OGRH.SVM.SyncConfig.debugRead and OGRH.Msg then
         local path = subkey and (key .. "." .. subkey) or key
         local valuePreview = (type(value) == "table") and "{table}" or tostring(value)
         OGRH.Msg(string.format("|cff66ccff[RH-SVM]|r Reading from [%s] = %s", path, valuePreview))
@@ -158,7 +159,7 @@ function OGRH.SVM.GetPath(path)
         
         if not current or type(current) ~= "table" then
             -- DEBUG: Show failed read
-            if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+            if OGRH.SVM.SyncConfig.debugRead and OGRH.Msg then
                 OGRH.Msg(string.format("|cff66ccff[RH-SVM]|r Reading from [%s] = nil (path not found)", path))
             end
             return nil
@@ -167,7 +168,7 @@ function OGRH.SVM.GetPath(path)
     end
     
     -- DEBUG: Show what we're reading
-    if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+    if OGRH.SVM.SyncConfig.debugRead and OGRH.Msg then
         local valuePreview = (type(current) == "table") and "{table}" or tostring(current)
         OGRH.Msg(string.format("|cff66ccff[RH-SVM]|r Reading from [%s] = %s", path, valuePreview))
     end
@@ -183,7 +184,7 @@ function OGRH.SVM.Set(key, subkey, value, syncMetadata)
     if not sv then return false end
     
     -- DEBUG: Show what we're writing
-    if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+    if OGRH.SVM.SyncConfig.debugWrite and OGRH.Msg then
         local path = subkey and (key .. "." .. subkey) or key
         local valuePreview = (type(value) == "table") and "{table}" or tostring(value)
         OGRH.Msg(string.format("|cff66ff66[RH-SVM]|r Writing to [%s] = %s", path, valuePreview))
@@ -230,7 +231,7 @@ function OGRH.SVM.SetPath(path, value, syncMetadata)
     end
     
     -- DEBUG: Show what we're writing
-    if OGRH.SVM.SyncConfig.debug and OGRH.Msg then
+    if OGRH.SVM.SyncConfig.debugWrite and OGRH.Msg then
         local valuePreview = type(value) == "table" and ("table: " .. tostring(value)) or tostring(value)
         OGRH.Msg(string.format("|cff66ff66[RH-SVM]|r Writing to [%s] = %s", path, valuePreview))
     end

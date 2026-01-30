@@ -23,7 +23,8 @@ OGRH.Invites = OGRH.Invites or {
   lastUpdate = 0,
   updateInterval = 2, -- Update every 2 seconds
   lastRollForHash = nil, -- For detecting RollFor data changes
-  roleSyncQueue = {} -- Queue for retrying failed role syncs
+  roleSyncQueue = {}, -- Queue for retrying failed role syncs
+  cachedCurrentSource = nil -- Cached source to avoid SVM reads every frame
 }
 
 -- Data source constants
@@ -88,6 +89,9 @@ function OGRH.Invites.EnsureSV()
   if not OGRH.SVM.GetPath("invites.currentSource") then
     OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.ROLLFOR, {syncLevel = "MANUAL", componentType = "settings"})
   end
+  
+  -- Cache currentSource to avoid repeated SVM reads in OnUpdate handlers
+  OGRH.Invites.cachedCurrentSource = OGRH.SVM.GetPath("invites.currentSource")
   if not OGRH.SVM.GetPath("invites.raidhelperData") then
     OGRH.SVM.SetPath("invites.raidhelperData", nil, {syncLevel = "MANUAL", componentType = "settings"})
   end
@@ -933,6 +937,7 @@ function OGRH.Invites.ShowWindow()
         if RollFor and RollFor.key_bindings and RollFor.key_bindings.softres_toggle then
           RollFor.key_bindings.softres_toggle()
           OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.ROLLFOR, {syncLevel = "MANUAL", componentType = "settings"})
+          OGRH.Invites.cachedCurrentSource = OGRH.Invites.SOURCE_TYPE.ROLLFOR
           if OGRH_InvitesFrame and OGRH_InvitesFrame.UpdateOrganizeButton then
             OGRH_InvitesFrame.UpdateOrganizeButton()
           end
@@ -1422,6 +1427,7 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
       }, {syncLevel = "MANUAL", componentType = "settings"})
       OGRH.SVM.SetPath("invites.raidhelperGroupsData", parsedData, {syncLevel = "MANUAL", componentType = "settings"})
       OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.RAIDHELPER, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.Invites.cachedCurrentSource = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
       
       statusText:SetText("|cff00ff00Successfully imported " .. table.getn(parsedData.players) .. " players from Groups|r")
     else
@@ -1436,6 +1442,7 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
       -- Store data and set source
       OGRH.SVM.SetPath("invites.raidhelperData", parsedData, {syncLevel = "MANUAL", componentType = "settings"})
       OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.RAIDHELPER, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.Invites.cachedCurrentSource = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
       
       -- Apply group assignments if groups data exists
       if OGRH.SVM.GetPath("invites.raidhelperGroupsData") then
@@ -2583,8 +2590,8 @@ rollForCheckFrame:SetScript("OnUpdate", function()
     return
   end
   
-  local currentSource = OGRH.SVM.GetPath("invites.currentSource")
-  if currentSource ~= OGRH.Invites.SOURCE_TYPE.ROLLFOR then
+  -- Use cached source to avoid SVM reads every frame
+  if OGRH.Invites.cachedCurrentSource ~= OGRH.Invites.SOURCE_TYPE.ROLLFOR then
     rollForTimeSinceCheck = 0
     return
   end
