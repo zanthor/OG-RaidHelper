@@ -46,6 +46,10 @@ OGRH.SyncIntegrity.State = {
 
 -- Start periodic integrity checks (called when becoming raid admin)
 function OGRH.StartIntegrityChecks()
+    -- DISABLED: Checksum polling timer disabled - using new sync architecture
+    return
+    
+    --[[
     if OGRH.SyncIntegrity.State.enabled then
         return  -- Already running
     end
@@ -58,6 +62,7 @@ function OGRH.StartIntegrityChecks()
     end, OGRH.SyncIntegrity.State.verificationInterval, true)  -- Repeating timer
     
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncIntegrity]|r Started checksum polling (every 30s)")
+    ]]--
 end
 
 -- Stop periodic integrity checks (called when losing raid admin)

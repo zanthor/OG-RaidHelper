@@ -6,16 +6,16 @@
   Note: Core permission logic lives in OGRH_Permissions.lua
 ]]--
 
--- Raid Lead state (legacy name kept for compatibility with SavedVariables)
+-- Raid Admin state (legacy name kept for backward compatibility)
 OGRH.RaidLead = {
-  currentLead = nil,           -- DEPRECATED: Use OGRH.GetRaidAdmin() instead (kept for backward compatibility)
+  currentLead = nil,           -- DEPRECATED: Use OGRH.GetRaidAdmin() instead (legacy field only)
   addonUsers = {},             -- List of raid members running the addon {name, rank}
   lastPollTime = 0,            -- Timestamp of last poll
   pollResponses = {},          -- Responses to current poll
   pollInProgress = false       -- Whether a poll is active
 }
 
--- Check if local player can edit (is raid lead, or not in raid)
+-- Check if local player can edit (is raid admin, or not in raid)
 function OGRH.CanEdit()
   -- If not in a raid, allow editing
   if GetNumRaidMembers() == 0 then
@@ -27,7 +27,7 @@ function OGRH.CanEdit()
 end
 
 -- Check if local player can navigate encounters (change Main UI selection)
--- Check if local player can manage roles (is raid lead, L, or A)
+-- Check if local player can manage roles (is raid admin, L, or A)
 function OGRH.CanManageRoles()
   -- If not in a raid, allow role management
   if GetNumRaidMembers() == 0 then
@@ -107,7 +107,7 @@ function OGRH.PollAddonUsers()
   end
   
   if not hasPermission then
-    OGRH.Msg("Only raid leaders or assistants can select a raid lead.")
+    OGRH.Msg("Only raid leaders or assistants can select a raid admin.")
     return
   end
   
@@ -149,7 +149,7 @@ function OGRH.PollAddonUsers()
   })
   
   -- Show UI immediately
-  OGRH.ShowRaidLeadSelectionUI()
+  OGRH.ShowRaidAdminSelectionUI()
   
   -- Keep poll open for 5 seconds to accept responses
   OGRH.ScheduleFunc(function()
@@ -162,7 +162,7 @@ function OGRH.HandleAddonPollResponse(sender, version, checksum)
   version = version or "Unknown"
   checksum = checksum or "0"
   
-  -- Route to raid lead selection poll if active
+  -- Route to raid admin selection poll if active
   if OGRH.RaidLead.pollInProgress then
     -- Check if already in list
     local alreadyRecorded = false
@@ -234,8 +234,8 @@ function OGRH.HandleReadHelperPollResponse(sender, version)
   end
 end
 
--- Show raid lead selection UI
-function OGRH.ShowRaidLeadSelectionUI()
+-- Show raid admin selection UI
+function OGRH.ShowRaidAdminSelectionUI()
   OGRH.CloseAllWindows("OGRH_RaidLeadSelectionFrame")
   
   if OGRH_RaidLeadSelectionFrame then
@@ -300,7 +300,7 @@ function OGRH.ShowRaidLeadSelectionUI()
   -- Title (left-aligned under close button, matching "Raids:" style)
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   title:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -17)
-  title:SetText("Select Raid Lead:")
+  title:SetText("Select Raid Admin:")
   title:SetTextColor(1, 0.82, 0)
   
   -- Column headers
@@ -486,9 +486,10 @@ function OGRH.ShowRaidLeadSelectionUI()
       local playerClass = OGRH.GetPlayerClass and OGRH.GetPlayerClass(response.name)
       local classColor = playerClass and RAID_CLASS_COLORS[playerClass] or {r=1, g=1, b=1}
       
-      -- Highlight current raid lead with green background (like selected raid)
-      local isCurrentLead = (OGRH.RaidLead.currentLead == response.name)
-      if isCurrentLead then
+      -- Highlight current raid admin with green background (like selected raid)
+      local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+      local isCurrentAdmin = (currentAdmin == response.name)
+      if isCurrentAdmin then
         btn.bg:SetVertexColor(0, 0.4, 0, 0.5)
         btn.text:SetText(response.name)
       else
@@ -510,7 +511,7 @@ function OGRH.ShowRaidLeadSelectionUI()
             btn.hoverBg:SetAllPoints(btn)
             btn.hoverBg:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
           end
-          if isCurrentLead then
+          if isCurrentAdmin then
             btn.hoverBg:SetVertexColor(0, 0.5, 0, 0.6)
           else
             btn.hoverBg:SetVertexColor(0.35, 0.45, 0.45, 0.9)
@@ -660,8 +661,8 @@ function OGRH.ShowRaidLeadSelectionUI()
   frame:Show()
 end
 
--- Update UI elements based on raid lead status
-function OGRH.UpdateRaidLeadUI()
+-- Update UI elements based on raid admin status
+function OGRH.UpdateRaidAdminUI()
   local canEdit = OGRH.CanEdit()
   
   -- Check if player is the ACTUAL current admin (not just a session admin)
@@ -753,13 +754,13 @@ function OGRH.QueryRaidAdmin()
   end
 end
 
--- Initialize raid admin from saved variables
+-- Initialize raid admin from Permissions system
 function OGRH.InitRaidLead()
-  OGRH.EnsureSV()
-  if OGRH_SV.raidLead then
-    -- Use SetRaidAdmin for proper initialization (suppress broadcast on reload)
-    OGRH.SetRaidAdmin(OGRH_SV.raidLead, true)
-  end
+  -- No SavedVariables persistence - Permissions.State.currentAdmin is runtime only
+  -- Admin is determined by:
+  -- 1. Session admin (set via /ogrh sa)
+  -- 2. Raid polling on join
+  -- 3. Manual selection via admin UI
   
   -- Set up event handler for raid roster changes
   if not OGRH.RaidLeadEventFrame then
@@ -776,8 +777,8 @@ function OGRH.InitRaidLead()
         if OGRH.Permissions and OGRH.Permissions.State then
           OGRH.Permissions.State.currentAdmin = nil
         end
-        if OGRH.UpdateRaidLeadUI then
-          OGRH.UpdateRaidLeadUI()
+        if OGRH.UpdateRaidAdminUI then
+          OGRH.UpdateRaidAdminUI()
         end
       -- If we just joined a raid (went from 0 to > 0)
       elseif frame.lastRaidSize == 0 and currentSize > 0 then

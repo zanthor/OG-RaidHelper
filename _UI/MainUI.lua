@@ -727,8 +727,8 @@ local function restoreMain()
   end
   
   -- Update raid lead UI state
-  if OGRH.UpdateRaidLeadUI then
-    OGRH.UpdateRaidLeadUI()
+  if OGRH.UpdateRaidAdminUI then
+    OGRH.UpdateRaidAdminUI()
   end
   
   -- Update encounter nav button with saved state

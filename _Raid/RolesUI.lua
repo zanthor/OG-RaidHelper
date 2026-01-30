@@ -37,7 +37,7 @@
   - Drag/drop: Move players between role columns
   - Alphabetical sorting: Players automatically sorted A-Z in each column
   - Class colors: Player names colored by class
-  - Role persistence: Assigned roles saved in OGRH_SV.roles
+  - Role persistence: Assigned roles saved via SVM (schema-independent)
 --]]
 
 -- Local Variables
@@ -49,6 +49,7 @@ local L = {}  -- Localization table
 OGRH.RolesUI = OGRH.RolesUI or {}
 
 -- Constants for raid targets (in reverse order 8->1 as requested)
+--[[
 local RAID_TARGETS = {
     {id = 8, name = "Skull"},
     {id = 7, name = "Cross"},
@@ -76,6 +77,7 @@ local function SetRaidTargetIconTexture(texture, iconId)
     local c = coords[iconId] or coords[1]
     texture:SetTexCoord(c[1], c[2], c[3], c[4])
 end
+]]--
 
 -- Role columns
 -- Storage for player raid target icons (kept for compatibility with other modules)
@@ -489,8 +491,9 @@ local function CreateRolesFrame()
     -- forceSyncRollFor: if true, apply RollFor data even for known players
     local function UpdatePlayerLists(forceSyncRollFor)
         -- Load saved raid target assignments
-        if OGRH_SV and OGRH_SV.raidTargets then
-            for name, iconId in pairs(OGRH_SV.raidTargets) do
+        --[[local raidTargets = OGRH.SVM.GetPath("raidTargets")
+        if raidTargets then
+            for name, iconId in pairs(raidTargets) do
                 PLAYER_RAID_TARGETS[name] = iconId
             end
         end
@@ -500,7 +503,7 @@ local function CreateRolesFrame()
         for name, iconId in pairs(PLAYER_RAID_TARGETS) do
             tempTargets[name] = iconId
         end
-        
+        ]]--
         -- Clear lists
         for i = 1, table.getn(ROLE_COLUMNS) do
             ROLE_COLUMNS[i].players = {}

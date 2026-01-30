@@ -2,7 +2,7 @@
 -- Class Priority assignment dialog for role slots
 
 -- Show class priority dialog for a specific role/slot
-function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIndex, roleData, refreshCallback)
+function OGRH.ShowClassPriorityDialog(raidIdx, encounterIdx, roleIndex, slotIndex, roleData, refreshCallback)
   -- Create or reuse frame
   if not OGRH_ClassPriorityFrame then
     local frame = CreateFrame("Frame", "OGRH_ClassPriorityFrame", UIParent)
@@ -103,8 +103,8 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
   local frame = OGRH_ClassPriorityFrame
   
   -- Store context
-  frame.raidName = raidName
-  frame.encounterName = encounterName
+  frame.raidIdx = raidIdx
+  frame.encounterIdx = encounterIdx
   frame.roleIndex = roleIndex
   frame.slotIndex = slotIndex
   frame.roleData = roleData
@@ -341,7 +341,23 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
   
   -- Save button handler
   frame.saveBtn:SetScript("OnClick", function()
-    -- Data is already saved in roleData.classPriority[slotIndex]
+    -- Write classPriority through SVM
+    if frame.raidIdx and frame.encounterIdx and frame.roleIndex and frame.slotIndex then
+      OGRH.SVM.SetPath(
+        string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.classPriority.%d",
+          frame.raidIdx, frame.encounterIdx, frame.roleIndex, frame.slotIndex),
+        roleData.classPriority[slotIndex]
+      )
+      
+      -- Also write classPriorityRoles if it exists
+      if roleData.classPriorityRoles and roleData.classPriorityRoles[slotIndex] then
+        OGRH.SVM.SetPath(
+          string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.classPriorityRoles.%d",
+            frame.raidIdx, frame.encounterIdx, frame.roleIndex, frame.slotIndex),
+          roleData.classPriorityRoles[slotIndex]
+        )
+      end
+    end
     
     frame:Hide()
     
@@ -349,8 +365,6 @@ function OGRH.ShowClassPriorityDialog(raidName, encounterName, roleIndex, slotIn
     if refreshCallback then
       refreshCallback()
     end
-    
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r Class priority saved")
   end)
   
   -- Initial render

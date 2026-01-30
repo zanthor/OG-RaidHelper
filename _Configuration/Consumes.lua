@@ -591,7 +591,7 @@ end
 function OGRH.ShowConsumeMonitor()
   OGRH.EnsureSV()
   
-  if not OGRH_SV.monitorConsumes then
+  if not OGRH.SVM.GetPath("monitorConsumes") then
     return
   end
   
@@ -642,7 +642,7 @@ function OGRH.ShowConsumeMonitor()
   
   -- Update function
   frame.Update = function()
-    if not OGRH_SV.monitorConsumes then
+    if not OGRH.SVM.GetPath("monitorConsumes") then
       frame:Hide()
       return
     end
@@ -665,16 +665,45 @@ function OGRH.ShowConsumeMonitor()
       return
     end
     
-    -- Get encounter roles
-    local roles = OGRH_SV.encounterMgmt and OGRH_SV.encounterMgmt.roles
-    if not roles or not roles[currentRaid] or not roles[currentRaid][currentEncounter] then
+    -- Get encounter roles using v2 schema (roles nested in encounters)
+    local encounterMgmt = OGRH.SVM.GetPath("encounterMgmt")
+    if not encounterMgmt or not encounterMgmt.raids then
       frame:Hide()
       return
     end
     
-    local encounterRoles = roles[currentRaid][currentEncounter]
-    local column1 = encounterRoles.column1 or {}
-    local column2 = encounterRoles.column2 or {}
+    -- Find raid and encounter by name (v2 uses numeric indices)
+    local raidData, encounterData
+    for _, raid in ipairs(encounterMgmt.raids) do
+      if raid.name == currentRaid then
+        raidData = raid
+        if raid.encounters then
+          for _, encounter in ipairs(raid.encounters) do
+            if encounter.name == currentEncounter then
+              encounterData = encounter
+              break
+            end
+          end
+        end
+        break
+      end
+    end
+    
+    if not encounterData or not encounterData.roles then
+      frame:Hide()
+      return
+    end
+    
+    -- v2 schema: roles is a flat array with column field
+    local column1 = {}
+    local column2 = {}
+    for _, role in ipairs(encounterData.roles) do
+      if role.column == 1 then
+        table.insert(column1, role)
+      elseif role.column == 2 then
+        table.insert(column2, role)
+      end
+    end
     
     -- Find consume check role
     local consumeRole = nil

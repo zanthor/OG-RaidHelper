@@ -138,9 +138,9 @@ function OGRH.SetRaidAdmin(playerName, suppressBroadcast)
     -- Clear session admin when normal admin changes
     OGRH.Permissions.State.sessionAdmin = nil
     
-    -- Update legacy state for backward compatibility
+    -- Update legacy state for backward compatibility (DEPRECATED - will be removed)
     if OGRH.RaidLead then
-        OGRH.RaidLead.currentLead = playerName
+        OGRH.RaidLead.currentLead = playerName  -- DEPRECATED: Only for old UI code that hasn't been updated yet
     end
     
     -- Save to saved variables
@@ -171,8 +171,8 @@ function OGRH.SetRaidAdmin(playerName, suppressBroadcast)
     end
     
     -- Update UI to reflect admin change (sync button color, etc.)
-    if OGRH.UpdateRaidLeadUI then
-        OGRH.UpdateRaidLeadUI()
+    if OGRH.UpdateRaidAdminUI then
+        OGRH.UpdateRaidAdminUI()
     end
     
     -- Broadcast the change to all raid members (only if not receiving from network)
@@ -271,8 +271,8 @@ function OGRH.SetSessionAdmin(playerName)
     end
     
     -- Update UI to reflect session admin
-    if OGRH.UpdateRaidLeadUI then
-        OGRH.UpdateRaidLeadUI()
+    if OGRH.UpdateRaidAdminUI then
+        OGRH.UpdateRaidAdminUI()
     end
     
     OGRH.Msg(string.format("|cff00ff00[Permissions]|r %s granted session admin (temporary)", playerName))

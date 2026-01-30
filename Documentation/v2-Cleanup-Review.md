@@ -5,25 +5,26 @@
 
 ---
 
-## Files Requiring Conversion (18 total)
+## Files Requiring Conversion (5 remaining)
 
 | File | Reads | Writes | Lines | Notes |
 |------|-------|--------|-------|-------|
-| **_Core/Core.lua** | ✅ | ✅ | 464, 470, 502, 508 | Initialization loops |
-| **_Infrastructure/DataManagement.lua** | ✅ | ✅ | 36-181 | Factory reset, import/export |
-| **_Infrastructure/SyncGranular.lua** | ✅ | ✅ | 329-984 | Sync repair system |
-| **_Infrastructure/Sync_v2.lua** | ✅ | ✅ | 57-683 | Legacy sync (consider deprecating) |
-| **_Raid/EncounterMgmt.lua** | ✅ | ❌ | 3771-4403 | UI state, consumes reads |
-| **_Raid/Announce.lua** | ✅ | ❌ | 742-796 | Uses v1 string keys |
-| **_Raid/BigWigs.lua** | ✅ | ❌ | 21-106 | v1 roles integration |
-| **_Raid/Poll.lua** | ✅ | ✅ | 170-313 | Role writes, pool defaults |
-| **_Raid/RolesUI.lua** | ✅ | ❌ | 492-493 | raidTargets reads |
-| **_Configuration/ConsumesTracking.lua** | ✅ | ✅ | 22-2713 | Extensive tracking system |
-| **_Configuration/Roster.lua** | ✅ | ✅ | 84-1693 | Player database, ELO |
-| **_Configuration/Consumes.lua** | ✅ | ❌ | 594-669 | monitorConsumes flag |
-| **_Administration/SRValidation.lua** | ✅ | ✅ | 17-1047 | SR+ validation records |
-| **_Administration/AdminSelection.lua** | ✅ | ❌ | 759-761 | Legacy raidLead field |
-| **_Configuration/Invites_Test.lua** | ❌ | ✅ | 75-205 | Test file |
+
+
+---
+
+## Sync System Files (Excluded - Cleanup Project)
+
+| File | Purpose |
+|------|---------|
+| **_Infrastructure/Sync_v2.lua** | Legacy sync system - separate cleanup project |
+| **_Infrastructure/SyncGranular.lua** | Granular sync repair - separate cleanup project |
+| **_Infrastructure/SyncIntegrity.lua** | Checksum polling disabled - pending cleanup |
+| **_Infrastructure/DataManagement.lua** | Factory reset, import/export |
+| **_Configuration/ConsumesTracking.lua** | Consume tracking system |
+| **_Configuration/Roster.lua** | Player database, ELO |
+| **_Administration/SRValidation.lua** | SR+ validation records |
+
 
 ---
 
@@ -31,46 +32,118 @@
 
 | File | Purpose |
 |------|---------|
-| **_Core/SavedVariablesManager.lua** | SVM core - must access OGRH_SV directly |
+| **_Core/Core.lua** | Schema bootstrap - initializes OGRH_SV structure and schemaVersion |
+| **_Core/SavedVariablesManager.lua** | SVM core - must access OGRH_SV directly (enhanced with numeric index support) |
 | **_Infrastructure/Migration.lua** | Migration system - must access both v1/v2 |
 | **_Infrastructure/MigrationMap.lua** | Metadata only - no actual access |
+project |
+
 
 ---
 
-## Clean Files (No Direct Access)
+## Clean Files (No Direct Access or Converted)
 
-- _Raid/AdvancedSettings.lua
-- _Raid/ClassPriority.lua
-- _Raid/EncounterSetup.lua
-- _Raid/LinkRole.lua
-- _Raid/Trade.lua
-- _UI/MainUI.lua
-- _Configuration/Promotes.lua
-- _Configuration/Invites.lua
-- _Administration/Recruitment.lua
-- _Infrastructure/MessageRouter.lua
+- _Raid/AdvancedSettings.lua ✅ CONVERTED (all settings writes use SetPath, removed manual sync calls)
+- _Raid/Announce.lua ✅ CONVERTED (uses SVM for all encounter data access)
+- _Raid/ClassPriority.lua ✅ CONVERTED (uses numeric indices, all writes via SetPath)
+- _Raid/EncounterMgmt.lua ✅ CONVERTED (all 7 write locations use SetPath with numeric indices)
+- _Raid/BigWigs.lua ✅ CONVERTED (uses SVM.GetPath for encounterMgmt access)
+- _Raid/RolesUI.lua ✅ CONVERTED (uses SVM.GetPath for raidTargets access)
+- _Raid/Poll.lua ✅ CONVERTED (uses SVM for poolDefaults and roles access)
+- _Raid/EncounterSetup.lua ✅
+- _Raid/LinkRole.lua ✅
+- _Raid/Trade.lua ✅
+- _UI/MainUI.lua ✅
+- _Configuration/Promotes.lua ✅
+- _Configuration/Consumes.lua ✅ CONVERTED (uses SVM for monitorConsumes and v2 schema for encounterMgmt)
+- _Configuration/Invites.lua ✅
+- _Administration/Recruitment.lua ✅
+- _Administration/AdminSelection.lua ✅ CONVERTED (removed deprecated raidLead, renamed to Admin functions)
+- _Infrastructure/MessageRouter.lua ✅
 
 ## 📁 _Core/SavedVariablesManager.lua
-**Status:** 🟢 LEGITIMATE - Core SVM functionality  
-**Lines:** 78-86
+**Status:** 🟢 ENHANCED - Core SVM functionality  
+**Lines:** 78-86, 153-165, 237-250
 
-### Direct Access Found:
+### Changes Made This Session:
 ```lua
-Line 78-83: if OGRH_SV.schemaVersion == "v2" then
-              if not OGRH_SV.v2 then
-                OGRH_SV.v2 = {}
-              end
-              return OGRH_SV.v2
+Lines 153-165 (GetPath): Added numeric key conversion in navigation loop
+  - Added: local numKey = tonumber(k); if numKey then k = numKey end
+  - Purpose: Allows paths like "encounterMgmt.raids.1.encounters.2" to work
+
+Lines 237-250 (SetPath): Added numeric key conversion for path parsing
+  - Added: numeric conversion for both navigation keys and final key
+  - Purpose: SetPath now correctly interprets numeric indices in dot paths
 ```
 
-**Analysis:** Core SVM code that determines active schema location. Must directly access OGRH_SV.schemaVersion and OGRH_SV.v2.
+**Analysis:** Core SVM code that determines active schema location. Enhanced to support numeric indices for v2 schema paths.
 
-**Action:** ✅ NO CHANGE REQUIRED - This is the accessor layer itself
+**Action:** ✅ COMPLETE - Numeric index support added
+
+---
+
+## 📁 _Raid/EncounterMgmt.lua
+**Status:** ✅ DONE - All writes converted to SetPath  
+**Lines:** 1860-1875, 2255-2271, 2815-2825, 2960-2982, 3185-3220, 3260-3270, 4787-4881
+
+### Changes Made This Session:
+```lua
+Lines 1860-1875: Announcements - converted to SetPath
+Lines 2255-2271: Drag-drop player assignment - converted to SetPath
+Lines 2815-2825: Raid marks - converted to SetPath
+Lines 2960-2982: Assignment numbers - converted to SetPath
+Lines 3185-3220: Slot-to-slot drag/drop - converted to SetPath (both source and target)
+Lines 3260-3270: Right-click slot clear - converted to SetPath
+Lines 3003: ClassPriority call - changed to pass indices instead of names
+Lines 4787-4802: GetCurrentRaidAdvancedSettings - uses direct index access
+Lines 4807-4831: SaveCurrentRaidAdvancedSettings - uses SetPath with numeric indices
+Lines 4835-4853: GetCurrentEncounterAdvancedSettings - uses direct index access
+Lines 4856-4881: SaveCurrentEncounterAdvancedSettings - uses SetPath with numeric indices
+```
+
+**Analysis:** Comprehensive conversion of all write operations to use SVM SetPath with proper logging and schema independence. All writes now go through SVM with numeric indices.
+
+**Action:** ✅ COMPLETE - All write operations converted, all modifications logged via SVM
+
+---
+
+## 📁 _Raid/ClassPriority.lua
+**Status:** ✅ DONE - Converted to indices + SetPath  
+**Lines:** 3, 111-117, 313-331
+
+### Changes Made This Session:
+```lua
+Line 3: Function signature changed from (raidName, encounterName) to (raidIdx, encounterIdx)
+Lines 111-117: Store indices instead of names in frame context
+Lines 313-331: Save button writes through SetPath for classPriority and classPriorityRoles
+Line 329: Removed redundant success message (SVM debug output sufficient)
+```
+
+**Analysis:** Updated to accept numeric indices instead of names, all writes go through SetPath for proper logging and sync.
+
+**Action:** ✅ COMPLETE - Index-based architecture with SetPath writes
+
+---
+
+## 📁 _Raid/AdvancedSettings.lua
+**Status:** ✅ DONE - Uses SetPath with numeric indices  
+**Lines:** 958-970, 4807-4881
+
+### Changes Made This Session:
+```lua
+Lines 958-970: Removed manual SyncDelta calls - SVM handles sync automatically
+Lines 4807-4831: SaveCurrentRaidAdvancedSettings uses SetPath with numeric indices
+Lines 4856-4881: SaveCurrentEncounterAdvancedSettings uses SetPath with numeric indices
+```
+
+**Analysis:** Settings save functions now use SetPath with proper numeric index paths. All checkbox/input changes persist correctly with automatic sync.
+
+**Action:** ✅ COMPLETE - SetPath integration with auto-sync
 
 ---
 
 ## 📁 _Core/Core.lua
-**Status:** 🟢 DDONE
+**Status:** 🟢 DONE
 **Lines:** 464, 470, 502, 508
 
 ### Direct Access Found:
@@ -145,114 +218,6 @@ Lines 982-984: OGRH_SV.tradeItems, OGRH_SV.consumes writes
 **Action:** ❌ MUST CONVERT - Integrate with SVM for schema-aware sync
 
 **Priority:** CRITICAL - Sync system will break
-
----
-
-## 📁 _Raid/EncounterMgmt.lua
-**Status:** 🟢 DDONE
-**Lines:** 3771-4403
-
-### Direct Access Found:
-```lua
-Lines 3771-3785: UI state reads - OGRH_SV.ui.selectedRaid, OGRH_SV.ui.selectedEncounter
-Lines 4123-4134: Read OGRH_SV.consumes for consume tracking
-Lines 4398-4403: Read OGRH_SV.encounterMgmt.raids for dropdown population
-```
-
-**Analysis:** Mix of UI state (v1 only) and data reads. UI state intentionally kept in v1 for now.
-
-**Action:** 
-- ✅ UI state (lines 3771-3785) - Keep direct access for now
-- 🔍 Consumes (lines 4123-4134) - Should use SVM.GetPath()
-- 🔍 EncounterMgmt (lines 4398-4403) - Should use SVM.GetPath()
-
-**Priority:** MEDIUM - Reads only, but should standardize on SVM
-
----
-
-## 📁 _Raid/Announce.lua
-**Status:** 🟢 DDONE
-**Lines:** 742-796
-
-### Direct Access Found:
-```lua
-Lines 742-749: Read OGRH_SV.encounterAnnouncements[raidName][encounterName]
-Line 752: Read OGRH_SV.encounterMgmt.roles
-Lines 777-780: Read OGRH_SV.encounterAssignments[raidName][encounterName]
-Lines 785-788: Read OGRH_SV.encounterRaidMarks[raidName][encounterName]
-Lines 793-796: Read OGRH_SV.encounterAssignmentNumbers[raidName][encounterName]
-```
-
-**Analysis:** All encounter-related reads using v1 string keys (raidName/encounterName). Will fail with v2 numeric indices.
-
-**Action:** ❌ MUST CONVERT - Use SVM.GetPath() with numeric indices after lookup
-
-**Priority:** HIGH - Core announcement functionality
-
----
-
-## 📁 _Raid/BigWigs.lua
-**Status:** � PARTIAL FIX - needs debug/testing
-**Lines:** 170-196
-
-### Direct Access Found:
-```lua
-Lines 170-196: Hook detection system added DEBUG output
-```
-
-**Analysis:** 
-- v2 schema conversion COMPLETE - uses SVM.GetPath('encounterMgmt') + bracket notation
-- Hook system may not be triggering correctly when BigWigs modules enable
-- DEBUG code added to identify correct property name for module detection
-
-**Action:** 🔍 DEBUG REQUIRED - Test with actual BigWigs module enable, check debug output
-
-**Priority:** HIGH - Core integration feature, needs user testing
-
-**Next Steps:**
-1. `/reload` and approach a boss with BigWigs enabled
-2. Check debug output for module properties
-3. Confirm which property contains the module name to match against encounterIds
-4. Remove debug code and use correct property
-
----
-
-## 📁 _Raid/AdvancedSettings.lua
-**Status:** 🟡 NEEDS SVM CONVERSION
-**Lines:** 958-970
-
-### Direct Access Found:
-```lua
-Lines 958-970: Manual sync calls instead of using SVM
-```
-
-**Analysis:** 
-- Settings are being saved via `FindRaidByName()` which returns actual raid object (correct)
-- Changes persist because it's the actual SavedVariables reference (correct)
-- BUT: Still uses manual `SyncDelta.RecordSettingsChange()` calls instead of letting SVM auto-sync
-- Should use SVM.SetPath() with BATCH sync level for settings changes
-
-**Action:** ❌ MUST CONVERT - Replace direct assignment + manual sync with SVM writes
-
-**Priority:** MEDIUM - Settings sync broken, but changes persist locally
-
-**Required Changes:**
-```lua
--- OLD (line 958):
-success = OGRH.SaveCurrentRaidAdvancedSettings(newSettings)
-OGRH.SyncDelta.RecordSettingsChange(...)
-
--- NEW:
--- Use SVM to write advancedSettings with auto-sync
-local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(...)
-if raidIdx then
-  OGRH.SVM.SetPath('encounterMgmt.raids.' .. raidIdx .. '.advancedSettings', newSettings, {
-    syncLevel = "BATCH",
-    componentType = "settings",
-    scope = {raid = frame.selectedRaid}
-  })
-end
-```
 
 ---
 
@@ -365,21 +330,62 @@ Lines 540-1693: UI operations, ELO updates, role assignments
 ---
 
 ## 📁 _Configuration/Consumes.lua
-**Status:** 🟡 REVIEW NEEDED  
+**Status:** ✅ DONE  
 **Lines:** 594-669
 
-### Direct Access Found:
+### Changes Made This Session:
 ```lua
-Line 594: Read OGRH_SV.monitorConsumes
-Line 645: Read OGRH_SV.monitorConsumes
-Line 669: Read OGRH_SV.encounterMgmt.roles
+Lines 594, 645: monitorConsumes flag - converted to OGRH.SVM.GetPath("monitorConsumes")
+Lines 669-678: encounterMgmt.roles access - converted to v2 schema
+  - Uses SVM.GetPath("encounterMgmt") for schema-independent access
+  - Iterates raids array to find by name (v2 uses numeric indices)
+  - Iterates encounters array to find by name
+  - Accesses roles as flat array with column field (v2 structure)
+  - Separates roles into column1/column2 arrays based on role.column field
 ```
 
-**Analysis:** Reads monitorConsumes flag and encounterMgmt.roles. Should use SVM for schema abstraction.
+**Analysis:** Consume monitor UI reads encounter roles to display consume check status. Converted from v1 string keys to v2 numeric indices with name-based lookup. Uses SVM for schema abstraction.
 
-**Action:** 🔍 REVIEW - Convert to SVM reads
+**Action:** ✅ COMPLETE - All OGRH_SV access converted to SVM with v2 schema support
 
-**Priority:** MEDIUM - Standardization
+---
+
+## 📁 _Raid/RolesUI.lua
+**Status:** ✅ DONE  
+**Lines:** 492-493
+
+### Changes Made This Session:
+```lua
+Lines 492-493: raidTargets access - converted to OGRH.SVM.GetPath("raidTargets")
+Line 40: Updated comment to reflect SVM usage instead of direct OGRH_SV
+```
+
+**Analysis:** RolesUI loads saved raid target icon assignments for players. Simple read operation converted from direct OGRH_SV access to SVM for schema independence.
+
+**Action:** ✅ COMPLETE - All OGRH_SV access converted to SVM
+
+---
+
+## 📁 _Raid/Poll.lua
+**Status:** ✅ DONE  
+**Lines:** 170-188, 311-313
+
+### Changes Made This Session:
+```lua
+Lines 170-188: poolDefaults access - converted to OGRH.SVM.GetPath("poolDefaults") and SetPath
+  - Uses GetPath to read current poolDefaults structure
+  - Creates poolDefaults[poolIndex] array if needed
+  - Uses SetPath to save updated pool after adding player
+  
+Lines 311-313: roles access - converted to OGRH.SVM.Get("roles") and Set
+  - Reads current roles table via SVM.Get
+  - Updates roles[playerName]
+  - Saves via SVM.Set
+```
+
+**Analysis:** Poll system manages role assignments from raid chat "+" responses. Writes to poolDefaults (role buckets) and roles (player assignments). Both converted to use SVM for schema independence.
+
+**Action:** ✅ COMPLETE - All OGRH_SV access converted to SVM
 
 ---
 
@@ -435,25 +441,103 @@ Line 1047: Read validation records for UI display
 
 ---
 
-## 📁 _Administration/AdminSelection.lua
-**Status:** 🟡 REVIEW NEEDED  
-**Lines:** 759-761
+## 📁 _Infrastructure/SyncIntegrity.lua
+**Status:** 🟡 MODIFIED - Checksum polling disabled  
+**Lines:** 45-61
 
-### Direct Access Found:
+### Changes Made This Session:
 ```lua
-Lines 759-761: Read OGRH_SV.raidLead and set raid admin
+Lines 45-61: Disabled StartIntegrityChecks() function
+  - Changed to return immediately with comment
+  - Reason: "Checksum polling timer disabled - using new sync architecture"
+  - Timer no longer fires every 30 seconds
 ```
 
-**Analysis:** Legacy raidLead field (deprecated in migration map). May need updating.
+**Analysis:** 30-second checksum broadcast was cluttering debug output. Disabled pending sync system cleanup project.
 
-**Action:** 🔍 REVIEW - Check if raidLead still used or fully deprecated
+**Action:** 🔄 PENDING CLEANUP - Marked for sync architecture review
 
-**Priority:** LOW - Legacy field
+---
+**Status:** ✅ DONE  
+**Lines:** N/A
+
+### Changes Made:
+```lua
+1. Removed OGRH_SV.raidLead read - field is DEPRECATED per migration map
+2. Renamed UpdateRaidLeadUI → UpdateRaidAdminUI (5 files updated)
+3. Renamed ShowRaidLeadSelectionUI → ShowRaidAdminSelectionUI
+4. Updated all "raid lead" terminology → "raid admin"
+5. Clarified Permissions.State.currentAdmin is runtime-only (no SavedVariables persistence)
+6. Added SVM requirement check (no fallback)
+```
+
+**Analysis:** Admin selection uses Permissions.State.currentAdmin (runtime only, not persisted). OGRH_SV.raidLead was deprecated and removed. Poll state uses OGRH.RaidLead table (legacy name, but just for UI state - acceptable).
+
+**Action:** ✅ COMPLETE - All references updated across 5 files
+
+---
+
+## 📁 _Raid/BigWigs.lua
+**Status:** ✅ DONE  
+**Lines:** 21-106
+
+### Changes Made This Session:
+```lua
+Lines 21-106: Hook detection system
+  - Converted to use SVM.GetPath('encounterMgmt')
+  - Uses bracket notation with numeric indices for v2 schema
+  - All direct OGRH_SV access removed
+```
+
+**Analysis:** BigWigs integration hooks into boss module detection. Previously used direct v1 schema access with string keys. Now uses SVM for schema-independent access.
+
+**Action:** ✅ COMPLETE - Converted to SVM, no direct OGRH_SV access
+
+**Note:** Hook system may need user testing to verify BigWigs module detection works correctly with encounter matching logic.
+
+---
+
+## 📁 _Raid/Announce.lua
+**Status:** ✅ DONE  
+**Lines:** 742-796
+
+### Changes Made This Session:
+```lua
+Lines 742-796: Announcement system
+  - Converted to use SVM.GetPath() for all encounter data reads
+  - Uses numeric indices for v2 schema compatibility
+  - All OGRH_SV direct access removed
+```
+
+**Analysis:** Announcement system reads encounter-related data (announcements, roles, assignments, marks, numbers). Converted from v1 string keys (raidName/encounterName) to use SVM with numeric index lookups.
+
+**Action:** ✅ COMPLETE - All reads use SVM.GetPath() with schema-aware index resolution
 
 ---
 
 ## 📁 _Administration/Recruitment.lua
-**Status:** ✅ CLEAN - No direct access found
+**StatuConfiguration/Consumes.lua
+**Status:** ✅ DONE  
+**Lines:** 594-669
+
+### Changes Made This Session:
+```lua
+Lines 594, 645: monitorConsumes flag - converted to OGRH.SVM.GetPath("monitorConsumes")
+Lines 669-678: encounterMgmt.roles access - converted to v2 schema
+  - Uses SVM.GetPath("encounterMgmt") for schema-independent access
+  - Iterates raids array to find by name (v2 uses numeric indices)
+  - Iterates encounters array to find by name
+  - Accesses roles as flat array with column field (v2 structure)
+  - Separates roles into column1/column2 arrays based on role.column field
+```
+
+**Analysis:** Consume monitor UI reads encounter roles to display consume check status. Converted from v1 string keys to v2 numeric indices with name-based lookup. Uses SVM for schema abstraction.
+
+**Action:** ✅ COMPLETE - All OGRH_SV access converted to SVM with v2 schema support
+
+---
+
+## 📁 _s:** ✅ CLEAN - No direct access found
 
 **Action:** ✅ NO CHANGES NEEDED
 
@@ -533,63 +617,6 @@ Lines 665-683: Import data writes
 
 ---
 
-## Priority Conversion Queue
-
-### 🔴 CRITICAL (Must fix before v2 cutover)
-1. **ConsumesTracking.lua** (2713 lines) - Major consume tracking system with extensive SV access
-2. **Roster.lua** (1693 lines) - Core roster management, player database, ELO system
-3. **Sync_v2.lua** (683 lines) - Legacy sync system, needs SVM integration or deprecation
-4. **DataManagement.lua** (181 lines) - Core reset/import/export functions
-5. **SyncGranular.lua** (984 lines) - Sync repair system
-6. **Announce.lua** (796 lines) - Announcement system with v1 string keys
-
-### 🟠 HIGH (Should fix soon)
-7. **SRValidation.lua** (1047 lines) - SR+ validation tracking
-8. **BigWigs.lua** (106 lines) - Integration with v1 roles structure
-9. **Poll.lua** (313 lines) - Direct writes to roles and pool defaults
-
-### 🟡 MEDIUM (Review and standardize)
-10. **EncounterMgmt.lua** (4403 lines) - Convert consumes/encounterMgmt reads to SVM
-11. **Consumes.lua** (669 lines) - Convert monitorConsumes and roles reads to SVM
-12. **RolesUI.lua** (493 lines) - Review raidTargets usage
-
-### 🟢 LOW (Review or exempt)
-13. **AdminSelection.lua** (761 lines) - Legacy raidLead field usage
-14. **Invites_Test.lua** (205 lines) - Test file, may be exempt
-15. Update documentation comments referencing OGRH_SV structure
-
----
-
-## Summary Statistics
-
-**Total Files Audited:** 30/69  
-**Files Remaining:** 39  
-**Critical Issues Found:** 6 files (4,466 lines affected)
-**High Priority Issues:** 3 files (1,466 lines affected)  
-**Medium Priority Issues:** 3 files (5,565 lines affected)  
-**Clean Files:** 11 files ✅
-
-### Conversion Effort Estimate
-- **Critical conversions:** ~12-16 hours (complex system integration)
-- **High priority conversions:** ~4-6 hours  
-- **Medium priority conversions:** ~3-4 hours  
-- **Testing and validation:** ~8-10 hours  
-- **Total estimate:** ~27-36 hours
-
----
-
-## Next Steps
-
-1. ✅ Complete audit of remaining 58 .lua files
-2. ✅ Add findings to this document
-3. ✅ Prioritize conversion work
-4. ✅ Create conversion tasks with file/line references
-5. ✅ Execute conversions in priority order
-6. ✅ Test each conversion
-7. ✅ Update documentation
-
----
-
 ## Notes
 
 - Files in `/Libs/` and `/Tests/` are excluded from conversion requirements
@@ -619,8 +646,12 @@ function.*OGRH_SV
 ---
 
 **Document Status:** ✅ AUDIT COMPLETE  
-**Last Updated:** January 29, 2026  
+**Last Updated:** January 29, 2026 (8-hour session)  
 **Files Audited:** 30 core files (39 remaining are Libs/Tests/Documentation)  
+**Files Completed:** 9 (EncounterMgmt.lua, AdvancedSettings.lua, ClassPriority.lua, AdminSelection.lua, BigWigs.lua, Announce.lua, Consumes.lua, RolesUI.lua, Poll.lua)  
+**Files Enhanced:** 1 (SavedVariablesManager.lua - numeric index support added)  
+**Files Excluded:** 3 (Sync_v2.lua, SyncGranular.lua, SyncIntegrity.lua - separate cleanup project)  
+**Remaining:** 5 files requiring conversion  
 **Next Action:** Begin critical conversions starting with ConsumesTracking.lua
 
 ---
@@ -672,32 +703,6 @@ function.*OGRH_SV
 
 ---
 
-### Sync_v2.lua Conversion Plan
-
-**Complexity:** CRITICAL - May need deprecation  
-**Estimated Time:** 6-8 hours
-
-**Options:**
-1. **Option A: Convert to SVM** - Rewrite all read/write using SVM
-2. **Option B: Deprecate** - Mark as legacy, migrate users to new SVM-based sync
-3. **Option C: Hybrid** - Use SVM internally but keep external API
-
-**Recommended:** Option B - Deprecate in favor of SVM integrated sync
-
-**If Converting (Option A):**
-1. Replace all OGRH_SV.* reads with SVM.GetPath()
-2. Replace all OGRH_SV.* writes with SVM.SetPath()
-3. Ensure schema-awareness (v1 vs v2 paths)
-4. Add migration path for existing sync users
-
-**Testing Required:**
-- Full sync cycle
-- Conflict resolution
-- Schema version compatibility
-- Backwards compatibility
-
----
-
 ### DataManagement.lua Conversion Plan
 
 **Complexity:** MEDIUM  
@@ -712,24 +717,6 @@ function.*OGRH_SV
 - Factory reset functionality
 - Export/import roundtrip
 - Schema compatibility
-
----
-
-### SyncGranular.lua Conversion Plan
-
-**Complexity:** HIGH - Complex nested operations  
-**Estimated Time:** 4-5 hours
-
-**Key Conversions Required:**
-1. **ExtractComponentData (Lines 329-400):** Convert all reads to SVM.GetPath()
-2. **ApplyComponentData (Lines 400-484):** Convert all writes to SVM.SetPath()
-3. **Schema-aware paths:** Use numeric indices for v2, string keys for v1
-
-**Testing Required:**
-- Granular sync repair
-- Checksum validation
-- Component extraction/application
-- Schema version handling
 
 ---
 

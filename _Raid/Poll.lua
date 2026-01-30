@@ -138,55 +138,43 @@ eventFrame:SetScript("OnEvent", function()
     if string.find(text, "%+") then
         local playerName = string.match(sender, "^[^-]+") or sender
         
-        -- Add to role using OGRH's system
-        OGRH.EnsureSV() -- Ensure saved variables exist
-        OGRH.AddTo(activePoll.currentRole, playerName)
+        -- Assign player to role using RolesUI API (this updates ROLE_COLUMNS and saves via SVM)
+        -- RolesUI.SetPlayerRole expects uppercase role names (TANKS, HEALERS, MELEE, RANGED)
+        if OGRH.RolesUI and OGRH.RolesUI.SetPlayerRole and activePoll.currentRole then
+            OGRH.RolesUI.SetPlayerRole(playerName, activePoll.currentRole)
+        end
         
-        -- Check if player is already in the Assigned side (ROLE_COLUMNS)
-        local isInAssigned = false
-        if OGRH.GetRolePlayers then
-            local rolePlayers = OGRH.GetRolePlayers(activePoll.currentRole)
-            for i = 1, table.getn(rolePlayers) do
-                if rolePlayers[i] == playerName then
-                    isInAssigned = true
+        -- Also add to pool defaults for persistence
+        -- Map role name to pool defaults index
+        local roleToIndex = {
+            TANKS = 1,
+            HEALERS = 2,
+            MELEE = 3,
+            RANGED = 4
+        }
+        
+        local poolIndex = roleToIndex[activePoll.currentRole]
+        if poolIndex then
+            -- Get current pool defaults
+            local poolDefaults = OGRH.SVM.GetPath("poolDefaults") or {}
+            if not poolDefaults[poolIndex] then
+                poolDefaults[poolIndex] = {}
+            end
+            
+            -- Check if player is already in pool defaults
+            local alreadyInPool = false
+            for i = 1, table.getn(poolDefaults[poolIndex]) do
+                if poolDefaults[poolIndex][i] == playerName then
+                    alreadyInPool = true
                     break
                 end
             end
-        end
-        
-        -- If not in assigned, add to Pool Defaults
-        if not isInAssigned then
-            -- Map role name to pool defaults index
-            local roleToIndex = {
-                TANKS = 1,
-                HEALERS = 2,
-                MELEE = 3,
-                RANGED = 4
-            }
             
-            local poolIndex = roleToIndex[activePoll.currentRole]
-            if poolIndex then
-                -- Ensure pool defaults structure exists
-                if not OGRH_SV.poolDefaults then
-                    OGRH_SV.poolDefaults = {}
-                end
-                if not OGRH_SV.poolDefaults[poolIndex] then
-                    OGRH_SV.poolDefaults[poolIndex] = {}
-                end
-                
-                -- Check if player is already in pool defaults
-                local alreadyInPool = false
-                for i = 1, table.getn(OGRH_SV.poolDefaults[poolIndex]) do
-                    if OGRH_SV.poolDefaults[poolIndex][i] == playerName then
-                        alreadyInPool = true
-                        break
-                    end
-                end
-                
-                -- Add to pool defaults if not already there
-                if not alreadyInPool then
-                    table.insert(OGRH_SV.poolDefaults[poolIndex], playerName)
-                end
+            -- Add to pool defaults if not already there
+            if not alreadyInPool then
+                table.insert(poolDefaults[poolIndex], playerName)
+                -- Save updated pool defaults
+                OGRH.SVM.SetPath("poolDefaults." .. poolIndex, poolDefaults[poolIndex])
             end
         end
         
@@ -307,10 +295,10 @@ local function handleRoleChange(playerName, newRole)
     for i, column in ipairs(OGRH.ROLE_COLUMNS) do
         if column.name:upper() == newRole then
             table.insert(column.players, playerName)
-            -- Save the role change
-            if not OGRH_SV then OGRH_SV = {} end
-            if not OGRH_SV.roles then OGRH_SV.roles = {} end
-            OGRH_SV.roles[playerName] = newRole
+            -- Save the role change using SVM
+            local roles = OGRH.SVM.Get("roles") or {}
+            roles[playerName] = newRole
+            OGRH.SVM.Set("roles", nil, roles)
             break
         end
     end

@@ -59,7 +59,6 @@ _Infrastructure\SyncUI.lua
 ## Phase 3: Configuration - Roster & Consumables
 ## ===================================================================
 _Configuration\Invites.lua
-_Configuration\Invites_Test.lua
 _Configuration\Roster.lua
 _Configuration\Promotes.lua
 _Configuration\Consumes.lua
