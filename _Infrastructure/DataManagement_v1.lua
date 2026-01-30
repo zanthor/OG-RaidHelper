@@ -11,32 +11,6 @@ end
 OGRH.DataManagement = OGRH.DataManagement or {}
 
 -------------------------------------------------------------------------------
--- Helper: Strip Player Assignments from Encounter Management
--------------------------------------------------------------------------------
-
-local function StripPlayerAssignments(encounterMgmt)
-  if not encounterMgmt then return nil end
-  
-  -- Deep copy helper that strips player assignment fields
-  local function deepCopy(tbl)
-    if type(tbl) ~= "table" then return tbl end
-    
-    local copy = {}
-    for k, v in pairs(tbl) do
-      -- Strip player assignment fields at any level
-      if k == "assignedPlayers" or k == "tempAssignedPlayers" then
-        -- Completely skip player assignment arrays
-      else
-        copy[k] = deepCopy(v)
-      end
-    end
-    return copy
-  end
-  
-  return deepCopy(encounterMgmt)
-end
-
--------------------------------------------------------------------------------
 -- Load Defaults
 -------------------------------------------------------------------------------
 
@@ -57,33 +31,27 @@ function OGRH.DataManagement.LoadDefaults()
     OGRH.EnsureSV()
   end
   
-  -- Use SVM to set all data (schema-independent)
-  if not OGRH.SVM then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper] Error:|r SavedVariablesManager not available")
-    return
-  end
-  
-  -- Import all encounter management data via SVM
+  -- Import all encounter management data directly from the table
   if OGRH.FactoryDefaults.encounterMgmt then
-    OGRH.SVM.Set("encounterMgmt", OGRH.FactoryDefaults.encounterMgmt)
+    OGRH_SV.encounterMgmt = OGRH.FactoryDefaults.encounterMgmt
   end
   if OGRH.FactoryDefaults.encounterRaidMarks then
-    OGRH.SVM.Set("encounterRaidMarks", OGRH.FactoryDefaults.encounterRaidMarks)
+    OGRH_SV.encounterRaidMarks = OGRH.FactoryDefaults.encounterRaidMarks
   end
   if OGRH.FactoryDefaults.encounterAssignmentNumbers then
-    OGRH.SVM.Set("encounterAssignmentNumbers", OGRH.FactoryDefaults.encounterAssignmentNumbers)
+    OGRH_SV.encounterAssignmentNumbers = OGRH.FactoryDefaults.encounterAssignmentNumbers
   end
   if OGRH.FactoryDefaults.encounterAnnouncements then
-    OGRH.SVM.Set("encounterAnnouncements", OGRH.FactoryDefaults.encounterAnnouncements)
+    OGRH_SV.encounterAnnouncements = OGRH.FactoryDefaults.encounterAnnouncements
   end
   if OGRH.FactoryDefaults.tradeItems then
-    OGRH.SVM.Set("tradeItems", OGRH.FactoryDefaults.tradeItems)
+    OGRH_SV.tradeItems = OGRH.FactoryDefaults.tradeItems
   end
   if OGRH.FactoryDefaults.consumes then
-    OGRH.SVM.Set("consumes", OGRH.FactoryDefaults.consumes)
+    OGRH_SV.consumes = OGRH.FactoryDefaults.consumes
   end
   if OGRH.FactoryDefaults.rgo then
-    OGRH.SVM.Set("rgo", OGRH.FactoryDefaults.rgo)
+    OGRH_SV.rgo = OGRH.FactoryDefaults.rgo
   end
   
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Factory defaults loaded successfully!")
@@ -129,24 +97,26 @@ function OGRH.DataManagement.ExportData()
     OGRH.EnsureSV()
   end
   
-  -- Use SVM to get data (schema-independent)
-  if not OGRH.SVM then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper] Error:|r SavedVariablesManager not available")
-    return
+  -- Collect all encounter management data
+  -- Explicitly include only raids and roles (exclude playerPools, encounterPools, encounterAssignments, poolDefaults)
+  local encounterMgmt = {}
+  if OGRH_SV.encounterMgmt then
+    encounterMgmt.raids = OGRH_SV.encounterMgmt.raids
+    encounterMgmt.roles = OGRH_SV.encounterMgmt.roles
   end
   
-  -- Get data and strip player assignments from encounterMgmt
-  local rawEncounterMgmt = OGRH.SVM.Get("encounterMgmt")
-  local cleanedEncounterMgmt = StripPlayerAssignments(rawEncounterMgmt)
-  
   local exportData = {
-    version = "2.0",
-    consumes = OGRH.SVM.Get("consumes") or {},
-    tradeItems = OGRH.SVM.Get("tradeItems") or {},
-    encounterMgmt = cleanedEncounterMgmt or {}
+    version = "1.0",
+    encounterMgmt = encounterMgmt,
+    encounterRaidMarks = OGRH_SV.encounterRaidMarks or {},
+    encounterAssignmentNumbers = OGRH_SV.encounterAssignmentNumbers or {},
+    encounterAnnouncements = OGRH_SV.encounterAnnouncements or {},
+    tradeItems = OGRH_SV.tradeItems or {},
+    consumes = OGRH_SV.consumes or {},
+    rgo = OGRH_SV.rgo or {}
   }
   
-  -- Serialize to compact format (pretty print chokes the game client)
+  -- Serialize to string using new serializer
   local serialized = OGRH.Serialize(exportData)
   
   local editBox = OGRH_DataManagementFrame.importExportEditBox
@@ -188,26 +158,30 @@ function OGRH.DataManagement.ImportData()
     OGRH.EnsureSV()
   end
   
-  -- Use SVM to set data (schema-independent)
-  if not OGRH.SVM then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RaidHelper] Error:|r SavedVariablesManager not available")
-    return
+  -- Full import - overwrite everything
+  if importData.encounterMgmt then
+    OGRH_SV.encounterMgmt = importData.encounterMgmt
   end
-  
-  -- Import only the data that was exported (v2 format)
-  -- SVM.Set signature: Set(key, subkey, value, syncMetadata)
-  -- For top-level keys, subkey is nil
-  if importData.consumes then
-    OGRH.SVM.Set("consumes", nil, importData.consumes)
+  if importData.encounterRaidMarks then
+    OGRH_SV.encounterRaidMarks = importData.encounterRaidMarks
+  end
+  if importData.encounterAssignmentNumbers then
+    OGRH_SV.encounterAssignmentNumbers = importData.encounterAssignmentNumbers
+  end
+  if importData.encounterAnnouncements then
+    OGRH_SV.encounterAnnouncements = importData.encounterAnnouncements
   end
   if importData.tradeItems then
-    OGRH.SVM.Set("tradeItems", nil, importData.tradeItems)
+    OGRH_SV.tradeItems = importData.tradeItems
   end
-  if importData.encounterMgmt then
-    OGRH.SVM.Set("encounterMgmt", nil, importData.encounterMgmt)
+  if importData.consumes then
+    OGRH_SV.consumes = importData.consumes
+  end
+  if importData.rgo then
+    OGRH_SV.rgo = importData.rgo
   end
   
-  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Data imported successfully (version " .. (importData.version or "unknown") .. ").")
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Encounter data imported successfully.")
   
   -- Refresh all windows
   OGRH.DataManagement.RefreshAllWindows()
