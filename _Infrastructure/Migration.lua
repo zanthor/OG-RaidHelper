@@ -2523,17 +2523,9 @@ OGRH.Msg("|cffff0000[RH-Migration]|r ERROR: v2 schema not active. Run /ogrh migr
 OGRH.Msg("|cff00ccff[RH-Migration]|r Purging v1 data from SavedVariables...")
     end
     
-    -- List of keys to preserve (v2 and essential top-level keys)
+    -- List of keys to preserve (only v2 - everything else is inside it)
     local preserveKeys = {
-        v2 = true,
-        schemaVersion = true,  -- Top-level schema marker
-        pollTime = true,        -- Core setting
-        firstRun = true,        -- First run flag
-        ui = true,              -- UI state
-        allowRemoteReadyCheck = true,
-        consumeMonitoringActive = true,
-        raidLead = true,
-        lockSync = true
+        v2 = true  -- v2 schema contains all addon data
     }
     
     -- Count keys purged

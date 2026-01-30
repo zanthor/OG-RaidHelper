@@ -179,11 +179,10 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Auto-activating v2 schema...")
       local daysSinceMigration = (currentTime - migrationDate) / 86400  -- 86400 seconds in a day
       
       if daysSinceMigration >= 15 then
-        -- Check if v1 data still exists
+        -- Check if v1 data still exists (anything except v2)
         local hasV1Data = false
-        local preserveKeys = {v2=true, schemaVersion=true, pollTime=true, firstRun=true, ui=true, allowRemoteReadyCheck=true, consumeMonitoringActive=true, raidLead=true, lockSync=true}
         for key, _ in pairs(OGRH_SV) do
-          if not preserveKeys[key] then
+          if key ~= "v2" then
             hasV1Data = true
             break
           end

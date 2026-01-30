@@ -1268,8 +1268,8 @@ end
 -- @param raidName string: (optional) Name of the raid for flask requirement checking
 -- @param encounterName string: (optional) Name of the encounter for flask requirement checking
 function CT.CalculatePlayerScore(playerName, playerClass, raidData, raidName, encounterName)
-  -- Get player's role from RolesUI
-  local playerRole = OGRH_SV and OGRH_SV.roles and OGRH_SV.roles[playerName]
+  -- Get player's role from RolesUI via getter function
+  local playerRole = OGRH_GetPlayerRole and OGRH_GetPlayerRole(playerName)
   if not playerRole then
     return nil, "No role assigned"
   end
@@ -2413,7 +2413,7 @@ function CT.CaptureConsumesSnapshot()
   local players = {}
   for playerName, data in pairs(raidData) do
     local score, err, details = CT.CalculatePlayerScore(playerName, data.class, raidData, raid, encounter)
-    local role = OGRH_SV.roles and OGRH_SV.roles[playerName] or "UNKNOWN"
+    local role = OGRH_GetPlayerRole and OGRH_GetPlayerRole(playerName) or "UNKNOWN"
     
     table.insert(players, {
       name = playerName,
