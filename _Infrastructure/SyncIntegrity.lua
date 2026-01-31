@@ -23,7 +23,7 @@ OGRH.SyncIntegrity = {}
 
 OGRH.SyncIntegrity.State = {
     lastChecksumBroadcast = 0,
-    verificationInterval = 15,  -- seconds
+    verificationInterval = 30,  -- seconds
     checksumCache = {},
     pollingTimer = nil,
     enabled = false,
@@ -711,9 +711,11 @@ function OGRH.SyncIntegrity.OnRolesRepair(sender, data)
         OGRH.Msg("|cff00ff00[RH]|r Roles updated")
     end
     
-    -- Refresh UI if needed
-    if OGRH.RolesUI and OGRH.RolesUI.Refresh then
-        OGRH.RolesUI.Refresh()
+    -- Refresh RolesUI if open (use UpdatePlayerLists to rebuild display)
+    if OGRH.rolesFrame and OGRH.rolesFrame.UpdatePlayerLists then
+        OGRH.rolesFrame.UpdatePlayerLists(false)
+    elseif OGRH_RolesFrame and OGRH_RolesFrame:IsVisible() and OGRH.RenderRoles then
+        OGRH.RenderRoles()
     end
     
     -- Refresh encounter planning interface
@@ -762,9 +764,9 @@ function OGRH.SyncIntegrity.StartIntegrityChecks()
         if OGRH.CanModifyStructure(UnitName("player")) then
             OGRH.SyncIntegrity.BroadcastChecksums()
         end
-    end, 15, true)  -- 15 seconds, repeating
+    end, 30, true)  -- 30 seconds, repeating
     
-    OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Active Raid checksum polling started (broadcasts every 15s)")
+    OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Active Raid checksum polling started (broadcasts every 30s)")
 end
 
 -- Record admin modification (resets cooldown timer)

@@ -214,7 +214,10 @@ local function CreateRolesFrame()
                                     local oldRole = roles[draggedName]
                                     
                                     roles[draggedName] = newRole
-                                    OGRH.SVM.Set("roles", nil, roles)
+                                    OGRH.SVM.Set("roles", nil, roles, {
+                                        syncLevel = "REALTIME",
+                                        componentType = "roles"
+                                    })
                                     
                                     -- Sync tank and healer status to Puppeteer and pfUI
                                     local isTank = (newRole == "TANKS")

@@ -71,7 +71,24 @@ function OGRH.DataManagement.LoadDefaults()
     OGRH.SVM.Set("tradeItems", nil, OGRH.FactoryDefaults.tradeItems)
   end
   if OGRH.FactoryDefaults.encounterMgmt then
+    -- Preserve Active Raid (raids[1]) when loading defaults
+    local currentEncounterMgmt = OGRH.SVM.Get("encounterMgmt")
+    local activeRaid = nil
+    if currentEncounterMgmt and currentEncounterMgmt.raids and currentEncounterMgmt.raids[1] then
+      activeRaid = OGRH.DeepCopy(currentEncounterMgmt.raids[1])
+    end
+    
+    -- Load factory defaults
     OGRH.SVM.Set("encounterMgmt", nil, OGRH.FactoryDefaults.encounterMgmt)
+    
+    -- Restore Active Raid to raids[1]
+    if activeRaid then
+      local newEncounterMgmt = OGRH.SVM.Get("encounterMgmt")
+      if newEncounterMgmt and newEncounterMgmt.raids then
+        table.insert(newEncounterMgmt.raids, 1, activeRaid)
+        OGRH.SVM.Set("encounterMgmt", nil, newEncounterMgmt)
+      end
+    end
   end
   
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Factory defaults loaded successfully!")
@@ -118,6 +135,15 @@ function OGRH.DataManagement.ExportData()
   local rawEncounterMgmt = OGRH.SVM.Get("encounterMgmt")
   local cleanedEncounterMgmt = StripPlayerAssignments(rawEncounterMgmt)
   
+  -- Exclude Active Raid (raids[1]) from export
+  if cleanedEncounterMgmt and cleanedEncounterMgmt.raids then
+    local exportRaids = {}
+    for i = 2, table.getn(cleanedEncounterMgmt.raids) do
+      table.insert(exportRaids, cleanedEncounterMgmt.raids[i])
+    end
+    cleanedEncounterMgmt.raids = exportRaids
+  end
+  
   local exportData = {
     version = "2.0",
     consumes = OGRH.SVM.Get("consumes") or {},
@@ -133,7 +159,7 @@ function OGRH.DataManagement.ExportData()
   editBox:HighlightText()
   editBox:SetFocus()
   
-  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Data exported to textbox.")
+  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Data exported to textbox (excluding Active Raid).")
 end
 
 function OGRH.DataManagement.ImportData()
@@ -183,7 +209,24 @@ function OGRH.DataManagement.ImportData()
     OGRH.SVM.Set("tradeItems", nil, importData.tradeItems)
   end
   if importData.encounterMgmt then
+    -- Preserve Active Raid (raids[1]) during import
+    local currentEncounterMgmt = OGRH.SVM.Get("encounterMgmt")
+    local activeRaid = nil
+    if currentEncounterMgmt and currentEncounterMgmt.raids and currentEncounterMgmt.raids[1] then
+      activeRaid = OGRH.DeepCopy(currentEncounterMgmt.raids[1])
+    end
+    
+    -- Import the data
     OGRH.SVM.Set("encounterMgmt", nil, importData.encounterMgmt)
+    
+    -- Restore Active Raid to raids[1]
+    if activeRaid then
+      local newEncounterMgmt = OGRH.SVM.Get("encounterMgmt")
+      if newEncounterMgmt and newEncounterMgmt.raids then
+        table.insert(newEncounterMgmt.raids, 1, activeRaid)
+        OGRH.SVM.Set("encounterMgmt", nil, newEncounterMgmt)
+      end
+    end
   end
   
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Data imported successfully (version " .. (importData.version or "unknown") .. ").")

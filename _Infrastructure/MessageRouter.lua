@@ -326,10 +326,13 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     end)
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.QUERY, function(sender, data, channel)
-        -- Respond to admin query with current admin info
-        if OGRH.GetRaidAdmin then
+        -- Only respond to admin query if you're actually authorized to be admin
+        if OGRH.GetRaidAdmin and OGRH.IsRaidAdmin then
             local currentAdmin = OGRH.GetRaidAdmin()
-            if currentAdmin then
+            local playerName = UnitName("player")
+            
+            -- Only respond if you ARE the current admin AND you're still authorized (L/A)
+            if currentAdmin == playerName and OGRH.IsRaidAdmin(playerName) then
                 OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.ADMIN.RESPONSE, {
                     currentAdmin = currentAdmin,
                     timestamp = GetTime(),

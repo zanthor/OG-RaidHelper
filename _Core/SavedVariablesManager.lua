@@ -655,9 +655,11 @@ function OGRH.SVM.OnDeltaReceived(sender, data, channel)
     local success = OGRH.SVM.SetPath(data.path, data.value, nil)  -- nil = no sync (we're receiving)
     
     if success then
-        -- Trigger UI updates
-        if OGRH.RolesUI and OGRH.RolesUI.RefreshDisplay then
-            OGRH.RolesUI.RefreshDisplay()
+        -- Trigger UI updates - use same pattern as repair handler
+        if OGRH.rolesFrame and OGRH.rolesFrame.UpdatePlayerLists then
+            OGRH.rolesFrame.UpdatePlayerLists(false)
+        elseif OGRH_RolesFrame and OGRH_RolesFrame:IsVisible() and OGRH.RenderRoles then
+            OGRH.RenderRoles()
         end
         
         -- Refresh encounter planning interface if it exists
@@ -704,10 +706,12 @@ function OGRH.SVM.OnBatchReceived(sender, data, channel)
         end
     end
     
-    -- Trigger UI updates if any succeeded
+    -- Trigger UI updates if any succeeded - use same pattern as repair handler
     if successCount > 0 then
-        if OGRH.RolesUI and OGRH.RolesUI.RefreshDisplay then
-            OGRH.RolesUI.RefreshDisplay()
+        if OGRH.rolesFrame and OGRH.rolesFrame.UpdatePlayerLists then
+            OGRH.rolesFrame.UpdatePlayerLists(false)
+        elseif OGRH_RolesFrame and OGRH_RolesFrame:IsVisible() and OGRH.RenderRoles then
+            OGRH.RenderRoles()
         end
     end
     

@@ -543,37 +543,71 @@ function OGRH.UpdateEncounterNavButton()
   local raidName = OGRH.SVM.Get("ui", "selectedRaid")
   local encounterName = OGRH.SVM.Get("ui", "selectedEncounter")
   
+  OGRH.Msg("|cff00ccff[RH-Debug]|r UpdateEncounterNavButton called: raid=" .. tostring(raidName) .. ", encounter=" .. tostring(encounterName))
+  
   -- Load modules for the selected encounter (main UI only)
   if OGRH.LoadModulesForRole and OGRH.UnloadAllModules and raidName and encounterName then
-    -- Get roles for this encounter using SVM
-    local rolesPath = string.format("encounterMgmt.roles.%s.%s", raidName, encounterName)
-    local rolesData = OGRH.SVM.GetPath(rolesPath)
+    -- Get raids array to find the encounter's roles
+    local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
     
-    if rolesData then
-      -- Collect all modules from custom module roles
-      local allModules = {}
-      if rolesData.column1 then
-        for _, role in ipairs(rolesData.column1) do
-          if role.isCustomModule and role.modules then
-            for _, moduleId in ipairs(role.modules) do
-              table.insert(allModules, moduleId)
+    OGRH.Msg("|cff00ccff[RH-Debug]|r raids = " .. tostring(raids) .. " (count: " .. (raids and table.getn(raids) or 0) .. ")")
+    
+    if raids then
+      -- Find raid and encounter indices
+      local raidIdx, encIdx
+      for i = 1, table.getn(raids) do
+        if raids[i].name == raidName then
+          raidIdx = i
+          if raids[i].encounters then
+            for j = 1, table.getn(raids[i].encounters) do
+              if raids[i].encounters[j].name == encounterName then
+                encIdx = j
+                break
+              end
             end
           end
-        end
-      end
-      if rolesData.column2 then
-        for _, role in ipairs(rolesData.column2) do
-          if role.isCustomModule and role.modules then
-            for _, moduleId in ipairs(role.modules) do
-              table.insert(allModules, moduleId)
-            end
-          end
+          break
         end
       end
       
-      -- Load the modules
-      if table.getn(allModules) > 0 then
-        OGRH.LoadModulesForRole(allModules)
+      OGRH.Msg("|cff00ccff[RH-Debug]|r Found indices: raidIdx=" .. tostring(raidIdx) .. ", encIdx=" .. tostring(encIdx))
+      
+      -- Get roles from the encounter
+      if raidIdx and encIdx then
+        local rolesPath = string.format("encounterMgmt.raids.%d.encounters.%d.roles", raidIdx, encIdx)
+        local rolesData = OGRH.SVM.GetPath(rolesPath)
+        
+        OGRH.Msg("|cff00ccff[RH-Debug]|r rolesData = " .. tostring(rolesData))
+        
+        if rolesData then
+          OGRH.Msg("|cff00ccff[RH-Debug]|r roles array count: " .. (rolesData and table.getn(rolesData) or 0))
+          
+          -- Collect all modules from custom module roles
+          -- Roles are stored as a flat array with column field inside each role
+          local allModules = {}
+          for i = 1, table.getn(rolesData) do
+            local role = rolesData[i]
+            OGRH.Msg("|cff00ccff[RH-Debug]|r Role " .. i .. ": isCustomModule=" .. tostring(role.isCustomModule) .. ", modules=" .. tostring(role.modules) .. ", column=" .. tostring(role.column))
+            if role.isCustomModule and role.modules then
+              OGRH.Msg(string.format("|cff00ccff[RH-Debug]|r Found custom module role with %d modules", table.getn(role.modules)))
+              for _, moduleId in ipairs(role.modules) do
+                OGRH.Msg("|cff00ccff[RH-Debug]|r Adding module: " .. tostring(moduleId))
+                table.insert(allModules, moduleId)
+              end
+            end
+          end
+          
+          -- Load the modules
+          if table.getn(allModules) > 0 then
+            OGRH.Msg(string.format("|cff00ff00[RH]|r Loading %d custom modules for encounter", table.getn(allModules)))
+            OGRH.LoadModulesForRole(allModules)
+          else
+            OGRH.Msg("|cff00ccff[RH-Debug]|r No modules found, unloading all")
+            OGRH.UnloadAllModules()
+          end
+        else
+          OGRH.UnloadAllModules()
+        end
       else
         OGRH.UnloadAllModules()
       end

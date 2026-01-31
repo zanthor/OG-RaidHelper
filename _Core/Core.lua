@@ -5288,8 +5288,10 @@ local function CreateMinimapButton()
             text = "Data Management",
             onClick = function()
               OGRH.CloseAllWindows("OGRH_DataManagementFrame")
-              if OGRH.Sync and OGRH.Sync.ShowDataManagementWindow then
-                OGRH.Sync.ShowDataManagementWindow()
+              if OGRH.DataManagement and OGRH.DataManagement.ShowWindow then
+                OGRH.DataManagement.ShowWindow()
+              else
+                OGRH.Msg("Data Management module not loaded.")
               end
             end
           }

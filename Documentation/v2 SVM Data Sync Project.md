@@ -784,27 +784,27 @@ end
 ## Implementation Phases
 
 ### Phase 1: Core Infrastructure
-- [ ] Create `SyncChecksum.lua` with all checksum functions
-- [ ] Create `SyncRouter.lua` for sync level routing
-- [ ] Update `SavedVariablesManager.lua` with context-aware routing
-- [ ] Implement Active Raid initialization in Core.lua
-- [ ] Write migration function for Active Raid insertion
+- [x] Create `SyncChecksum.lua` with all checksum functions
+- [x] Create `SyncRouter.lua` for sync level routing
+- [x] Update `SavedVariablesManager.lua` with context-aware routing
+- [x] Implement Active Raid initialization in Core.lua
+- [x] Write migration function for Active Raid insertion
 
 ### Phase 2: UI Implementation
-- [ ] Modify right-click menu on Encounter button (Main UI)
-- [ ] Add "Active Raid" submenu for quick encounter navigation
-- [ ] Add "Set Active Raid" section below with raid list
-- [ ] Implement "Set Active Raid" confirmation dialog
-- [ ] Add active raid indicator to Main UI
-- [ ] Test raid copying with assignments
-- [ ] Add permission checks to EncounterSetup for active raid edits
+- [x] Modify right-click menu on Encounter button (Main UI)
+- [x] Add "Active Raid" submenu for quick encounter navigation
+- [x] Add "Set Active Raid" section below with raid list
+- [x] Implement "Set Active Raid" confirmation dialog
+- [x] Add active raid indicator to Main UI
+- [x] Test raid copying with assignments
+- [x] Add permission checks to EncounterSetup for active raid edits
 
 ### Phase 3: Sync Integration
-- [ ] Update EncounterMgmt.lua to use SVM with REALTIME metadata
-- [ ] Update EncounterSetup.lua to use SVM with BATCH metadata
-- [ ] Implement checksum broadcast (30s + after changes)
-- [ ] Implement client validation and repair requests
-- [ ] Implement admin repair buffer (1-second delay)
+- [x] Update EncounterMgmt.lua to use SVM with REALTIME metadata
+- [x] Update EncounterSetup.lua to use SVM with BATCH metadata
+- [x] Implement checksum broadcast (30s + after changes)
+- [x] Implement client validation and repair requests
+- [x] Implement admin repair buffer (1-second delay)
 
 ### Phase 4: Code Consolidation
 - [ ] Audit all sync calls (grep search)

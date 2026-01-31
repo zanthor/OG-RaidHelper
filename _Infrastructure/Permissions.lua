@@ -146,6 +146,11 @@ function OGRH.SetRaidAdmin(playerName, suppressBroadcast)
     -- Save to saved variables
     OGRH.EnsureSV()
     
+    -- Ensure adminHistory exists
+    if not OGRH.Permissions.State.adminHistory then
+        OGRH.Permissions.State.adminHistory = {}
+    end
+    
     -- Record in history
     table.insert(OGRH.Permissions.State.adminHistory, {
         timestamp = time(),
@@ -227,6 +232,11 @@ function OGRH.RequestAdminRole()
                 onSuccess = function()
                     OGRH.SetRaidAdmin(playerName)
                     OGRH.Msg("|cff00ff00[Permissions]|r You are now the raid admin")
+                    
+                    -- Update admin button to show green
+                    if OGRH.UpdateAdminButtonColor then
+                        OGRH.UpdateAdminButtonColor()
+                    end
                 end
             }
         )
@@ -234,6 +244,11 @@ function OGRH.RequestAdminRole()
         -- Fallback if MessageRouter not available
         OGRH.SetRaidAdmin(playerName)
         OGRH.Msg("|cff00ff00[Permissions]|r You are now the raid admin")
+        
+        -- Update admin button to show green
+        if OGRH.UpdateAdminButtonColor then
+            OGRH.UpdateAdminButtonColor()
+        end
     end
     
     return true
@@ -249,10 +264,33 @@ function OGRH.PollForRaidAdmin()
         return  -- MessageRouter not initialized yet
     end
     
+    -- Clear current admin before polling
+    local previousAdmin = OGRH.GetRaidAdmin()
+    OGRH.Permissions.State.currentAdmin = nil
+    
     -- Broadcast query to all raid members
     OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.QUERY, "", {
         priority = "HIGH"
     })
+    
+    -- After 2 seconds, if no admin responded, make raid leader the admin
+    OGRH.ScheduleTimer(function()
+        if not OGRH.GetRaidAdmin() and UnitInRaid("player") then
+            -- No admin responded - find raid leader and make them admin
+            for i = 1, GetNumRaidMembers() do
+                local name, rank = GetRaidRosterInfo(i)
+                if rank == 2 then  -- Rank 2 = raid leader
+                    OGRH.SetRaidAdmin(name)
+                    if name == UnitName("player") then
+                        OGRH.Msg("|cff00ff00[RH]|r No raid admin found - you are now raid admin (raid leader)")
+                    else
+                        OGRH.Msg("|cff00ccff[RH]|r No raid admin found - " .. name .. " is now raid admin (raid leader)")
+                    end
+                    break
+                end
+            end
+        end
+    end, 2, false)
 end
 
 -- Set session admin (temporary, for current session only)
