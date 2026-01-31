@@ -874,62 +874,62 @@ local function LogWrapperCall(funcName)
 end
 
 -- Hashing
-OGRH.HashString = function(...)
+OGRH.HashString = function(str)
     LogWrapperCall("OGRH.HashString")
-    return OGRH.SyncChecksum.HashString(...)
+    return OGRH.SyncChecksum.HashString(str)
 end
 
-OGRH.HashRole = function(...)
+OGRH.HashRole = function(role, columnMultiplier, roleIndex)
     LogWrapperCall("OGRH.HashRole")
-    return OGRH.SyncChecksum.HashRole(...)
+    return OGRH.SyncChecksum.HashRole(role, columnMultiplier, roleIndex)
 end
 
 -- Checksums (legacy v1 schema)
-OGRH.CalculateStructureChecksum = function(...)
+OGRH.CalculateStructureChecksum = function(raid, encounter)
     LogWrapperCall("OGRH.CalculateStructureChecksum")
-    return OGRH.SyncChecksum.CalculateStructureChecksum(...)
+    return OGRH.SyncChecksum.CalculateStructureChecksum(raid, encounter)
 end
 
-OGRH.CalculateAllStructureChecksum = function(...)
+OGRH.CalculateAllStructureChecksum = function()
     LogWrapperCall("OGRH.CalculateAllStructureChecksum")
-    return OGRH.SyncChecksum.CalculateAllStructureChecksum(...)
+    return OGRH.SyncChecksum.CalculateAllStructureChecksum()
 end
 
-OGRH.CalculateRolesUIChecksum = function(...)
+OGRH.CalculateRolesUIChecksum = function()
     LogWrapperCall("OGRH.CalculateRolesUIChecksum")
-    return OGRH.SyncChecksum.CalculateRolesUIChecksum(...)
+    return OGRH.SyncChecksum.CalculateRolesUIChecksum()
 end
 
 -- Checksums (v2 schema)
-OGRH.ComputeRaidChecksum = function(...)
+OGRH.ComputeRaidChecksum = function(raidName)
     LogWrapperCall("OGRH.ComputeRaidChecksum")
-    return OGRH.SyncChecksum.ComputeRaidChecksum(...)
+    return OGRH.SyncChecksum.ComputeRaidChecksum(raidName)
 end
 
-OGRH.ComputeActiveAssignmentsChecksum = function(...)
+OGRH.ComputeActiveAssignmentsChecksum = function(encounterIdx)
     LogWrapperCall("OGRH.ComputeActiveAssignmentsChecksum")
-    return OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(...)
+    return OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(encounterIdx)
 end
 
-OGRH.GetGlobalComponentChecksums = function(...)
+OGRH.GetGlobalComponentChecksums = function()
     LogWrapperCall("OGRH.GetGlobalComponentChecksums")
-    return OGRH.SyncChecksum.GetGlobalComponentChecksums(...)
+    return OGRH.SyncChecksum.GetGlobalComponentChecksums()
 end
 
 -- Serialization
-OGRH.Serialize = function(...)
+OGRH.Serialize = function(tbl)
     LogWrapperCall("OGRH.Serialize")
-    return OGRH.SyncChecksum.Serialize(...)
+    return OGRH.SyncChecksum.Serialize(tbl)
 end
 
-OGRH.Deserialize = function(...)
+OGRH.Deserialize = function(str)
     LogWrapperCall("OGRH.Deserialize")
-    return OGRH.SyncChecksum.Deserialize(...)
+    return OGRH.SyncChecksum.Deserialize(str)
 end
 
-OGRH.DeepCopy = function(...)
+OGRH.DeepCopy = function(tbl)
     LogWrapperCall("OGRH.DeepCopy")
-    return OGRH.SyncChecksum.DeepCopy(...)
+    return OGRH.SyncChecksum.DeepCopy(tbl)
 end
 
 --[[
