@@ -49,6 +49,7 @@ _Infrastructure\Versioning.lua
 _Infrastructure\MessageRouter.lua
 _Infrastructure\MigrationMap.lua
 _Infrastructure\Migration.lua
+_Infrastructure\SyncChecksum.lua
 _Infrastructure\SyncRouter.lua
 _Infrastructure\DataManagement.lua
 _Infrastructure\SyncIntegrity.lua
