@@ -23,11 +23,19 @@ local function CreateStatsPanel()
     local frame = CreateFrame("Frame", "OGAddonMsg_StatsPanel", UIParent)
     frame:SetWidth(280)
     frame:SetHeight(200)
-    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     frame:SetMovable(1)
     frame:EnableMouse(1)
     frame:SetClampedToScreen(1)
     frame:SetFrameStrata("DIALOG")
+    
+    -- Set initial position from saved variables or default
+    if OGAddonMsg_Config and OGAddonMsg_Config.statsPanelPosition then
+        local pos = OGAddonMsg_Config.statsPanelPosition
+        frame:ClearAllPoints()
+        frame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+    else
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
     
     -- Backdrop (OGST style - dark with tooltip border)
     frame:SetBackdrop({
@@ -70,6 +78,19 @@ local function CreateStatsPanel()
     end)
     frame:SetScript("OnDragStop", function()
         this:StopMovingOrSizing()
+        
+        -- Save position to SavedVariables
+        if not OGAddonMsg_Config then
+            OGAddonMsg_Config = {}
+        end
+        
+        local point, relativeTo, relativePoint, xOfs, yOfs = this:GetPoint()
+        OGAddonMsg_Config.statsPanelPosition = {
+            point = point,
+            relativePoint = relativePoint,
+            xOfs = xOfs,
+            yOfs = yOfs
+        }
     end)
     
     -- Stat labels (left column)

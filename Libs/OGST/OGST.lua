@@ -17,6 +17,8 @@ do
   local loadedFrom = debugstack()
   if string.find(loadedFrom, "Interface\\AddOns\\_OGST\\") then
     OGST_LOAD_SOURCE = "standalone"
+  elseif string.find(loadedFrom, "Interface\\AddOns\\OG%-RaidHelper\\Libs\\OGST\\") then
+    OGST_LOAD_SOURCE = "OG-RaidHelper"
   elseif string.find(loadedFrom, "Interface\\AddOns\\") then
     -- Extract addon name from path
     local _, _, addonName = string.find(loadedFrom, "Interface\\AddOns\\([^\\]+)\\")
@@ -127,17 +129,14 @@ OGST.LIST_ITEM_SPACING = 2
 -- Returns the base path to the OGST folder
 function OGST.GetResourcePath()
   if not OGST._resourcePath then
-    -- Try to find where OGST is loaded from by checking known locations
-    -- Priority: standalone _OGST addon, then check for embedded versions
-    
-    -- Check if standalone exists
-    local testPath = "Interface\\AddOns\\_OGST\\img\\"
-    -- We can't directly test file existence in 1.12, so we'll store the source
+    -- Determine path based on where OGST was loaded from
     
     if OGST.loadSource == "standalone" then
       OGST._resourcePath = "Interface\\AddOns\\_OGST\\"
+    elseif OGST.loadSource == "OG-RaidHelper" then
+      OGST._resourcePath = "Interface\\AddOns\\OG-RaidHelper\\Libs\\OGST\\"
     else
-      -- Embedded version - construct path from load source
+      -- Generic embedded version - construct path from load source
       OGST._resourcePath = "Interface\\AddOns\\" .. (OGST.loadSource or "OG-RaidHelper") .. "\\Libs\\OGST\\"
     end
   end
@@ -2149,8 +2148,7 @@ function OGST.CreateMenuButton(parent, config)
     
     local item = menu:AddItem({
       text = capturedConfig.text,
-      onClick = capturedConfig._internalOnClick,
-      submenu = capturedConfig.submenu
+      onClick = capturedConfig._internalOnClick
     })
     
     -- Mark initially selected items
