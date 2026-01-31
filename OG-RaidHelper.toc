@@ -22,6 +22,7 @@ Libs\json.lua
 ## OGAddonMsg - Embedded Communication Library
 Libs\OGAddonMsg\Core.lua
 Libs\OGAddonMsg\Config.lua
+Libs\OGAddonMsg\Serialization.lua
 Libs\OGAddonMsg\Chunker.lua
 Libs\OGAddonMsg\Queue.lua
 Libs\OGAddonMsg\Retry.lua
