@@ -848,28 +848,12 @@ end
 -- Debug flag for tracking legacy function calls
 OGRH_CHECKSUM_DEBUG = true  -- Set to false to disable wrapper debug logging
 
--- Helper function to log wrapper calls with caller info
+-- Helper function to log wrapper calls
 local function LogWrapperCall(funcName)
     if not OGRH_CHECKSUM_DEBUG then return end
     
-    -- Get caller information from debug stack
-    local info = debug.getinfo(3, "Sl")
-    if info then
-        local source = info.source or "unknown"
-        local line = info.currentline or 0
-        
-        -- Clean up source path for readability
-        source = string.gsub(source, "^@.*\\AddOns\\", "")
-        
-        DEFAULT_CHAT_FRAME:AddMessage(string.format(
-            "|cffff9900[CHECKSUM-WRAPPER]|r %s called from %s:%d",
-            funcName, source, line
-        ))
-    else
-        DEFAULT_CHAT_FRAME:AddMessage(string.format(
-            "|cffff9900[CHECKSUM-WRAPPER]|r %s called (caller unknown)",
-            funcName
-        ))
+    if OGRH and OGRH.Msg then
+        OGRH.Msg(string.format("|cffff9900[CHECKSUM-WRAPPER]|r %s called", funcName))
     end
 end
 
