@@ -265,11 +265,26 @@ function OGRH.SVM.SetPath(path, value, syncMetadata)
 end
 
 -- ============================================
--- SYNC: Route Based on Level
+-- SYNC: Route Based on Level (with Context Awareness)
 -- ============================================
 function OGRH.SVM.HandleSync(key, subkey, value, syncMetadata)
     if not OGRH.SVM.SyncConfig.enabled then return end
-    if not syncMetadata or not syncMetadata.syncLevel then return end
+    
+    -- Build full path
+    local path = key
+    if subkey then
+        path = key .. "." .. subkey
+    end
+    
+    -- If syncMetadata not provided or missing syncLevel, use SyncRouter to determine it
+    if not syncMetadata or not syncMetadata.syncLevel then
+        if OGRH.SyncRouter and OGRH.SyncRouter.Route then
+            syncMetadata = OGRH.SyncRouter.Route(path, value, "update")
+        else
+            -- Fallback to BATCH if router not available
+            syncMetadata = {syncLevel = "BATCH", componentType = "generic"}
+        end
+    end
     
     local level = syncMetadata.syncLevel
     
@@ -279,12 +294,27 @@ function OGRH.SVM.HandleSync(key, subkey, value, syncMetadata)
         OGRH.SVM.SyncBatch(key, subkey, value, syncMetadata)
     end
     -- GRANULAR and MANUAL are on-demand only (not triggered by writes)
+    
+    -- Notify SyncChecksum of modification
+    if OGRH.SyncChecksum then
+        if syncMetadata.scope and syncMetadata.scope.raidIdx then
+            if syncMetadata.scope.encounterIdx then
+                OGRH.SyncChecksum.MarkEncounterDirty(syncMetadata.scope.raidIdx, syncMetadata.scope.encounterIdx)
+            else
+                OGRH.SyncChecksum.MarkRaidDirty(syncMetadata.scope.raidIdx)
+            end
+        elseif syncMetadata.componentType then
+            OGRH.SyncChecksum.MarkComponentDirty(syncMetadata.componentType)
+        end
+    end
 end
 
 -- ============================================
 -- SYNC: Realtime (Immediate)
 -- ============================================
 function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
+    OGRH.Msg("|cffaaffaa[RH-SVM DEBUG]|r SyncRealtime called: key=" .. tostring(key) .. ", subkey=" .. tostring(subkey))
+    
     -- Check permissions based on componentType
     local playerName = UnitName("player")
     local componentType = syncMetadata.componentType or "generic"
@@ -316,6 +346,12 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
         path = key .. "." .. subkey
     end
     
+    -- Compute structure checksum for validation
+    local structureChecksum = nil
+    if OGRH.ComputeRaidChecksum and syncMetadata.scope and syncMetadata.scope.raid then
+        structureChecksum = OGRH.ComputeRaidChecksum(syncMetadata.scope.raid)
+    end
+    
     -- Prepare delta change data
     local changeData = {
         type = "REALTIME_UPDATE",
@@ -324,7 +360,8 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
         componentType = syncMetadata.componentType or "generic",
         scope = syncMetadata.scope,
         timestamp = GetTime(),
-        author = UnitName("player")
+        author = UnitName("player"),
+        structureChecksum = structureChecksum  -- Include for client validation
     }
     
     -- Send via MessageRouter with high priority
@@ -333,13 +370,17 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
             OGRH.MessageTypes.SYNC.DELTA,
             changeData,
             {
-                priority = "HIGH",  -- High priority for realtime (was "ALERT", fixed to match OGAddonMsg queue levels)
+                priority = "HIGH",
                 onFailure = function()
-                    -- If send fails, queue for retry
                     OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
                 end
             }
         )
+    end
+    
+    -- Record modification for checksum system (but don't trigger broadcast - that's periodic)
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.RecordAdminModification then
+        OGRH.SyncIntegrity.RecordAdminModification(syncMetadata.scope)
     end
     
     -- Invalidate checksum for affected scope
@@ -586,19 +627,42 @@ function OGRH.SVM.OnDeltaReceived(sender, data, channel)
         return
     end
     
-    -- Validate data
-    if not data or not data.path or not data.value then
-        OGRH.Msg("|cffff0000[RH-SVM]|r Received invalid delta update")
+    -- Validate data (allow nil values for clearing)
+    if not data or not data.path then
+        OGRH.Msg("|cffff0000[RH-SVM]|r Received invalid delta update (path=" .. tostring(data and data.path or "nil") .. ")")
         return
+    end
+    
+    -- Validate structure checksum if provided
+    if data.structureChecksum and data.scope and data.scope.raid then
+        if OGRH.ComputeRaidChecksum then
+            local localChecksum = OGRH.ComputeRaidChecksum(data.scope.raid)
+            if localChecksum ~= data.structureChecksum then
+                OGRH.Msg("|cffff9900[RH-SVM]|r Delta rejected - structure mismatch. Requesting repair.")
+                -- Request structure repair from checksum system
+                if OGRH.SyncIntegrity and OGRH.SyncIntegrity.QueueRepairRequest then
+                    OGRH.SyncIntegrity.QueueRepairRequest(sender, {
+                        type = "ACTIVE_RAID_STRUCTURE",
+                        component = "structure"
+                    })
+                end
+                return
+            end
+        end
     end
     
     -- Apply update to local SavedVariables
     local success = OGRH.SVM.SetPath(data.path, data.value, nil)  -- nil = no sync (we're receiving)
     
     if success then
-        -- Trigger UI updates if needed
+        -- Trigger UI updates
         if OGRH.RolesUI and OGRH.RolesUI.RefreshDisplay then
             OGRH.RolesUI.RefreshDisplay()
+        end
+        
+        -- Refresh encounter planning interface if it exists
+        if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then
+            OGRH_EncounterFrame.RefreshRoleContainers()
         end
     else
         OGRH.Msg("|cffff0000[RH-SVM]|r Failed to apply delta update: " .. data.path)

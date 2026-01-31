@@ -48,12 +48,10 @@ _Infrastructure\Versioning.lua
 _Infrastructure\MessageRouter.lua
 _Infrastructure\MigrationMap.lua
 _Infrastructure\Migration.lua
-_Infrastructure\Sync_v2.lua
+_Infrastructure\SyncRouter.lua
 _Infrastructure\DataManagement.lua
 _Infrastructure\SyncIntegrity.lua
-_Infrastructure\SyncDelta.lua
 _Infrastructure\SyncGranular.lua
-_Infrastructure\SyncUI.lua
 
 ## ===================================================================
 ## Phase 3: Configuration - Roster & Consumables
@@ -103,3 +101,4 @@ _Modules\OGRH-ConsumeHelper.lua
 ## Phase 8: Tests (Debug Mode Only)
 ## ===================================================================
 _Tests\test_svm.lua
+_Tests\test_phase1.lua

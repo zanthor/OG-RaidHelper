@@ -344,14 +344,23 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   
   -- Note: Change tracking now handled automatically by SVM sync levels
   
-  -- Write assignments back to v2 schema (nested in roles) - modify directly
+  -- Write assignments back to v2 schema using SVM.SetPath for proper sync
+  local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
+  
   for roleIdx, roleAssignments in pairs(assignments) do
     if encounter.roles[roleIdx] then
-      if not encounter.roles[roleIdx].assignedPlayers then
-        encounter.roles[roleIdx].assignedPlayers = {}
-      end
       for slotIdx, playerName in pairs(roleAssignments) do
-        encounter.roles[roleIdx].assignedPlayers[slotIdx] = playerName
+        -- Use SetPath for each assignment to trigger sync
+        OGRH.SVM.SetPath(
+          string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
+            frame.selectedRaidIdx, frame.selectedEncounterIdx, roleIdx, slotIdx),
+          playerName,
+          {
+            syncLevel = syncLevel,
+            componentType = "assignments",
+            scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+          }
+        )
       end
     end
   end
@@ -1868,10 +1877,16 @@ function OGRH.ShowEncounterPlanning(encounterName)
       editBox:SetScript("OnEditFocusLost", function()
         if frame.selectedRaidIdx and frame.selectedEncounterIdx then
           local newText = this:GetText()
+          local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
           OGRH.SVM.SetPath(
             string.format("encounterMgmt.raids.%d.encounters.%d.announcements.%d", 
               frame.selectedRaidIdx, frame.selectedEncounterIdx, capturedIndex),
-            newText
+            newText,
+            {
+              syncLevel = syncLevel,
+              componentType = "settings",
+              scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+            }
           )
         end
       end)
@@ -2255,10 +2270,16 @@ function OGRH.ShowEncounterPlanning(encounterName)
             -- Assign player to slot if we found a target
             if foundTarget and targetRoleIndex and targetSlotIndex then
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
+                local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, targetRoleIndex, targetSlotIndex),
-                  frame.draggedPlayerName
+                  frame.draggedPlayerName,
+                  {
+                    syncLevel = syncLevel,
+                    componentType = "assignments",
+                    scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                  }
                 )
               end
               
@@ -2729,8 +2750,9 @@ function OGRH.ShowEncounterPlanning(encounterName)
                     -- Update with modified roles
                     raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx].roles = allRoles
                     
+                    local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
                     OGRH.SVM.SetPath('encounterMgmt.raids', raids, {
-                      syncLevel = "MANUAL",
+                      syncLevel = syncLevel,
                       componentType = "settings",
                       scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
                     })
@@ -2837,10 +2859,16 @@ function OGRH.ShowEncounterPlanning(encounterName)
               
               -- Save the raid mark assignment via SetPath for proper logging
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
+                local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.raidMarks.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, capturedRoleIndex, capturedSlotIndex),
-                  currentIndex
+                  currentIndex,
+                  {
+                    syncLevel = syncLevel,
+                    componentType = "settings",
+                    scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                  }
                 )
               end
               
@@ -2973,10 +3001,16 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 end
                 
                 -- Write assignment number using SetPath
+                local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignmentNumbers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, capturedRoleIndex, capturedSlotIndex),
-                  currentIndex
+                  currentIndex,
+                  {
+                    syncLevel = syncLevel,
+                    componentType = "assignments",
+                    scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                  }
                 )
               end
               
@@ -3198,17 +3232,30 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 end
                 
                 -- Move dragged player to target position
+                local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, targetRoleIndex, targetSlotIndex),
-                  frame.draggedPlayer
+                  frame.draggedPlayer,
+                  {
+                    syncLevel = syncLevel,
+                    componentType = "assignments",
+                    scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                  }
                 )
                 
                 -- Update source position (swap or clear)
+                -- Use nil to clear, or targetPlayer for swap
+                local sourceValue = targetPlayer or nil
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, frame.draggedFromRole, frame.draggedFromSlot),
-                  targetPlayer
+                  sourceValue,
+                  {
+                    syncLevel = syncLevel,
+                    componentType = "assignments",
+                    scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                  }
                 )
               end
             end
@@ -3253,10 +3300,16 @@ function OGRH.ShowEncounterPlanning(encounterName)
               -- Right click: Unassign player using SetPath
               if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then return end
               
+              local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
               OGRH.SVM.SetPath(
                 string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                   frame.selectedRaidIdx, frame.selectedEncounterIdx, slotRoleIndex, slotSlotIndex),
-                nil
+                nil,
+                {
+                  syncLevel = syncLevel,
+                  componentType = "assignments",
+                  scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                }
               )
               
               -- Refresh display
@@ -3751,22 +3804,6 @@ function OGRH.ShowConsumeSelectionDialog(raidIdx, encounterIdx, roleIndex, slotI
     -- Modify directly - changes persist because this is the actual SavedVariables reference
     encounter.roles[dialog.roleIndex].consumes[dialog.slotIndex] = newConsumeData
     
-    -- Delta sync for consume selection change
-    if OGRH.SyncDelta and OGRH.SyncDelta.RecordAssignmentChange then
-      local consumeData = {
-        raidIdx = dialog.raidIdx,
-        encounterIdx = dialog.encounterIdx,
-        roleIndex = dialog.roleIndex,
-        slotIndex = dialog.slotIndex
-      }
-      OGRH.SyncDelta.RecordAssignmentChange(
-        nil,  -- playerName (not applicable for consume selection)
-        "CONSUME_SELECTION",
-        {consume = newConsumeData, consumeData = consumeData},
-        {consume = oldConsume, consumeData = consumeData}
-      )
-    end
-    
     -- Refresh the Encounter Planning UI
     if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then
       OGRH_EncounterFrame.RefreshRoleContainers()
@@ -3979,6 +4016,28 @@ function OGRH.OpenEncounterPlanning()
     if OGRH_EncounterFrame and currentRaid and currentEncounter then
       OGRH_EncounterFrame.selectedRaid = currentRaid
       OGRH_EncounterFrame.selectedEncounter = currentEncounter
+      
+      -- Find and set indices for the selected raid/encounter
+      local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
+      if raids then
+        for i = 1, table.getn(raids) do
+          if raids[i].name == currentRaid then
+            OGRH_EncounterFrame.selectedRaidIdx = i
+            
+            -- Find encounter index
+            if raids[i].encounters then
+              for j = 1, table.getn(raids[i].encounters) do
+                if raids[i].encounters[j].name == currentEncounter then
+                  OGRH_EncounterFrame.selectedEncounterIdx = j
+                  break
+                end
+              end
+            end
+            break
+          end
+        end
+      end
+      
       -- Refresh to show the correct selection
       if OGRH_EncounterFrame.RefreshRaidsList then
         OGRH_EncounterFrame.RefreshRaidsList()
@@ -3993,10 +4052,34 @@ function OGRH.OpenEncounterPlanning()
     return
   end
   
-  -- Frame already exists - update to current Main UI selection
+  -- Frame already exists - show it first, then update to current Main UI selection
+  OGRH_EncounterFrame:Show()
+  
   if currentRaid and currentEncounter then
     OGRH_EncounterFrame.selectedRaid = currentRaid
     OGRH_EncounterFrame.selectedEncounter = currentEncounter
+    
+    -- Find and set indices for the selected raid/encounter
+    local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
+    if raids then
+      for i = 1, table.getn(raids) do
+        if raids[i].name == currentRaid then
+          OGRH_EncounterFrame.selectedRaidIdx = i
+          
+          -- Find encounter index
+          if raids[i].encounters then
+            for j = 1, table.getn(raids[i].encounters) do
+              if raids[i].encounters[j].name == currentEncounter then
+                OGRH_EncounterFrame.selectedEncounterIdx = j
+                break
+              end
+            end
+          end
+          break
+        end
+      end
+    end
+    
     -- Refresh to show the correct selection
     if OGRH_EncounterFrame.RefreshRaidsList then
       OGRH_EncounterFrame.RefreshRaidsList()
@@ -4008,8 +4091,55 @@ function OGRH.OpenEncounterPlanning()
       OGRH_EncounterFrame.RefreshRoleContainers()
     end
   end
+end
+
+-- ============================================
+-- SET ACTIVE RAID CONFIRMATION DIALOG
+-- ============================================
+
+function OGRH.ShowSetActiveRaidConfirmation(sourceRaidIdx)
+  -- Get raid info
+  local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
+  if not raids or sourceRaidIdx < 2 or sourceRaidIdx > table.getn(raids) then
+    OGRH.Msg("|cffff0000[RH]|r Invalid raid selection")
+    return
+  end
   
-  OGRH_EncounterFrame:Show()
+  local sourceRaid = raids[sourceRaidIdx]
+  local raidName = sourceRaid.displayName or sourceRaid.name
+  
+  -- Create confirmation dialog using StaticPopupDialogs (1.12 compatible)
+  if not StaticPopupDialogs["OGRH_SET_ACTIVE_RAID"] then
+    StaticPopupDialogs["OGRH_SET_ACTIVE_RAID"] = {
+      text = "Set Active Raid to:\n%s\n\nThis will:\n- Copy the raid structure\n- Sync to all raid members\n- Replace current Active Raid",
+      button1 = "Confirm",
+      button2 = "Cancel",
+      OnAccept = function()
+        -- In WoW 1.12, we need to access via text_arg or store in global
+        local idx = StaticPopupDialogs["OGRH_SET_ACTIVE_RAID"].tempData
+        OGRH.Msg("|cff00ccff[RH-Dialog]|r OnAccept called with idx: " .. tostring(idx))
+        if idx and OGRH.SetActiveRaid then
+          OGRH.SetActiveRaid(idx)
+        else
+          OGRH.Msg("|cffff0000[RH-Dialog]|r ERROR: idx=" .. tostring(idx) .. ", SetActiveRaid=" .. tostring(OGRH.SetActiveRaid))
+        end
+      end,
+      timeout = 0,
+      whileDead = 1,
+      hideOnEscape = 1
+    }
+  end
+  
+  -- Store data in the dialog definition for WoW 1.12 compatibility
+  StaticPopupDialogs["OGRH_SET_ACTIVE_RAID"].tempData = sourceRaidIdx
+  
+  -- Show dialog with raid name
+  local dialog = StaticPopup_Show("OGRH_SET_ACTIVE_RAID", raidName)
+  if dialog then
+    OGRH.Msg("|cff00ccff[RH-Dialog]|r Dialog shown, stored index: " .. tostring(sourceRaidIdx))
+  else
+    OGRH.Msg("|cffff0000[RH-Dialog]|r ERROR: Failed to show dialog")
+  end
 end
 
 function OGRH.ShowEncounterRaidMenu(anchorBtn)
@@ -4040,50 +4170,76 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         return
       end
       
-      for i = 1, table.getn(raids) do
-        local raid = raids[i]
-        local raidName = raid.name
-        
-        -- Get encounters for this raid (new structure only)
-        local encounters = {}
-        if raid.encounters then
-          for j = 1, table.getn(raid.encounters) do
-            table.insert(encounters, raid.encounters[j].name)
+      -- ============================================
+      -- ACTIVE RAID SECTION (Index 1)
+      -- ============================================
+      local activeRaid = raids[1]
+      if activeRaid then
+        -- Build Active Raid encounter submenu
+        local activeEncounters = {}
+        if activeRaid.encounters then
+          for j = 1, table.getn(activeRaid.encounters) do
+            local encounterName = activeRaid.encounters[j].name
+            local capturedEncounter = encounterName
+            
+            table.insert(activeEncounters, {
+              text = encounterName,
+              onClick = function()
+                -- Check authorization
+                if not OGRH.CanNavigateEncounter or not OGRH.CanNavigateEncounter() then
+                  OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can change the selected encounter.")
+                  return
+                end
+                
+                -- Active Raid is always index 1
+                OGRH.SetCurrentEncounter(activeRaid.name, capturedEncounter)
+                
+                -- Update UI
+                OGRH.UpdateEncounterNavButton()
+                if OGRH.ShowConsumeMonitor then
+                  OGRH.ShowConsumeMonitor()
+                end
+              end
+            })
           end
         end
         
-        -- Build submenu items for encounters
-        local submenuItems = {}
-        for j = 1, table.getn(encounters) do
-          local encounterName = encounters[j]
-          local capturedRaid = raidName
-          local capturedEncounter = encounterName
-          
-          table.insert(submenuItems, {
-            text = encounterName,
-            onClick = function()
-              -- Check authorization
-              if not OGRH.CanNavigateEncounter or not OGRH.CanNavigateEncounter() then
-                OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can change the selected encounter.")
-                return
-              end
-              
-              -- Update encounter using centralized setter (triggers REALTIME sync)
-              OGRH.SetCurrentEncounter(capturedRaid, capturedEncounter)
-              
-              -- Update UI
-              OGRH.UpdateEncounterNavButton()
-              if OGRH.ShowConsumeMonitor then
-                OGRH.ShowConsumeMonitor()
-              end
-            end
-          })
-        end
-        
-        -- Add raid item with encounter submenu
+        -- Add Active Raid menu item
         menu:AddItem({
-          text = raidName,
-          submenu = submenuItems
+          text = (activeRaid.displayName or "[AR] New Raid"),
+          submenu = activeEncounters,
+          color = {0.3, 1.0, 0.3}  -- Light green to distinguish Active Raid
+        })
+      end
+      
+      -- ============================================
+      -- CHANGE RAID SECTION (Index 2+)
+      -- ============================================
+      
+      -- Add "Change Raid" header (unclickable)
+      menu:AddItem({
+        text = "Change Raid",
+        color = {1.0, 0.8, 0.3},  -- Orange/gold for action items
+        disabled = true  -- Make it a header
+      })
+      
+      -- Add individual raid items below the header
+      for i = 2, table.getn(raids) do
+        local raid = raids[i]
+        local capturedIdx = i
+        
+        menu:AddItem({
+          text = "  " .. (raid.displayName or raid.name),  -- Indent with spaces
+          onClick = function()
+            -- Check authorization
+            if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then
+              OGRH.Msg("Only the Raid Admin can change the Active Raid.")
+              return
+            end
+            
+            -- Show confirmation dialog
+            OGRH.ShowSetActiveRaidConfirmation(capturedIdx)
+          end
         })
       end
       

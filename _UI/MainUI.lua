@@ -457,6 +457,16 @@ function OGRH.NavigateToPreviousEncounter()
         -- Update UI
         OGRH.UpdateEncounterNavButton()
         
+        -- Refresh Encounter Planning window if it's open
+        if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+          if OGRH_EncounterFrame.RefreshRoleContainers then
+            OGRH_EncounterFrame.RefreshRoleContainers()
+          end
+          if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
+            OGRH_EncounterFrame.UpdateAnnouncementBuilder()
+          end
+        end
+        
         -- Update consume monitor if enabled
         if OGRH.ShowConsumeMonitor then
           OGRH.ShowConsumeMonitor()
@@ -496,6 +506,16 @@ function OGRH.NavigateToNextEncounter()
         
         -- Update UI
         OGRH.UpdateEncounterNavButton()
+        
+        -- Refresh Encounter Planning window if it's open
+        if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+          if OGRH_EncounterFrame.RefreshRoleContainers then
+            OGRH_EncounterFrame.RefreshRoleContainers()
+          end
+          if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
+            OGRH_EncounterFrame.UpdateAnnouncementBuilder()
+          end
+        end
         
         -- Update consume monitor if enabled
         if OGRH.ShowConsumeMonitor then
@@ -562,22 +582,38 @@ function OGRH.UpdateEncounterNavButton()
     end
   end
   
+  -- Get Active Raid info for display
+  local activeRaid = OGRH.GetActiveRaid and OGRH.GetActiveRaid()
+  local activeRaidName = ""
+  if activeRaid and activeRaid.displayName then
+    activeRaidName = activeRaid.displayName
+  end
+  
   if not raidName then
-    btn:SetText("Select Raid")
+    if activeRaidName ~= "" then
+      btn:SetText(activeRaidName)
+    else
+      btn:SetText("Select Raid")
+    end
     prevBtn:Disable()
     nextBtn:Disable()
     return
   end
   
+  -- Always show encounter name if one is selected
   if encounterName then
-    -- Truncate encounter name if needed to fit
     local displayName = encounterName
     if string.len(displayName) > 15 then
       displayName = string.sub(displayName, 1, 12) .. "..."
     end
     btn:SetText(displayName)
+  elseif activeRaidName ~= "" then
+    -- Show Active Raid name when no encounter selected
+    btn:SetText(activeRaidName)
+  elseif raidName then
+    btn:SetText("Select Encounter")
   else
-    btn:SetText("No Encounter")
+    btn:SetText("Select Raid")
   end
   
   -- Enable/disable prev/next buttons
@@ -1266,10 +1302,16 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
       else
         OGRH.Msg("SVM tests not loaded.")
       end
+    elseif testName == "phase1" then
+      if OGRH.Tests and OGRH.Tests.Phase1 and OGRH.Tests.Phase1.RunAll then
+        OGRH.Tests.Phase1.RunAll()
+      else
+        OGRH.Msg("Phase 1 tests not loaded.")
+      end
     elseif OGRH.SyncIntegrity and OGRH.SyncIntegrity.RunTests then
       OGRH.SyncIntegrity.RunTests(testName)
     else
-      OGRH.Msg("Test system not loaded. Available: test svm")
+      OGRH.Msg("Test system not loaded. Available: test svm, test phase1")
     end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
@@ -1293,6 +1335,7 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     OGRH.Msg("  sa - Set session admin (temporary)")
     OGRH.Msg("Test Commands:")
     OGRH.Msg("  test svm - Run SavedVariablesManager tests")
+    OGRH.Msg("  test phase1 - Run Phase 1 Core Infrastructure tests")
   else
     OGRH.Msg("Unknown command. Type /" .. OGRH.CMD .. " help for usage.")
   end

@@ -240,6 +240,11 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Loading factory defaults...")
     OGRH.UpgradeEncounterDataStructure()
   end
   
+  -- Ensure Active Raid exists (Phase 1: Core Infrastructure)
+  if OGRH_SV.schemaVersion == "v2" then
+    OGRH.EnsureActiveRaid()
+  end
+  
   -- Load factory defaults on first run if configured
   if OGRH_SV.firstRun ~= false and OGRH.FactoryDefaults and type(OGRH.FactoryDefaults) == "table" and OGRH.FactoryDefaults.version then
     OGRH.LoadFactoryDefaults()
@@ -264,22 +269,13 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Loading factory defaults...")
     OGRH.Sync.Initialize()
   end
   
-  -- Initialize Phase 2+ stub systems (for future implementation)
+  -- Initialize sync systems
   if OGRH.SyncIntegrity and OGRH.SyncIntegrity.Initialize then
     OGRH.SyncIntegrity.Initialize()
   end
   
-  if OGRH.SyncDelta and OGRH.SyncDelta.Initialize then
-    OGRH.SyncDelta.Initialize()
-  end
-  
-  -- Initialize Phase 6.3 granular sync system
   if OGRH.SyncGranular and OGRH.SyncGranular.Initialize then
     OGRH.SyncGranular.Initialize()
-  end
-  
-  if OGRH.SyncUI and OGRH.SyncUI.Initialize then
-    OGRH.SyncUI.Initialize()
   end
   
   elseif event == "PLAYER_ENTERING_WORLD" then
@@ -345,6 +341,7 @@ end
 -- Set currently selected raid/encounter (centralized write interface)
 -- This is the ONLY function that should write selectedRaid/selectedEncounter
 function OGRH.SetCurrentEncounter(raidName, encounterName)
+  -- Store locally first
   if raidName then
     OGRH.SVM.Set("ui", "selectedRaid", raidName, {
       syncLevel = "REALTIME",
@@ -357,6 +354,235 @@ function OGRH.SetCurrentEncounter(raidName, encounterName)
       syncLevel = "REALTIME",
       componentType = "settings"
     })
+  end
+  
+  -- Broadcast encounter change if in raid and authorized
+  if GetNumRaidMembers() > 0 and raidName and encounterName then
+    -- Check if this is admin or raid lead/assistant
+    local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player"))
+    local canNavigate = OGRH.CanNavigateEncounter and OGRH.CanNavigateEncounter()
+    
+    if isAdmin then
+      -- Admin broadcasts encounter change to all raid members
+      OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, {
+        raidName = raidName,
+        encounterName = encounterName
+      }, {
+        priority = "HIGH"
+      })
+    elseif canNavigate then
+      -- Raid lead/assistant requests admin to change encounter
+      -- Find admin and send request
+      local adminName = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+      if adminName and adminName ~= UnitName("player") then
+        OGRH.MessageRouter.SendTo(adminName, OGRH.MessageTypes.STATE.REQUEST_ENCOUNTER, {
+          raidName = raidName,
+          encounterName = encounterName,
+          requester = UnitName("player")
+        })
+      end
+    end
+  end
+end
+
+-- ========================================
+-- ACTIVE RAID MANAGEMENT (Phase 1: Core Infrastructure)
+-- ========================================
+
+-- Ensure Active Raid exists at raids[1] (automatically shifts existing raids if needed)
+function OGRH.EnsureActiveRaid()
+  local sv = OGRH.SVM and OGRH.SVM.GetActiveSchema() or OGRH_SV.v2
+  if not sv then return false end
+  
+  -- Ensure encounterMgmt structure exists
+  if not sv.encounterMgmt then sv.encounterMgmt = {} end
+  if not sv.encounterMgmt.raids then sv.encounterMgmt.raids = {} end
+  
+  local raids = sv.encounterMgmt.raids
+  
+  -- Check if Active Raid already exists at correct position
+  if table.getn(raids) > 0 and raids[1] and raids[1].id == "__active__" then
+    return true  -- Active Raid already exists
+  end
+  
+  -- Active Raid doesn't exist - need to create and shift existing raids
+  local needsMigration = table.getn(raids) > 0
+  
+  -- Create Active Raid slot with default stub encounters
+  local activeRaid = {
+    id = "__active__",
+    name = "[ACTIVE RAID]",
+    displayName = "[AR] New Raid",
+    sortOrder = 0,  -- Always first
+    sourceRaidId = nil,  -- No source set yet
+    encounters = {
+      -- Default stub encounter for testing/initial state
+      {
+        id = 1,
+        name = "Planning",
+        displayName = "Raid Planning",
+        sortOrder = 1,
+        roles = {}  -- Empty roles array
+      }
+    }
+  }
+  
+  -- Shift existing raids up by 1 index
+  if needsMigration then
+    OGRH.Msg("|cffffaa00[RH-ActiveRaid]|r Migrating existing raids to Active Raid structure...")
+    for i = table.getn(raids), 1, -1 do
+      raids[i + 1] = raids[i]
+    end
+    
+    -- Update UI selectedRaid reference if it exists
+    if sv.ui and sv.ui.selectedRaid then
+      local oldRaidIdx = sv.ui.selectedRaid
+      if type(oldRaidIdx) == "number" and oldRaidIdx > 0 then
+        sv.ui.selectedRaid = oldRaidIdx + 1
+      end
+    end
+    
+    OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Shifted " .. table.getn(raids) .. " existing raids up by 1 index")
+  end
+  
+  -- Insert Active Raid at index 1
+  raids[1] = activeRaid
+  
+  OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Active Raid initialized at raids[1]")
+  return true
+end
+
+-- Deep copy utility (declared before SetActiveRaid needs it)
+local function DeepCopyForActiveRaid(obj, seen)
+    if type(obj) ~= 'table' then return obj end
+    if seen and seen[obj] then return seen[obj] end
+    local s = seen or {}
+    local res = setmetatable({}, getmetatable(obj))
+    s[obj] = res
+    for k, v in pairs(obj) do res[DeepCopyForActiveRaid(k, s)] = DeepCopyForActiveRaid(v, s) end
+    return res
+end
+
+-- Set Active Raid source (copy from another raid)
+function OGRH.SetActiveRaid(sourceRaidIdx)
+  OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r SetActiveRaid called with index: " .. tostring(sourceRaidIdx))
+  
+  local sv = OGRH.SVM and OGRH.SVM.GetActiveSchema() or OGRH_SV.v2
+  if not sv or not sv.encounterMgmt or not sv.encounterMgmt.raids then
+    OGRH.Msg("|cffff0000[RH-ActiveRaid]|r ERROR: encounterMgmt not initialized")
+    return false
+  end
+  
+  local raids = sv.encounterMgmt.raids
+  
+  -- Validate source raid
+  if sourceRaidIdx < 2 or sourceRaidIdx > table.getn(raids) then
+    OGRH.Msg("|cffff0000[RH-ActiveRaid]|r ERROR: Invalid source raid index: " .. tostring(sourceRaidIdx))
+    return false
+  end
+  
+  local sourceRaid = raids[sourceRaidIdx]
+  if not sourceRaid then
+    OGRH.Msg("|cffff0000[RH-ActiveRaid]|r ERROR: Source raid not found")
+    return false
+  end
+  
+  -- Deep copy source raid to Active Raid
+  local activeRaid = raids[1]
+  if not activeRaid then
+    OGRH.EnsureActiveRaid()
+    activeRaid = raids[1]
+  end
+  
+  -- Copy encounters from source
+  activeRaid.encounters = DeepCopyForActiveRaid(sourceRaid.encounters)
+  activeRaid.sourceRaidId = sourceRaid.id
+  activeRaid.displayName = "[AR] " .. (sourceRaid.name or sourceRaid.displayName or "Unknown")
+  
+  OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Set Active Raid to: %s", sourceRaid.name or sourceRaid.displayName))
+  
+  -- Set the UI to select the Active Raid
+  OGRH.SVM.Set("ui", "selectedRaid", activeRaid.name, {
+    syncLevel = "REALTIME",
+    componentType = "settings"
+  })
+  
+  -- Automatically select the first encounter in the new Active Raid
+  if activeRaid.encounters and table.getn(activeRaid.encounters) > 0 then
+    local firstEncounter = activeRaid.encounters[1].name
+    OGRH.SVM.Set("ui", "selectedEncounter", firstEncounter, {
+      syncLevel = "REALTIME",
+      componentType = "settings"
+    })
+    OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected first encounter: %s", firstEncounter))
+  end
+  
+  -- Trigger UI refresh
+  if OGRH.UpdateEncounterNavButton then
+    OGRH.UpdateEncounterNavButton()
+  end
+  
+  -- Refresh Encounter Planning window if it's open
+  if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+    if OGRH_EncounterFrame.RefreshRoleContainers then
+      OGRH_EncounterFrame.RefreshRoleContainers()
+    end
+    if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
+      OGRH_EncounterFrame.UpdateAnnouncementBuilder()
+    end
+  end
+  
+  if OGRH.MainUI and OGRH.MainUI.RefreshDisplay then
+    OGRH.MainUI.RefreshDisplay()
+  end
+  
+  -- Trigger checksum broadcast after change (SyncIntegrity will respect cooldown)
+  if OGRH.SyncIntegrity and OGRH.SyncIntegrity.RecordAdminModification then
+    OGRH.SyncIntegrity.RecordAdminModification()
+  end
+  if OGRH.SyncIntegrity and OGRH.SyncIntegrity.BroadcastChecksums then
+    OGRH.ScheduleTimer(function()
+      OGRH.SyncIntegrity.BroadcastChecksums()
+    end, 2)  -- Broadcast 2 seconds after change
+  end
+  
+  return true
+end
+
+-- Get Active Raid data
+function OGRH.GetActiveRaid()
+  local sv = OGRH.SVM and OGRH.SVM.GetActiveSchema() or OGRH_SV.v2
+  if not sv or not sv.encounterMgmt or not sv.encounterMgmt.raids then
+    return nil
+  end
+  
+  return sv.encounterMgmt.raids[1]
+end
+
+-- ========================================
+-- SYNC PRIORITY HELPERS (Phase 3)
+-- ========================================
+
+-- Determine if a raid index is the Active Raid
+function OGRH.IsActiveRaid(raidIdx)
+  return raidIdx == 1
+end
+
+-- Get appropriate sync level based on context
+-- EncounterMgmt (Planning window): REALTIME for Active Raid, BATCH for saved raids
+-- EncounterSetup (Configuration window): BATCH for Active Raid, MANUAL for saved raids
+function OGRH.GetSyncLevel(raidIdx, context)
+  local isActive = OGRH.IsActiveRaid(raidIdx)
+  
+  if context == "EncounterMgmt" then
+    -- Planning window: REALTIME for active, BATCH for saved
+    return isActive and "REALTIME" or "BATCH"
+  elseif context == "EncounterSetup" then
+    -- Configuration window: BATCH for active, MANUAL for saved
+    return isActive and "BATCH" or "MANUAL"
+  else
+    -- Default: BATCH for active, MANUAL for saved
+    return isActive and "BATCH" or "MANUAL"
   end
 end
 
@@ -664,6 +890,12 @@ function OGRH.ScheduleTimer(callback, delay, repeating)
     repeating = repeating
   }
   return id
+end
+
+function OGRH.CancelTimer(id)
+  if id and OGRH.timers[id] then
+    OGRH.timers[id] = nil
+  end
 end
 
 -- ========================================

@@ -216,14 +216,6 @@ local function CreateRolesFrame()
                                     roles[draggedName] = newRole
                                     OGRH.SVM.Set("roles", nil, roles)
                                     
-                                    -- Use delta sync for role change (Phase 3A)
-                                    if OGRH.SyncDelta and OGRH.SyncDelta.RecordRoleChange then
-                                        OGRH.SyncDelta.RecordRoleChange(draggedName, newRole, oldRole)
-                                    else
-                                        -- Delta sync not available - this indicates addon load order problem
-                                        OGRH.Msg("|cffff0000[RolesUI]|r Delta sync system not loaded! Role change not synced")
-                                    end
-                                    
                                     -- Sync tank and healer status to Puppeteer and pfUI
                                     local isTank = (newRole == "TANKS")
                                     local isHealer = (newRole == "HEALERS")

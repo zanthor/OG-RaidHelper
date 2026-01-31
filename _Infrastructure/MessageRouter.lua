@@ -400,6 +400,13 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         local encounterData = data
         if not encounterData then return end
         
+        -- Security: Only accept encounter changes from raid admin
+        if GetNumRaidMembers() > 0 then
+            if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin(sender) then
+                return
+            end
+        end
+        
         -- Update local UI to match encounter selection
         if encounterData.raidName and encounterData.encounterName then
             OGRH.SVM.SetPath("ui.selectedRaid", encounterData.raidName)
@@ -410,9 +417,80 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                 OGRH.UpdateEncounterNavButton()
             end
             
+            -- Refresh Encounter Planning window if it's open
+            if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+                if OGRH_EncounterFrame.RefreshRoleContainers then
+                    OGRH_EncounterFrame.RefreshRoleContainers()
+                end
+                if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
+                    OGRH_EncounterFrame.UpdateAnnouncementBuilder()
+                end
+            end
+            
             -- Update consume monitor if available
             if OGRH.ShowConsumeMonitor then
                 OGRH.ShowConsumeMonitor()
+            end
+        end
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.REQUEST_ENCOUNTER, function(sender, data, channel)
+        -- Only admin should process encounter change requests
+        if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin(UnitName("player")) then
+            return
+        end
+        
+        -- Validate request data
+        if not data or not data.raidName or not data.encounterName then
+            return
+        end
+        
+        -- Apply encounter change locally (will trigger broadcast to all)
+        if OGRH.SetCurrentEncounter then
+            OGRH.SetCurrentEncounter(data.raidName, data.encounterName)
+        end
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.QUERY_ENCOUNTER, function(sender, data, channel)
+        -- Only admin should respond to encounter queries
+        if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin(UnitName("player")) then
+            return
+        end
+        
+        -- Get current encounter selection
+        local raidName, encounterName = OGRH.GetCurrentEncounter()
+        if raidName and encounterName then
+            OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.STATE.RESPONSE_ENCOUNTER, {
+                raidName = raidName,
+                encounterName = encounterName
+            })
+        end
+    end)
+    
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.RESPONSE_ENCOUNTER, function(sender, data, channel)
+        -- Only accept encounter responses from admin
+        if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin(sender) then
+            return
+        end
+        
+        -- Apply encounter selection
+        if data and data.raidName and data.encounterName then
+            OGRH.SVM.SetPath("ui.selectedRaid", data.raidName)
+            OGRH.SVM.SetPath("ui.selectedEncounter", data.encounterName)
+            
+            -- Update UI
+            if OGRH.UpdateEncounterNavButton then
+                OGRH.UpdateEncounterNavButton()
+            end
+            
+            -- Refresh Encounter Planning window if open
+            if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+                if OGRH_EncounterFrame.RefreshRoleContainers then
+                    OGRH_EncounterFrame.RefreshRoleContainers()
+                end
+                if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
+                    OGRH_EncounterFrame.UpdateAnnouncementBuilder()
+                end
             end
         end
     end)

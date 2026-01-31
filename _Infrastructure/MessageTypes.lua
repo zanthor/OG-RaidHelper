@@ -78,6 +78,7 @@ OGRH.MessageTypes.SYNC = {
     DELTA = "OGRH_SYNC_DELTA", -- Broadcast delta changes
     
     -- Checksum operations
+    CHECKSUM = "OGRH_SYNC_CHECKSUM",  -- Phase 1: Unified checksum broadcast
     CHECKSUM_STRUCTURE = "OGRH_SYNC_CHECKSUM_STRUCTURE",
     CHECKSUM_ASSIGNMENTS = "OGRH_SYNC_CHECKSUM_ASSIGNMENTS",
     CHECKSUM_MISMATCH = "OGRH_SYNC_CHECKSUM_MISMATCH",
@@ -86,6 +87,10 @@ OGRH.MessageTypes.SYNC = {
     -- Repair operations
     REPAIR_REQUEST = "OGRH_SYNC_REPAIR_REQUEST",
     REPAIR_DATA = "OGRH_SYNC_REPAIR_DATA",
+    REPAIR_ACTIVE_RAID = "OGRH_SYNC_REPAIR_ACTIVE_RAID",  -- Broadcast Active Raid structure
+    REPAIR_ASSIGNMENTS = "OGRH_SYNC_REPAIR_ASSIGNMENTS",  -- Broadcast encounter assignments
+    REPAIR_ROLES = "OGRH_SYNC_REPAIR_ROLES",              -- Broadcast RolesUI
+    REPAIR_GLOBAL = "OGRH_SYNC_REPAIR_GLOBAL",            -- Broadcast global components
     
     -- Read-only operations
     REQUEST_READONLY = "OGRH_SYNC_REQUEST_READONLY",
@@ -148,6 +153,7 @@ OGRH.MessageTypes.STATE = {
     CHANGE_ENCOUNTER = "OGRH_STATE_CHANGE_ENCOUNTER",
     QUERY_ENCOUNTER = "OGRH_STATE_QUERY_ENCOUNTER",
     RESPONSE_ENCOUNTER = "OGRH_STATE_RESPONSE_ENCOUNTER",
+    REQUEST_ENCOUNTER = "OGRH_STATE_REQUEST_ENCOUNTER",  -- Non-admin requests encounter change
     
     -- Phase state
     CHANGE_PHASE = "OGRH_STATE_CHANGE_PHASE",

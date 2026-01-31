@@ -733,6 +733,31 @@ OGRH.Msg("\n/reload recommended to ensure clean state")
 end
 
 -- ============================================
+-- ACTIVE RAID MIGRATION (Phase 1: Core Infrastructure)
+-- ============================================
+function OGRH.Migration.MigrateToActiveRaid()
+    -- Check prerequisites
+    if OGRH_SV.schemaVersion ~= "v2" then
+        OGRH.Msg("[AR-Migration] ERROR: Must be on v2 schema. Run /ogrh migration cutover confirm first.")
+        return false
+    end
+    
+    -- Call the core function which handles automatic migration
+    local success = OGRH.EnsureActiveRaid()
+    
+    if success then
+        OGRH.Msg("=" .. string.rep("=", 70))
+        OGRH.Msg("[AR-Migration] ✓ Active Raid Migration Complete!")
+        OGRH.Msg("=" .. string.rep("=", 70))
+        OGRH.Msg("Active Raid slot at raids[1]")
+        OGRH.Msg("\nUse /ogrh activeraid set <raidIdx> to set the Active Raid source")
+        OGRH.Msg("Example: /ogrh activeraid set 2")
+    end
+    
+    return success
+end
+
+-- ============================================
 -- COMPARISON: Compare v1 vs v2 raid data
 -- ============================================
 function OGRH.Migration.CompareRaid(raidName)
