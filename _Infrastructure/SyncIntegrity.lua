@@ -61,14 +61,18 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
     -- Check if network queue is busy (don't add more traffic if repairs are still sending)
     if OGAddonMsg and OGAddonMsg.stats and OGAddonMsg.stats.queueDepth then
         if OGAddonMsg.stats.queueDepth > 0 then
-            OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (network queue busy: %d messages pending)", OGAddonMsg.stats.queueDepth))
+            if OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (network queue busy: %d messages pending)", OGAddonMsg.stats.queueDepth))
+            end
             return
         end
     end
     
     -- NEVER broadcast if admin is in combat
     if UnitAffectingCombat("player") then
-        OGRH.Msg("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (in combat)")
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (in combat)")
+        end
         return
     end
     
@@ -76,15 +80,19 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
     local timeSinceLastMod = GetTime() - OGRH.SyncIntegrity.State.lastAdminModification
     if timeSinceLastMod < OGRH.SyncIntegrity.State.modificationCooldown then
         local remaining = OGRH.SyncIntegrity.State.modificationCooldown - timeSinceLastMod
-        OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (data modified %.0fs ago, cooldown %.0fs)", 
-            timeSinceLastMod, remaining))
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (data modified %.0fs ago, cooldown %.0fs)", 
+                timeSinceLastMod, remaining))
+        end
         return
     end
     
     -- Broadcast Active Raid checksums only (index 1)
     local activeRaid = OGRH.GetActiveRaid()
     if not activeRaid then
-        OGRH.Msg("|cffff9900[RH-SyncIntegrity]|r No Active Raid found, skipping broadcast")
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffff9900[RH-SyncIntegrity]|r No Active Raid found, skipping broadcast")
+        end
         return
     end
     
@@ -274,7 +282,9 @@ function OGRH.SyncIntegrity.OnRepairRequest(sender, data)
         return
     end
     
-    OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r Repair request from " .. tostring(sender) .. " for " .. tostring(data.component))
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r Repair request from " .. tostring(sender) .. " for " .. tostring(data.component))
+    end
     
     -- Add to buffer
     local buffer = OGRH.SyncIntegrity.RepairBuffer
@@ -307,11 +317,15 @@ function OGRH.SyncIntegrity.FlushRepairBuffer()
     
     local count = 0
     for _ in pairs(buffer.requests) do count = count + 1 end
-    OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r Flushing " .. tostring(count) .. " repair request(s), broadcasting repairs")
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r Flushing " .. tostring(count) .. " repair request(s), broadcasting repairs")
+    end
     
     -- Broadcast repair for each unique component (once per component)
     for key, request in pairs(buffer.requests) do
-        OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Processing repair for component: " .. tostring(request.component))
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Processing repair for component: " .. tostring(request.component))
+        end
         
         if request.component == "structure" then
             OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
@@ -333,15 +347,21 @@ end
 
 -- Admin: Broadcast Active Raid structure for repair
 function OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
-    OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r BroadcastActiveRaidRepair() called")
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r BroadcastActiveRaidRepair() called")
+    end
     
     local activeRaid = OGRH_SV.v2.encounterMgmt.raids[1]
     if not activeRaid then 
-        OGRH.Msg("|cffff0000[RH-SyncIntegrity DEBUG]|r No active raid found")
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffff0000[RH-SyncIntegrity DEBUG]|r No active raid found")
+        end
         return 
     end
     
-    OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Active raid exists, preparing copy")
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Active raid exists, preparing copy")
+    end
     
     -- Deep copy and strip assignments for structure-only sync
     local raidCopy = OGRH.DeepCopy(activeRaid)
@@ -354,7 +374,9 @@ function OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
         end
     end
     
-    OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Calling MessageRouter.Broadcast...")
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Calling MessageRouter.Broadcast...")
+    end
     
     local msgId = OGRH.MessageRouter.Broadcast(
         OGRH.MessageTypes.SYNC.REPAIR_ACTIVE_RAID,
@@ -365,7 +387,9 @@ function OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
         }
     )
     
-    OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r Broadcast Active Raid structure repair (msgId: " .. tostring(msgId) .. ")")
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r Broadcast Active Raid structure repair (msgId: " .. tostring(msgId) .. ")")
+    end
 end
 
 -- Admin: Broadcast Active Raid assignments for specific encounter

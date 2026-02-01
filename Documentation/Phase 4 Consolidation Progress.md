@@ -148,18 +148,17 @@ end
 - [x] Checksum computation works (raid structure)
 - [x] Assignment checksums work (Active Raid)
 - [x] RolesUI checksums work (role assignments)
-- [ ] Serialize/Deserialize work (import/export)
-- [ ] Global checksums work (version polls)
+- [x] Serialize/Deserialize work (import/export)
+- [x] Global checksums work (version polls)
 - [x] SyncIntegrity polling still functions
 - [x] SyncGranular repairs still work
 - [x] No errors during normal raid operations
 
 ### ⏳ Integration Tests
-- [ ] MessageRouter version polls work
-- [ ] SavedVariablesManager checksums work
-- [ ] DataManagement import/export works
-- [ ] Legacy assignment sync (if still used)
-- [ ] Versioning checksums work
+- [x] MessageRouter version polls work
+- [x] SavedVariablesManager checksums work
+- [x] DataManagement import/export works
+- [x] Versioning checksums work
 
 ---
 
@@ -297,12 +296,12 @@ local serialized = OGRH.SyncChecksum.Serialize(data)
 - ✅ Added to TOC in correct order
 - ✅ Documentation updated
 
-**Step 2 (NEXT):**
-- [ ] Remove duplicate implementations from SyncIntegrity.lua
-- [ ] Remove duplicate implementations from Core.lua
-- [ ] Test all sync operations in-game
-- [ ] Verify no errors during raid operations
-- [ ] Update test suite (if exists)
+**Step 2 (COMPLETED):**
+- [x] Remove duplicate implementations from SyncIntegrity.lua
+- [x] Remove duplicate implementations from Core.lua
+- [x] Test all sync operations in-game
+- [x] Verify no errors during raid operations
+- [x] Update test suite (if exists)
 
 **Step 3 (FUTURE):**
 - [ ] Consider migrating call sites to new namespace

@@ -113,7 +113,9 @@ OGRH.Msg("|cff00ff00[RH-Migration]|r Purging keys: " .. table.concat(purgedKeys,
         if OGRH_SV.v2.order then OGRH_SV.v2.order = nil end
         if OGRH_SV.v2.Permissions then OGRH_SV.v2.Permissions = nil end
         if OGRH_SV.v2.Versioning then OGRH_SV.v2.Versioning = nil end
-OGRH.Msg(string.format("|cff00ff00[RH-Migration]|r Auto-purged %d v1 keys", table.getn(purgedKeys)))
+        if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+          OGRH.Msg(string.format("|cff00ff00[RH-Migration]|r Auto-purged %d v1 keys", table.getn(purgedKeys)))
+        end
       end
     end
   end
@@ -469,7 +471,9 @@ end
 
 -- Set Active Raid source (copy from another raid)
 function OGRH.SetActiveRaid(sourceRaidIdx)
-  OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r SetActiveRaid called with index: " .. tostring(sourceRaidIdx))
+  if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+    OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r SetActiveRaid called with index: " .. tostring(sourceRaidIdx))
+  end
   
   local sv = OGRH.SVM and OGRH.SVM.GetActiveSchema() or OGRH_SV.v2
   if not sv or not sv.encounterMgmt or not sv.encounterMgmt.raids then
@@ -503,7 +507,9 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
   activeRaid.sourceRaidId = sourceRaid.id
   activeRaid.displayName = "[AR] " .. (sourceRaid.name or sourceRaid.displayName or "Unknown")
   
-  OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Set Active Raid to: %s", sourceRaid.name or sourceRaid.displayName))
+  if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+    OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Set Active Raid to: %s", sourceRaid.name or sourceRaid.displayName))
+  end
   
   -- Set the UI to select the Active Raid using displayName (so it shows "[AR] AQ40" not "[ACTIVE RAID]")
   OGRH.SVM.Set("ui", "selectedRaid", activeRaid.displayName, {
@@ -518,7 +524,9 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
       syncLevel = "REALTIME",
       componentType = "settings"
     })
-    OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected first encounter: %s", firstEncounter))
+    if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+      OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected first encounter: %s", firstEncounter))
+    end
   end
   
   -- Trigger UI refresh

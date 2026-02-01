@@ -4117,7 +4117,9 @@ function OGRH.ShowSetActiveRaidConfirmation(sourceRaidIdx)
       OnAccept = function()
         -- In WoW 1.12, we need to access via text_arg or store in global
         local idx = StaticPopupDialogs["OGRH_SET_ACTIVE_RAID"].tempData
-        OGRH.Msg("|cff00ccff[RH-Dialog]|r OnAccept called with idx: " .. tostring(idx))
+        if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+          OGRH.Msg("|cff00ccff[RH-Dialog]|r OnAccept called with idx: " .. tostring(idx))
+        end
         if idx and OGRH.SetActiveRaid then
           OGRH.SetActiveRaid(idx)
         else
@@ -4136,7 +4138,9 @@ function OGRH.ShowSetActiveRaidConfirmation(sourceRaidIdx)
   -- Show dialog with raid name
   local dialog = StaticPopup_Show("OGRH_SET_ACTIVE_RAID", raidName)
   if dialog then
-    OGRH.Msg("|cff00ccff[RH-Dialog]|r Dialog shown, stored index: " .. tostring(sourceRaidIdx))
+    if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+      OGRH.Msg("|cff00ccff[RH-Dialog]|r Dialog shown, stored index: " .. tostring(sourceRaidIdx))
+    end
   else
     OGRH.Msg("|cffff0000[RH-Dialog]|r ERROR: Failed to show dialog")
   end
