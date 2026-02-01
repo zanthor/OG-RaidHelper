@@ -117,7 +117,7 @@ function RosterMgmt.EnsureSV()
       syncLevel = "MANUAL",
       componentType = "settings"
     })
-    OGRH.Msg("|cffffaa00[RH-Roster]|r Initialized default settings")
+    -- Debug message removed - roster initialized silently
   end
   
   return true

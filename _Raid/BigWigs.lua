@@ -194,7 +194,7 @@ local function HookBigWigs()
       end
     end
     
-    OGRH.Msg("|cff00ff00[RH-BigWigs]|r Integration active (hooked " .. count .. " modules)")
+    -- BigWigs integration active silently - no user-facing message
   else
     OGRH.Msg("|cffff0000[RH-BigWigs]|r Error: BigWigs.modules not found")
   end

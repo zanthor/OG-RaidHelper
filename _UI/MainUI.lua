@@ -4,6 +4,12 @@ if not OGRH then
   return
 end
 
+-- MainUI State
+OGRH.MainUI = OGRH.MainUI or {}
+OGRH.MainUI.State = {
+  debug = false  -- Toggle with /ogrh debug ui
+}
+
 local Main = CreateFrame("Frame","OGRH_Main",UIParent)
 Main:SetWidth(180); Main:SetHeight(56)  -- Fixed height for title bar + encounter nav
 Main:SetPoint("CENTER", UIParent, "CENTER", -380, 120)
@@ -543,14 +549,18 @@ function OGRH.UpdateEncounterNavButton()
   local raidName = OGRH.SVM.Get("ui", "selectedRaid")
   local encounterName = OGRH.SVM.Get("ui", "selectedEncounter")
   
-  OGRH.Msg("|cff00ccff[RH-Debug]|r UpdateEncounterNavButton called: raid=" .. tostring(raidName) .. ", encounter=" .. tostring(encounterName))
+  if OGRH.MainUI.State.debug then
+    OGRH.Msg("|cff66ccff[RH][DEBUG]|r UpdateEncounterNavButton called: raid=" .. tostring(raidName) .. ", encounter=" .. tostring(encounterName))
+  end
   
   -- Load modules for the selected encounter (main UI only)
   if OGRH.LoadModulesForRole and OGRH.UnloadAllModules and raidName and encounterName then
     -- Get raids array to find the encounter's roles
     local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
     
-    OGRH.Msg("|cff00ccff[RH-Debug]|r raids = " .. tostring(raids) .. " (count: " .. (raids and table.getn(raids) or 0) .. ")")
+    if OGRH.MainUI.State.debug then
+      OGRH.Msg("|cff66ccff[RH][DEBUG]|r raids = " .. tostring(raids) .. " (count: " .. (raids and table.getn(raids) or 0) .. ")")
+    end
     
     if raids then
       -- Find raid and encounter indices
@@ -570,28 +580,41 @@ function OGRH.UpdateEncounterNavButton()
         end
       end
       
-      OGRH.Msg("|cff00ccff[RH-Debug]|r Found indices: raidIdx=" .. tostring(raidIdx) .. ", encIdx=" .. tostring(encIdx))
+      if OGRH.MainUI.State.debug then
+        OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Found indices: raidIdx=%s, encIdx=%s", tostring(raidIdx), tostring(encIdx)))
+      end
       
       -- Get roles from the encounter
       if raidIdx and encIdx then
         local rolesPath = string.format("encounterMgmt.raids.%d.encounters.%d.roles", raidIdx, encIdx)
         local rolesData = OGRH.SVM.GetPath(rolesPath)
         
-        OGRH.Msg("|cff00ccff[RH-Debug]|r rolesData = " .. tostring(rolesData))
+        if OGRH.MainUI.State.debug then
+          OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r rolesData = %s", tostring(rolesData)))
+        end
         
         if rolesData then
-          OGRH.Msg("|cff00ccff[RH-Debug]|r roles array count: " .. (rolesData and table.getn(rolesData) or 0))
+          if OGRH.MainUI.State.debug then
+            OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r roles array count: %d", table.getn(rolesData)))
+          end
           
           -- Collect all modules from custom module roles
           -- Roles are stored as a flat array with column field inside each role
           local allModules = {}
           for i = 1, table.getn(rolesData) do
             local role = rolesData[i]
-            OGRH.Msg("|cff00ccff[RH-Debug]|r Role " .. i .. ": isCustomModule=" .. tostring(role.isCustomModule) .. ", modules=" .. tostring(role.modules) .. ", column=" .. tostring(role.column))
+            if OGRH.MainUI.State.debug then
+              OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Role %d: isCustomModule=%s, modules=%s, column=%s", 
+                i, tostring(role.isCustomModule), tostring(role.modules), tostring(role.column)))
+            end
             if role.isCustomModule and role.modules then
-              OGRH.Msg(string.format("|cff00ccff[RH-Debug]|r Found custom module role with %d modules", table.getn(role.modules)))
+              if OGRH.MainUI.State.debug then
+                OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Found custom module role with %d modules", table.getn(role.modules)))
+              end
               for _, moduleId in ipairs(role.modules) do
-                OGRH.Msg("|cff00ccff[RH-Debug]|r Adding module: " .. tostring(moduleId))
+                if OGRH.MainUI.State.debug then
+                  OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Adding module: %s", tostring(moduleId)))
+                end
                 table.insert(allModules, moduleId)
               end
             end
@@ -599,10 +622,12 @@ function OGRH.UpdateEncounterNavButton()
           
           -- Load the modules
           if table.getn(allModules) > 0 then
-            OGRH.Msg(string.format("|cff00ff00[RH]|r Loading %d custom modules for encounter", table.getn(allModules)))
+            OGRH.Msg(string.format("|cff00ff00[RH-MainUI]|r Loading %d custom modules for encounter", table.getn(allModules)))
             OGRH.LoadModulesForRole(allModules)
           else
-            OGRH.Msg("|cff00ccff[RH-Debug]|r No modules found, unloading all")
+            if OGRH.MainUI.State.debug then
+              OGRH.Msg("|cff00ccff[RH-MainUI-DEBUG]|r No modules found, unloading all")
+            end
             OGRH.UnloadAllModules()
           end
         else
@@ -890,29 +915,66 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Message router not loaded.")
     end
-  elseif sub == "sync debug" or sub == "syncdebug" then
-    if OGRH.SyncIntegrity then
-      OGRH.SyncIntegrity.State.debug = not OGRH.SyncIntegrity.State.debug
-      local status = OGRH.SyncIntegrity.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
-      OGRH.Msg("Sync debug messages: " .. status)
+  -- Debug Commands (centralized under /ogrh debug [option])
+  elseif string.find(sub, "^debug ") then
+    local _, _, debugOption = string.find(sub, "^debug%s+(.+)")
+    if debugOption == "help" then
+      -- Show all debug options and their current state
+      OGRH.Msg("|cff66ccff[RH][DEBUG]|r Available debug options:")
+      OGRH.Msg("  |cff00ccff/ogrh debug sync|r - Toggle SyncIntegrity verbose messages " ..
+        (OGRH.SyncIntegrity and (OGRH.SyncIntegrity.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("  |cff00ccff/ogrh debug ui|r - Toggle MainUI debug messages " ..
+        (OGRH.MainUI and (OGRH.MainUI.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("  |cff00ccff/ogrh debug svm-read|r - Toggle SVM read operations " ..
+        (OGRH.SVM and (OGRH.SVM.SyncConfig.debugRead and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("  |cff00ccff/ogrh debug svm-write|r - Toggle SVM write operations " ..
+        (OGRH.SVM and (OGRH.SVM.SyncConfig.debugWrite and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("  |cff00ccff/ogrh debug consumes|r - Toggle ConsumesTracking debug messages " ..
+        (OGRH.ConsumesTracking and (OGRH.ConsumesTracking.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("|cff66ccff[RH][DEBUG]|r Use /ogrh debug [option] to toggle")
+    elseif debugOption == "sync" then
+      if OGRH.SyncIntegrity then
+        OGRH.SyncIntegrity.State.debug = not OGRH.SyncIntegrity.State.debug
+        local status = OGRH.SyncIntegrity.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("Sync debug: " .. status)
+      else
+        OGRH.Msg("SyncIntegrity not loaded.")
+      end
+    elseif debugOption == "ui" then
+      if OGRH.MainUI then
+        OGRH.MainUI.State.debug = not OGRH.MainUI.State.debug
+        local status = OGRH.MainUI.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("MainUI debug: " .. status)
+      else
+        OGRH.Msg("MainUI not loaded.")
+      end
+    elseif debugOption == "svm-read" then
+      if OGRH.SVM and OGRH.SVM.SyncConfig then
+        OGRH.SVM.SyncConfig.debugRead = not OGRH.SVM.SyncConfig.debugRead
+        local status = OGRH.SVM.SyncConfig.debugRead and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("SVM read debug: " .. status)
+      else
+        OGRH.Msg("SavedVariablesManager not loaded.")
+      end
+    elseif debugOption == "svm-write" then
+      if OGRH.SVM and OGRH.SVM.SyncConfig then
+        OGRH.SVM.SyncConfig.debugWrite = not OGRH.SVM.SyncConfig.debugWrite
+        local status = OGRH.SVM.SyncConfig.debugWrite and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("SVM write debug: " .. status)
+      else
+        OGRH.Msg("SavedVariablesManager not loaded.")
+      end
+    elseif debugOption == "consumes" then
+      if OGRH.ConsumesTracking then
+        OGRH.ConsumesTracking.State.debug = not OGRH.ConsumesTracking.State.debug
+        local status = OGRH.ConsumesTracking.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("ConsumesTracking debug: " .. status)
+      else
+        OGRH.Msg("ConsumesTracking not loaded.")
+      end
     else
-      OGRH.Msg("SyncIntegrity not loaded.")
-    end
-  elseif sub == "debug svm read" or sub == "svm read" then
-    if OGRH.SVM and OGRH.SVM.SyncConfig then
-      OGRH.SVM.SyncConfig.debugRead = not OGRH.SVM.SyncConfig.debugRead
-      local status = OGRH.SVM.SyncConfig.debugRead and "|cff00ff00ON|r" or "|cffff0000OFF|r"
-      OGRH.Msg("SVM read debug: " .. status)
-    else
-      OGRH.Msg("SavedVariablesManager not loaded.")
-    end
-  elseif sub == "debug svm write" or sub == "svm write" then
-    if OGRH.SVM and OGRH.SVM.SyncConfig then
-      OGRH.SVM.SyncConfig.debugWrite = not OGRH.SVM.SyncConfig.debugWrite
-      local status = OGRH.SVM.SyncConfig.debugWrite and "|cff00ff00ON|r" or "|cffff0000OFF|r"
-      OGRH.Msg("SVM write debug: " .. status)
-    else
-      OGRH.Msg("SavedVariablesManager not loaded.")
+      OGRH.Msg("|cffff0000[RH]|r Unknown debug option: " .. debugOption)
+      OGRH.Msg("Use |cff00ccff/ogrh debug help|r to see available options")
     end
   elseif sub == "admin take" or sub == "takeadmin" then
     if OGRH.RequestAdminRole then
@@ -1377,7 +1439,9 @@ end
 _G["SLASH_"..string.upper(OGRH.CMD).."1"] = "/"..OGRH.CMD
 
 if OGRH and OGRH.Msg then
-  OGRH.Msg("|cff66ccff[RH]|r v" .. OGRH.VERSION .. " loaded")
+  if OGRH.MainUI.State.debug then
+    OGRH.Msg("|cff66ccff[RH][DEBUG]|r v" .. OGRH.VERSION .. " loaded")
+  end
   
   -- Notify about RollFor status
   if OGRH.ROLLFOR_AVAILABLE then

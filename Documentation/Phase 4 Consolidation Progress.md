@@ -98,32 +98,42 @@ OGRH.SyncChecksum.ComputeRaidChecksum(raidName)
 
 ## Serialization Strategy
 
-**Decision:** Keep OGRH.Serialize/Deserialize for now, delegate to OGAddonMsg
+**Decision:** Delegate all serialization to OGAddonMsg (required dependency)
 
 ### Rationale:
-1. **OGAddonMsg.Serialize** already exists and is robust
-2. **Import/Export** operations use OGRH.Serialize for user-facing text
+1. **OGAddonMsg.Serialize** is already the standard across the addon
+2. **Import/Export** operations use serialization for user-facing text
 3. **Internal sync** operations use OGAddonMsg automatically (transparent)
-4. **Backward compatibility** preserved for existing DataManagement code
+4. **No fallback needed** - OGAddonMsg is a core dependency, addon should error if missing
 
 ### Implementation:
 ```lua
 function OGRH.SyncChecksum.Serialize(tbl)
-    -- Delegate to OGAddonMsg if available
+    -- Delegate to OGAddonMsg (required dependency)
     if OGAddonMsg and OGAddonMsg.Serialize then
         return OGAddonMsg.Serialize(tbl)
     end
     
-    -- Fallback for safety (shouldn't be reached in normal operation)
-    return SimpleFallbackSerializer(tbl)
+    -- Critical error - OGAddonMsg is required
+    error("CRITICAL: OGAddonMsg not available - cannot serialize data")
+end
+
+function OGRH.SyncChecksum.Deserialize(str)
+    -- Delegate to OGAddonMsg (required dependency)
+    if OGAddonMsg and OGAddonMsg.Deserialize then
+        return OGAddonMsg.Deserialize(str)
+    end
+    
+    -- Critical error - OGAddonMsg is required
+    error("CRITICAL: OGAddonMsg not available - cannot deserialize data")
 end
 ```
 
 **Benefits:**
 - Single implementation (OGAddonMsg owns the format)
-- OGRH code doesn't maintain duplicate serializer
-- Seamless migration path (already using OGAddonMsg internally)
-- User-facing export/import still works exactly as before
+- No duplicate serialization logic to maintain
+- Clear failure mode if dependency is missing
+- No hidden fallback code masking critical issues
 
 ---
 
@@ -135,14 +145,14 @@ end
 - [x] SyncChecksum module initializes
 
 ### ⏳ Functional Tests (Need to verify in-game)
-- [ ] Checksum computation works (raid structure)
-- [ ] Assignment checksums work (Active Raid)
-- [ ] RolesUI checksums work (role assignments)
+- [x] Checksum computation works (raid structure)
+- [x] Assignment checksums work (Active Raid)
+- [x] RolesUI checksums work (role assignments)
 - [ ] Serialize/Deserialize work (import/export)
 - [ ] Global checksums work (version polls)
-- [ ] SyncIntegrity polling still functions
-- [ ] SyncGranular repairs still work
-- [ ] No errors during normal raid operations
+- [x] SyncIntegrity polling still functions
+- [x] SyncGranular repairs still work
+- [x] No errors during normal raid operations
 
 ### ⏳ Integration Tests
 - [ ] MessageRouter version polls work

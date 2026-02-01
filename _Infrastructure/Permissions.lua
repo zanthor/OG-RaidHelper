@@ -281,11 +281,7 @@ function OGRH.PollForRaidAdmin()
                 local name, rank = GetRaidRosterInfo(i)
                 if rank == 2 then  -- Rank 2 = raid leader
                     OGRH.SetRaidAdmin(name)
-                    if name == UnitName("player") then
-                        OGRH.Msg("|cff00ff00[RH]|r No raid admin found - you are now raid admin (raid leader)")
-                    else
-                        OGRH.Msg("|cff00ccff[RH]|r No raid admin found - " .. name .. " is now raid admin (raid leader)")
-                    end
+                    -- Raid admin assignment happens silently - no user-facing message
                     break
                 end
             end

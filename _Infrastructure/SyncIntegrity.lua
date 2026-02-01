@@ -32,7 +32,7 @@ OGRH.SyncIntegrity.State = {
     lastAdminModification = 0,  -- timestamp of last admin change
     modificationCooldown = 2,  -- seconds to wait after last change before broadcasting
     
-    -- Debug mode (toggle with /ogrh sync debug)
+    -- Debug mode (toggle with /ogrh debug sync)
     debug = false,  -- Hide verbose sync messages by default
 }
 
@@ -49,7 +49,9 @@ OGRH.SyncIntegrity.State = {
 
 -- Admin: Broadcast Active Raid checksums to raid
 function OGRH.SyncIntegrity.BroadcastChecksums()
-    OGRH.Msg("|cffff00ff[RH-SyncIntegrity]|r BroadcastChecksums() called")
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r BroadcastChecksums() called")
+    end
     
     if GetNumRaidMembers() == 0 then
         OGRH.Msg("|cffff9900[RH-SyncIntegrity]|r Not broadcasting - not in raid")
@@ -100,17 +102,17 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
     
     local lightweightChecksums = {
         -- Active Raid structure checksum (all encounters, roles, but no assignments)
-        activeRaidStructure = OGRH.ComputeRaidChecksum(activeRaid.name),
+        activeRaidStructure = OGRH.SyncChecksum.ComputeRaidChecksum(activeRaid.name),
         
         -- Active encounter assignments checksum (current encounter only)
         activeEncounterIdx = currentEncounterIdx,
-        activeAssignments = currentEncounterIdx and OGRH.ComputeActiveAssignmentsChecksum(currentEncounterIdx) or nil,
+        activeAssignments = currentEncounterIdx and OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(currentEncounterIdx) or nil,
         
         -- Global roles (TANKS, HEALERS, MELEE, RANGED)
-        rolesUI = OGRH.CalculateRolesUIChecksum(),
+        rolesUI = OGRH.SyncChecksum.CalculateRolesUIChecksum(),
         
         -- Global component checksums
-        global = OGRH.GetGlobalComponentChecksums(),
+        global = OGRH.SyncChecksum.GetGlobalComponentChecksums(),
         
         -- Metadata
         timestamp = GetTime(),
@@ -170,7 +172,7 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
     -- Validate Active Raid structure
     local activeRaid = OGRH.GetActiveRaid()
     if activeRaid then
-        local localStructure = OGRH.ComputeRaidChecksum(activeRaid.name)
+        local localStructure = OGRH.SyncChecksum.ComputeRaidChecksum(activeRaid.name)
         OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Structure checksums: local=%s, admin=%s", localStructure, checksums.activeRaidStructure))
         if localStructure ~= checksums.activeRaidStructure then
             table.insert(mismatches, {
@@ -183,7 +185,7 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
     
     -- Validate Active Encounter assignments (if admin has a selected encounter)
     if checksums.activeEncounterIdx and checksums.activeAssignments then
-        local localAssignments = OGRH.ComputeActiveAssignmentsChecksum(checksums.activeEncounterIdx)
+        local localAssignments = OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(checksums.activeEncounterIdx)
         OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Assignment checksums: local=%s, admin=%s", localAssignments, checksums.activeAssignments))
         if localAssignments ~= checksums.activeAssignments then
             table.insert(mismatches, {
@@ -196,7 +198,7 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
     end
     
     -- Validate RolesUI (global roles)
-    local localRolesUI = OGRH.CalculateRolesUIChecksum()
+    local localRolesUI = OGRH.SyncChecksum.CalculateRolesUIChecksum()
     if localRolesUI ~= checksums.rolesUI then
         table.insert(mismatches, {
             type = "ROLES_UI",
@@ -208,7 +210,7 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
     end
     
     -- Validate global components
-    local localGlobal = OGRH.GetGlobalComponentChecksums()
+    local localGlobal = OGRH.SyncChecksum.GetGlobalComponentChecksums()
     for componentName, checksum in pairs(checksums.global) do
         if localGlobal[componentName] ~= checksum then
             table.insert(mismatches, {
@@ -594,13 +596,17 @@ function OGRH.SyncIntegrity.StartIntegrityChecks()
         end
     end, 30, true)  -- 30 seconds, repeating
     
-    OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Active Raid checksum polling started (broadcasts every 30s)")
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Active Raid checksum polling started (broadcasts every 30s)")
+    end
 end
 
 -- Record admin modification (resets cooldown timer)
 function OGRH.SyncIntegrity.RecordAdminModification()
     OGRH.SyncIntegrity.State.lastAdminModification = GetTime()
-    OGRH.Msg("|cffffaa00[RH-SyncIntegrity]|r Admin modification recorded, broadcasts will resume in 2s")
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffffaa00[RH-SyncIntegrity]|r Admin modification recorded, broadcasts will resume in 2s")
+    end
 end
 
 -- Initialize (register message handlers)
@@ -670,11 +676,15 @@ function OGRH.SyncIntegrity.CheckAdminStatus()
     
     if isAdmin and inRaid and not OGRH.SyncIntegrity.State.enabled then
         -- Just became admin in a raid - start broadcasting
-        OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r Starting Active Raid checksum broadcasting (you are raid admin)")
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Starting Active Raid checksum broadcasting (you are raid admin)")
+        end
         OGRH.SyncIntegrity.StartIntegrityChecks()
     elseif (not isAdmin or not inRaid) and OGRH.SyncIntegrity.State.enabled then
         -- Lost admin or left raid - stop broadcasting
-        OGRH.Msg("|cffff9900[RH-SyncIntegrity]|r Stopping checksum broadcasting (no longer admin or left raid)")
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Stopping checksum broadcasting (no longer admin or left raid)")
+        end
         if OGRH.SyncIntegrity.State.timer then
             OGRH.CancelTimer(OGRH.SyncIntegrity.State.timer)
             OGRH.SyncIntegrity.State.timer = nil

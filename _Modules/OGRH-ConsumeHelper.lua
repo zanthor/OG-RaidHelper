@@ -2918,4 +2918,4 @@ OGRH.ShowConsumeHelper = ConsumeHelper.ShowWindow
 OGRH.ShowManageConsumes = ConsumeHelper.ShowManageConsumes
 
 -- Initialize on load
-OGRH.Msg("|cffffff66[RH-ConsumeHelper]|r module loaded.")
+-- ConsumeHelper loaded silently - no debug message needed

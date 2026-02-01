@@ -244,58 +244,32 @@ end
     @return string - Serialized representation
 ]]
 function OGRH.SyncChecksum.Serialize(tbl)
+    -- Delegate to OGAddonMsg (required dependency)
     if OGAddonMsg and OGAddonMsg.Serialize then
         return OGAddonMsg.Serialize(tbl)
     end
     
-    -- Fallback implementation if OGAddonMsg not available
-    if type(tbl) ~= "table" then 
-        return tostring(tbl) 
-    end
-    
-    local result = "{"
-    for k, v in pairs(tbl) do
-        if type(k) == "string" then
-            result = result .. k .. "="
-        end
-        
-        if type(v) == "table" then
-            result = result .. OGRH.SyncChecksum.Serialize(v) .. ","
-        elseif type(v) == "string" then
-            result = result .. string.format("%q", v) .. ","
-        elseif type(v) == "number" or type(v) == "boolean" then
-            result = result .. tostring(v) .. ","
-        end
-    end
-    result = result .. "}"
-    return result
+    -- Critical error - OGAddonMsg is a required dependency
+    error("CRITICAL: OGAddonMsg not available - cannot serialize data")
 end
 
 --[[
     Deserialize string to table
     
     Delegates to OGAddonMsg.Deserialize for robust deserialization.
-    Uses loadstring to evaluate serialized data.
+    OGAddonMsg is a required dependency - errors if not available.
     
     @param str string - Serialized table string
     @return table or nil - Deserialized table, or nil on error
 ]]
 function OGRH.SyncChecksum.Deserialize(str)
+    -- Delegate to OGAddonMsg (required dependency)
     if OGAddonMsg and OGAddonMsg.Deserialize then
         return OGAddonMsg.Deserialize(str)
     end
     
-    -- Fallback implementation if OGAddonMsg not available
-    if not str or str == "" then 
-        return nil 
-    end
-    
-    local func = loadstring("return " .. str)
-    if func then
-        return func()
-    end
-    
-    return nil
+    -- Critical error - OGAddonMsg is a required dependency
+    error("CRITICAL: OGAddonMsg not available - cannot deserialize data")
 end
 
 --[[

@@ -433,4 +433,4 @@ function OGRH.Tests.Phase1.RunAll()
     OGRH.Msg("|cff66ccff[RH-Tests]|r ===================================================")
 end
 
-OGRH.Msg("|cff66ccff[RH-Tests]|r Phase 1 test suite loaded. Run with: /ogrh test phase1")
+-- Debug message removed - test suite is loaded silently. Run with: /ogrh test phase1

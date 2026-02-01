@@ -335,7 +335,11 @@ OGRH.EnsureSV()
 
 -- Get currently selected raid/encounter (read-only)
 function OGRH.GetCurrentEncounter()
-  return OGRH.SVM.Get("ui", "selectedRaid"), OGRH.SVM.Get("ui", "selectedEncounter")
+  local selectedRaid = OGRH.SVM.Get("ui", "selectedRaid")
+  local selectedEncounter = OGRH.SVM.Get("ui", "selectedEncounter")
+  
+  -- selectedRaid now stores the displayName directly (e.g., "[AR] AQ40")
+  return selectedRaid, selectedEncounter
 end
 
 -- Set currently selected raid/encounter (centralized write interface)
@@ -501,8 +505,8 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
   
   OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Set Active Raid to: %s", sourceRaid.name or sourceRaid.displayName))
   
-  -- Set the UI to select the Active Raid
-  OGRH.SVM.Set("ui", "selectedRaid", activeRaid.name, {
+  -- Set the UI to select the Active Raid using displayName (so it shows "[AR] AQ40" not "[ACTIVE RAID]")
+  OGRH.SVM.Set("ui", "selectedRaid", activeRaid.displayName, {
     syncLevel = "REALTIME",
     componentType = "settings"
   })
@@ -4501,7 +4505,7 @@ function OGRH.LoadFactoryDefaults()
     OGRH_SV.rgo = OGRH.FactoryDefaults.rgo
   end
   
-  OGRH.Msg("|cff00ff00Factory defaults loaded successfully!|r")
+  -- Factory defaults loaded silently - no user-facing message needed
   
   -- Refresh any open windows
   if OGRH_EncounterSetupFrame and OGRH_EncounterSetupFrame.RefreshAll then
@@ -4963,10 +4967,15 @@ end)
 -- Used by consumables tracking module to capture historical records
 -- @return string, string: raid name, encounter name (or nil, nil if not selected)
 function OGRH.GetSelectedRaidAndEncounter()
-  if OGRH_SV and OGRH_SV.ui then
-    return OGRH_SV.ui.selectedRaid, OGRH_SV.ui.selectedEncounter
+  -- Use existing GetCurrentEncounter which handles backward compatibility via SVM
+  local raidName, encounterName = OGRH.GetCurrentEncounter()
+  
+  if not raidName or not encounterName then
+    return nil, nil
   end
-  return nil, nil
+  
+  -- Return the names as-is (these are already display names in the new system)
+  return raidName, encounterName
 end
 
 

@@ -859,8 +859,8 @@ function OGRH.SyncGranular.ReceiveRaidSync(sender, syncData)
     local encounterCount = table.getn(sortedEncounters)
     
     -- Recompute checksums
-    if OGRH.ComputeRaidChecksum then
-        OGRH.ComputeRaidChecksum(raidName)
+    if OGRH.SyncChecksum and OGRH.SyncChecksum.ComputeRaidChecksum then
+        OGRH.SyncChecksum.ComputeRaidChecksum(raidName)
     end
     
     -- Trigger UI refresh
@@ -1108,8 +1108,8 @@ function OGRH.SyncGranular.OnRaidMetadataReceived(sender, syncData)
     raid.advancedSettings = OGRH.DeepCopy(advancedSettings)
     
     -- Verify checksum now matches (if we have validation)
-    if OGRH.ComputeRaidChecksum then
-        local newChecksum = OGRH.ComputeRaidChecksum(raidName)
+    if OGRH.SyncChecksum and OGRH.SyncChecksum.ComputeRaidChecksum then
+        local newChecksum = OGRH.SyncChecksum.ComputeRaidChecksum(raidName)
         DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Applied raid metadata: %s (checksum=%s)", 
             raidName, tostring(newChecksum)))
     else

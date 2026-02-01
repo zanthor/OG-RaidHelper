@@ -223,7 +223,7 @@ end
 ]]
 
 function OGRH.SyncRouter.Initialize()
-    OGRH.Msg("|cff00ccff[RH-SyncRouter]|r Loaded (Phase 1)")
+    -- Module initialized
 end
 
 -- Auto-initialize on load

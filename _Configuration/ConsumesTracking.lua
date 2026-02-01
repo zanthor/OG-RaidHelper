@@ -13,6 +13,11 @@ end
 
 local CT = OGRH.ConsumesTracking
 
+-- Module State
+CT.State = {
+  debug = false  -- Toggle with /ogrh debug consumes
+}
+
 -- ============================================================================
 -- Saved Variables
 -- ============================================================================
@@ -45,7 +50,9 @@ function CT.EnsureSavedVariables()
       syncLevel = "MANUAL",
       componentType = "settings"
     })
-    OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r Initialized default settings")
+    if CT.State.debug then
+      OGRH.Msg("|cffffaa00[RH-ConsumesTracking][DEBUG]|r Initialized default settings")
+    end
   else
     -- Ensure trackOnPull exists for existing saves
     if OGRH.SVM.GetPath("consumesTracking.trackOnPull") == nil then
@@ -274,7 +281,8 @@ function CT.UpdateDetailPanel(actionName)
           syncLevel = "MANUAL",
           componentType = "settings"
         })
-        CT.trackOnPullEnabled = isChecked  -- Update cache
+        
+        OGRH.Msg(string.format("|cff00ff00[CT]|r Track on Pull %s", isChecked and "ENABLED" or "DISABLED"))
       end
     })
     OGST.AnchorElement(enableCheckbox, detailPanel, {position = "top", align = "left", offsetX = 10, offsetY = -10})
@@ -2263,9 +2271,6 @@ function CT.Initialize()
   
   CT.EnsureSavedVariables()
   
-  -- Cache trackOnPull setting to avoid repeated SVM reads on every CHAT_MSG_ADDON event
-  CT.trackOnPullEnabled = OGRH.SVM.GetPath("consumesTracking.trackOnPull") or false
-  
   -- Register for BigWigs pull timer detection (Phase 3)
   if not eventHandlerFrame then
     eventHandlerFrame = CreateFrame("Frame", "OGRH_ConsumesTrackingEventFrame")
@@ -2325,8 +2330,7 @@ CT.currentPullStartTime = 0
 CT.captureScheduled = false
 CT.captureTimerFrame = nil
 
--- Cache trackOnPull setting to avoid excessive SVM reads
-CT.trackOnPullEnabled = false
+
 
 -- Sort players by role and score for display
 -- @param players table: Array of player records {name, class, role, score}
@@ -2360,12 +2364,20 @@ end
 -- This is called when a pull timer is detected (future implementation)
 -- For now, this can be called manually for testing
 function CT.CaptureConsumesSnapshot()
+  if CT.State.debug then
+    OGRH.Msg("|cffffaa00[RH-ConsumesTracking][DEBUG]|r CaptureConsumesSnapshot() called")
+  end
+  
   -- Ensure saved variables are initialized
   CT.EnsureSavedVariables()
   
   -- Get raid/encounter selection from main UI
-  -- TODO: This function needs to be implemented in the main UI module
   local raid, encounter = OGRH.GetSelectedRaidAndEncounter()
+  if CT.State.debug then
+    OGRH.Msg(string.format("|cffffaa00[RH-ConsumesTracking][DEBUG]|r GetSelectedRaidAndEncounter returned: raid=%s, encounter=%s", 
+      tostring(raid), tostring(encounter)))
+  end
+  
   if not raid or not encounter then
     OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r Cannot capture consume scores: No raid/encounter selected.")
     return
@@ -2467,9 +2479,11 @@ function CT.CaptureConsumesSnapshot()
   -- Refresh UI if tracking panel is open
   CT.RefreshTrackingHistoryLists()
   
-  -- Announce to chat
-  OGRH.Msg(string.format("|cff00ff00[RH-ConsumesTracking]|r Captured consume scores for %s - %s (%d players)", 
-    raid, encounter, table.getn(players)))
+  -- Announce to chat (only in debug mode)
+  if CT.State.debug then
+    OGRH.Msg(string.format("|cffffaa00[RH-ConsumesTracking][DEBUG]|r Captured consume scores for %s - %s (%d players)", 
+      raid, encounter, table.getn(players)))
+  end
 end
 
 -- ============================================================================
@@ -2514,11 +2528,19 @@ end
 function CT.OnPullTimerDetected()
   if event ~= "CHAT_MSG_ADDON" then return end
   
-  -- Check cached trackOnPull setting (updated via UI checkbox)
-  if not CT.trackOnPullEnabled then return end
+  -- Check trackOnPull setting directly from SVM
+  local trackOnPullEnabled = OGRH.SVM.GetPath("consumesTracking.trackOnPull")
+  if not trackOnPullEnabled then 
+    return 
+  end
   
   -- Prevent duplicate captures for the same pull
-  if CT.captureScheduled then return end
+  if CT.captureScheduled then 
+    if arg1 == "BigWigs" then
+      OGRH.Msg("|cffaaaaaa[CT-DEBUG]|r Capture already scheduled, skipping")
+    end
+    return 
+  end
   
   -- arg1 = prefix ("BigWigs")
   -- arg2 = message ("PulltimerSync 10" or "PulltimerBroadcastSync 10")
@@ -2529,6 +2551,10 @@ function CT.OnPullTimerDetected()
     local message = arg2
     local sender = arg4
     
+    if CT.State.debug then
+      OGRH.Msg(string.format("|cffffaa00[RH-ConsumesTracking][DEBUG]|r Pull timer detected from %s: %s", sender, message))
+    end
+    
     -- Parse pull timer duration from message
     local _, _, duration = string.find(message, "PulltimerSync%s+(%d+)")
     if not duration then
@@ -2538,6 +2564,10 @@ function CT.OnPullTimerDetected()
     if duration then
       local pullDuration = tonumber(duration)
       if pullDuration and pullDuration > 0 then
+        if CT.State.debug then
+          OGRH.Msg(string.format("|cffffaa00[RH-ConsumesTracking][DEBUG]|r Scheduling capture for %d second pull...", pullDuration))
+        end
+        
         -- Store pull info
         CT.currentPullNumber = pullDuration
         CT.currentPullRequester = sender
@@ -2545,6 +2575,10 @@ function CT.OnPullTimerDetected()
         
         -- Schedule the capture
         CT.ScheduleCaptureTimer(pullDuration)
+      end
+    else
+      if CT.State.debug then
+        OGRH.Msg("|cffffaa00[RH-ConsumesTracking][DEBUG]|r Could not parse duration from message: " .. tostring(message))
       end
     end
   end
@@ -2825,6 +2859,37 @@ function OGRH.ConsumesTracking.TestClearHistory()
   OGRH.Msg(string.format("Cleared %d history records.", count))
 end
 
+-- Test function to simulate a pull timer
+-- Usage: /script OGRH.ConsumesTracking.TestSimulatePull(10)
+function CT.TestSimulatePull(seconds)
+  seconds = seconds or 10
+  OGRH.Msg(string.format("|cff00ff00[CT-TEST]|r Simulating %d second pull timer...", seconds))
+  
+  -- Store pull info
+  CT.currentPullNumber = seconds
+  CT.currentPullRequester = UnitName("player")
+  CT.currentPullStartTime = GetTime()
+  
+  -- Schedule the capture
+  CT.ScheduleCaptureTimer(seconds)
+end
+
+-- Test function to check trackOnPull status
+-- Usage: /script OGRH.ConsumesTracking.TestCheckStatus()
+function CT.TestCheckStatus()
+  local savedValue = OGRH.SVM.GetPath("consumesTracking.trackOnPull")
+  local wholeTable = OGRH.SVM.GetPath("consumesTracking")
+  
+  OGRH.Msg("|cff00ff00[CT-Status]|r Track on Pull Status:")
+  OGRH.Msg(string.format("  GetPath('consumesTracking.trackOnPull'): %s", tostring(savedValue)))
+  
+  if wholeTable then
+    OGRH.Msg(string.format("  Direct table access: %s", tostring(wholeTable.trackOnPull)))
+  else
+    OGRH.Msg("  consumesTracking table not found!")
+  end
+end
+
 -- ============================================================================
 -- Initialization
 -- ============================================================================
@@ -2834,4 +2899,6 @@ CT.Initialize()
 -- Debug/Info
 -- ============================================================================
 
-OGRH.Msg("|cffffaa00[RH-ConsumesTracking]|r module loaded (v1.0.0)")
+if CT.State.debug then
+  OGRH.Msg("|cffffaa00[RH-ConsumesTracking][DEBUG]|r module loaded (v1.0.0)")
+end

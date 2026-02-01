@@ -48,7 +48,9 @@ function OGRH.CreateChatWindow()
     if existingFrame then
         OGRH._ogrhChatFrame = existingFrame
         OGRH._ogrhChatFrameIndex = existingIndex
-        OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Using existing chat window (ChatFrame" .. existingIndex .. ")")
+        if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+            OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Using existing chat window (ChatFrame" .. existingIndex .. ")")
+        end
         return existingFrame
     end
     
@@ -71,7 +73,9 @@ function OGRH.CreateChatWindow()
     OGRH._ogrhChatFrame = newFrame
     OGRH._ogrhChatFrameIndex = frameIndex
     
-    OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Created NEW chat window (ChatFrame" .. (frameIndex or "?") .. ")")
+    if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+        OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Created NEW chat window (ChatFrame" .. (frameIndex or "?") .. ")")
+    end
     
     -- If pfUI detected, refresh layout
     if pfUI and pfUI.chat and pfUI.chat.RefreshChat then
@@ -162,7 +166,9 @@ chatWindowFrame:SetScript("OnEvent", function()
         -- Create window immediately when addon loads (before pfUI)
         OGRH.CreateChatWindow()
         FlushMessageQueue()  -- Flush any queued messages
-        OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Chat window created (before pfUI)")
+        if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+            OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Chat window created (before pfUI)")
+        end
         
     elseif event == "ADDON_LOADED" and arg1 == "pfUI" then
         -- pfUI just loaded - wait a moment for it to initialize, then clean our window
@@ -205,7 +211,9 @@ chatWindowFrame:SetScript("OnEvent", function()
                         end
                     end
                     
-                    OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Cleaned channels and docked into pfUI")
+                    if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+                        OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Cleaned channels and docked into pfUI")
+                    end
                 end
             end, 1.0)
         else
@@ -248,7 +256,9 @@ chatWindowFrame:SetScript("OnEvent", function()
                             end
                         end
                         
-                        OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Cleaned channels and docked into pfUI")
+                        if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+                            OGRH.Msg("|cff66ff66[RH-ChatWindow]|r Cleaned channels and docked into pfUI")
+                        end
                     end
                 end
             end)
@@ -264,4 +274,4 @@ chatWindowFrame:SetScript("OnEvent", function()
 end)
 
 -- Success message (will be queued until window exists)
-OGRH.Msg("|cff66ff66[RH-ChatWindow]|r module loaded")
+-- ChatWindow loaded silently - no debug message needed

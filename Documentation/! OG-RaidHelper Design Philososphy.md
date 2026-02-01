@@ -476,10 +476,105 @@ OGRH.Msg("|cffff6666[RH-RolesUI]|r Role updated: Tank -> Healer")
 ```
 
 **Debug Messages:**
+
+All debug output MUST be wrapped in debug flag checks to prevent spam. Each module maintains its own debug flag that can be toggled at runtime.
+
 ```lua
--- Use category color + [DEBUG] prefix
-OGRH.Msg("|cff00ccff[RH-Sync][DEBUG]|r BroadcastFullSync called")
+-- Module State initialization (in module file)
+OGRH.MyModule.State = {
+    debug = false  -- Toggle with /ogrh debug mymodule
+}
+
+-- Debug output (wrapped in flag check)
+if OGRH.MyModule.State.debug then
+    OGRH.Msg("|cff00ccff[RH-MyModule][DEBUG]|r Function called with param: " .. tostring(param))
+end
+
+-- Use category color + [DEBUG] suffix for debug messages
+-- Infrastructure example:
+if OGRH.SyncIntegrity.State.debug then
+    OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r BroadcastFullSync called")
+end
+
+-- Core example:
+if OGRH.SVM.SyncConfig.debugRead then
+    OGRH.Msg("|cff66ff66[RH-SVM][DEBUG]|r Reading path: " .. path)
+end
+
+-- UI example:
+if OGRH.MainUI.State.debug then
+    OGRH.Msg("|cff66ccff[RH-MainUI][DEBUG]|r UpdateEncounterNavButton called")
+end
 ```
+
+**Available Debug Flags:**
+
+| Module | Flag Location | Slash Command | Purpose |
+|--------|---------------|---------------|---------|
+| **SyncIntegrity** | `OGRH.SyncIntegrity.State.debug` | `/ogrh debug sync` | Verbose sync/checksum messages |
+| **SavedVariablesManager** | `OGRH.SVM.SyncConfig.debugRead` | `/ogrh debug svm-read` | SVM read operations |
+| **SavedVariablesManager** | `OGRH.SVM.SyncConfig.debugWrite` | `/ogrh debug svm-write` | SVM write operations |
+| **MainUI** | `OGRH.MainUI.State.debug` | `/ogrh debug ui` | UI update and nav logic |
+| **SyncChecksum** | `OGRH_CHECKSUM_DEBUG` (global) | Manual toggle in code | Legacy wrapper calls |
+
+**Debug Help Command:**
+
+```lua
+/ogrh debug help  -- Show all debug options and current state
+```
+
+**Debug Command Pattern:**
+
+All debug toggles follow the pattern: `/ogrh debug [option]`
+
+```lua
+-- Toggle sync debug
+/ogrh debug sync
+
+-- Toggle SVM read debug  
+/ogrh debug svm-read
+
+-- Toggle SVM write debug
+/ogrh debug svm-write
+
+-- Toggle UI debug
+/ogrh debug ui
+
+-- Show help
+/ogrh debug help
+```
+
+**Adding New Debug Flags:**
+
+When creating a new module with debug output:
+
+1. **Create State.debug flag:**
+   ```lua
+   OGRH.MyModule.State = {
+       debug = false  -- Toggle with /ogrh debug mymodule
+   }
+   ```
+
+2. **Wrap all debug messages:**
+   ```lua
+   if OGRH.MyModule.State.debug then
+       OGRH.Msg("|cff00ccff[RH-MyModule][DEBUG]|r Your message here")
+   end
+   ```
+
+3. **Add slash command handler** (in MainUI.lua SlashCmdList):
+   ```lua
+   elseif sub == "debug mymodule" then
+       if OGRH.MyModule then
+           OGRH.MyModule.State.debug = not OGRH.MyModule.State.debug
+           local status = OGRH.MyModule.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+           OGRH.Msg("MyModule debug: " .. status)
+       else
+           OGRH.Msg("MyModule not loaded.")
+       end
+   ```
+
+4. **Update debug help command** to include new option
 
 #### Complete Examples by Location
 

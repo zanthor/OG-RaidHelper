@@ -59,8 +59,8 @@ OGRH.SVM.SyncConfig = {
     batchTimer = nil,
     offlineQueue = {},
     enabled = true,
-    debugRead = false,   -- Toggle with /ogrh debug svm read
-    debugWrite = false   -- Toggle with /ogrh debug svm write
+    debugRead = false,   -- Toggle with /ogrh debug svm-read
+    debugWrite = false   -- Toggle with /ogrh debug svm-write
 }
 
 -- Sync level definitions (priorities must match OGAddonMsg queue levels: CRITICAL, HIGH, NORMAL, LOW)
@@ -313,7 +313,9 @@ end
 -- SYNC: Realtime (Immediate)
 -- ============================================
 function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
-    OGRH.Msg("|cffaaffaa[RH-SVM DEBUG]|r SyncRealtime called: key=" .. tostring(key) .. ", subkey=" .. tostring(subkey))
+    if OGRH.SVM.SyncConfig.debugWrite then
+        OGRH.Msg("|cffaaffaa[RH-SVM DEBUG]|r SyncRealtime called: key=" .. tostring(key) .. ", subkey=" .. tostring(subkey))
+    end
     
     -- Check permissions based on componentType
     local playerName = UnitName("player")
@@ -348,8 +350,8 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
     
     -- Compute structure checksum for validation
     local structureChecksum = nil
-    if OGRH.ComputeRaidChecksum and syncMetadata.scope and syncMetadata.scope.raid then
-        structureChecksum = OGRH.ComputeRaidChecksum(syncMetadata.scope.raid)
+    if OGRH.SyncChecksum and OGRH.SyncChecksum.ComputeRaidChecksum and syncMetadata.scope and syncMetadata.scope.raid then
+        structureChecksum = OGRH.SyncChecksum.ComputeRaidChecksum(syncMetadata.scope.raid)
     end
     
     -- Prepare delta change data
@@ -635,8 +637,8 @@ function OGRH.SVM.OnDeltaReceived(sender, data, channel)
     
     -- Validate structure checksum if provided
     if data.structureChecksum and data.scope and data.scope.raid then
-        if OGRH.ComputeRaidChecksum then
-            local localChecksum = OGRH.ComputeRaidChecksum(data.scope.raid)
+        if OGRH.SyncChecksum and OGRH.SyncChecksum.ComputeRaidChecksum then
+            local localChecksum = OGRH.SyncChecksum.ComputeRaidChecksum(data.scope.raid)
             if localChecksum ~= data.structureChecksum then
                 OGRH.Msg("|cffff9900[RH-SVM]|r Delta rejected - structure mismatch. Requesting repair.")
                 -- Request structure repair from checksum system

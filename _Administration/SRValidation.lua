@@ -31,7 +31,7 @@ function OGRH.SRValidation.EnsureSV()
       syncLevel = "MANUAL",
       componentType = "settings"
     })
-    OGRH.Msg("|cffcc99ff[RH-SRValidation]|r Initialized default settings")
+    -- Debug message removed - use /ogrh debug sr to enable verbose logging
   end
   
   return true
