@@ -1269,6 +1269,777 @@ OGRH.rolesFrame.UpdatePlayerLists(true)
 
 ---
 
+## Invites Module (_Configuration/Invites.lua)
+
+The Invites module manages raid invites with support for multiple data sources (RollFor, Raid-Helper Invites, Raid-Helper Groups). It provides automated invite mode, role sync, group organization, and player status tracking.
+
+### Data Sources
+
+The module supports three data sources via two import types:
+
+**Source Type Constants:**
+- `OGRH.Invites.SOURCE_TYPE.ROLLFOR` - RollFor addon integration
+- `OGRH.Invites.SOURCE_TYPE.RAIDHELPER` - Raid-Helper JSON imports
+
+**Data Sources:**
+1. **RollFor** - Real-time integration with RollFor addon
+   - Soft reserve list with class and spec/role
+   - Auto-updates when RollFor data changes
+   - No manual import required
+
+2. **Raid-Helper (Invites)** - JSON import for sign-ups
+   - Import via "Import Raid-Helper (Invites)" button
+   - Includes: name, class, role, bench/absence status
+   - Supports roster metadata (raid title, instance, date)
+
+3. **Raid-Helper (Groups)** - JSON import for group assignments
+   - Import via "Import Raid-Helper (Groups)" button
+   - Includes: all Invites data PLUS group assignments (1-8)
+   - Enables auto-organize functionality
+
+### Public Functions
+
+#### `OGRH.Invites.ShowWindow()`
+**Type:** Public  
+**Authorization:** Requires RollFor addon  
+**Returns:** `nil`
+
+Opens the Invites management window.
+
+**Behavior:**
+- Closes other addon windows
+- Creates window if first use
+- Refreshes player list from current data source
+- Shows error if RollFor not available
+
+**Example:**
+```lua
+-- Open invites window
+OGRH.Invites.ShowWindow()
+```
+
+---
+
+#### `OGRH.Invites.GetRosterPlayers()`
+**Type:** Public  
+**Returns:** `table` - Array of standardized player objects
+
+Returns unified roster data from the currently active data source (RollFor or Raid-Helper).
+
+**Player Object Structure:**
+```lua
+{
+  name = "PlayerName",        -- Normalized (Title case)
+  class = "WARRIOR",          -- Uppercase class name or nil
+  role = "TANKS",             -- OGRH format: TANKS, HEALERS, MELEE, RANGED
+  group = 1,                  -- Group assignment (1-8) or nil
+  bench = false,              -- On bench status
+  absent = false,             -- Absent status
+  status = "not_in_raid",     -- Current status (see STATUS constants)
+  online = false,             -- Online status
+  source = "rollfor",         -- Data source type
+  rawRole = "WarriorTank"     -- Original role string (RollFor only)
+}
+```
+
+**Example:**
+```lua
+-- Get all roster players
+local players = OGRH.Invites.GetRosterPlayers()
+for _, player in ipairs(players) do
+  if not player.bench and not player.absent then
+    print(player.name .. " - " .. player.role)
+  end
+end
+```
+
+**Implementation Notes:**
+- Automatically switches between RollFor and Raid-Helper based on `currentSource`
+- Returns empty table `{}` if no data loaded
+- Used by RolesUI for automatic role sync
+
+---
+
+#### `OGRH.Invites.GetSoftResPlayers()`
+**Type:** Public  
+**Returns:** `table` - Array of RollFor player objects
+
+Returns player list from RollFor addon (soft reserve data).
+
+**RollFor Player Structure:**
+```lua
+{
+  name = "PlayerName",
+  class = "Warrior",
+  role = "WarriorTank"  -- ClassSpec format
+}
+```
+
+**Example:**
+```lua
+-- Get soft-res players from RollFor
+local players = OGRH.Invites.GetSoftResPlayers()
+```
+
+**Implementation Notes:**
+- Requires RollFor addon loaded
+- Calls `RollFor.GetSoftResPlayers()`
+- Returns empty table if RollFor unavailable
+
+---
+
+#### `OGRH.Invites.IsInviteModeActive()`
+**Type:** Public  
+**Returns:** `boolean`
+
+Checks if Invite Mode is currently active.
+
+**Example:**
+```lua
+-- Check invite mode status
+if OGRH.Invites.IsInviteModeActive() then
+  -- Auto-sync roles for joining players
+end
+```
+
+---
+
+#### `OGRH.Invites.ToggleInviteMode()`
+**Type:** Public  
+**Authorization:** No restrictions  
+**Returns:** `nil`
+
+Starts or stops automated invite mode.
+
+**Behavior When Starting:**
+- Announces to guild chat
+- Shows Invite Mode panel
+- Does immediate first invite cycle
+- Sets up OnUpdate handler for periodic invites
+- Auto-responds to whispers from roster players
+
+**Behavior When Stopping:**
+- Hides Invite Mode panel
+- Stops automatic invites
+- Disables auto-responses
+
+**Example:**
+```lua
+-- Toggle invite mode on/off
+OGRH.Invites.ToggleInviteMode()
+```
+
+**Implementation Notes:**
+- Invite interval configurable via `inviteMode.interval` (default 60 seconds)
+- Automatically converts party to raid when needed
+- Tracks progress (invited count vs total players)
+
+---
+
+#### `OGRH.Invites.InvitePlayer(playerName)`
+**Type:** Public  
+**Parameters:**
+- `playerName` (string) - Player name to invite
+
+**Returns:** `boolean` - Success status
+
+Invites a single player and tracks the invitation.
+
+**Behavior:**
+- Checks player status (online, in raid, declined, etc.)
+- Sends invite via `InviteByName()`
+- Updates `playerStatuses` tracking
+- Returns `false` if already in raid, offline, or declined
+
+**Example:**
+```lua
+-- Invite specific player
+local success = OGRH.Invites.InvitePlayer("Tankadin")
+```
+
+---
+
+#### `OGRH.Invites.InviteAllOnline()`
+**Type:** Public  
+**Authorization:** No restrictions  
+**Returns:** `nil`
+
+Invites all online players from roster (excluding benched/absent).
+
+**Behavior:**
+- Iterates through `GetRosterPlayers()`
+- Checks online status for each
+- Skips benched and absent players
+- Invites all eligible online players
+
+**Example:**
+```lua
+-- Mass invite button click
+OGRH.Invites.InviteAllOnline()
+```
+
+---
+
+#### `OGRH.Invites.IsPlayerInRaid(playerName)`
+**Type:** Public  
+**Parameters:**
+- `playerName` (string) - Player name to check
+
+**Returns:** `boolean`
+
+Checks if player is currently in the raid.
+
+**Example:**
+```lua
+-- Check if player already in raid
+if not OGRH.Invites.IsPlayerInRaid("Tankadin") then
+  OGRH.Invites.InvitePlayer("Tankadin")
+end
+```
+
+---
+
+#### `OGRH.Invites.GetPlayerStatus(playerName)`
+**Type:** Public  
+**Parameters:**
+- `playerName` (string) - Player name to query
+
+**Returns:** `(string, boolean, string|nil)` - `(status, online, groupType)`
+
+Returns detailed status information for a player.
+
+**Status Constants:**
+- `"in_raid"` - Player is in current raid
+- `"invited"` - Player has been invited this session
+- `"declined"` - Player declined invite
+- `"offline"` - Player is offline
+- `"in_other_group"` - Player is in another group/raid
+- `"not_in_raid"` - Player is online and available
+
+**Example:**
+```lua
+-- Get player status
+local status, online, groupType = OGRH.Invites.GetPlayerStatus("Tankadin")
+if status == "offline" then
+  print("Player is offline")
+elseif status == "declined" then
+  print("Player declined invite")
+end
+```
+
+---
+
+#### `OGRH.Invites.WhisperPlayer(playerName, message)`
+**Type:** Public  
+**Parameters:**
+- `playerName` (string) - Player name
+- `message` (string) - Message to send
+
+**Returns:** `nil`
+
+Sends a whisper to the specified player.
+
+**Example:**
+```lua
+-- Whisper player
+OGRH.Invites.WhisperPlayer("Tankadin", "Can you join now?")
+```
+
+---
+
+#### `OGRH.Invites.ClearDeclined(playerName)`
+**Type:** Public  
+**Parameters:**
+- `playerName` (string) - Player name
+
+**Returns:** `nil`
+
+Clears declined status for a player, allowing them to be invited again.
+
+**Example:**
+```lua
+-- Reset declined status
+OGRH.Invites.ClearDeclined("Tankadin")
+```
+
+---
+
+#### `OGRH.Invites.ClearAllTracking()`
+**Type:** Public  
+**Returns:** `nil`
+
+Clears all invite tracking (invited, declined statuses).
+
+**Example:**
+```lua
+-- Reset all tracking
+OGRH.Invites.ClearAllTracking()
+```
+
+---
+
+#### `OGRH.Invites.SyncPlayerRole(playerName)`
+**Type:** Public (Internal Use)  
+**Parameters:**
+- `playerName` (string) - Player who just joined raid
+
+**Returns:** `nil`
+
+Syncs a player's role from roster data to RolesUI when they join during Invite Mode.
+
+**Behavior:**
+- Only active when Invite Mode is enabled
+- Looks up player in `GetRosterPlayers()`
+- Calls `OGRH.RolesUI.SetPlayerRole()` if role found
+- Automatically called by `RAID_ROSTER_UPDATE` handler
+
+**Example:**
+```lua
+-- Called automatically when player joins
+-- Manual call (rare):
+OGRH.Invites.SyncPlayerRole("Tankadin")
+```
+
+**Implementation Notes:**
+- Part of automatic role sync system (push path)
+- Only syncs if Invite Mode active
+- No effect if player not in roster data
+
+---
+
+#### `OGRH.Invites.ApplyGroupAssignments()`
+**Type:** Public  
+**Authorization:** Requires Raid Leader or Assistant  
+**Returns:** `nil`
+
+Organizes raid members into groups based on Raid-Helper Groups assignments.
+
+**Behavior:**
+- Only available when using Raid-Helper (Groups) source
+- Requires group assignments in imported data
+- Moves players to assigned groups (1-8)
+- Handles group swaps when target group full
+- Skips players in combat
+- Shows feedback messages
+
+**Example:**
+```lua
+-- Organize raid groups (manual)
+OGRH.Invites.OrganizeRaidGroups()
+```
+
+**Alias:**
+- `OGRH.Invites.OrganizeRaidGroups()` - Manual version with chat feedback
+
+**Implementation Notes:**
+- Auto-organize version (`AutoOrganizeNewMembers()`) runs silently when players join
+- Only active for Raid-Helper source
+- Requires RL/A permissions
+
+---
+
+#### `OGRH.Invites.ParseRaidHelperJSON(jsonString)`
+**Type:** Public  
+**Parameters:**
+- `jsonString` (string) - Raid-Helper Invites JSON export
+
+**Returns:** `(table|nil, string|nil)` - `(parsedData, errorMessage)`
+
+Parses Raid-Helper Invites JSON into standardized format.
+
+**Parsed Data Structure:**
+```lua
+{
+  id = "raid-123",
+  name = "MC Raid",
+  players = {
+    {
+      name = "PlayerName",
+      class = "WARRIOR",
+      role = "TANKS",
+      bench = false,
+      absent = false,
+      status = "signed",
+      group = nil  -- Not in Invites format
+    },
+    -- ...
+  }
+}
+```
+
+**Example:**
+```lua
+-- Parse JSON
+local data, err = OGRH.Invites.ParseRaidHelperJSON(jsonString)
+if err then
+  print("Parse error: " .. err)
+else
+  print("Loaded " .. table.getn(data.players) .. " players")
+end
+```
+
+---
+
+#### `OGRH.Invites.ParseRaidHelperGroupsJSON(jsonString)`
+**Type:** Public  
+**Parameters:**
+- `jsonString` (string) - Raid-Helper Groups JSON export
+
+**Returns:** `(table|nil, string|nil)` - `(parsedData, errorMessage)`
+
+Parses Raid-Helper Groups JSON (includes group assignments).
+
+**Behavior:**
+- Same as `ParseRaidHelperJSON()` but includes `group` field
+- Enables auto-organize functionality
+
+**Example:**
+```lua
+-- Parse Groups JSON
+local data, err = OGRH.Invites.ParseRaidHelperGroupsJSON(jsonString)
+if data then
+  -- Can now use ApplyGroupAssignments()
+end
+```
+
+---
+
+#### `OGRH.Invites.ShowJSONImportDialog(importType)`
+**Type:** Public  
+**Parameters:**
+- `importType` (string) - `"invites"` or `"groups"`
+
+**Returns:** `nil`
+
+Shows JSON import dialog for Raid-Helper data.
+
+**Example:**
+```lua
+-- Show invites import dialog
+OGRH.Invites.ShowJSONImportDialog("invites")
+
+-- Show groups import dialog
+OGRH.Invites.ShowJSONImportDialog("groups")
+```
+
+---
+
+#### `OGRH.Invites.MapRoleToOGRH(roleString, source)`
+**Type:** Public  
+**Parameters:**
+- `roleString` (string) - Role from data source
+- `source` (string) - Source type (`ROLLFOR` or `RAIDHELPER`)
+
+**Returns:** `string|nil` - OGRH role bucket (`TANKS`, `HEALERS`, `MELEE`, `RANGED`)
+
+Converts role strings from different sources to standardized OGRH format.
+
+**Example:**
+```lua
+-- Map RollFor role
+local role = OGRH.Invites.MapRoleToOGRH("WarriorTank", "rollfor")
+-- Returns: "TANKS"
+
+-- Map Raid-Helper role
+local role = OGRH.Invites.MapRoleToOGRH("Healer", "raidhelper")
+-- Returns: "HEALERS"
+```
+
+---
+
+#### `OGRH.Invites.MapRollForRoleToOGRH(rollForRole)`
+**Type:** Public  
+**Parameters:**
+- `rollForRole` (string) - ClassSpec format from RollFor
+
+**Returns:** `string|nil` - OGRH role bucket
+
+Maps RollFor ClassSpec roles to OGRH role buckets.
+
+**RollFor Role Mapping:**
+- Tank specs → `TANKS` (WarriorTank, PaladinTank, DruidTank)
+- Healer specs → `HEALERS` (PriestHealer, PaladinHealer, DruidHealer, ShamanHealer)
+- Melee specs → `MELEE` (RogueDD, WarriorDD, DruidDD, ShamanDD, PaladinDD, HunterDD)
+- Ranged specs → `RANGED` (MageDD, WarlockDD, HunterDD)
+
+**Example:**
+```lua
+-- Map RollFor role
+local role = OGRH.Invites.MapRollForRoleToOGRH("PriestHealer")
+-- Returns: "HEALERS"
+```
+
+---
+
+#### `OGRH.Invites.GetMetadata()`
+**Type:** Public  
+**Returns:** `table` - Roster metadata
+
+Returns raid metadata from current data source.
+
+**Metadata Structure:**
+```lua
+{
+  source = "rollfor",      -- Data source type
+  instance = "MC",         -- Instance/raid name
+  date = "2026-02-02",     -- Raid date
+  title = "MC Raid"        -- Full title
+}
+```
+
+**Example:**
+```lua
+-- Get raid info
+local meta = OGRH.Invites.GetMetadata()
+print("Raid: " .. meta.title)
+```
+
+---
+
+#### `OGRH.Invites.GetInstanceName(instanceId)`
+**Type:** Public  
+**Parameters:**
+- `instanceId` (string) - Instance abbreviation
+
+**Returns:** `string` - Full instance name
+
+Converts instance abbreviations to full names.
+
+**Supported Instances:**
+- `MC` → Molten Core
+- `BWL` → Blackwing Lair
+- `AQ20` → Ruins of Ahn'Qiraj
+- `AQ40` → Temple of Ahn'Qiraj
+- `ZG` → Zul'Gurub
+- `NAXX` → Naxxramas
+- `ONY` → Onyxia's Lair
+
+**Example:**
+```lua
+local name = OGRH.Invites.GetInstanceName("MC")
+-- Returns: "Molten Core"
+```
+
+---
+
+### UI Components
+
+**Main Invites Window:**
+- **Data Source Selector** - Toggle between RollFor and Raid-Helper
+- **Import Buttons** - Import Raid-Helper JSON (Invites or Groups)
+- **Player List** - Scrollable list organized by status
+  - Active roster (online/offline)
+  - Benched players
+  - Absent players
+- **Action Buttons** - Invite, Whisper, Clear Declined
+- **Invite Mode Toggle** - Start/stop automated invites
+- **Organize Groups** - Apply Raid-Helper group assignments
+
+**Invite Mode Panel:**
+- **Progress Bars** - Visual countdown and player count
+- **Stop Button** - Cancel invite mode
+- **Draggable** - Position saved to SavedVariables
+
+**Player List Sections:**
+- Players grouped by status
+- Class-colored names
+- Online/offline indicators
+- In-raid status badges
+- Benched/absent visual indicators
+
+---
+
+### Invite Mode Features
+
+**Automatic Invites:**
+- **Interval-based** - Configurable delay between cycles (default 60s)
+- **Smart inviting** - Only invites online, non-benched, non-absent players
+- **Party conversion** - Auto-converts to raid when needed
+- **Progress tracking** - Shows invited count vs total players
+
+**Auto-Response System:**
+- **Benched players** - "You are currently on the bench..."
+- **Absent players** - "You are marked as absent..."
+- **Active players** - Auto-invites if not already in raid
+
+**Auto-Organize (Groups Source Only):**
+- **Silent mode** - Auto-organizes when players join during Invite Mode
+- **Manual mode** - "Organize Groups" button with feedback
+- **Smart swapping** - Handles full groups intelligently
+
+---
+
+### Role Sync Integration
+
+**Automatic Role Push (Primary):**
+```lua
+-- RAID_ROSTER_UPDATE handler in Invites.lua
+if not previousRaidMembers[name] then
+  OGRH.Invites.SyncPlayerRole(name)  -- Push to RolesUI
+end
+```
+
+**Role Sync Flow:**
+1. Player joins raid
+2. `RAID_ROSTER_UPDATE` event fires
+3. Invites module detects new member
+4. Calls `SyncPlayerRole(playerName)`
+5. Looks up role in `GetRosterPlayers()`
+6. Calls `OGRH.RolesUI.SetPlayerRole(name, role)`
+7. Role saved and Puppeteer/pfUI synced
+
+**Conditions:**
+- Only during Invite Mode (`inviteMode.enabled == true`)
+- Only for players in roster data
+- Only on first join (tracked via `previousRaidMembers`)
+
+---
+
+### Data Storage
+
+**SavedVariables Structure:**
+```lua
+OGRH_SV.v2.invites = {
+  -- Source selection
+  currentSource = "rollfor",  -- or "raidhelper"
+  
+  -- Raid-Helper data
+  raidhelperData = {
+    id = "raid-123",
+    name = "MC Raid",
+    players = {...}
+  },
+  raidhelperGroupsData = {...},
+  
+  -- Invite Mode state
+  inviteMode = {
+    enabled = false,
+    interval = 60,
+    lastInviteTime = 0,
+    totalPlayers = 0,
+    invitedCount = 0
+  },
+  
+  -- Invite tracking (session only)
+  declinedPlayers = {...},
+  history = {...},
+  
+  -- UI state
+  invitePanelPosition = {
+    point = "BOTTOMRIGHT",
+    x = -20,
+    y = 200
+  }
+}
+```
+
+---
+
+### Event Handlers
+
+Invites module registers and handles:
+
+- `RAID_ROSTER_UPDATE` - Detects new members, syncs roles, auto-organizes
+- `CHAT_MSG_WHISPER` - Auto-response for roster players during Invite Mode
+- `OnUpdate` (Invite Mode Panel) - Countdown timer, periodic invites
+
+---
+
+### Integration with Other Modules
+
+**RolesUI Integration:**
+- **Push-based sync** - Calls `SetPlayerRole()` when players join
+- **Data source** - Provides `GetRosterPlayers()` for pull-based sync
+- **IsInviteModeActive()** - RolesUI checks before pulling data
+
+**RollFor Integration:**
+- **Real-time data** - Queries `RollFor.GetSoftResPlayers()`
+- **Change detection** - Hash-based detection of RollFor updates
+- **Auto-refresh** - Updates UI when RollFor data changes
+
+**Raid Organization:**
+- **Group assignments** - Applies Raid-Helper group data
+- **Auto-organize** - Organizes new members silently
+- **Manual organize** - "Organize Groups" button with feedback
+
+---
+
+### Authorization
+
+**No Permission Checks:**
+- Anyone can use Invites window
+- Anyone can toggle Invite Mode
+- Anyone can import JSON data
+
+**RL/A Required:**
+- `ApplyGroupAssignments()` - Requires raid leader or assistant
+- `OrganizeRaidGroups()` - Requires raid leader or assistant
+
+---
+
+### Dependencies
+
+**Required:**
+- `OGRH_Core.lua` - Core functions and SavedVariablesManager
+- `RollFor` addon - For RollFor data source
+- `json.lua` library - For Raid-Helper JSON parsing
+
+**Optional:**
+- `OGRH.RolesUI.SetPlayerRole()` - Role sync integration
+- `OGRH.CloseAllWindows()` - Window management
+- `OGRH.StyleButton()` - Button styling
+
+---
+
+### Debugging
+
+**Common Issues:**
+
+**"Invites requires RollFor version X"**
+- RollFor addon not loaded or wrong version
+- Check `OGRH.ROLLFOR_AVAILABLE` flag
+
+**Roles not syncing:**
+- Verify Invite Mode is active
+- Check if player is in roster data: `GetRosterPlayers()`
+- Manually sync: `OGRH.Invites.SyncPlayerRole("PlayerName")`
+
+**JSON parse errors:**
+- Verify JSON format (copy exactly from Raid-Helper export)
+- Check for trailing commas or formatting issues
+- Error message shows line/column of parse error
+
+**Group organize not working:**
+- Must use Raid-Helper (Groups) source (not Invites)
+- Requires RL/A permissions
+- Players in combat cannot be moved
+
+**Manual Inspections:**
+```lua
+-- Check current source
+local source = OGRH.SVM.GetPath("invites.currentSource")
+
+-- Get all roster players
+local players = OGRH.Invites.GetRosterPlayers()
+for _, p in ipairs(players) do
+  print(p.name, p.role, p.group or "no group")
+end
+
+-- Check invite mode status
+local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
+print("Enabled:", inviteMode.enabled)
+print("Interval:", inviteMode.interval)
+
+-- View Raid-Helper data
+local data = OGRH.SVM.GetPath("invites.raidhelperData")
+if data then
+  print("Raid:", data.name)
+  print("Players:", table.getn(data.players))
+end
+```
+
+---
+
 ## Future Additions
 
 This document will be expanded to include:
@@ -1278,7 +2049,6 @@ This document will be expanded to include:
 - **Consume Module** - Consume checking, monitoring, logging
 - **Admin Module** - Raid admin management, permissions, polling
 - **Poll Module** - Role polling system, ready checks, response tracking
-- **RollFor Integration** - Soft reserve validation, invite system, loot management
 
 ---
 

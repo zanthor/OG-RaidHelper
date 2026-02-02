@@ -622,16 +622,6 @@ OGRH_ConsumeHelper_SV = {
 
 ### 🔴 Critical Issues
 
-**RESOLVED:** ~~Duplicate Keys: Both `permissions`/`Permissions` and `versioning`/`Versioning` existed~~
-   - ✅ **Fixed:** Consolidated to lowercase in migration code (January 30, 2026)
-   - **Impact:** None - migration now generates correct lowercase keys only
-
-**RESOLVED:** ~~Deprecated `order` field~~
-   - ✅ **Fixed:** All runtime code removed (January 30, 2026)
-   - ✅ **Migrated but frozen:** Field will be copied from v1 to v2 during migration to preserve existing data, but will remain static
-   - **Details:** Manual player ordering feature was previously replaced with alphabetical sort; all maintenance code removed
-   - **Impact:** None - field is unused and frozen; no new data will be written to it
-
 ### 🟡 Remaining Improvement Opportunities
 
 1. **Inconsistent Metadata:** Some entities have both `name` and `displayName`
