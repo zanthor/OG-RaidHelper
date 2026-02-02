@@ -653,42 +653,32 @@ function OGRH.ShowConsumeMonitor()
       return
     end
     
-    -- Get current encounter
+    -- Get current encounter (v2 schema: returns indices)
     if not OGRH.GetCurrentEncounter then
       frame:Hide()
       return
     end
     
-    local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
-    if not currentRaid or not currentEncounter then
+    local raidIdx, encounterIdx = OGRH.GetCurrentEncounter()
+    if not raidIdx or not encounterIdx then
       frame:Hide()
       return
     end
     
-    -- Get encounter roles using v2 schema (roles nested in encounters)
-    local encounterMgmt = OGRH.SVM.GetPath("encounterMgmt")
-    if not encounterMgmt or not encounterMgmt.raids then
+    -- Get encounter data using indices
+    local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+    if not raids or not raids[raidIdx] then
       frame:Hide()
       return
     end
     
-    -- Find raid and encounter by name (v2 uses numeric indices)
-    local raidData, encounterData
-    for _, raid in ipairs(encounterMgmt.raids) do
-      if raid.name == currentRaid then
-        raidData = raid
-        if raid.encounters then
-          for _, encounter in ipairs(raid.encounters) do
-            if encounter.name == currentEncounter then
-              encounterData = encounter
-              break
-            end
-          end
-        end
-        break
-      end
+    local raidData = raids[raidIdx]
+    if not raidData.encounters or not raidData.encounters[encounterIdx] then
+      frame:Hide()
+      return
     end
     
+    local encounterData = raidData.encounters[encounterIdx]
     if not encounterData or not encounterData.roles then
       frame:Hide()
       return

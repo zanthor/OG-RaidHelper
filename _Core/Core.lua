@@ -337,57 +337,92 @@ OGRH.EnsureSV()
 
 -- Get currently selected raid/encounter (read-only)
 function OGRH.GetCurrentEncounter()
-  local selectedRaid = OGRH.SVM.Get("ui", "selectedRaid")
-  local selectedEncounter = OGRH.SVM.Get("ui", "selectedEncounter")
+  -- v2 schema: Use indices instead of names
+  local selectedRaidIndex = OGRH.SVM.Get("ui", "selectedRaidIndex")
+  local selectedEncounterIndex = OGRH.SVM.Get("ui", "selectedEncounterIndex")
   
-  -- selectedRaid now stores the displayName directly (e.g., "[AR] AQ40")
-  return selectedRaid, selectedEncounter
+  return selectedRaidIndex, selectedEncounterIndex
+end
+
+-- Helper: Convert indices to names for backward compatibility
+function OGRH.GetCurrentEncounterNames()
+  local raidIdx, encIdx = OGRH.GetCurrentEncounter()
+  if not raidIdx or not encIdx then
+    return nil, nil
+  end
+  
+  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+  if not raids or not raids[raidIdx] then
+    return nil, nil
+  end
+  
+  local raid = raids[raidIdx]
+  local raidName = raid.name  -- Use name for lookups
+  local encounterName = raid.encounters and raid.encounters[encIdx] and raid.encounters[encIdx].name
+  
+  return raidName, encounterName
 end
 
 -- Set currently selected raid/encounter (centralized write interface)
--- This is the ONLY function that should write selectedRaid/selectedEncounter
-function OGRH.SetCurrentEncounter(raidName, encounterName)
-  -- Store locally first
-  if raidName then
-    OGRH.SVM.Set("ui", "selectedRaid", raidName, {
-      syncLevel = "REALTIME",
-      componentType = "settings"
-    })
-  end
+-- This is the ONLY function that should write selectedRaidIndex/selectedEncounterIndex
+function OGRH.SetCurrentEncounter(raidIndex, encounterIndex)
+  -- Check authorization first
+  local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player"))
+  local canNavigate = OGRH.CanNavigateEncounter and OGRH.CanNavigateEncounter()
   
-  if encounterName then
-    OGRH.SVM.Set("ui", "selectedEncounter", encounterName, {
-      syncLevel = "REALTIME",
-      componentType = "settings"
-    })
-  end
-  
-  -- Broadcast encounter change if in raid and authorized
-  if GetNumRaidMembers() > 0 and raidName and encounterName then
-    -- Check if this is admin or raid lead/assistant
-    local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player"))
-    local canNavigate = OGRH.CanNavigateEncounter and OGRH.CanNavigateEncounter()
-    
-    if isAdmin then
-      -- Admin broadcasts encounter change to all raid members
-      OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, {
-        raidName = raidName,
-        encounterName = encounterName
-      }, {
-        priority = "HIGH"
+  -- In raid: L/A only sends request, doesn't update local state
+  if GetNumRaidMembers() > 0 and not isAdmin and canNavigate then
+    -- Raid lead/assistant requests admin to change encounter
+    local adminName = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+    if adminName and adminName ~= UnitName("player") then
+      OGRH.MessageRouter.SendTo(adminName, OGRH.MessageTypes.STATE.REQUEST_ENCOUNTER, {
+        raidIndex = raidIndex,
+        encounterIndex = encounterIndex,
+        requester = UnitName("player")
       })
-    elseif canNavigate then
-      -- Raid lead/assistant requests admin to change encounter
-      -- Find admin and send request
-      local adminName = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
-      if adminName and adminName ~= UnitName("player") then
-        OGRH.MessageRouter.SendTo(adminName, OGRH.MessageTypes.STATE.REQUEST_ENCOUNTER, {
-          raidName = raidName,
-          encounterName = encounterName,
-          requester = UnitName("player")
-        })
+    end
+    return  -- Don't update local state - wait for Admin broadcast
+  end
+  
+  -- Admin or solo: update local state
+  if raidIndex then
+    OGRH.SVM.Set("ui", "selectedRaidIndex", raidIndex, {
+      syncLevel = "REALTIME",
+      componentType = "settings"
+    })
+  end
+  
+  if encounterIndex then
+    OGRH.SVM.Set("ui", "selectedEncounterIndex", encounterIndex, {
+      syncLevel = "REALTIME",
+      componentType = "settings"
+    })
+  end
+  
+  -- Maintain backward compatibility: set selectedRaid and selectedEncounter for consume logging
+  if raidIndex and encounterIndex then
+    local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+    if raids and raids[raidIndex] then
+      local raid = raids[raidIndex]
+      -- Use displayName for consume logging (e.g., "[AR] AQ40" not "[ACTIVE RAID]")
+      local raidDisplayName = raid.displayName or raid.name
+      OGRH.SVM.Set("ui", "selectedRaid", raidDisplayName)
+      
+      if raid.encounters and raid.encounters[encounterIndex] then
+        local encounterName = raid.encounters[encounterIndex].name
+        OGRH.SVM.Set("ui", "selectedEncounter", encounterName)
       end
     end
+  end
+  
+  -- Admin broadcasts encounter change to all raid members
+  if GetNumRaidMembers() > 0 and isAdmin and raidIndex and encounterIndex then
+    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER, {
+      raidIndex = raidIndex,
+      encounterIndex = encounterIndex
+    }, {
+      priority = "HIGH"
+    })
   end
 end
 
@@ -511,22 +546,34 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
     OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Set Active Raid to: %s", sourceRaid.name or sourceRaid.displayName))
   end
   
-  -- Set the UI to select the Active Raid using displayName (so it shows "[AR] AQ40" not "[ACTIVE RAID]")
-  OGRH.SVM.Set("ui", "selectedRaid", activeRaid.displayName, {
+  -- Set the UI to select the Active Raid by INDEX (Active Raid is always raids[1])
+  if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+    OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Setting selectedRaidIndex = 1")
+  end
+  OGRH.SVM.Set("ui", "selectedRaidIndex", 1, {
     syncLevel = "REALTIME",
     componentType = "settings"
   })
   
-  -- Automatically select the first encounter in the new Active Raid
+  -- Automatically select the first encounter in the new Active Raid by INDEX
   if activeRaid.encounters and table.getn(activeRaid.encounters) > 0 then
-    local firstEncounter = activeRaid.encounters[1].name
-    OGRH.SVM.Set("ui", "selectedEncounter", firstEncounter, {
+    if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+      OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Setting selectedEncounterIndex = 1")
+    end
+    OGRH.SVM.Set("ui", "selectedEncounterIndex", 1, {
       syncLevel = "REALTIME",
       componentType = "settings"
     })
     if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
-      OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected first encounter: %s", firstEncounter))
+      OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected first encounter (index 1): %s", activeRaid.encounters[1].name))
     end
+  end
+  
+  -- Verify the write
+  if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
+    local readBack1 = OGRH.SVM.Get("ui", "selectedRaidIndex")
+    local readBack2 = OGRH.SVM.Get("ui", "selectedEncounterIndex")
+    OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Verification: selectedRaidIndex=%s, selectedEncounterIndex=%s", tostring(readBack1), tostring(readBack2)))
   end
   
   -- Trigger UI refresh
@@ -2464,6 +2511,7 @@ function OGRH.ReAnnounce()
   OGRH.Msg("Re-announced " .. table.getn(OGRH.storedAnnouncement.lines) .. " line(s).")
 end
 ]]--
+
 -- Handle incoming addon messages and game events
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("CHAT_MSG_ADDON")
@@ -3012,11 +3060,8 @@ addonFrame:SetScript("OnEvent", function()
           end
           
           if raidFound and encounterFound then
-            -- Update main UI selection only (don't touch planning window)
-            OGRH.EnsureSV()
-            if not OGRH_SV.ui then OGRH_SV.ui = {} end
-            OGRH.SVM.Set("ui", "selectedRaid", raidName)
-            OGRH.SVM.Set("ui", "selectedEncounter", encounterName)
+            -- Update main UI selection using indices (SetCurrentEncounter handles backward compat)
+            OGRH.SetCurrentEncounter(raidIdx, encIdx)
             
             -- Do NOT update planning window frame
             -- Planning window maintains its own independent selection
@@ -4601,29 +4646,23 @@ local function CreateMinimapButton()
       
       OGRH_MinimapMenu = menu
       
-      -- Invites submenu
+      -- Invites (direct click, no submenu)
       local invitesItem = menu:AddItem({
         text = "Invites",
-        submenu = {
-          {
-            text = "Show Invites",
-            onClick = function()
-              if not OGRH.ROLLFOR_AVAILABLE then
-                OGRH.Msg("Invites requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
-                return
-              end
-              
-              OGRH.CloseAllWindows("OGRH_InvitesFrame")
-              
-              if OGRH.Invites and OGRH.Invites.ShowWindow then
-                OGRH.Invites.ShowWindow()
-              else
-                OGRH.Msg("Invites module not loaded.")
-              end
-            end
-          }
-          -- DEPRECATED: "Sort Raid" removed - was RGO-dependent
-        }
+        onClick = function()
+          if not OGRH.ROLLFOR_AVAILABLE then
+            OGRH.Msg("Invites requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
+            return
+          end
+          
+          OGRH.CloseAllWindows("OGRH_InvitesFrame")
+          
+          if OGRH.Invites and OGRH.Invites.ShowWindow then
+            OGRH.Invites.ShowWindow()
+          else
+            OGRH.Msg("Invites module not loaded.")
+          end
+        end
       })
       
       -- Gray out if RollFor not available
@@ -4667,20 +4706,7 @@ local function CreateMinimapButton()
         srValidationItem.fs:SetTextColor(0.5, 0.5, 0.5)
       end
       
-      -- Track Consumes
-      menu:AddItem({
-        text = "Track Consumes",
-        onClick = function()
-          OGRH.CloseAllWindows("OGRH_TrackConsumesFrame")
-          if OGRH.ShowTrackConsumes then
-            OGRH.ShowTrackConsumes()
-          else
-            OGRH.Msg("Track Consumes module not loaded.")
-          end
-        end
-      })
-      
-      -- Settings submenu
+      -- Settings submenu (moved here, will be added to menu after Hide)
       local settingsItems = {
           {
             text = "Encounters",
@@ -4732,6 +4758,17 @@ local function CreateMinimapButton()
             end
           },
           {
+            text = "Track Consumes",
+            onClick = function()
+              OGRH.CloseAllWindows("OGRH_TrackConsumesFrame")
+              if OGRH.ShowTrackConsumes then
+                OGRH.ShowTrackConsumes()
+              else
+                OGRH.Msg("Track Consumes module not loaded.")
+              end
+            end
+          },
+          {
             text = "Auto Promote",
             onClick = function()
               if OGRH.ShowAutoPromote then
@@ -4775,31 +4812,6 @@ local function CreateMinimapButton()
           }
       }
       
-      local settingsMenuItem = menu:AddItem({
-        text = "Settings",
-        submenu = settingsItems
-      })
-      
-      -- Hook into Settings menu item OnEnter to update Monitor Consumes text before submenu shows
-      local originalOnEnter = settingsMenuItem:GetScript("OnEnter")
-      settingsMenuItem:SetScript("OnEnter", function()
-        -- Clear cached submenu to force recreation with updated text
-        settingsMenuItem.submenu = nil
-        
-        -- Update Monitor Consumes text (4th item in settings) before submenu is created
-        OGRH.EnsureSV()
-        if OGRH.SVM.Get("monitorConsumes") then
-          settingsItems[4].text = "|cff00ff00Monitor Consumes|r"
-        else
-          settingsItems[4].text = "Monitor Consumes"
-        end
-        
-        -- Call original OnEnter to show submenu
-        if originalOnEnter then
-          originalOnEnter()
-        end
-      end)
-      
       -- Modules submenu
       menu:AddItem({
         text = "Modules",
@@ -4832,6 +4844,32 @@ local function CreateMinimapButton()
           end
         end
       })
+      
+      -- Settings submenu (at bottom)
+      local settingsMenuItem = menu:AddItem({
+        text = "Settings",
+        submenu = settingsItems
+      })
+      
+      -- Hook into Settings menu item OnEnter to update Monitor Consumes text before submenu shows
+      local originalOnEnter = settingsMenuItem:GetScript("OnEnter")
+      settingsMenuItem:SetScript("OnEnter", function()
+        -- Clear cached submenu to force recreation with updated text
+        settingsMenuItem.submenu = nil
+        
+        -- Update Monitor Consumes text (4th item in settings) before submenu is created
+        OGRH.EnsureSV()
+        if OGRH.SVM.Get("monitorConsumes") then
+          settingsItems[4].text = "|cff00ff00Monitor Consumes|r"
+        else
+          settingsItems[4].text = "Monitor Consumes"
+        end
+        
+        -- Call original OnEnter to show submenu
+        if originalOnEnter then
+          originalOnEnter()
+        end
+      end)
       
       -- Helper function to update toggle text
       menu.UpdateToggleText = function()
@@ -4975,14 +5013,33 @@ end)
 -- Used by consumables tracking module to capture historical records
 -- @return string, string: raid name, encounter name (or nil, nil if not selected)
 function OGRH.GetSelectedRaidAndEncounter()
-  -- Use existing GetCurrentEncounter which handles backward compatibility via SVM
-  local raidName, encounterName = OGRH.GetCurrentEncounter()
-  
-  if not raidName or not encounterName then
+  -- Get indices
+  local raidIdx, encIdx = OGRH.GetCurrentEncounter()
+  if not raidIdx or not encIdx then
     return nil, nil
   end
   
-  -- Return the names as-is (these are already display names in the new system)
+  -- Get raid/encounter objects
+  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+  if not raids or not raids[raidIdx] then
+    return nil, nil
+  end
+  
+  local raid = raids[raidIdx]
+  local encounter = raid.encounters and raid.encounters[encIdx]
+  if not encounter then
+    return nil, nil
+  end
+  
+  -- Use displayName for raid (e.g., "[AR] AQ40") and strip [AR] prefix if present
+  local raidName = raid.displayName or raid.name
+  if raidName then
+    -- Strip "[AR] " prefix from Active Raid
+    raidName = string.gsub(raidName, "^%[AR%]%s*", "")
+  end
+  
+  local encounterName = encounter.name
+  
   return raidName, encounterName
 end
 

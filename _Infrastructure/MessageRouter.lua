@@ -410,10 +410,24 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             end
         end
         
-        -- Update local UI to match encounter selection
-        if encounterData.raidName and encounterData.encounterName then
-            OGRH.SVM.SetPath("ui.selectedRaid", encounterData.raidName)
-            OGRH.SVM.SetPath("ui.selectedEncounter", encounterData.encounterName)
+        -- Update local UI to match encounter selection using indices
+        if encounterData.raidIndex and encounterData.encounterIndex then
+            -- Don't re-broadcast - just update local state silently
+            OGRH.SVM.Set("ui", "selectedRaidIndex", encounterData.raidIndex)
+            OGRH.SVM.Set("ui", "selectedEncounterIndex", encounterData.encounterIndex)
+            
+            -- Also update legacy name fields for backward compatibility
+            local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+            if raids and raids[encounterData.raidIndex] then
+                local raid = raids[encounterData.raidIndex]
+                local raidDisplayName = raid.displayName or raid.name
+                OGRH.SVM.Set("ui", "selectedRaid", raidDisplayName)
+                
+                if raid.encounters and raid.encounters[encounterData.encounterIndex] then
+                    local encounterName = raid.encounters[encounterData.encounterIndex].name
+                    OGRH.SVM.Set("ui", "selectedEncounter", encounterName)
+                end
+            end
             
             -- Update UI button if available
             if OGRH.UpdateEncounterNavButton then
@@ -443,14 +457,34 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             return
         end
         
-        -- Validate request data
-        if not data or not data.raidName or not data.encounterName then
+        -- Validate request data (now using indices)
+        if not data or not data.raidIndex or not data.encounterIndex then
             return
         end
         
-        -- Apply encounter change locally (will trigger broadcast to all)
+        -- Apply encounter change locally (will trigger broadcast to all via SetCurrentEncounter)
         if OGRH.SetCurrentEncounter then
-            OGRH.SetCurrentEncounter(data.raidName, data.encounterName)
+            OGRH.SetCurrentEncounter(data.raidIndex, data.encounterIndex)
+        end
+        
+        -- Update Admin's own UI
+        if OGRH.UpdateEncounterNavButton then
+            OGRH.UpdateEncounterNavButton()
+        end
+        
+        -- Refresh Encounter Planning window if it's open
+        if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+            if OGRH_EncounterFrame.RefreshRoleContainers then
+                OGRH_EncounterFrame.RefreshRoleContainers()
+            end
+            if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
+                OGRH_EncounterFrame.UpdateAnnouncementBuilder()
+            end
+        end
+        
+        -- Update consume monitor if enabled
+        if OGRH.ShowConsumeMonitor then
+            OGRH.ShowConsumeMonitor()
         end
     end)
     

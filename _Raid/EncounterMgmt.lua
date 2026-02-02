@@ -567,10 +567,8 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
 end
 
 -- Get currently selected encounter for main UI (not planning window)
--- DEPRECATED: Use OGRH.GetCurrentEncounter() in Core.lua instead
-function OGRH.GetCurrentEncounter()
-  return OGRH.SVM.Get("ui", "selectedRaid"), OGRH.SVM.Get("ui", "selectedEncounter")
-end
+-- REMOVED: OGRH.GetCurrentEncounter() is now in Core.lua only
+-- This deprecated function was overwriting the Core.lua implementation
 
 -- Global ReplaceTags function for announcement processing
 -- Migrate old roleDefaults to poolDefaults (one-time migration)
@@ -4007,35 +4005,21 @@ function OGRH.OpenEncounterPlanning()
     OGRH_ShareFrame:Hide()
   end
   
-  -- Get current raid/encounter from Main UI
-  local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
+  -- Get current raid/encounter indices from Main UI
+  local raidIdx, encounterIdx = OGRH.GetCurrentEncounter()
   
   if not OGRH_EncounterFrame then
     OGRH.ShowEncounterPlanning()
     -- After frame creation, set to current Main UI selection if available
-    if OGRH_EncounterFrame and currentRaid and currentEncounter then
-      OGRH_EncounterFrame.selectedRaid = currentRaid
-      OGRH_EncounterFrame.selectedEncounter = currentEncounter
-      
-      -- Find and set indices for the selected raid/encounter
+    if OGRH_EncounterFrame and raidIdx and encounterIdx then
+      -- Get raid and encounter objects
       local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
-      if raids then
-        for i = 1, table.getn(raids) do
-          if raids[i].name == currentRaid then
-            OGRH_EncounterFrame.selectedRaidIdx = i
-            
-            -- Find encounter index
-            if raids[i].encounters then
-              for j = 1, table.getn(raids[i].encounters) do
-                if raids[i].encounters[j].name == currentEncounter then
-                  OGRH_EncounterFrame.selectedEncounterIdx = j
-                  break
-                end
-              end
-            end
-            break
-          end
-        end
+      if raids and raids[raidIdx] and raids[raidIdx].encounters and raids[raidIdx].encounters[encounterIdx] then
+        -- Set both indices and names on the frame
+        OGRH_EncounterFrame.selectedRaidIdx = raidIdx
+        OGRH_EncounterFrame.selectedEncounterIdx = encounterIdx
+        OGRH_EncounterFrame.selectedRaid = raids[raidIdx].name
+        OGRH_EncounterFrame.selectedEncounter = raids[raidIdx].encounters[encounterIdx].name
       end
       
       -- Refresh to show the correct selection
@@ -4055,29 +4039,15 @@ function OGRH.OpenEncounterPlanning()
   -- Frame already exists - show it first, then update to current Main UI selection
   OGRH_EncounterFrame:Show()
   
-  if currentRaid and currentEncounter then
-    OGRH_EncounterFrame.selectedRaid = currentRaid
-    OGRH_EncounterFrame.selectedEncounter = currentEncounter
-    
-    -- Find and set indices for the selected raid/encounter
+  if raidIdx and encounterIdx then
+    -- Get raid and encounter objects
     local raids = OGRH.SVM.GetPath('encounterMgmt.raids')
-    if raids then
-      for i = 1, table.getn(raids) do
-        if raids[i].name == currentRaid then
-          OGRH_EncounterFrame.selectedRaidIdx = i
-          
-          -- Find encounter index
-          if raids[i].encounters then
-            for j = 1, table.getn(raids[i].encounters) do
-              if raids[i].encounters[j].name == currentEncounter then
-                OGRH_EncounterFrame.selectedEncounterIdx = j
-                break
-              end
-            end
-          end
-          break
-        end
-      end
+    if raids and raids[raidIdx] and raids[raidIdx].encounters and raids[raidIdx].encounters[encounterIdx] then
+      -- Set both indices and names on the frame
+      OGRH_EncounterFrame.selectedRaidIdx = raidIdx
+      OGRH_EncounterFrame.selectedEncounterIdx = encounterIdx
+      OGRH_EncounterFrame.selectedRaid = raids[raidIdx].name
+      OGRH_EncounterFrame.selectedEncounter = raids[raidIdx].encounters[encounterIdx].name
     end
     
     -- Refresh to show the correct selection
@@ -4184,7 +4154,7 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         if activeRaid.encounters then
           for j = 1, table.getn(activeRaid.encounters) do
             local encounterName = activeRaid.encounters[j].name
-            local capturedEncounter = encounterName
+            local capturedEncounterIdx = j
             
             table.insert(activeEncounters, {
               text = encounterName,
@@ -4195,8 +4165,8 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
                   return
                 end
                 
-                -- Active Raid is always index 1
-                OGRH.SetCurrentEncounter(activeRaid.name, capturedEncounter)
+                -- Active Raid is always index 1, set encounter by index
+                OGRH.SetCurrentEncounter(1, capturedEncounterIdx)
                 
                 -- Update UI
                 OGRH.UpdateEncounterNavButton()

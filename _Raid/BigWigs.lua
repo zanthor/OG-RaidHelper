@@ -65,14 +65,24 @@ end
 function OGRH.BigWigs.OnEncounterDetected(moduleName)
   if not moduleName or moduleName == "" then return end
   
+  if OGRH.BigWigs.State.debug then
+    OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r OnEncounterDetected called with: " .. tostring(moduleName))
+  end
+  
   -- Avoid duplicate processing
   if lastDetectedEncounter == moduleName then
+    if OGRH.BigWigs.State.debug then
+      OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r Skipping duplicate detection")
+    end
     return
   end
   
   -- Check if player is raid admin (not just leader/assist)
   if GetNumRaidMembers() > 0 then
-    if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin() then
+    if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin(UnitName("player")) then
+      if OGRH.BigWigs.State.debug then
+        OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r Not raid admin, skipping")
+      end
       return
     end
   end
@@ -80,15 +90,23 @@ function OGRH.BigWigs.OnEncounterDetected(moduleName)
   -- Find matching OGRH encounter
   local raidName, encounterName = FindMatchingEncounter(moduleName)
   
+  if OGRH.BigWigs.State.debug then
+    OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r FindMatchingEncounter returned: raidName=" .. tostring(raidName) .. ", encounterName=" .. tostring(encounterName))
+  end
+  
   if raidName and encounterName then
     -- Update last detected to avoid spam
     lastDetectedEncounter = moduleName
     
     -- Set the main UI selection (not planning window)
     OGRH.EnsureSV()
+    
+    -- Convert names to indices for v2 schema
+    local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(raidName, encounterName)
+    
     -- Use centralized API to set current encounter (handles sync automatically)
-    if OGRH.SetCurrentEncounter then
-      OGRH.SetCurrentEncounter(raidName, encounterName)
+    if OGRH.SetCurrentEncounter and raidIdx and encIdx then
+      OGRH.SetCurrentEncounter(raidIdx, encIdx)
     end
     
     -- Refresh main UI if it exists
@@ -161,7 +179,32 @@ function OGRH.BigWigs.OnEncounterDetected(moduleName)
   end
 end
 
--- Hook into BigWigs module enable
+-- Function to handle boss engagement (combat start)
+function OGRH.BigWigs.OnBossEngage(moduleName)
+  if not moduleName or moduleName == "" then return end
+  
+  if OGRH.BigWigs.State.debug then
+    OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r OnBossEngage called with: " .. tostring(moduleName))
+  end
+  
+  -- Trigger consume tracking if enabled (don't change encounter)
+  if OGRH.ConsumesTracking and OGRH.ConsumesTracking.CaptureConsumesSnapshot then
+    local trackOnPull = OGRH.SVM.GetPath("consumesTracking.trackOnPull")
+    if trackOnPull then
+      -- Check if this is a back-to-back repeat
+      local now = GetTime()
+      if (now - lastConsumeTrackingTime) > 30 then -- 30 second cooldown
+        lastConsumeTrackingTime = now
+        
+        -- Capture consumes snapshot for currently selected encounter
+        OGRH.ConsumesTracking.CaptureConsumesSnapshot()
+        OGRH.Msg("|cffff6666[RH-BigWigs]|r Captured consume snapshot on boss engage")
+      end
+    end
+  end
+end
+
+-- Hook into BigWigs module enable and engage events
 local function HookBigWigs()
   if not BigWigs then
     -- BigWigs not loaded yet, try again later
@@ -169,10 +212,11 @@ local function HookBigWigs()
     return
   end
   
-  -- Hook each module's OnEnable function for detection
+  -- Hook each module's OnEnable and Engage functions
   if BigWigs.modules then
     local count = 0
     for name, module in pairs(BigWigs.modules) do
+      -- Hook OnEnable for encounter selection
       if module.OnEnable then
         local originalOnEnable = module.OnEnable
         module.OnEnable = function(self)
@@ -199,6 +243,25 @@ local function HookBigWigs()
         end
         count = count + 1
       end
+      
+      -- Hook Engage for consume tracking
+      if module.Engage then
+        local originalEngage = module.Engage
+        module.Engage = function(self)
+          -- Call original
+          originalEngage(self)
+          
+          if OGRH.BigWigs.State.debug then
+            OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r Boss engage detected")
+          end
+          
+          -- Try different properties to find the right one
+          local moduleName = self.translatedName or self.name or name
+          if moduleName then
+            OGRH.BigWigs.OnBossEngage(moduleName)
+          end
+        end
+      end
     end
     
     -- BigWigs integration active silently - no user-facing message
@@ -216,3 +279,31 @@ initFrame:SetScript("OnEvent", function()
     OGRH.ScheduleTimer(HookBigWigs, 2)
   end
 end)
+
+-- ============================================================================
+-- Test Functions
+-- ============================================================================
+
+-- Test function to simulate BigWigs encounter detection
+-- Usage: /script OGRH.BigWigs.TestEncounterDetection("Baron Geddon")
+function OGRH.BigWigs.TestEncounterDetection(moduleName)
+  if not moduleName then
+    OGRH.Msg("|cffff0000[RH-BigWigs Test]|r Usage: OGRH.BigWigs.TestEncounterDetection(\"Baron Geddon\")")
+    return
+  end
+  
+  OGRH.Msg("|cff00ff00[RH-BigWigs Test]|r Simulating encounter detection for: " .. moduleName)
+  OGRH.BigWigs.OnEncounterDetected(moduleName)
+end
+
+-- Test function to simulate BigWigs boss engagement
+-- Usage: /script OGRH.BigWigs.TestBossEngage("Baron Geddon")
+function OGRH.BigWigs.TestBossEngage(moduleName)
+  if not moduleName then
+    OGRH.Msg("|cffff0000[RH-BigWigs Test]|r Usage: OGRH.BigWigs.TestBossEngage(\"Baron Geddon\")")
+    return
+  end
+  
+  OGRH.Msg("|cff00ff00[RH-BigWigs Test]|r Simulating boss engage for: " .. moduleName)
+  OGRH.BigWigs.OnBossEngage(moduleName)
+end

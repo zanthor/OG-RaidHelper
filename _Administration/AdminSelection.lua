@@ -54,19 +54,21 @@ function OGRH.CanManageRoles()
   return false
  end
 
-function OGRH.CanNavigateEncounter()
+function OGRH.CanNavigateEncounter(playerName)
+  -- Default to local player if not specified
+  if not playerName then
+    playerName = UnitName("player")
+  end
+  
   -- If not in a raid, allow navigation
   if GetNumRaidMembers() == 0 then
     return true
   end
   
   -- Check if player is the designated raid admin
-  if OGRH.IsRaidAdmin(UnitName("player")) then
+  if OGRH.IsRaidAdmin(playerName) then
     return true
   end
-  
-  -- Check if player is raid leader or assistant
-  local playerName = UnitName("player")
   
   -- Hardcoded exceptions for specific players
   if playerName == "Tankmedady" or playerName == "Gnuzmas" then

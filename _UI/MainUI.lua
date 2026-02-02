@@ -254,36 +254,32 @@ announceBtn:SetScript("OnClick", function()
       return
     end
     
-    local currentRaid, currentEncounter = OGRH.GetCurrentEncounter()
-    if not currentRaid or not currentEncounter then
+    -- Get indices (v2 schema)
+    local raidIdx, encounterIdx = OGRH.GetCurrentEncounter()
+    if not raidIdx or not encounterIdx then
       return -- Silently do nothing if no encounter selected
     end
     
-    -- Get role configuration
+    -- Get role configuration using v2 schema index-based path
     OGRH.EnsureSV()
-    local roles = OGRH.SVM.GetPath("encounterMgmt.roles")
-    if not roles or not roles[currentRaid] or not roles[currentRaid][currentEncounter] then
+    local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+    if not raids or not raids[raidIdx] or not raids[raidIdx].encounters or not raids[raidIdx].encounters[encounterIdx] then
+      return -- Silently do nothing if no encounter found
+    end
+    
+    local encounter = raids[raidIdx].encounters[encounterIdx]
+    local rolesData = encounter.roles
+    
+    if not rolesData or table.getn(rolesData) == 0 then
       return -- Silently do nothing if no roles configured
     end
     
-    local encounterRoles = roles[currentRaid][currentEncounter]
-    local column1 = encounterRoles.column1 or {}
-    local column2 = encounterRoles.column2 or {}
-    
-    -- Find consume check role
+    -- Find consume check role (v2 schema: flat array with column field)
     local consumeRole = nil
-    for i = 1, table.getn(column1) do
-      if column1[i].isConsumeCheck then
-        consumeRole = column1[i]
+    for i = 1, table.getn(rolesData) do
+      if rolesData[i].isConsumeCheck then
+        consumeRole = rolesData[i]
         break
-      end
-    end
-    if not consumeRole then
-      for i = 1, table.getn(column2) do
-        if column2[i].isConsumeCheck then
-          consumeRole = column2[i]
-          break
-        end
       end
     end
     
@@ -301,7 +297,8 @@ announceBtn:SetScript("OnClick", function()
     -- Build consume announcement lines
     local announceLines = {}
     local titleColor = OGRH.COLOR.HEADER or "|cFFFFD100"
-    table.insert(announceLines, titleColor .. "Consumes for " .. currentEncounter .. OGRH.COLOR.RESET)
+    local encounterName = encounter.name or "Unknown Encounter"
+    table.insert(announceLines, titleColor .. "Consumes for " .. encounterName .. OGRH.COLOR.RESET)
     
     for i = 1, (consumeRole.slots or 1) do
       if consumeRole.consumes[i] then
@@ -355,7 +352,7 @@ announceBtn:SetScript("OnClick", function()
   
   -- Left-click: Normal announcement
   if OGRH.Announcements and OGRH.Announcements.SendEncounterAnnouncement then
-    local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounter()
+    local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounterNames()
     OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEncounter)
   end
 end)
@@ -441,44 +438,42 @@ function OGRH.NavigateToPreviousEncounter()
     return
   end
   
-  -- Get current encounter from main UI selection
-  local raidName, currentEncounter = OGRH.GetCurrentEncounter()
+  -- Get current encounter from main UI selection (indices)
+  local raidIdx, encounterIdx = OGRH.GetCurrentEncounter()
   
-  if not raidName or not currentEncounter then
+  if not raidIdx or not encounterIdx then
     return
   end
   
-  local raid = OGRH.FindRaidByName(raidName)
+  -- Access raid by index (Active Raid is always at index 1)
+  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+  if not raids or not raids[raidIdx] then
+    return
+  end
+  
+  local raid = raids[raidIdx]
   if raid and raid.encounters then
-    local encounters = {}
-    for i = 1, table.getn(raid.encounters) do
-      table.insert(encounters, raid.encounters[i].name)
-    end
-    
-    for i = 1, table.getn(encounters) do
-      if encounters[i] == currentEncounter and i > 1 then
-        -- Update encounter using centralized setter (triggers REALTIME sync)
-        OGRH.SetCurrentEncounter(raidName, encounters[i - 1])
-        
-        -- Update UI
-        OGRH.UpdateEncounterNavButton()
-        
-        -- Refresh Encounter Planning window if it's open
-        if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
-          if OGRH_EncounterFrame.RefreshRoleContainers then
-            OGRH_EncounterFrame.RefreshRoleContainers()
-          end
-          if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
-            OGRH_EncounterFrame.UpdateAnnouncementBuilder()
-          end
+    -- Navigate to previous encounter by index
+    if encounterIdx > 1 then
+      -- Update encounter using centralized setter (triggers REALTIME sync)
+      OGRH.SetCurrentEncounter(raidIdx, encounterIdx - 1)
+      
+      -- Update UI
+      OGRH.UpdateEncounterNavButton()
+      
+      -- Refresh Encounter Planning window if it's open
+      if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+        if OGRH_EncounterFrame.RefreshRoleContainers then
+          OGRH_EncounterFrame.RefreshRoleContainers()
         end
-        
-        -- Update consume monitor if enabled
-        if OGRH.ShowConsumeMonitor then
-          OGRH.ShowConsumeMonitor()
+        if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
+          OGRH_EncounterFrame.UpdateAnnouncementBuilder()
         end
-        
-        break
+      end
+      
+      -- Update consume monitor if enabled
+      if OGRH.ShowConsumeMonitor then
+        OGRH.ShowConsumeMonitor()
       end
     end
   end
@@ -491,44 +486,42 @@ function OGRH.NavigateToNextEncounter()
     return
   end
   
-  -- Get current encounter from main UI selection
-  local raidName, currentEncounter = OGRH.GetCurrentEncounter()
+  -- Get current encounter from main UI selection (indices)
+  local raidIdx, encounterIdx = OGRH.GetCurrentEncounter()
   
-  if not raidName or not currentEncounter then
+  if not raidIdx or not encounterIdx then
     return
   end
   
-  local raid = OGRH.FindRaidByName(raidName)
+  -- Access raid by index (Active Raid is always at index 1)
+  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+  if not raids or not raids[raidIdx] then
+    return
+  end
+  
+  local raid = raids[raidIdx]
   if raid and raid.encounters then
-    local encounters = {}
-    for i = 1, table.getn(raid.encounters) do
-      table.insert(encounters, raid.encounters[i].name)
-    end
-    
-    for i = 1, table.getn(encounters) do
-      if encounters[i] == currentEncounter and i < table.getn(encounters) then
-        -- Update encounter using centralized setter (triggers REALTIME sync)
-        OGRH.SetCurrentEncounter(raidName, encounters[i + 1])
-        
-        -- Update UI
-        OGRH.UpdateEncounterNavButton()
-        
-        -- Refresh Encounter Planning window if it's open
-        if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
-          if OGRH_EncounterFrame.RefreshRoleContainers then
-            OGRH_EncounterFrame.RefreshRoleContainers()
-          end
-          if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
-            OGRH_EncounterFrame.UpdateAnnouncementBuilder()
-          end
+    -- Navigate to next encounter by index
+    if encounterIdx < table.getn(raid.encounters) then
+      -- Update encounter using centralized setter (triggers REALTIME sync)
+      OGRH.SetCurrentEncounter(raidIdx, encounterIdx + 1)
+      
+      -- Update UI
+      OGRH.UpdateEncounterNavButton()
+      
+      -- Refresh Encounter Planning window if it's open
+      if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+        if OGRH_EncounterFrame.RefreshRoleContainers then
+          OGRH_EncounterFrame.RefreshRoleContainers()
         end
-        
-        -- Update consume monitor if enabled
-        if OGRH.ShowConsumeMonitor then
-          OGRH.ShowConsumeMonitor()
+        if OGRH_EncounterFrame.UpdateAnnouncementBuilder then
+          OGRH_EncounterFrame.UpdateAnnouncementBuilder()
         end
-        
-        break
+      end
+      
+      -- Update consume monitor if enabled
+      if OGRH.ShowConsumeMonitor then
+        OGRH.ShowConsumeMonitor()
       end
     end
   end
@@ -545,16 +538,29 @@ function OGRH.UpdateEncounterNavButton()
   local prevBtn = OGRH.encounterNav.prevEncBtn
   local nextBtn = OGRH.encounterNav.nextEncBtn
   
-  -- Get raid and encounter from SVM (active schema)
-  local raidName = OGRH.SVM.Get("ui", "selectedRaid")
-  local encounterName = OGRH.SVM.Get("ui", "selectedEncounter")
+  -- Get raid and encounter indices from SVM (v2 schema)
+  local raidIdx, encounterIdx = OGRH.GetCurrentEncounter()
   
   if OGRH.MainUI.State.debug then
-    OGRH.Msg("|cff66ccff[RH][DEBUG]|r UpdateEncounterNavButton called: raid=" .. tostring(raidName) .. ", encounter=" .. tostring(encounterName))
+    OGRH.Msg("|cff66ccff[RH][DEBUG]|r UpdateEncounterNavButton called: raidIdx=" .. tostring(raidIdx) .. ", encounterIdx=" .. tostring(encounterIdx))
+  end
+  
+  -- If we don't have indices, try to initialize them
+  if not raidIdx or not encounterIdx then
+    local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+    if raids and raids[1] and raids[1].encounters and table.getn(raids[1].encounters) > 0 then
+      raidIdx = 1
+      encounterIdx = 1
+      OGRH.SVM.Set("ui", "selectedRaidIndex", 1)
+      OGRH.SVM.Set("ui", "selectedEncounterIndex", 1)
+      if OGRH.MainUI.State.debug then
+        OGRH.Msg("|cff66ccff[RH][DEBUG]|r Initialized indices to 1, 1")
+      end
+    end
   end
   
   -- Load modules for the selected encounter (main UI only)
-  if OGRH.LoadModulesForRole and OGRH.UnloadAllModules and raidName and encounterName then
+  if OGRH.LoadModulesForRole and OGRH.UnloadAllModules and raidIdx and encounterIdx then
     -- Get raids array to find the encounter's roles
     local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
     
@@ -562,75 +568,50 @@ function OGRH.UpdateEncounterNavButton()
       OGRH.Msg("|cff66ccff[RH][DEBUG]|r raids = " .. tostring(raids) .. " (count: " .. (raids and table.getn(raids) or 0) .. ")")
     end
     
-    if raids then
-      -- Find raid and encounter indices
-      local raidIdx, encIdx
-      for i = 1, table.getn(raids) do
-        if raids[i].name == raidName then
-          raidIdx = i
-          if raids[i].encounters then
-            for j = 1, table.getn(raids[i].encounters) do
-              if raids[i].encounters[j].name == encounterName then
-                encIdx = j
-                break
-              end
-            end
-          end
-          break
-        end
-      end
+    if raids and raids[raidIdx] and raids[raidIdx].encounters and raids[raidIdx].encounters[encounterIdx] then
+      -- Get roles from the encounter using indices
+      local rolesPath = string.format("encounterMgmt.raids.%d.encounters.%d.roles", raidIdx, encounterIdx)
+      local rolesData = OGRH.SVM.GetPath(rolesPath)
       
       if OGRH.MainUI.State.debug then
-        OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Found indices: raidIdx=%s, encIdx=%s", tostring(raidIdx), tostring(encIdx)))
+        OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r rolesData = %s", tostring(rolesData)))
       end
       
-      -- Get roles from the encounter
-      if raidIdx and encIdx then
-        local rolesPath = string.format("encounterMgmt.raids.%d.encounters.%d.roles", raidIdx, encIdx)
-        local rolesData = OGRH.SVM.GetPath(rolesPath)
-        
+      if rolesData then
         if OGRH.MainUI.State.debug then
-          OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r rolesData = %s", tostring(rolesData)))
+          OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r roles array count: %d", table.getn(rolesData)))
         end
         
-        if rolesData then
+        -- Collect all modules from custom module roles
+        -- Roles are stored as a flat array with column field inside each role
+        local allModules = {}
+        for i = 1, table.getn(rolesData) do
+          local role = rolesData[i]
           if OGRH.MainUI.State.debug then
-            OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r roles array count: %d", table.getn(rolesData)))
+            OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Role %d: isCustomModule=%s, modules=%s, column=%s", 
+              i, tostring(role.isCustomModule), tostring(role.modules), tostring(role.column)))
           end
-          
-          -- Collect all modules from custom module roles
-          -- Roles are stored as a flat array with column field inside each role
-          local allModules = {}
-          for i = 1, table.getn(rolesData) do
-            local role = rolesData[i]
+          if role.isCustomModule and role.modules then
             if OGRH.MainUI.State.debug then
-              OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Role %d: isCustomModule=%s, modules=%s, column=%s", 
-                i, tostring(role.isCustomModule), tostring(role.modules), tostring(role.column)))
+              OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Found custom module role with %d modules", table.getn(role.modules)))
             end
-            if role.isCustomModule and role.modules then
+            for _, moduleId in ipairs(role.modules) do
               if OGRH.MainUI.State.debug then
-                OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Found custom module role with %d modules", table.getn(role.modules)))
+                OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Adding module: %s", tostring(moduleId)))
               end
-              for _, moduleId in ipairs(role.modules) do
-                if OGRH.MainUI.State.debug then
-                  OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r Adding module: %s", tostring(moduleId)))
-                end
-                table.insert(allModules, moduleId)
-              end
+              table.insert(allModules, moduleId)
             end
           end
-          
-          -- Load the modules
-          if table.getn(allModules) > 0 then
-            OGRH.Msg(string.format("|cff00ff00[RH-MainUI]|r Loading %d custom modules for encounter", table.getn(allModules)))
-            OGRH.LoadModulesForRole(allModules)
-          else
-            if OGRH.MainUI.State.debug then
-              OGRH.Msg("|cff00ccff[RH-MainUI-DEBUG]|r No modules found, unloading all")
-            end
-            OGRH.UnloadAllModules()
-          end
+        end
+        
+        -- Load the modules
+        if table.getn(allModules) > 0 then
+          OGRH.Msg(string.format("|cff00ff00[RH-MainUI]|r Loading %d custom modules for encounter", table.getn(allModules)))
+          OGRH.LoadModulesForRole(allModules)
         else
+          if OGRH.MainUI.State.debug then
+            OGRH.Msg("|cff00ccff[RH-MainUI-DEBUG]|r No modules found, unloading all")
+          end
           OGRH.UnloadAllModules()
         end
       else
@@ -648,7 +629,7 @@ function OGRH.UpdateEncounterNavButton()
     activeRaidName = activeRaid.displayName
   end
   
-  if not raidName then
+  if not raidIdx then
     if activeRaidName ~= "" then
       btn:SetText(activeRaidName)
     else
@@ -659,9 +640,22 @@ function OGRH.UpdateEncounterNavButton()
     return
   end
   
+  -- Get raid and encounter objects by index
+  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+  local raid = raids and raids[raidIdx]
+  local encounter = raid and raid.encounters and raid.encounters[encounterIdx]
+  
+  if OGRH.MainUI.State.debug then
+    OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r raids=%s, raid=%s, encounter=%s", 
+      tostring(raids), tostring(raid), tostring(encounter)))
+    if encounter then
+      OGRH.Msg(string.format("|cff66ccff[RH][DEBUG]|r encounter.name=%s", tostring(encounter.name)))
+    end
+  end
+  
   -- Always show encounter name if one is selected
-  if encounterName then
-    local displayName = encounterName
+  if encounter and encounter.name then
+    local displayName = encounter.name
     if string.len(displayName) > 15 then
       displayName = string.sub(displayName, 1, 12) .. "..."
     end
@@ -669,42 +663,23 @@ function OGRH.UpdateEncounterNavButton()
   elseif activeRaidName ~= "" then
     -- Show Active Raid name when no encounter selected
     btn:SetText(activeRaidName)
-  elseif raidName then
+  elseif raid then
     btn:SetText("Select Encounter")
   else
     btn:SetText("Select Raid")
   end
   
-  -- Enable/disable prev/next buttons
-  local raid = OGRH.FindRaidByName(raidName)
+  -- Enable/disable prev/next buttons based on encounter index
   if raid and raid.encounters then
-    local encounters = {}
-    for i = 1, table.getn(raid.encounters) do
-      table.insert(encounters, raid.encounters[i].name)
-    end
-    
-    local currentIndex = nil
-    for i = 1, table.getn(encounters) do
-      if encounters[i] == encounterName then
-        currentIndex = i
-        break
-      end
-    end
-    
-    if currentIndex then
-      if currentIndex > 1 then
-        prevBtn:Enable()
-      else
-        prevBtn:Disable()
-      end
-      
-      if currentIndex < table.getn(encounters) then
-        nextBtn:Enable()
-      else
-        nextBtn:Disable()
-      end
+    if encounterIdx and encounterIdx > 1 then
+      prevBtn:Enable()
     else
       prevBtn:Disable()
+    end
+    
+    if encounterIdx and encounterIdx < table.getn(raid.encounters) then
+      nextBtn:Enable()
+    else
       nextBtn:Disable()
     end
   else
@@ -828,6 +803,19 @@ local function restoreMain()
   
   -- Update encounter nav button with saved state
   if OGRH.UpdateEncounterNavButton then
+    -- Ensure we have indices set (migrate from old name-based system if needed)
+    local raidIdx = OGRH.SVM.Get("ui", "selectedRaidIndex")
+    local encIdx = OGRH.SVM.Get("ui", "selectedEncounterIndex")
+    
+    -- If indices don't exist but we have Active Raid, initialize to first encounter
+    if not raidIdx and not encIdx then
+      local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+      if raids and raids[1] and raids[1].encounters and table.getn(raids[1].encounters) > 0 then
+        OGRH.SVM.Set("ui", "selectedRaidIndex", 1)
+        OGRH.SVM.Set("ui", "selectedEncounterIndex", 1)
+      end
+    end
+    
     OGRH.UpdateEncounterNavButton()
   end
   
