@@ -2086,7 +2086,7 @@ function OGRH.SendAnnouncement(lines, testMode)
     end
   end
 end
-
+--[[
 -- Send addon message with prefix (DEPRECATED - Use OGRH.MessageRouter instead)
 function OGRH.SendAddonMessage(msgType, data)
   -- This function is deprecated and should not be used
@@ -2104,7 +2104,7 @@ function OGRH.BroadcastEncounterSelection(raidName, encounterName)
   DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-DEPRECATED]|r This function is disabled. Please update caller to use MessageRouter.")
   -- SendAddonMessage calls deliberately removed - do not re-add
 end
-
+]]--
 --[[
   NOTE: Checksum and serialization functions have been consolidated into
   _Infrastructure/SyncChecksum.lua. All calls now delegate to that module.
@@ -2120,7 +2120,7 @@ end
   These functions are accessible via backward compatibility wrappers at OGRH.*
   which delegate to OGRH.SyncChecksum.*
 ]]
-
+--[[
 function OGRH.CalculateAssignmentChecksum(raid, encounter)
   OGRH.EnsureSV()
   if not OGRH_SV.encounterAssignments or 
@@ -2463,7 +2463,7 @@ function OGRH.ReAnnounce()
   
   OGRH.Msg("Re-announced " .. table.getn(OGRH.storedAnnouncement.lines) .. " line(s).")
 end
-
+]]--
 -- Handle incoming addon messages and game events
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("CHAT_MSG_ADDON")

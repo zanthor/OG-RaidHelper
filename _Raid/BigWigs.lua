@@ -2,6 +2,9 @@
 -- BigWigs encounter detection integration
 
 OGRH.BigWigs = OGRH.BigWigs or {}
+OGRH.BigWigs.State = OGRH.BigWigs.State or {
+  debug = false
+}
 
 -- Track last detected encounter to avoid duplicate switches
 local lastDetectedEncounter = nil
@@ -177,16 +180,20 @@ local function HookBigWigs()
           originalOnEnable(self)
           
           -- DEBUG: Log what properties are available
-          OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r Module enabled:")
-          OGRH.Msg("  name: " .. tostring(name))
-          OGRH.Msg("  self.name: " .. tostring(self.name))
-          OGRH.Msg("  self.translatedName: " .. tostring(self.translatedName))
-          OGRH.Msg("  self.displayName: " .. tostring(self.displayName))
+          if OGRH.BigWigs.State.debug then
+            OGRH.Msg("|cff00ff00[RH-BigWigs DEBUG]|r Module enabled:")
+            OGRH.Msg("  name: " .. tostring(name))
+            OGRH.Msg("  self.name: " .. tostring(self.name))
+            OGRH.Msg("  self.translatedName: " .. tostring(self.translatedName))
+            OGRH.Msg("  self.displayName: " .. tostring(self.displayName))
+          end
           
           -- Try different properties to find the right one
           local moduleName = self.translatedName or self.name or name
           if moduleName then
-            OGRH.Msg("  Using: " .. tostring(moduleName))
+            if OGRH.BigWigs.State.debug then
+              OGRH.Msg("  Using: " .. tostring(moduleName))
+            end
             OGRH.BigWigs.OnEncounterDetected(moduleName)
           end
         end

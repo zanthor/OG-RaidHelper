@@ -264,26 +264,58 @@ function OGRH.PollForRaidAdmin()
         return  -- MessageRouter not initialized yet
     end
     
-    -- Clear current admin before polling
+    -- Keep track of previous admin to avoid unnecessary resets
     local previousAdmin = OGRH.GetRaidAdmin()
-    OGRH.Permissions.State.currentAdmin = nil
     
     -- Broadcast query to all raid members
     OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.QUERY, "", {
         priority = "HIGH"
     })
     
-    -- After 2 seconds, if no admin responded, make raid leader the admin
+    -- After 2 seconds, if no admin responded AND there truly is no admin, try to assign one
     OGRH.ScheduleTimer(function()
-        if not OGRH.GetRaidAdmin() and UnitInRaid("player") then
-            -- No admin responded - find raid leader and make them admin
+        local currentAdmin = OGRH.GetRaidAdmin()
+        
+        -- Only assign a new admin if there truly is NO admin (neither from response nor from previous state)
+        if not currentAdmin and UnitInRaid("player") then
+            -- Helper function to check if a player has the addon (has responded to version poll)
+            local function HasAddon(playerName)
+                if OGRH.RaidLead and OGRH.RaidLead.pollResponses then
+                    for i = 1, table.getn(OGRH.RaidLead.pollResponses) do
+                        if OGRH.RaidLead.pollResponses[i].name == playerName then
+                            return true
+                        end
+                    end
+                end
+                return false
+            end
+            
+            -- Find raid leader/assist with addon and make them admin
+            -- Prefer raid leader, then assists
+            local newAdmin = nil
             for i = 1, GetNumRaidMembers() do
                 local name, rank = GetRaidRosterInfo(i)
-                if rank == 2 then  -- Rank 2 = raid leader
-                    OGRH.SetRaidAdmin(name)
-                    -- Raid admin assignment happens silently - no user-facing message
+                if rank == 2 and HasAddon(name) then  -- Rank 2 = raid leader
+                    newAdmin = name
                     break
                 end
+            end
+            
+            -- If raid leader doesn't have addon, try assists
+            if not newAdmin then
+                for i = 1, GetNumRaidMembers() do
+                    local name, rank = GetRaidRosterInfo(i)
+                    if rank == 1 and HasAddon(name) then  -- Rank 1 = assistant
+                        newAdmin = name
+                        break
+                    end
+                end
+            end
+            
+            -- Only assign if we found someone with the addon
+            if newAdmin then
+                OGRH.SetRaidAdmin(newAdmin)
+                -- Raid admin assignment happens silently - no user-facing message
             end
         end
     end, 2, false)

@@ -931,6 +931,8 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
         (OGRH.SVM and (OGRH.SVM.SyncConfig.debugWrite and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
       OGRH.Msg("  |cff00ccff/ogrh debug consumes|r - Toggle ConsumesTracking debug messages " ..
         (OGRH.ConsumesTracking and (OGRH.ConsumesTracking.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("  |cff00ccff/ogrh debug bigwigs|r - Toggle BigWigs integration debug messages " ..
+        (OGRH.BigWigs and (OGRH.BigWigs.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
       OGRH.Msg("|cff66ccff[RH][DEBUG]|r Use /ogrh debug [option] to toggle")
     elseif debugOption == "sync" then
       if OGRH.SyncIntegrity then
@@ -971,6 +973,14 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
         OGRH.Msg("ConsumesTracking debug: " .. status)
       else
         OGRH.Msg("ConsumesTracking not loaded.")
+      end
+    elseif debugOption == "bigwigs" then
+      if OGRH.BigWigs then
+        OGRH.BigWigs.State.debug = not OGRH.BigWigs.State.debug
+        local status = OGRH.BigWigs.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("BigWigs debug: " .. status)
+      else
+        OGRH.Msg("BigWigs integration not loaded.")
       end
     else
       OGRH.Msg("|cffff0000[RH]|r Unknown debug option: " .. debugOption)
