@@ -172,13 +172,12 @@ OGRH_SV.v2.roles = {
 
 ---
 
-### 3. invites (RaidHelper.io Integration)
+### 3. invites (RaidHelper.io Integration) - v2 Update
 
 ```lua
 OGRH_SV.v2.invites = {
     -- Current Source
-    currentSource = "raidhelper",  -- string: "raidhelper" or "manual"
-    autoSortEnabled = false,       -- boolean: Auto-sort by RaidHelper groups
+    currentSource = "rollfor",     -- string: "rollfor" or "raidhelper"
     
     -- Invite Mode State
     inviteMode = {
@@ -191,14 +190,15 @@ OGRH_SV.v2.invites = {
     
     -- RaidHelper Event Data
     raidhelperData = {
-        id = "1463359972531245180",  -- string: RaidHelper event ID
+        id = "1463359972531245180",  -- string: RaidHelper event ID (hash)
         name = "Molten Core",         -- string: Event name
         players = {
             [1] = {
                 name = "PlayerName",
                 class = "Warrior",
-                spec = "Tank",
-                status = "accepted",  -- "accepted", "declined", "tentative"
+                role = "Tank",           -- string: Role from signup
+                status = "active",       -- "active", "benched", "absent"
+                realm = "Turtle WoW",    -- string: Realm (optional)
                 -- ... other player metadata
             },
             -- ... array of players
@@ -214,18 +214,30 @@ OGRH_SV.v2.invites = {
             ["PlayerName2"] = 2,
             -- ... keyed by player name
         },
+        groups = {
+            [1] = {"PlayerA", "PlayerB", "PlayerC", "PlayerD", "PlayerE"},
+            [2] = {"PlayerF", "PlayerG", "PlayerH", "PlayerI", "PlayerJ"},
+            -- ... arrays of player names per group
+        },
         players = {
             [1] = {
                 name = "PlayerName",
                 class = "Warrior",
+                role = "Tank",
+                group = 1,
                 -- ... same structure as raidhelperData.players
             },
             -- ... array of players
         }
     },
     
-    -- Declined Players
-    declinedPlayers = {},  -- table: Players who declined invite
+    -- Session Tracking (cleared on import)
+    declinedPlayers = {},  -- table: Players who declined invite (cleared on import)
+    history = {},          -- table: Invite/response tracking (cleared on import)
+    
+    -- v2 Invites Update (NEW - February 2026)
+    autoSort = false,      -- boolean: Auto-organize raid groups (default: false)
+    planningRoster = {},   -- array: Planning roster for EncounterMgmt integration
     
     -- UI State
     invitePanelPosition = {
@@ -235,6 +247,47 @@ OGRH_SV.v2.invites = {
     }
 }
 ```
+
+**v2 Update Changes:**
+- Added `autoSort` flag - Controls auto-organization of raid groups
+- Added `planningRoster` array - Filtered roster for EncounterMgmt assignment planning
+- `history` table now cleared on import (session-specific)
+- `declinedPlayers` cleared on import (session-specific)
+- `currentSource` now supports "rollfor" (was "manual" in v1)
+- Enhanced `raidhelperGroupsData` with `groups` array structure
+- Standardized player `status` values: "active", "benched", "absent"
+
+**Planning Roster Structure:**
+```lua
+OGRH_SV.v2.invites.planningRoster = {
+    [1] = {
+        name = "PlayerName",
+        class = "WARRIOR",
+        role = "TANKS"  -- OGRH bucket: TANKS, HEALERS, MELEE, RANGED
+    },
+    -- ... array of players (excludes absent, includes benched)
+}
+```
+
+**Auto-Sort Behavior:**
+- `autoSort = true` - New raid members auto-organized into assigned groups
+- `autoSort = false` - No auto-organization (manual only)
+- Requires `raidhelperGroupsData.groupAssignments` to function
+- Only runs when player joins raid during Invite Mode
+
+**Import Flow:**
+All import sources (RollFor, Raid-Helper Invites, Raid-Helper Groups) now:
+1. Clear `history` table (resets invite/response tracking)
+2. Clear `declinedPlayers` table (resets decline tracking)
+3. Clear `planningRoster` array (before regenerating)
+4. Import source data
+5. Generate new `planningRoster` from imported data
+
+**RollFor Integration (Option A: Read-Only):**
+- OGRH reads from `RollForCharDb.softres.data` (no local copy stored)
+- User imports to RollFor first via `/sr` command
+- OGRH detects data and imports via `GetSoftResPlayers()`
+- Planning roster generated from RollFor player list
 
 ---
 

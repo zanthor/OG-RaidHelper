@@ -114,6 +114,15 @@ function OGRH.Invites.EnsureSV()
       y = 200
     }, {syncLevel = "MANUAL", componentType = "settings"})
   end
+  
+  -- v2 Invites Update: Schema additions
+  if not OGRH.SVM.GetPath("invites.autoSort") then
+    OGRH.SVM.SetPath("invites.autoSort", false, {syncLevel = "MANUAL", componentType = "settings"})
+  end
+  if not OGRH.SVM.GetPath("invites.planningRoster") then
+    OGRH.SVM.SetPath("invites.planningRoster", {}, {syncLevel = "MANUAL", componentType = "settings"})
+  end
+  
   -- Note: Don't initialize lastRollForHash here - it gets set by RollFor change detection
   -- Setting it to nil repeatedly causes spam in SVM debug output
 end
@@ -875,6 +884,44 @@ function OGRH.Invites.SyncToRolesUI()
   end
 end
 
+-- Generate planning roster from current roster data
+-- Filters out absent players only (keeps benched for planning purposes)
+function OGRH.Invites.GeneratePlanningRoster()
+  local players = OGRH.Invites.GetRosterPlayers()
+  local planningRoster = {}
+  
+  for i = 1, table.getn(players) do
+    local player = players[i]
+    
+    -- Exclude absent only (keep benched for planning)
+    if not player.absent then
+      table.insert(planningRoster, {
+        name = player.name,
+        class = player.class,
+        role = player.role,  -- Already in OGRH format
+        group = player.group,
+        online = player.online,
+        source = player.source,
+        benched = player.bench or false  -- Preserve benched status
+      })
+    end
+  end
+  
+  -- Save to schema
+  OGRH.SVM.SetPath("invites.planningRoster", planningRoster, {
+    syncLevel = "MANUAL",
+    componentType = "settings"
+  })
+  
+  return planningRoster
+end
+
+-- Get planning roster (accessor for EncounterMgmt integration)
+function OGRH.Invites.GetPlanningRoster()
+  OGRH.Invites.EnsureSV()
+  return OGRH.SVM.GetPath("invites.planningRoster") or {}
+end
+
 -- Show Invites Window
 function OGRH.Invites.ShowWindow()
   -- Check if RollFor is available
@@ -930,19 +977,46 @@ function OGRH.Invites.ShowWindow()
       width = 140
     })
     
-    -- RollFor Import option
+    -- RollFor Import option (Option A: Read-only - prompt user to update RollFor first)
     menu:AddItem({
       text = "RollFor Soft-Res",
       onClick = function()
-        if RollFor and RollFor.key_bindings and RollFor.key_bindings.softres_toggle then
-          RollFor.key_bindings.softres_toggle()
-          OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.ROLLFOR, {syncLevel = "MANUAL", componentType = "settings"})
-          OGRH.Invites.cachedCurrentSource = OGRH.Invites.SOURCE_TYPE.ROLLFOR
-          if OGRH_InvitesFrame and OGRH_InvitesFrame.UpdateOrganizeButton then
+        -- Check if RollFor is available
+        if not RollFor or not RollForCharDb then
+          OGRH.Msg("RollFor addon not found or not loaded.")
+          return
+        end
+        
+        -- Check if there's soft-res data
+        if not RollForCharDb.softres or not RollForCharDb.softres.data then
+          OGRH.Msg("No soft-res data found in RollFor. Please import data into RollFor first.")
+          return
+        end
+        
+        -- Clear history and planning roster on new import
+        OGRH.SVM.SetPath("invites.history", {}, {syncLevel = "MANUAL", componentType = "settings"})
+        OGRH.SVM.SetPath("invites.declinedPlayers", {}, {syncLevel = "MANUAL", componentType = "settings"})
+        OGRH.SVM.SetPath("invites.planningRoster", {}, {syncLevel = "MANUAL", componentType = "settings"})
+        
+        -- Set source to RollFor
+        OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.ROLLFOR, {syncLevel = "MANUAL", componentType = "settings"})
+        OGRH.Invites.cachedCurrentSource = OGRH.Invites.SOURCE_TYPE.ROLLFOR
+        
+        -- Generate planning roster from RollFor data
+        OGRH.Invites.GeneratePlanningRoster()
+        
+        -- Get player count
+        local players = OGRH.Invites.GetSoftResPlayers()
+        local playerCount = players and table.getn(players) or 0
+        
+        OGRH.Msg("Imported " .. playerCount .. " players from RollFor.")
+        
+        -- Refresh main window if open
+        if OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
+          OGRH.Invites.RefreshPlayerList()
+          if OGRH_InvitesFrame.UpdateOrganizeButton then
             OGRH_InvitesFrame.UpdateOrganizeButton()
           end
-        else
-          OGRH.Msg("RollFor addon not found or not loaded.")
         end
       end
     })
@@ -972,14 +1046,8 @@ function OGRH.Invites.ShowWindow()
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOP", 0, -15)
   
-  -- Set title with raid name and ID from metadata
-  local meta = OGRH.Invites.GetMetadata()
-  local titleText = "Raid Invites"
-  if meta.instance then
-    local raidName = OGRH.Invites.GetInstanceName(meta.instance)
-    titleText = "Raid Invites - " .. raidName .. " (" .. tostring(meta.instance) .. ")"
-  end
-  title:SetText(titleText)
+  -- v2 Invites Update: Simplified to static title
+  title:SetText("Raid Invites")
   frame.titleText = title
   
   -- Close button
@@ -1097,20 +1165,12 @@ function OGRH.Invites.ShowWindow()
   })
   OGST.AnchorElement(secondsLabel, intervalContainer, {position = "right", align = "center"})
   
-  -- Row 2 (y=50): Action buttons
-  local inviteAllBtn = OGST.CreateButton(frame, {
-    text = "Invite All Active",
-    width = 130,
-    height = 28,
-    onClick = function()
-      OGRH.Invites.InviteAllOnline()
-    end
-  })
-  inviteAllBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, 50)
+  -- v2 Invites Update: Removed "Invite All Active" button
+  -- Use Invite Mode for automated invites
   
-  -- Stats text (row 2, center)
+  -- Stats text (row 2, left side)
   local statsText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  statsText:SetPoint("LEFT", inviteAllBtn, "RIGHT", 20, 0)
+  statsText:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, 50)
   statsText:SetJustifyH("LEFT")
   statsText:SetText("0 players not in raid")
   frame.statsText = statsText
@@ -1149,28 +1209,69 @@ function OGRH.Invites.ShowWindow()
   })
   OGST.AnchorElement(clearBtn, refreshBtn, {position = "below", align = "right"})
   
-  -- AutoGroup button (to the left of Clear Status, only for Raid-Helper source)
-  local organizeBtn = OGST.CreateButton(frame, {
-    text = "AutoGroup",
+  -- Sort button (toggle for auto-organize) - only for Raid-Helper source
+  local sortBtn = OGST.CreateButton(frame, {
+    text = "Sort",
     width = 80,
     height = 28,
-    onClick = function()
-      OGRH.Invites.OrganizeRaidGroups()
+    onClick = function(btn)
+      -- Toggle auto-sort flag
+      local current = OGRH.SVM.GetPath("invites.autoSort") or false
+      OGRH.SVM.SetPath("invites.autoSort", not current, {syncLevel = "MANUAL", componentType = "settings"})
+      
+      -- Update button color and message
+      local autoSort = OGRH.SVM.GetPath("invites.autoSort")
+      if autoSort then
+        OGRH.Msg("|cff00ff00[RH-Config]|r Auto-sort |cff00ff00enabled|r - new raid members will be organized automatically")
+      else
+        OGRH.Msg("|cffffaa00[RH-Config]|r Auto-sort |cffffaa00disabled|r")
+      end
+      
+      -- Trigger button update to refresh color
+      if OGRH_InvitesFrame and OGRH_InvitesFrame.UpdateOrganizeButton then
+        OGRH_InvitesFrame.UpdateOrganizeButton()
+      end
     end
   })
-  OGST.AnchorElement(organizeBtn, clearBtn, {position = "left", align = "center"})
+  OGST.AnchorElement(sortBtn, clearBtn, {position = "left", align = "center"})
+  frame.sortBtn = sortBtn  -- Save reference to frame
   
-  -- Show/hide organize button based on data source
-  local function UpdateOrganizeButton()
-    local currentSource = OGRH.SVM.GetPath("invites.currentSource")
-    if currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
-      organizeBtn:Show()
+  -- Update Sort button color based on state
+  local function UpdateSortButtonColor()
+    if not frame.sortBtn or not frame.sortBtn.text then return end
+    local autoSort = OGRH.SVM.GetPath("invites.autoSort")
+    
+    if autoSort then
+      frame.sortBtn.text:SetText("Sort")
+      frame.sortBtn.text:SetTextColor(0, 1, 0, 1)  -- Green when enabled
     else
-      organizeBtn:Hide()
+      frame.sortBtn.text:SetText("Sort")
+      frame.sortBtn.text:SetTextColor(1, 0.82, 0, 1)  -- Yellow when disabled
     end
   end
-  UpdateOrganizeButton()
-  frame.UpdateOrganizeButton = UpdateOrganizeButton
+  
+  -- Enable/disable sort button based on group data availability
+  local function UpdateSortButton()
+    if not frame.sortBtn then return end
+    
+    -- Always show button, enable only if group data available
+    frame.sortBtn:Show()
+    
+    local groupsData = OGRH.SVM.GetPath("invites.raidhelperGroupsData")
+    if groupsData and groupsData.groupAssignments then
+      frame.sortBtn:Enable()
+      UpdateSortButtonColor()
+    else
+      frame.sortBtn:Disable()
+      -- Grey when no group data
+      if frame.sortBtn.text then
+        frame.sortBtn.text:SetText("Sort")
+        frame.sortBtn.text:SetTextColor(0.5, 0.5, 0.5, 1)  -- Grey
+      end
+    end
+  end
+  UpdateSortButton()
+  frame.UpdateOrganizeButton = UpdateSortButton  -- Keep old reference for compatibility
   
   -- Register window with OGST for design mode updates
   if OGST.RegisterWindow then
@@ -1251,16 +1352,9 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
     if importType == "groups" then
       dialog.titleText:SetText("Import Raid-Helper Groups")
       dialog.labelText:SetText("Paste Composition Tool JSON data below:")
-      if dialog.raidNameInput then
-        dialog.raidNameInput:SetText("")
-        dialog.raidNameInput:Show()
-      end
     else
       dialog.titleText:SetText("Import Raid-Helper Invites")
       dialog.labelText:SetText("Raid-Helper signup JSON data below:")
-      if dialog.raidNameInput then
-        dialog.raidNameInput:Hide()
-      end
     end
     
     dialog.editBox:SetText("")
@@ -1304,41 +1398,13 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
   label:SetText(importType == "groups" and "Paste Composition Tool JSON data below:" or "Raid-Helper signup JSON data below:")
   dialog.labelText = label
   
-  -- Raid Name input (only for Groups import)
-  local raidNameInput
-  if importType == "groups" then
-    local raidNameLabel = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    raidNameLabel:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
-    raidNameLabel:SetText("Raid Name:")
-    
-    local raidNameBox = CreateFrame("EditBox", nil, dialog)
-    raidNameBox:SetPoint("LEFT", raidNameLabel, "RIGHT", 5, 0)
-    raidNameBox:SetWidth(280)
-    raidNameBox:SetHeight(20)
-    raidNameBox:SetAutoFocus(false)
-    raidNameBox:SetFontObject(ChatFontNormal)
-    raidNameBox:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      edgeSize = 12,
-      insets = {left = 4, right = 4, top = 4, bottom = 4}
-    })
-    raidNameBox:SetBackdropColor(0, 0, 0, 0.8)
-    raidNameBox:SetTextInsets(5, 5, 0, 0)
-    raidNameBox:SetScript("OnEscapePressed", function() raidNameBox:ClearFocus() end)
-    raidNameInput = raidNameBox
-    dialog.raidNameInput = raidNameInput
-  end
+  -- v2 Invites Update: Removed raid name input
+  -- Raid name determined by Active Raid in EncounterMgmt
   
   -- JSON input area using ScrollFrame
   local inputBackdrop = CreateFrame("Frame", nil, dialog)
-  if importType == "groups" then
-    inputBackdrop:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -36)
-    inputBackdrop:SetHeight(222)
-  else
-    inputBackdrop:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
-    inputBackdrop:SetHeight(250)
-  end
+  inputBackdrop:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
+  inputBackdrop:SetHeight(250)
   inputBackdrop:SetWidth(420)
   inputBackdrop:SetBackdrop({
     bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -1410,24 +1476,24 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
         return
       end
       
-      -- Get custom raid name from input
-      local customRaidName = "Raid"
-      if dialog.raidNameInput then
-        local inputName = dialog.raidNameInput:GetText()
-        if inputName and inputName ~= "" then
-          customRaidName = inputName
-        end
-      end
+      -- Clear history and planning roster on new import
+      OGRH.SVM.SetPath("invites.history", {}, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.SVM.SetPath("invites.declinedPlayers", {}, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.SVM.SetPath("invites.planningRoster", {}, {syncLevel = "MANUAL", componentType = "settings"})
       
       -- Replace invites roster data with Groups data
+      -- v2 Invites Update: Use hash as ID, no custom raid name
       OGRH.SVM.SetPath("invites.raidhelperData", {
         id = parsedData.hash,
-        name = customRaidName,
+        name = "Raid-Helper Groups",
         players = parsedData.players
       }, {syncLevel = "MANUAL", componentType = "settings"})
       OGRH.SVM.SetPath("invites.raidhelperGroupsData", parsedData, {syncLevel = "MANUAL", componentType = "settings"})
       OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.RAIDHELPER, {syncLevel = "MANUAL", componentType = "settings"})
       OGRH.Invites.cachedCurrentSource = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
+      
+      -- Generate planning roster
+      OGRH.Invites.GeneratePlanningRoster()
       
       statusText:SetText("|cff00ff00Successfully imported " .. table.getn(parsedData.players) .. " players from Groups|r")
     else
@@ -1439,6 +1505,11 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
         return
       end
       
+      -- Clear history and planning roster on new import
+      OGRH.SVM.SetPath("invites.history", {}, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.SVM.SetPath("invites.declinedPlayers", {}, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.SVM.SetPath("invites.planningRoster", {}, {syncLevel = "MANUAL", componentType = "settings"})
+      
       -- Store data and set source
       OGRH.SVM.SetPath("invites.raidhelperData", parsedData, {syncLevel = "MANUAL", componentType = "settings"})
       OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.RAIDHELPER, {syncLevel = "MANUAL", componentType = "settings"})
@@ -1448,6 +1519,9 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
       if OGRH.SVM.GetPath("invites.raidhelperGroupsData") then
         OGRH.Invites.ApplyGroupAssignments()
       end
+      
+      -- Generate planning roster
+      OGRH.Invites.GeneratePlanningRoster()
       
       statusText:SetText("|cff00ff00Successfully imported " .. table.getn(parsedData.players) .. " players from " .. (parsedData.name or "Raid-Helper") .. "|r")
     end
@@ -1479,6 +1553,193 @@ function OGRH.Invites.ShowJSONImportDialog(importType)
   
   -- Enable ESC to close
   OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_JSONImportDialog")
+  
+  dialog:Show()
+  editBox:SetFocus()
+end
+
+-- Sprint 4 Option B: Raid-Res Import Dialog (writes to RollFor, then imports)
+function OGRH.Invites.ShowRaidResImportDialog()
+  -- Create or show existing dialog
+  if OGRH_RaidResImportDialog then
+    local dialog = OGRH_RaidResImportDialog
+    dialog.editBox:SetText("")
+    dialog.statusText:SetText(" ")
+    dialog:Show()
+    return
+  end
+  
+  -- Create dialog frame
+  local dialog = CreateFrame("Frame", "OGRH_RaidResImportDialog", UIParent)
+  dialog:SetWidth(450)
+  dialog:SetHeight(400)
+  dialog:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  dialog:SetFrameStrata("FULLSCREEN_DIALOG")
+  dialog:EnableMouse(true)
+  dialog:SetMovable(true)
+  dialog:RegisterForDrag("LeftButton")
+  dialog:SetScript("OnDragStart", function() dialog:StartMoving() end)
+  dialog:SetScript("OnDragStop", function() dialog:StopMovingOrSizing() end)
+  
+  -- Backdrop
+  dialog:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  dialog:SetBackdropColor(0, 0, 0, 0.9)
+  
+  -- Title
+  local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -15)
+  title:SetText("Import from Raid-Res")
+  dialog.titleText = title
+  
+  -- Instruction label
+  local label = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  label:SetPoint("TOPLEFT", 15, -45)
+  label:SetText("Paste Raid-Res export data below:")
+  dialog.labelText = label
+  
+  -- Input area using ScrollFrame
+  local inputBackdrop = CreateFrame("Frame", nil, dialog)
+  inputBackdrop:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
+  inputBackdrop:SetHeight(250)
+  inputBackdrop:SetWidth(420)
+  inputBackdrop:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/DialogFrame/UI-DialogBox-Border",
+    edgeSize = 16,
+    insets = {left = 5, right = 5, top = 5, bottom = 5}
+  })
+  inputBackdrop:SetBackdropColor(0, 0, 0, 1)
+  inputBackdrop:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+  
+  -- ScrollFrame for text input
+  local scrollFrame = CreateFrame("ScrollFrame", nil, inputBackdrop)
+  scrollFrame:SetPoint("TOPLEFT", 8, -8)
+  scrollFrame:SetPoint("BOTTOMRIGHT", -8, 8)
+  
+  -- Scroll child
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  scrollFrame:SetScrollChild(scrollChild)
+  scrollChild:SetWidth(400)
+  scrollChild:SetHeight(500)
+  
+  -- EditBox for data input
+  local editBox = CreateFrame("EditBox", nil, scrollChild)
+  editBox:SetPoint("TOPLEFT", 0, 0)
+  editBox:SetWidth(400)
+  editBox:SetHeight(500)
+  editBox:SetMultiLine(true)
+  editBox:SetAutoFocus(false)
+  editBox:SetMaxLetters(0)
+  editBox:SetFontObject(GameFontHighlightSmall)
+  editBox:SetTextInsets(5, 5, 3, 3)
+  editBox:SetScript("OnEscapePressed", function() editBox:ClearFocus() end)
+  dialog.editBox = editBox
+  
+  -- Status text
+  local statusText = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  statusText:SetPoint("TOPLEFT", inputBackdrop, "BOTTOMLEFT", 0, -8)
+  statusText:SetPoint("TOPRIGHT", inputBackdrop, "BOTTOMRIGHT", 0, -8)
+  statusText:SetJustifyH("LEFT")
+  statusText:SetText(" ")
+  dialog.statusText = statusText
+  
+  -- Import button
+  local importBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  importBtn:SetWidth(80)
+  importBtn:SetHeight(24)
+  importBtn:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -90, 15)
+  importBtn:SetText("Import")
+  if OGRH and OGRH.StyleButton then
+    OGRH.StyleButton(importBtn)
+  end
+  importBtn:SetScript("OnClick", function()
+    local data = editBox:GetText()
+    
+    if not data or string.len(data) == 0 then
+      statusText:SetText("|cffff0000Error: No data provided|r")
+      return
+    end
+    
+    -- Validate RollFor is available
+    if not RollFor then
+      statusText:SetText("|cffff0000Error: RollFor addon not found|r")
+      return
+    end
+    
+    if not RollFor.import_encoded_softres_data or type(RollFor.import_encoded_softres_data) ~= "function" then
+      local version = GetAddOnMetadata("RollFor", "Version") or "unknown"
+      statusText:SetText("|cffff0000Error: RollFor v" .. version .. " does not support import API|r")
+      return
+    end
+    
+    -- Option B: Write to RollFor via API, then import from RollFor
+    statusText:SetText("Importing to RollFor...")
+    
+    -- Call RollFor's import API
+    local success, errorMsg = pcall(function()
+      RollFor.import_encoded_softres_data(data, function(softresData)
+        -- Callback fires after RollFor processes the data
+        if not softresData then
+          statusText:SetText("|cffff0000Error: RollFor could not decode data|r")
+          return
+        end
+        
+        -- Clear history and planning roster on new import
+        OGRH.SVM.SetPath("invites.history", {}, {syncLevel = "MANUAL", componentType = "settings"})
+        OGRH.SVM.SetPath("invites.declinedPlayers", {}, {syncLevel = "MANUAL", componentType = "settings"})
+        OGRH.SVM.SetPath("invites.planningRoster", {}, {syncLevel = "MANUAL", componentType = "settings"})
+        
+        -- Set source to RollFor
+        OGRH.SVM.SetPath("invites.currentSource", OGRH.Invites.SOURCE_TYPE.ROLLFOR, {syncLevel = "MANUAL", componentType = "settings"})
+        OGRH.Invites.cachedCurrentSource = OGRH.Invites.SOURCE_TYPE.ROLLFOR
+        
+        -- Generate planning roster from RollFor data
+        OGRH.Invites.GeneratePlanningRoster()
+        
+        -- Get player count from RollFor
+        local players = OGRH.Invites.GetSoftResPlayers()
+        local playerCount = players and table.getn(players) or 0
+        
+        statusText:SetText("|cff00ff00Successfully imported " .. playerCount .. " players from Raid-Res|r")
+        
+        -- Refresh main window if open
+        if OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
+          OGRH.Invites.RefreshPlayerList()
+          if OGRH_InvitesFrame.UpdateOrganizeButton then
+            OGRH_InvitesFrame.UpdateOrganizeButton()
+          end
+        end
+        
+        -- Close dialog after 1.5 seconds
+        OGRH.ScheduleTimer(function()
+          dialog:Hide()
+        end, 1.5, false)
+      end)
+    end)
+    
+    if not success then
+      statusText:SetText("|cffff0000Error: " .. (errorMsg or "Unknown error") .. "|r")
+    end
+  end)
+  
+  -- Cancel button
+  local cancelBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+  cancelBtn:SetWidth(80)
+  cancelBtn:SetHeight(24)
+  cancelBtn:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -10, 15)
+  cancelBtn:SetText("Cancel")
+  if OGRH and OGRH.StyleButton then
+    OGRH.StyleButton(cancelBtn)
+  end
+  cancelBtn:SetScript("OnClick", function() dialog:Hide() end)
+  
+  -- Enable ESC to close
+  OGRH.MakeFrameCloseOnEscape(dialog, "OGRH_RaidResImportDialog")
   
   dialog:Show()
   editBox:SetFocus()
@@ -1582,12 +1843,7 @@ function OGRH.Invites.RefreshPlayerList()
     sourceName = "RollFor Soft-Res"
     sourceColor = "|cff00ff00"
     
-    -- Update title with raid metadata
-    local meta = OGRH.Invites.GetMetadata()
-    if meta.instance and OGRH_InvitesFrame.titleText then
-      local raidName = OGRH.Invites.GetInstanceName(meta.instance)
-      OGRH_InvitesFrame.titleText:SetText("Raid Invites - " .. raidName .. " (" .. tostring(meta.instance) .. ")")
-    end
+    -- v2 Invites Update: Title is now static "Raid Invites"
   elseif currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
     sourceName = "Raid-Helper"
     sourceColor = "|cff00ccff"
@@ -1598,11 +1854,7 @@ function OGRH.Invites.RefreshPlayerList()
       sourceName = sourceName .. " (Groups)"
     end
     
-    -- Update title with raid-helper data
-    local raidhelperData = OGRH.SVM.GetPath("invites.raidhelperData")
-    if raidhelperData and raidhelperData.name and OGRH_InvitesFrame.titleText then
-      OGRH_InvitesFrame.titleText:SetText("Raid Invites - " .. raidhelperData.name)
-    end
+    -- v2 Invites Update: Title is now static "Raid Invites"
   end
   
   if OGRH_InvitesFrame.infoText then
@@ -1721,36 +1973,8 @@ function OGRH.Invites.RefreshPlayerList()
       statusText:SetText("|cffccccccUnknown|r")
     end
     
-    -- Invite button
-    local inviteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    inviteBtn:SetWidth(50)
-    inviteBtn:SetHeight(20)
-    inviteBtn:SetPoint("LEFT", row, "LEFT", 320, 0)
-    inviteBtn:SetText("Invite")
-    OGRH.StyleButton(inviteBtn)
-    local playerName = playerData.name
-    inviteBtn:SetScript("OnClick", function()
-      OGRH.Invites.InvitePlayer(playerName)
-    end)
-    -- Disable if offline, benched, or absent
-    if playerData.status == STATUS.OFFLINE or isDisabled then
-      inviteBtn:Disable()
-    end
-    
-    -- Whisper button
-    local whisperBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    whisperBtn:SetWidth(50)
-    whisperBtn:SetHeight(20)
-    whisperBtn:SetPoint("LEFT", inviteBtn, "RIGHT", 2, 0)
-    whisperBtn:SetText("Msg")
-    OGRH.StyleButton(whisperBtn)
-    whisperBtn:SetScript("OnClick", function()
-      OGRH.Invites.WhisperPlayer(playerName)
-    end)
-    -- Disable if offline, benched, or absent
-    if playerData.status == STATUS.OFFLINE or isDisabled then
-      whisperBtn:Disable()
-    end
+    -- v2 Invites Update: Removed per-player Invite and Msg buttons
+    -- Use Invite Mode for automated invites
     
     table.insert(scrollChild.rows, row)
     yOffset = yOffset - rowHeight - rowSpacing
@@ -1971,19 +2195,13 @@ function OGRH.Invites.ToggleInviteMode()
       end
     end
     
-    -- Get raid name for announcement
+    -- Get raid name from Active Raid
     local raidName = "Raid"
-    local currentSource = OGRH.SVM.GetPath("invites.currentSource")
-    if currentSource == OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
-      local raidhelperData = OGRH.SVM.GetPath("invites.raidhelperData")
-      if raidhelperData and raidhelperData.name then
-        raidName = raidhelperData.name
-      end
-    elseif currentSource == OGRH.Invites.SOURCE_TYPE.ROLLFOR then
-      local meta = OGRH.Invites.GetMetadata()
-      if meta.instance then
-        raidName = OGRH.Invites.GetInstanceName(meta.instance)
-      end
+    local activeRaid = OGRH.GetActiveRaid()
+    if activeRaid and activeRaid.displayName then
+      raidName = activeRaid.displayName
+      -- Strip [AR] prefix if present
+      raidName = string.gsub(raidName, "^%[AR%]%s*", "")
     end
     
     -- Announce to guild chat
@@ -1992,8 +2210,8 @@ function OGRH.Invites.ToggleInviteMode()
     -- Show auxiliary panel
     OGRH.Invites.ShowInviteModePanel()
     
-    -- Do first batch invite immediately
-    OGRH.Invites.DoInviteCycle()
+    -- Do first batch invite immediately (skip guild announcement on first cycle)
+    OGRH.Invites.DoInviteCycle(true)
   else
     -- Hide auxiliary panel
     if OGRH_InviteModePanel then
@@ -2011,10 +2229,13 @@ function OGRH.Invites.ToggleInviteMode()
   end
 end
 
-function OGRH.Invites.DoInviteCycle()
+function OGRH.Invites.DoInviteCycle(skipAnnouncement)
   local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
   local players = OGRH.Invites.GetRosterPlayers()
   local invitedThisCycle = 0
+  
+  -- Mark the start time of this invite cycle for tracking responses
+  local cycleStartTime = time()
   
   -- Check current group status
   local inRaid = (GetNumRaidMembers() > 0)
@@ -2042,6 +2263,42 @@ function OGRH.Invites.DoInviteCycle()
         end
       end
     end
+  end
+  
+  -- Announce to guild if we invited anyone this cycle (unless skipped for first cycle)
+  if invitedThisCycle > 0 and not skipAnnouncement then
+    local raidName = "Raid"
+    local activeRaid = OGRH.GetActiveRaid()
+    if activeRaid and activeRaid.displayName then
+      raidName = activeRaid.displayName
+      -- Strip [AR] prefix if present
+      raidName = string.gsub(raidName, "^%[AR%]%s*", "")
+    end
+    
+    SendChatMessage("Inviting " .. invitedThisCycle .. " more for " .. raidName .. ". Whisper me if you're signed up and need an invite!", "GUILD")
+  end
+  
+  -- Schedule check for "already in group" messages after 1 second
+  if invitedThisCycle > 0 then
+    OGRH.ScheduleTimer(function()
+      local history = OGRH.SVM.GetPath("invites.history") or {}
+      local alreadyInGroupPlayers = {}
+      
+      -- Check history for recent "already_in_group" entries from this cycle
+      for i = table.getn(history), 1, -1 do
+        local entry = history[i]
+        if entry.action == "already_in_group" and entry.timestamp >= cycleStartTime then
+          table.insert(alreadyInGroupPlayers, entry.player)
+        elseif entry.timestamp < cycleStartTime then
+          break -- Stop checking older entries
+        end
+      end
+      
+      if table.getn(alreadyInGroupPlayers) > 0 then
+        local playerList = table.concat(alreadyInGroupPlayers, ", ")
+        SendChatMessage(playerList .. " already in a group.", "GUILD")
+      end
+    end, 1, false)
   end
   
   inviteMode.lastInviteTime = GetTime()
@@ -2252,11 +2509,29 @@ local inviteEventFrame = CreateFrame("Frame")
 inviteEventFrame:RegisterEvent("PARTY_INVITE_REQUEST")
 inviteEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 inviteEventFrame:RegisterEvent("CHAT_MSG_WHISPER")
+inviteEventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 inviteEventFrame:SetScript("OnEvent", function()
   if event == "PARTY_INVITE_REQUEST" then
     -- Track declined invites
     -- Note: WoW 1.12 doesn't have a specific "declined" event
     -- We'll track this indirectly
+  elseif event == "CHAT_MSG_SYSTEM" then
+    -- Capture "X is already in a group" messages
+    local message = arg1
+    if message and string.find(message, "is already in a group") then
+      -- Extract player name from message
+      local playerName = string.match(message, "(.+) is already in a group")
+      if playerName then
+        -- Log to history table
+        local history = OGRH.SVM.GetPath("invites.history") or {}
+        table.insert(history, {
+          player = playerName,
+          action = "already_in_group",
+          timestamp = time()
+        })
+        OGRH.SVM.SetPath("invites.history", history, {syncLevel = "MANUAL", componentType = "settings"})
+      end
+    end
   elseif event == "RAID_ROSTER_UPDATE" then
     -- Detect new members and sync their roles during invite mode
     local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
@@ -2327,34 +2602,74 @@ function OGRH.Invites.HandleWhisperAutoResponse(sender, message)
     return 
   end
   
+  -- Only respond when invite mode is active
+  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
+  if not inviteMode or not inviteMode.enabled then
+    return
+  end
+  
+  local senderNormalized = NormalizeName(sender)
+  
+  -- Check history to see if we've already auto-responded to this player
+  local history = OGRH.SVM.GetPath("invites.history") or {}
+  for i = table.getn(history), 1, -1 do
+    local entry = history[i]
+    if entry.action == "auto_response" and NormalizeName(entry.player) == senderNormalized then
+      return -- Already sent response, don't spam
+    end
+  end
+  
   -- Get roster players
   local players = OGRH.Invites.GetRosterPlayers()
-  local senderNormalized = NormalizeName(sender)
   
   -- Check if sender is in roster
   for _, player in ipairs(players) do
     if NormalizeName(player.name) == senderNormalized then
       if player.bench then
         SendChatMessage("You are currently on the bench for this raid. Please check with the raid leader if you want to participate.", "WHISPER", nil, sender)
+        -- Log auto-response in history
+        table.insert(history, {
+          player = senderNormalized,
+          action = "auto_response",
+          response = "benched",
+          timestamp = time()
+        })
+        OGRH.SVM.SetPath("invites.history", history, {syncLevel = "MANUAL", componentType = "settings"})
         return
       elseif player.absent then
         SendChatMessage("You are marked as absent for this raid. If you can attend, please update your status and whisper the raid leader.", "WHISPER", nil, sender)
+        -- Log auto-response in history
+        table.insert(history, {
+          player = senderNormalized,
+          action = "auto_response",
+          response = "absent",
+          timestamp = time()
+        })
+        OGRH.SVM.SetPath("invites.history", history, {syncLevel = "MANUAL", componentType = "settings"})
         return
       end
       
-      -- Player is on active roster - check if invite mode is active
-      local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
-      if inviteMode and inviteMode.enabled then
-        local inRaid = OGRH.Invites.IsPlayerInRaid(senderNormalized)
-        
-        -- Only auto-invite if they're not already in raid
-        if not inRaid then
-          OGRH.Invites.InvitePlayer(senderNormalized)
-        end
+      -- Player is on active roster - check if already in raid
+      local inRaid = OGRH.Invites.IsPlayerInRaid(senderNormalized)
+      
+      if not inRaid then
+        -- Not in raid yet, send invite
+        OGRH.Invites.InvitePlayer(senderNormalized)
       end
       return
     end
   end
+  
+  -- Player not in roster - send generic response
+  SendChatMessage("You're not on the roster for this raid. Please contact the raid leader if you believe this is an error.", "WHISPER", nil, sender)
+  -- Log auto-response in history
+  table.insert(history, {
+    player = senderNormalized,
+    action = "auto_response",
+    response = "not_on_roster",
+    timestamp = time()
+  })
+  OGRH.SVM.SetPath("invites.history", history, {syncLevel = "MANUAL", componentType = "settings"})
 end
 
 -- Helper function to check if player is in combat
@@ -2421,9 +2736,16 @@ end
 -- Organize raid groups based on Raid-Helper assignments
 -- Auto-organize new raid members (silent version)
 function OGRH.Invites.AutoOrganizeNewMembers()
-  local currentSource = OGRH.SVM.GetPath("invites.currentSource")
-  if currentSource ~= OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
-    return
+  -- Check autoSort flag (v2 Invites Update)
+  local autoSort = OGRH.SVM.GetPath("invites.autoSort")
+  if not autoSort then
+    return -- Auto-sort disabled
+  end
+  
+  -- Check if group data available
+  local groupsData = OGRH.SVM.GetPath("invites.raidhelperGroupsData")
+  if not groupsData or not groupsData.groupAssignments then
+    return -- No group assignments to apply
   end
   
   local raidhelperData = OGRH.SVM.GetPath("invites.raidhelperData")
@@ -2491,8 +2813,10 @@ end
 
 -- Manual organize command (with feedback)
 function OGRH.Invites.OrganizeRaidGroups()
-  local currentSource = OGRH.SVM.GetPath("invites.currentSource")
-  if currentSource ~= OGRH.Invites.SOURCE_TYPE.RAIDHELPER then
+  -- Check if group data available
+  local groupsData = OGRH.SVM.GetPath("invites.raidhelperGroupsData")
+  if not groupsData or not groupsData.groupAssignments then
+    OGRH.Msg("|cffff0000[RH-Config]|r No group assignments available. Import Raid-Helper Groups data first.")
     return
   end
   
@@ -2570,52 +2894,6 @@ function OGRH.Invites.OrganizeRaidGroups()
   end
 end
 
--- RollFor auto-refresh (check every 5 seconds for changes)
-local rollForCheckFrame = CreateFrame("Frame")
-local rollForLastHash = nil
-local rollForCheckInterval = 5
-local rollForTimeSinceCheck = 0
-
-local function GetRollForDataHash()
-  if not RollForCharDb or not RollForCharDb.softres or not RollForCharDb.softres.data then
-    return nil
-  end
-  return RollForCharDb.softres.data
-end
-
-rollForCheckFrame:SetScript("OnUpdate", function()
-  -- Early exit if window not visible or wrong source - don't even accumulate time
-  if not OGRH_InvitesFrame or not OGRH_InvitesFrame:IsVisible() then
-    rollForTimeSinceCheck = 0
-    return
-  end
-  
-  -- Use cached source to avoid SVM reads every frame
-  if OGRH.Invites.cachedCurrentSource ~= OGRH.Invites.SOURCE_TYPE.ROLLFOR then
-    rollForTimeSinceCheck = 0
-    return
-  end
-  
-  -- Only accumulate time if we should be checking
-  rollForTimeSinceCheck = rollForTimeSinceCheck + arg1
-  
-  if rollForTimeSinceCheck >= rollForCheckInterval then
-    rollForTimeSinceCheck = 0
-    
-    local currentHash = GetRollForDataHash()
-    
-    if currentHash and currentHash ~= rollForLastHash then
-      rollForLastHash = currentHash
-      
-      -- Refresh the player list
-      if OGRH.Invites.RefreshPlayerList then
-        OGRH.Invites.RefreshPlayerList()
-        ChatFrame4:AddMessage("[OGRH] RollFor data updated - refreshing player list.", 0, 1, 1)
-      end
-    end
-  end
-end)
-
 -- Initialize
 OGRH.Invites.EnsureSV()
 
@@ -2625,9 +2903,3 @@ if inviteMode then
   inviteMode.enabled = false
   OGRH.SVM.SetPath("invites.inviteMode", inviteMode, {syncLevel = "MANUAL", componentType = "settings"})
 end
-
--- Initialize RollFor hash
-rollForLastHash = GetRollForDataHash()
-
--- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RaidHelper]|r Invites loaded")
-

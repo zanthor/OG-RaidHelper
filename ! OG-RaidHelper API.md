@@ -1607,6 +1607,89 @@ OGRH.Invites.SyncPlayerRole("Tankadin")
 
 ---
 
+#### `OGRH.Invites.GeneratePlanningRoster()`
+**Type:** Public  
+**Returns:** `table` - Planning roster array
+
+Generates a planning roster from current roster data for EncounterMgmt integration. Filters out absent players while keeping benched players for planning purposes.
+
+**Behavior:**
+- Reads current roster via `GetRosterPlayers()`
+- Excludes only absent players (keeps benched)
+- Maps all roles to OGRH format
+- Saves to `invites.planningRoster` in schema
+- Returns the generated roster array
+
+**Planning Roster Entry Structure:**
+```lua
+{
+  name = "PlayerName",
+  class = "WARRIOR",
+  role = "TANKS",           -- OGRH format: TANKS, HEALERS, MELEE, RANGED
+  group = 1,                -- Group assignment or nil
+  online = false,           -- Online status
+  source = "rollfor",       -- Data source type
+  benched = false           -- Benched status (preserved for planning)
+}
+```
+
+**Example:**
+```lua
+-- Generate planning roster after import
+OGRH.Invites.GeneratePlanningRoster()
+
+-- Access generated roster
+local roster = OGRH.Invites.GetPlanningRoster()
+for _, player in ipairs(roster) do
+  if not player.benched then
+    print("Active: " .. player.name .. " - " .. player.role)
+  else
+    print("Benched: " .. player.name .. " - " .. player.role)
+  end
+end
+```
+
+**Implementation Notes:**
+- Called automatically after roster import (RollFor, Raid-Helper)
+- Benched players included for assignment planning
+- Absent players excluded (won't be in raid)
+- Stored with MANUAL sync level (no auto-sync)
+
+---
+
+#### `OGRH.Invites.GetPlanningRoster()`
+**Type:** Public  
+**Returns:** `table` - Cached planning roster array
+
+Returns the cached planning roster for EncounterMgmt integration.
+
+**Behavior:**
+- Reads `invites.planningRoster` from schema
+- Returns empty table `{}` if no roster generated
+- No filtering or processing (returns cached data as-is)
+
+**Example:**
+```lua
+-- Get planning roster for encounter assignment
+local roster = OGRH.Invites.GetPlanningRoster()
+print("Planning roster has " .. table.getn(roster) .. " players")
+
+-- Use in EncounterMgmt for auto-assignment
+for _, player in ipairs(roster) do
+  if player.role == "TANKS" and not player.benched then
+    -- Auto-assign to tank role
+  end
+end
+```
+
+**Implementation Notes:**
+- Accessor function for EncounterMgmt module
+- Returns cached data (no regeneration)
+- Use `GeneratePlanningRoster()` to refresh roster
+- Cleared on new roster import
+
+---
+
 #### `OGRH.Invites.ApplyGroupAssignments()`
 **Type:** Public  
 **Authorization:** Requires Raid Leader or Assistant  
@@ -1924,6 +2007,12 @@ OGRH_SV.v2.invites = {
   declinedPlayers = {...},
   history = {...},
   
+  -- v2 Invites Update additions
+  autoSort = false,          -- Auto-organize new members during Invite Mode
+  planningRoster = {         -- Cached roster for EncounterMgmt integration
+    -- Array of standardized player objects (benched included, absent excluded)
+  },
+  
   -- UI state
   invitePanelPosition = {
     point = "BOTTOMRIGHT",
@@ -2037,6 +2126,355 @@ if data then
   print("Players:", table.getn(data.players))
 end
 ```
+
+---
+
+## Invites Module (_Configuration/Invites.lua) - v2 Update
+
+The Invites module manages raid roster imports from RollFor soft-reserve data and Raid-Helper JSON exports, with automated invite cycles and planning roster integration.
+
+### Public Functions
+
+#### `OGRH.Invites.GeneratePlanningRoster()`
+**Type:** Public  
+**Returns:** `table` - Planning roster array
+
+Generates planning roster from current import source, filtering out absent players and mapping roles to OGRH format (TANKS/HEALERS/MELEE/RANGED).
+
+**Behavior:**
+- Reads roster from current source (RollFor or Raid-Helper)
+- Filters out players with status "absent"
+- Includes players with status "benched" (available for planning)
+- Maps roles to OGRH buckets using `MapRoleToOGRH()`
+- Writes result to `OGRH_SV.v2.invites.planningRoster`
+- Returns generated roster array
+
+**Planning Roster Structure:**
+```lua
+{
+  {name = "PlayerName", class = "WARRIOR", role = "TANKS"},
+  {name = "PlayerName", class = "PRIEST", role = "HEALERS"},
+  {name = "PlayerName", class = "ROGUE", role = "MELEE"},
+  {name = "PlayerName", class = "MAGE", role = "RANGED"},
+  -- ... etc
+}
+```
+
+**Role Mapping:**
+- **TANKS** - Tank, Feral Tank
+- **HEALERS** - Healer, Resto Druid, Holy Priest, etc.
+- **MELEE** - Melee DPS, Feral DPS, Rogue, Warrior DPS
+- **RANGED** - Ranged DPS, Caster, Mage, Warlock, Hunter
+
+**Example:**
+```lua
+-- Generate planning roster after import
+local roster = OGRH.Invites.GeneratePlanningRoster()
+print("Generated roster with " .. table.getn(roster) .. " players")
+```
+
+**Implementation Notes:**
+- Called automatically after all import operations
+- Clears existing planning roster before regenerating
+- Uses SVM with MANUAL sync level (no auto-sync)
+- Accessed by EncounterMgmt for assignment planning
+
+---
+
+#### `OGRH.Invites.GetPlanningRoster()`
+**Type:** Public  
+**Returns:** `table` - Cached planning roster array
+
+Accessor for EncounterMgmt integration to retrieve current planning roster.
+
+**Behavior:**
+- Reads from `OGRH_SV.v2.invites.planningRoster`
+- Returns cached roster (no regeneration)
+- Returns empty table if no roster exists
+
+**Example:**
+```lua
+-- Access planning roster for assignment
+local roster = OGRH.Invites.GetPlanningRoster()
+for _, player in ipairs(roster) do
+    print(player.name .. " (" .. player.role .. ")")
+end
+```
+
+**Use Cases:**
+- EncounterMgmt auto-assignment
+- Roster validation
+- Planning UI display
+
+---
+
+#### `OGRH.Invites.ShowWindow()`
+**Type:** Public  
+**Returns:** `nil`
+
+Opens the Raid Invites window with player roster and import controls.
+
+**UI Elements:**
+- **Import Roster** - Dropdown menu (RollFor, Raid-Helper Invites, Raid-Helper Groups)
+- **Sort** - Toggle auto-organization (green=on, yellow=off, grey=no data)
+- **Start Invite Mode** - Automated invite cycles
+- **Clear Status** - Clears history, declined players, invite tracking
+- **Player List** - Shows all roster players with status indicators
+
+**Example:**
+```lua
+-- Open invites window
+OGRH.Invites.ShowWindow()
+```
+
+---
+
+#### `OGRH.Invites.AutoOrganizeNewMembers()`
+**Type:** Public  
+**Authorization:** Requires Raid Leader or Assistant  
+**Returns:** `nil`
+
+Automatically organizes new raid members into assigned groups based on Raid-Helper group data. Only runs when `autoSort` flag is enabled AND group data is available.
+
+**Behavior:**
+- Checks `autoSort` flag from schema
+- Verifies group assignments data exists
+- Skips if player in combat
+- Moves player to assigned group
+- Provides feedback on organization status
+
+**Conditions:**
+- ✅ Auto-sort enabled via Sort button
+- ✅ Raid-Helper (Groups) data imported
+- ✅ Player has group assignment
+- ✅ Player not in combat
+- ✅ User has RL/A permissions
+
+**Example:**
+```lua
+-- Called when player joins raid during Invite Mode
+OGRH.Invites.AutoOrganizeNewMembers()
+```
+
+**Implementation Notes:**
+- Called from RAID_ROSTER_UPDATE event handler
+- Silent operation (no chat spam)
+- Skips gracefully if conditions not met
+
+---
+
+#### `OGRH.Invites.GetRosterPlayers()`
+**Type:** Public  
+**Returns:** `table` - Unified player roster array
+
+Returns unified roster from current data source (RollFor or Raid-Helper).
+
+**Player Object Structure:**
+```lua
+{
+  name = "PlayerName",
+  class = "WARRIOR",
+  role = "Tank",           -- Source-specific role string
+  status = "active",       -- "active", "benched", "absent"
+  group = 1,              -- Group number (if assigned)
+  realm = "Turtle WoW"    -- (optional)
+}
+```
+
+**Example:**
+```lua
+local players = OGRH.Invites.GetRosterPlayers()
+for _, player in ipairs(players) do
+    print(player.name, player.role, player.status)
+end
+```
+
+---
+
+#### `OGRH.Invites.ToggleInviteMode()`
+**Type:** Public  
+**Authorization:** Requires Raid Leader or Assistant  
+**Returns:** `nil`
+
+Toggles automated invite cycle mode with guild announcements and auto-whisper responses.
+
+**Behavior:**
+- Starts/stops timer-based invite cycles
+- Announces to guild on start (includes raid name)
+- Announces each invite cycle to guild
+- Auto-responds to whispers from roster players
+- Auto-organizes new members (if Sort enabled)
+
+**Guild Announcements:**
+```
+[Start] Now inviting for <Raid Name>! Whisper me for invite.
+[Cycle] Inviting players for <Raid Name>...
+```
+
+**Auto-Whisper Responses:**
+- **Active players** - Auto-invited
+- **Benched players** - "You are on bench. Whisper again if available."
+- **Absent players** - "You are marked absent."
+- **Not on roster** - Source-specific message (RollFor: "Not on soft-res list", Raid-Helper: "Not on signup list")
+
+**Example:**
+```lua
+-- Toggle invite mode
+OGRH.Invites.ToggleInviteMode()
+```
+
+**Implementation Notes:**
+- Interval configurable in Invite Mode panel
+- Deduplicates auto-responses via history tracking
+- Tracks "already in group" messages from CHAT_MSG_SYSTEM
+
+---
+
+### Public Properties
+
+#### `OGRH.Invites.SOURCE_TYPE`
+**Type:** Table (Constants)  
+**Access:** Public Read-Only
+
+Data source type constants.
+
+**Values:**
+- `ROLLFOR` - "rollfor" (RollFor soft-reserve import)
+- `RAIDHELPER` - "raidhelper" (Raid-Helper JSON import)
+
+**Example:**
+```lua
+-- Check current source
+local source = OGRH.SVM.GetPath("invites.currentSource")
+if source == OGRH.Invites.SOURCE_TYPE.ROLLFOR then
+    print("Using RollFor data")
+end
+```
+
+---
+
+### Schema Structure (OGRH_SV.v2.invites)
+
+```lua
+OGRH_SV.v2.invites = {
+    -- Data Source
+    currentSource = "rollfor",  -- "rollfor" | "raidhelper"
+    
+    -- RollFor Data (Option A: Read-only from RollForCharDb)
+    -- No local storage - reads directly from RollFor
+    
+    -- Raid-Helper Data
+    raidhelperData = {
+        id = "hash123",
+        name = "Raid Title",
+        players = {...}
+    },
+    
+    raidhelperGroupsData = {
+        groups = {...},
+        groupAssignments = {...}
+    },
+    
+    -- Invite Mode
+    inviteMode = {
+        enabled = false,
+        interval = 60,
+        lastInviteTime = 0,
+        totalPlayers = 0,
+        invitedCount = 0
+    },
+    
+    -- Tracking
+    declinedPlayers = {},
+    history = {},  -- Cleared on new import
+    
+    -- v2 Invites Update (NEW)
+    autoSort = false,        -- Enable/disable auto-group sorting
+    planningRoster = {},     -- Array for EncounterMgmt integration
+    
+    -- UI
+    invitePanelPosition = {...}
+}
+```
+
+---
+
+### Import Flow (v2 Update)
+
+All three import sources follow the same pattern:
+
+1. **Clear session data:**
+   ```lua
+   OGRH.SVM.SetPath("invites.history", {}, {syncLevel = "MANUAL"})
+   OGRH.SVM.SetPath("invites.declinedPlayers", {}, {syncLevel = "MANUAL"})
+   OGRH.SVM.SetPath("invites.planningRoster", {}, {syncLevel = "MANUAL"})
+   ```
+
+2. **Import data from source:**
+   - **RollFor** - Read from `RollForCharDb.softres.data` (user imports to RollFor first via `/sr`)
+   - **Raid-Helper (Invites)** - Parse JSON from signup export
+   - **Raid-Helper (Groups)** - Parse JSON from Composition Tool export
+
+3. **Set current source:**
+   ```lua
+   OGRH.SVM.SetPath("invites.currentSource", sourceType, {syncLevel = "MANUAL"})
+   ```
+
+4. **Generate planning roster:**
+   ```lua
+   OGRH.Invites.GeneratePlanningRoster()
+   ```
+
+5. **Refresh UI and update Sort button state**
+
+---
+
+### RollFor Integration (Option A: Read-Only)
+
+**Workflow:**
+1. User imports soft-res data into RollFor (via `/sr` command)
+2. User clicks Import Roster → RollFor Soft-Res in OGRH
+3. OGRH reads from `RollForCharDb.softres.data`
+4. Data decoded using RollFor's public `SoftRes.decode()` function
+5. Planning roster generated
+
+**Why Read-Only?**
+- RollFor v4.8.1 does not expose `import_encoded_softres_data` as a public API
+- Direct write to `RollForCharDb` would bypass RollFor's validation
+- Read-only approach is safest and most stable
+
+**Data Access:**
+```lua
+-- OGRH reads from RollFor's SavedVariables
+local encodedData = RollForCharDb.softres.data
+local decodedData = RollFor.SoftRes.decode(encodedData)
+local softresData = RollFor.SoftResDataTransformer.transform(decodedData)
+```
+
+---
+
+### Common Issues
+
+**Import not working:**
+- Check current source: `/script print(OGRH.SVM.GetPath("invites.currentSource"))`
+- RollFor: Ensure data imported to RollFor first (via `/sr`)
+- Raid-Helper: Verify JSON format (paste full export)
+
+**Sort button greyed out:**
+- Requires Raid-Helper (Groups) import
+- Group assignments must exist in imported data
+- Check: `/script print(OGRH.SVM.GetPath("invites.raidhelperGroupsData.groupAssignments"))`
+
+**Auto-sort not working:**
+- Verify Sort button is green (enabled)
+- Must use Raid-Helper (Groups) source
+- Requires RL/A permissions
+- Players in combat cannot be moved
+
+**Planning roster empty:**
+- Import data first (clears roster before regenerating)
+- Check roster: `/script local r = OGRH.Invites.GetPlanningRoster(); print(table.getn(r))`
+- Verify players not all marked "absent"
 
 ---
 

@@ -496,6 +496,7 @@ function OGST.CreateButton(parent, config)
   buttonText:SetPoint("CENTER", button, "CENTER", 0, 0)
   buttonText:SetText(config.text)
   buttonText:SetTextColor(1, 0.82, 0, 1)
+  button.text = buttonText  -- Save reference for external access
   
   OGST.StyleButton(button)
   
