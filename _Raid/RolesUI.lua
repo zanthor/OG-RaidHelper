@@ -219,6 +219,11 @@ local function CreateRolesFrame()
                                         componentType = "roles"
                                     })
                                     
+                                    -- Notify EncounterMgmt that roles changed (refresh player list)
+                                    if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshPlayersList then
+                                        OGRH_EncounterFrame.RefreshPlayersList()
+                                    end
+                                    
                                     -- Sync tank and healer status to Puppeteer and pfUI
                                     local isTank = (newRole == "TANKS")
                                     local isHealer = (newRole == "HEALERS")

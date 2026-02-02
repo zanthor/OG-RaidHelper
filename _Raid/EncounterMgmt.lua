@@ -1301,11 +1301,21 @@ function OGRH.ShowEncounterPlanning(encounterName)
     playersLabel:SetPoint("TOP", playersPanel, "TOP", 0, -10)
     playersLabel:SetText("Players:")
     
+    -- Unit source dropdown (Raid vs Roster)
+    local unitSourceBtn = CreateFrame("Button", nil, playersPanel, "UIPanelButtonTemplate")
+    unitSourceBtn:SetWidth(85)
+    unitSourceBtn:SetHeight(24)
+    unitSourceBtn:SetPoint("TOP", playersLabel, "BOTTOM", -47, -5)
+    unitSourceBtn:SetText("Raid")
+    OGRH.StyleButton(unitSourceBtn)
+    frame.unitSourceBtn = unitSourceBtn
+    frame.selectedUnitSource = "Raid"
+    
     -- Role filter dropdown for players
     local playerRoleBtn = CreateFrame("Button", nil, playersPanel, "UIPanelButtonTemplate")
-    playerRoleBtn:SetWidth(180)
+    playerRoleBtn:SetWidth(85)
     playerRoleBtn:SetHeight(24)
-    playerRoleBtn:SetPoint("TOP", playersLabel, "BOTTOM", 0, -5)
+    playerRoleBtn:SetPoint("LEFT", unitSourceBtn, "RIGHT", 5, 0)
     playerRoleBtn:SetText("All Roles")
     OGRH.StyleButton(playerRoleBtn)
     frame.playerRoleBtn = playerRoleBtn
@@ -1316,6 +1326,84 @@ function OGRH.ShowEncounterPlanning(encounterName)
       OGRH.playerRoleDropdown = CreateFrame("Frame", "OGRH_PlayerRoleDropdown", UIParent, "UIDropDownMenuTemplate")
     end
     
+    -- Unit source dropdown menu
+    unitSourceBtn:SetScript("OnClick", function()
+      -- Create menu items
+      local menuItems = {
+        {text = "Raid", value = "Raid"},
+        {text = "Roster", value = "Roster"}
+      }
+      
+      -- Show menu
+      local menuFrame = CreateFrame("Frame", nil, UIParent)
+      menuFrame:SetWidth(85)
+      menuFrame:SetHeight(table.getn(menuItems) * 20 + 10)
+      menuFrame:SetPoint("TOPLEFT", unitSourceBtn, "BOTTOMLEFT", 0, 0)
+      menuFrame:SetFrameStrata("DIALOG")
+      menuFrame:SetBackdrop({
+        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 12,
+        insets = {left = 3, right = 3, top = 3, bottom = 3}
+      })
+      menuFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+      menuFrame:EnableMouse(true)
+      
+      -- Close menu when clicking outside
+      menuFrame:SetScript("OnHide", function()
+        this:SetParent(nil)
+      end)
+      
+      -- Create menu item buttons
+      for i, item in ipairs(menuItems) do
+        local btn = CreateFrame("Button", nil, menuFrame)
+        btn:SetWidth(79)
+        btn:SetHeight(18)
+        btn:SetPoint("TOPLEFT", menuFrame, "TOPLEFT", 3, -3 - ((i-1) * 20))
+        
+        local bg = btn:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+        bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+        bg:Hide()
+        
+        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        text:SetPoint("LEFT", btn, "LEFT", 5, 0)
+        text:SetText(item.text)
+        
+        -- Capture variables for closure
+        local capturedValue = item.value
+        
+        btn:SetScript("OnEnter", function()
+          bg:Show()
+        end)
+        
+        btn:SetScript("OnLeave", function()
+          bg:Hide()
+        end)
+        
+        btn:SetScript("OnClick", function()
+          frame.selectedUnitSource = capturedValue
+          unitSourceBtn:SetText(capturedValue)
+          if frame.RefreshPlayersList then
+            frame.RefreshPlayersList()
+          end
+          menuFrame:Hide()
+        end)
+      end
+      
+      -- Auto-hide after short delay when mouse leaves
+      menuFrame:SetScript("OnUpdate", function()
+        if not MouseIsOver(menuFrame) and not MouseIsOver(unitSourceBtn) then
+          menuFrame:Hide()
+        end
+      end)
+      
+      frame.currentUnitSourceMenu = menuFrame
+    end)
+    
     -- Role filter dropdown
     playerRoleBtn:SetScript("OnClick", function()
       -- Create menu items
@@ -1324,13 +1412,12 @@ function OGRH.ShowEncounterPlanning(encounterName)
         {text = "Tanks", value = "tanks", label = "Tanks"},
         {text = "Healers", value = "healers", label = "Healers"},
         {text = "Melee", value = "melee", label = "Melee"},
-        {text = "Ranged", value = "ranged", label = "Ranged"},
-        {text = "Signed Up", value = "signedup", label = "Signed Up"}
+        {text = "Ranged", value = "ranged", label = "Ranged"}
       }
       
       -- Show menu
       local menuFrame = CreateFrame("Frame", nil, UIParent)
-      menuFrame:SetWidth(180)
+      menuFrame:SetWidth(85)
       menuFrame:SetHeight(table.getn(menuItems) * 20 + 10)
       menuFrame:SetPoint("TOPLEFT", playerRoleBtn, "BOTTOMLEFT", 0, 0)
       menuFrame:SetFrameStrata("DIALOG")
@@ -1353,7 +1440,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
       -- Create menu item buttons
       for i, item in ipairs(menuItems) do
         local btn = CreateFrame("Button", nil, menuFrame)
-        btn:SetWidth(174)
+        btn:SetWidth(79)
         btn:SetHeight(18)
         btn:SetPoint("TOPLEFT", menuFrame, "TOPLEFT", 3, -3 - ((i-1) * 20))
         
@@ -1403,7 +1490,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
     local searchBox = CreateFrame("EditBox", nil, playersPanel)
     searchBox:SetWidth(180)
     searchBox:SetHeight(24)
-    searchBox:SetPoint("TOP", playerRoleBtn, "BOTTOM", 0, -5)
+    searchBox:SetPoint("TOPLEFT", unitSourceBtn, "BOTTOMLEFT", 0, -5)
     searchBox:SetBackdrop({
       bgFile = "Interface/Tooltips/UI-Tooltip-Background",
       edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
@@ -1474,18 +1561,15 @@ function OGRH.ShowEncounterPlanning(encounterName)
     OGRH.StyleButton(autoAssignBtn)
     frame.autoAssignBtn = autoAssignBtn
     
-    -- Enable right-click
-    autoAssignBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    
     -- Tooltip
     autoAssignBtn:SetScript("OnEnter", function()
       GameTooltip:SetOwner(autoAssignBtn, "ANCHOR_TOP")
       GameTooltip:SetText("Auto Assign", 1, 1, 1)
-      GameTooltip:AddLine("Left-click: Auto-assign from current raid members", 0.8, 0.8, 0.8, 1)
-      if OGRH.ROLLFOR_AVAILABLE then
-        GameTooltip:AddLine("Right-click: Auto-assign from RollFor soft-reserve data", 0.8, 0.8, 0.8, 1)
+      local source = frame.selectedUnitSource or "Raid"
+      if source == "Roster" then
+        GameTooltip:AddLine("Auto-assign from planning roster", 0.8, 0.8, 0.8, 1)
       else
-        GameTooltip:AddLine("Right-click: Auto-assign from RollFor (requires RollFor " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ")", 0.5, 0.5, 0.5, 1)
+        GameTooltip:AddLine("Auto-assign from current raid members", 0.8, 0.8, 0.8, 1)
       end
       GameTooltip:Show()
     end)
@@ -1501,157 +1585,103 @@ function OGRH.ShowEncounterPlanning(encounterName)
         return
       end
       
-      local button = arg1 or "LeftButton"
+      -- Get selected unit source (Raid or Roster)
+      local unitSource = frame.selectedUnitSource or "Raid"
       
-      -- Right-click: Auto-assign from RollFor data
-      if button == "RightButton" then
-        -- Check if RollFor is available
-        if not OGRH.ROLLFOR_AVAILABLE then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Auto-assign from RollFor requires RollFor version " .. OGRH.ROLLFOR_REQUIRED_VERSION .. ".")
-          return
-        end
-        
-        if not frame.selectedRaid or not frame.selectedEncounter then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
-          return
-        end
-        
-        -- Check if RollFor data is loaded
-        if not RollFor or not RollForCharDb or not RollForCharDb.softres then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r RollFor addon not found or no soft-res data loaded.")
-          return
-        end
-        
-        -- Get RollFor players
-        local rollForPlayers = {}
-        local encodedData = RollForCharDb.softres.data
-        if encodedData and type(encodedData) == "string" and RollFor.SoftRes and RollFor.SoftRes.decode then
-          local decodedData = RollFor.SoftRes.decode(encodedData)
-          if decodedData and RollFor.SoftResDataTransformer and RollFor.SoftResDataTransformer.transform then
-            local softresData = RollFor.SoftResDataTransformer.transform(decodedData)
-            if softresData and type(softresData) == "table" then
-              local playerMap = {}
-              for itemId, itemData in pairs(softresData) do
-                if type(itemData) == "table" and itemData.rollers then
-                  for _, roller in ipairs(itemData.rollers) do
-                    if roller and roller.name then
-                      if not playerMap[roller.name] then
-                        playerMap[roller.name] = {
-                          name = roller.name,
-                          role = roller.role or "Unknown",
-                          class = nil
-                        }
-                      end
-                    end
-                  end
-                end
-              end
-              for _, playerData in pairs(playerMap) do
-                table.insert(rollForPlayers, playerData)
-              end
-            end
-          end
-        end
-        
-        if table.getn(rollForPlayers) == 0 then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No players found in RollFor data.")
-          return
-        end
-        
-        -- Update player classes from cache or guild roster
-        for _, playerData in ipairs(rollForPlayers) do
-          local class = OGRH.GetPlayerClass(playerData.name)
-          if not class then
-            local numGuild = GetNumGuildMembers(true)
-            for i = 1, numGuild do
-              local guildName, _, _, _, _, _, _, _, _, _, guildClass = GetGuildRosterInfo(i)
-              if guildName == playerData.name and guildClass then
-                class = string.upper(guildClass)
-                break
-              end
-            end
-          end
-          playerData.class = class
-        end
-        
-        -- Perform auto-assignment
-        local assignmentCount = OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
-        
-        -- Show status in label instead of chat
-        if frame.ShowStatus then
-          frame.ShowStatus("Auto-assigned " .. assignmentCount .. " players from RollFor data.", 10)
-        end
-        return
-      end
-      
-      -- Left-click: Auto Assign from current raid members
-      -- Now uses same two-pass logic as RollFor path
       if not frame.selectedRaid or not frame.selectedEncounter then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
         return
       end
       
-      if GetNumRaidMembers() == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to auto-assign.")
-        return
-      end
+      local playerList = {}
       
-      -- Build player data in same format as RollFor
-      local raidPlayers = {}
-      
-      -- Helper to get player's role from RolesUI
-      local function GetPlayerRole(playerName)
-        if not OGRH.rolesFrame or not OGRH.rolesFrame.ROLE_COLUMNS then
-          return nil
+      if unitSource == "Roster" then
+        -- Get planning roster from Invites module
+        local planningRoster = OGRH.Invites and OGRH.Invites.GetPlanningRoster and OGRH.Invites.GetPlanningRoster()
+        if not planningRoster or type(planningRoster) ~= "table" then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No planning roster available. Import RollFor data first.")
+          return
         end
         
-        local roleColumns = OGRH.rolesFrame.ROLE_COLUMNS
-        local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
-        
-        for colIndex = 1, table.getn(roleColumns) do
-          local players = roleColumns[colIndex].players
-          if players then
-            for _, name in ipairs(players) do
-              if name == playerName then
-                return roleNames[colIndex]
+        -- Convert planning roster to player list format
+        -- Planning roster has buckets: TANKS, HEALERS, MELEE, RANGED
+        local hasPlayers = false
+        for role, players in pairs(planningRoster) do
+          if type(players) == "table" then
+            for _, playerData in ipairs(players) do
+              if type(playerData) == "table" and playerData.name then
+                hasPlayers = true
+                table.insert(playerList, {
+                  name = playerData.name,
+                  role = role,  -- Already in TANKS/HEALERS/MELEE/RANGED format
+                  class = playerData.class or OGRH.GetPlayerClass(playerData.name) or "WARRIOR"
+                })
               end
             end
           end
         end
-        return nil
-      end
-      
-      -- Build player list from current raid
-      for i = 1, GetNumRaidMembers() do
-        local name, _, _, _, class = GetRaidRosterInfo(i)
-        if name and class then
-          local playerRole = GetPlayerRole(name)
-          if playerRole then
-            table.insert(raidPlayers, {
-              name = name,
-              role = playerRole,  -- Already in TANKS/HEALERS/MELEE/RANGED format
-              class = string.upper(class)
-            })
+        
+        if not hasPlayers then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Planning roster is empty. Import RollFor data first.")
+          return
+        end
+      else
+        -- Raid source
+        if GetNumRaidMembers() == 0 then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r You must be in a raid to auto-assign.")
+          return
+        end
+        
+        -- Helper to get player's role from RolesUI
+        local function GetPlayerRole(playerName)
+          if not OGRH.rolesFrame or not OGRH.rolesFrame.ROLE_COLUMNS then
+            return nil
           end
+          
+          local roleColumns = OGRH.rolesFrame.ROLE_COLUMNS
+          local roleNames = {"TANKS", "HEALERS", "MELEE", "RANGED"}
+          
+          for colIndex = 1, table.getn(roleColumns) do
+            local players = roleColumns[colIndex].players
+            if players then
+              for _, name in ipairs(players) do
+                if name == playerName then
+                  return roleNames[colIndex]
+                end
+              end
+            end
+          end
+          return nil
+        end
+        
+        -- Build player list from current raid
+        for i = 1, GetNumRaidMembers() do
+          local name, _, _, _, class = GetRaidRosterInfo(i)
+          if name and class then
+            local playerRole = GetPlayerRole(name)
+            if playerRole then
+              table.insert(playerList, {
+                name = name,
+                role = playerRole,  -- Already in TANKS/HEALERS/MELEE/RANGED format
+                class = string.upper(class)
+              })
+            end
+          end
+        end
+        
+        if table.getn(playerList) == 0 then
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No raid members found with assigned roles.")
+          return
         end
       end
       
-      if table.getn(raidPlayers) == 0 then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No raid members found with assigned roles.")
-        return
-      end
-      
-      -- Map function that just returns the role as-is (already in correct format)
-      local function MapRaidRole(roleBucket)
-        return roleBucket
-      end
-      
-      -- Use same auto-assign logic as RollFor
-      local assignmentCount = OGRH.AutoAssignRollForPlayers(frame, raidPlayers)
+      -- Perform auto-assignment
+      local assignmentCount = OGRH.AutoAssignRollForPlayers(frame, playerList)
       
       -- Show status in label instead of chat
       if frame.ShowStatus then
-        frame.ShowStatus("Auto-assigned " .. assignmentCount .. " players from raid.", 10)
+        local sourceName = unitSource == "Roster" and "planning roster" or "raid"
+        frame.ShowStatus("Auto-assigned " .. assignmentCount .. " players from " .. sourceName .. ".", 10)
       end
     end)
     
@@ -1933,69 +1963,67 @@ function OGRH.ShowEncounterPlanning(encounterName)
         ranged = {MAGE = true, Mage = true, WARLOCK = true, Warlock = true, HUNTER = true, Hunter = true, DRUID = true, Druid = true, PRIEST = true, Priest = true}
       }
       
-      -- Build player list: raid members, online 60s, offline 60s, or signed up players
+      -- Build player list based on selected unit source
       local raidPlayers = {}  -- {name=..., class=..., section="raid"}
       local onlinePlayers = {}  -- {name=..., class=..., section="online"}
       local offlinePlayers = {}  -- {name=..., class=..., section="offline"}
-      local signedUpPlayers = {}  -- {name=..., class=..., section="tanks"|"healers"|"melee"|"ranged"}
+      local rosterPlayers = {}  -- {name=..., class=..., section="roster"}
       
-      -- Check if we're showing Signed Up filter
-      if frame.selectedPlayerRole == "signedup" then
-        -- Get RollFor sign-up data
-        if RollForCharDb and RollForCharDb.softres and RollForCharDb.softres.data then
-          local encodedData = RollForCharDb.softres.data
-          if encodedData and type(encodedData) == "string" and RollFor and RollFor.SoftRes and RollFor.SoftRes.decode then
-            local decodedData = RollFor.SoftRes.decode(encodedData)
-            if decodedData and RollFor.SoftResDataTransformer and RollFor.SoftResDataTransformer.transform then
-              local softresData = RollFor.SoftResDataTransformer.transform(decodedData)
-              if softresData and type(softresData) == "table" then
-                -- Map RollFor role to OGRH role bucket
-                local roleMap = {
-                  DruidBear = "TANKS", PaladinProtection = "TANKS", ShamanTank = "TANKS", WarriorProtection = "TANKS",
-                  DruidRestoration = "HEALERS", PaladinHoly = "HEALERS", PriestHoly = "HEALERS", ShamanRestoration = "HEALERS",
-                  DruidFeral = "MELEE", HunterSurvival = "MELEE", PaladinRetribution = "MELEE", RogueDaggers = "MELEE",
-                  RogueSwords = "MELEE", ShamanEnhancement = "MELEE", WarriorArms = "MELEE", WarriorFury = "MELEE",
-                  DruidBalance = "RANGED", HunterMarksmanship = "RANGED", HunterBeastMastery = "RANGED", MageArcane = "RANGED",
-                  MageFire = "RANGED", MageFrost = "RANGED", PriestDiscipline = "RANGED", PriestShadow = "RANGED",
-                  ShamanElemental = "RANGED", WarlockAffliction = "RANGED", WarlockDemonology = "RANGED", WarlockDestruction = "RANGED"
-                }
-                
-                local playerMap = {}
-                for itemId, itemData in pairs(softresData) do
-                  if type(itemData) == "table" and itemData.rollers then
-                    for _, roller in ipairs(itemData.rollers) do
-                      if roller and roller.name then
-                        if not playerMap[roller.name] then
-                          local roleBucket = roleMap[roller.role] or "RANGED"
-                          local class = OGRH.GetPlayerClass(roller.name)
-                          if not class then
-                            -- Try to get from guild roster
-                            local numGuild = GetNumGuildMembers(true)
-                            for i = 1, numGuild do
-                              local guildName, _, _, _, guildClass = GetGuildRosterInfo(i)
-                              if guildName == roller.name and guildClass then
-                                class = string.upper(guildClass)
-                                OGRH.classCache[roller.name] = class
-                                break
-                              end
-                            end
-                          end
-                          
-                          playerMap[roller.name] = {
-                            name = roller.name,
-                            class = class or "UNKNOWN",
-                            section = string.lower(roleBucket)  -- tanks, healers, melee, ranged
-                          }
-                        end
+      -- Get selected unit source (Raid or Roster)
+      local unitSource = frame.selectedUnitSource or "Raid"
+      
+      if unitSource == "Roster" then
+        -- Get planning roster from Invites module
+        local planningRoster = OGRH.Invites and OGRH.Invites.GetPlanningRoster and OGRH.Invites.GetPlanningRoster()
+        if planningRoster and type(planningRoster) == "table" then
+          -- Planning roster has buckets: TANKS, HEALERS, MELEE, RANGED
+          for role, players in pairs(planningRoster) do
+            if type(players) == "table" then
+              for _, playerData in ipairs(players) do
+                if type(playerData) == "table" and playerData.name then
+                  local playerName = playerData.name
+                  local playerClass = playerData.class or OGRH.GetPlayerClass(playerName) or "WARRIOR"
+                  
+                  -- Apply search filter
+                  if searchText == "" or string.find(string.lower(playerName), searchText, 1, true) then
+                    -- Apply role filter
+                    local includePlayer = false
+                    local playerSection = "roster"
+                    
+                    if frame.selectedPlayerRole == "all" then
+                      includePlayer = true
+                      -- When showing all roles, group by role bucket
+                      if role == "TANKS" then
+                        playerSection = "tanks"
+                      elseif role == "HEALERS" then
+                        playerSection = "healers"
+                      elseif role == "MELEE" then
+                        playerSection = "melee"
+                      elseif role == "RANGED" then
+                        playerSection = "ranged"
                       end
+                    else
+                      -- Map planning roster role to class filter
+                      local roleFilter = frame.selectedPlayerRole
+                      if roleFilter == "tanks" and role == "TANKS" then
+                        includePlayer = true
+                      elseif roleFilter == "healers" and role == "HEALERS" then
+                        includePlayer = true
+                      elseif roleFilter == "melee" and role == "MELEE" then
+                        includePlayer = true
+                      elseif roleFilter == "ranged" and role == "RANGED" then
+                        includePlayer = true
+                      end
+                      playerSection = "roster"
                     end
-                  end
-                end
-                
-                -- Convert to array and apply search filter
-                for _, playerData in pairs(playerMap) do
-                  if searchText == "" or string.find(string.lower(playerData.name), searchText, 1, true) then
-                    table.insert(signedUpPlayers, playerData)
+                    
+                    if includePlayer then
+                      table.insert(rosterPlayers, {
+                        name = playerName,
+                        class = playerClass,
+                        section = playerSection
+                      })
+                    end
                   end
                 end
               end
@@ -2041,18 +2069,34 @@ function OGRH.ShowEncounterPlanning(encounterName)
             if searchText == "" or string.find(string.lower(name), searchText, 1, true) then
               -- Apply role filter - check RolesUI assignments for raid members
               local include = false
+              local playerSection = "raid"
+              
               if frame.selectedPlayerRole == "all" then
                 include = true
+                -- When showing all roles, group by role assignment
+                local assignments = roleAssignments[name]
+                if assignments then
+                  if assignments.tanks then
+                    playerSection = "tanks"
+                  elseif assignments.healers then
+                    playerSection = "healers"
+                  elseif assignments.melee then
+                    playerSection = "melee"
+                  elseif assignments.ranged then
+                    playerSection = "ranged"
+                  end
+                end
               else
                 -- For raid members, check their actual role assignment
                 local assignments = roleAssignments[name]
                 if assignments and assignments[frame.selectedPlayerRole] then
                   include = true
+                  playerSection = "raid"
                 end
               end
               
               if include then
-                table.insert(raidPlayers, {name = name, class = string.upper(class), section = "raid"})
+                table.insert(raidPlayers, {name = name, class = string.upper(class), section = playerSection})
               end
             end
           end
@@ -2065,28 +2109,17 @@ function OGRH.ShowEncounterPlanning(encounterName)
         raidNames[p.name] = true
       end
       
-      -- Get guild members (level 60 only)
-      local numGuildMembers = GetNumGuildMembers(true)
-      for i = 1, numGuildMembers do
-        local name, _, _, level, class, _, _, _, online = GetGuildRosterInfo(i)
-        if name and level == 60 and not raidNames[name] and class then
-          -- Cache the class
-          OGRH.classCache[name] = string.upper(class)
-          
-          -- Apply search filter
-          if searchText == "" or string.find(string.lower(name), searchText, 1, true) then
-            -- Apply role filter
-            local include = false
-            if frame.selectedPlayerRole == "all" then
-              include = true
-            else
-              local filter = classFilters[frame.selectedPlayerRole]
-              if filter and (filter[class] or filter[string.upper(class)]) then
-                include = true
-              end
-            end
+      -- Get guild members (level 60 only) - only show when "All Roles" is selected
+      if frame.selectedPlayerRole == "all" then
+        local numGuildMembers = GetNumGuildMembers(true)
+        for i = 1, numGuildMembers do
+          local name, _, _, level, class, _, _, _, online = GetGuildRosterInfo(i)
+          if name and level == 60 and not raidNames[name] and class then
+            -- Cache the class
+            OGRH.classCache[name] = string.upper(class)
             
-            if include then
+            -- Apply search filter
+            if searchText == "" or string.find(string.lower(name), searchText, 1, true) then
               if online then
                 table.insert(onlinePlayers, {name = name, class = string.upper(class), section = "online"})
               else
@@ -2096,25 +2129,31 @@ function OGRH.ShowEncounterPlanning(encounterName)
           end
         end
       end
-      end  -- end of signedup filter check
+      end  -- end of unitSource check
       
-      -- Sort each section alphabetically
-      table.sort(raidPlayers, function(a, b) return a.name < b.name end)
-      table.sort(onlinePlayers, function(a, b) return a.name < b.name end)
-      table.sort(offlinePlayers, function(a, b) return a.name < b.name end)
-      table.sort(signedUpPlayers, function(a, b)
+      -- Sort each section
+      table.sort(raidPlayers, function(a, b)
         if a.section ~= b.section then
-          local order = {tanks = 1, healers = 2, melee = 3, ranged = 4}
-          return (order[a.section] or 5) < (order[b.section] or 5)
+          local order = {tanks = 1, healers = 2, melee = 3, ranged = 4, raid = 5}
+          return (order[a.section] or 6) < (order[b.section] or 6)
         end
         return a.name < b.name
       end)
+      table.sort(rosterPlayers, function(a, b)
+        if a.section ~= b.section then
+          local order = {tanks = 1, healers = 2, melee = 3, ranged = 4, roster = 5}
+          return (order[a.section] or 6) < (order[b.section] or 6)
+        end
+        return a.name < b.name
+      end)
+      table.sort(onlinePlayers, function(a, b) return a.name < b.name end)
+      table.sort(offlinePlayers, function(a, b) return a.name < b.name end)
       
       -- Combine all sections
       local players = {}
-      if frame.selectedPlayerRole == "signedup" then
-        -- Only show signed up players
-        for _, p in ipairs(signedUpPlayers) do
+      if unitSource == "Roster" then
+        -- Only show planning roster players
+        for _, p in ipairs(rosterPlayers) do
           table.insert(players, p)
         end
       else
@@ -2140,10 +2179,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
           local sectionLabel = ""
           if playerData.section == "raid" then
             sectionLabel = "In Raid"
-          elseif playerData.section == "online" then
-            sectionLabel = "Online"
-          elseif playerData.section == "offline" then
-            sectionLabel = "Offline"
+          elseif playerData.section == "roster" then
+            sectionLabel = "Planning Roster"
           elseif playerData.section == "tanks" then
             sectionLabel = "Tanks"
           elseif playerData.section == "healers" then
@@ -2152,6 +2189,10 @@ function OGRH.ShowEncounterPlanning(encounterName)
             sectionLabel = "Melee"
           elseif playerData.section == "ranged" then
             sectionLabel = "Ranged"
+          elseif playerData.section == "online" then
+            sectionLabel = "Online"
+          elseif playerData.section == "offline" then
+            sectionLabel = "Offline"
           end
           
           if sectionLabel ~= "" then
@@ -2177,13 +2218,22 @@ function OGRH.ShowEncounterPlanning(encounterName)
         local playerBtn = OGRH.CreateStyledListItem(scrollChild, frame.guildContentWidth, OGRH.LIST_ITEM_HEIGHT, "Button")
         playerBtn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 2, -yOffset)
         
-        -- Player name with class color
-        local classColor = RAID_CLASS_COLORS[playerClass] or {r=1, g=1, b=1}
+        -- Player name with class color - get class from cache/lookup like assignment slots do
+        local class = OGRH.GetPlayerClass(playerName)
         
         local nameText = playerBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         nameText:SetPoint("LEFT", playerBtn, "LEFT", 5, 0)
         nameText:SetText(playerName)
-        nameText:SetTextColor(classColor.r, classColor.g, classColor.b)
+        
+        -- Apply class color the same way assignment slots do
+        local classColor
+        if class and RAID_CLASS_COLORS[class] then
+          classColor = RAID_CLASS_COLORS[class]
+          nameText:SetTextColor(classColor.r, classColor.g, classColor.b)
+        else
+          classColor = {r = 1, g = 1, b = 1}
+          nameText:SetTextColor(1, 1, 1)
+        end
         
         -- Make draggable
         playerBtn.playerName = playerName

@@ -888,14 +888,19 @@ end
 -- Filters out absent players only (keeps benched for planning purposes)
 function OGRH.Invites.GeneratePlanningRoster()
   local players = OGRH.Invites.GetRosterPlayers()
-  local planningRoster = {}
+  local planningRoster = {
+    TANKS = {},
+    HEALERS = {},
+    MELEE = {},
+    RANGED = {}
+  }
   
   for i = 1, table.getn(players) do
     local player = players[i]
     
     -- Exclude absent only (keep benched for planning)
     if not player.absent then
-      table.insert(planningRoster, {
+      local playerData = {
         name = player.name,
         class = player.class,
         role = player.role,  -- Already in OGRH format
@@ -903,7 +908,18 @@ function OGRH.Invites.GeneratePlanningRoster()
         online = player.online,
         source = player.source,
         benched = player.bench or false  -- Preserve benched status
-      })
+      }
+      
+      -- Add to appropriate role bucket
+      if player.role == "TANKS" then
+        table.insert(planningRoster.TANKS, playerData)
+      elseif player.role == "HEALERS" then
+        table.insert(planningRoster.HEALERS, playerData)
+      elseif player.role == "MELEE" then
+        table.insert(planningRoster.MELEE, playerData)
+      elseif player.role == "RANGED" then
+        table.insert(planningRoster.RANGED, playerData)
+      end
     end
   end
   
@@ -919,7 +935,12 @@ end
 -- Get planning roster (accessor for EncounterMgmt integration)
 function OGRH.Invites.GetPlanningRoster()
   OGRH.Invites.EnsureSV()
-  return OGRH.SVM.GetPath("invites.planningRoster") or {}
+  local roster = OGRH.SVM.GetPath("invites.planningRoster")
+  -- Ensure it has bucket structure
+  if not roster or not roster.TANKS then
+    return {TANKS = {}, HEALERS = {}, MELEE = {}, RANGED = {}}
+  end
+  return roster
 end
 
 -- Show Invites Window
