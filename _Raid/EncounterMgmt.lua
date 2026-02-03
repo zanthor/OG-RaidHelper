@@ -160,9 +160,9 @@ function OGRH.UpgradeEncounterDataStructure()
   return true
 end
 
--- Auto-assign players from RollFor data
-function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
-  if not frame or not rollForPlayers then return 0 end
+-- Auto-assign players from current raid or planning roster
+function OGRH.AutoAssignPlayers(frame, playerList)
+  if not frame or not playerList then return 0 end
   
   -- Get role configuration from v2 schema (roles nested in encounters)
   if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then
@@ -203,13 +203,13 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
     table.insert(allRoles, {role = column2[i], roleIndex = column2[i].roleId or (table.getn(allRoles) + 1)})
   end
   
-  -- Map RollFor role to OGRH role bucket (same as Invites module)
-  local function MapRollForRole(rollForRole)
-    if not rollForRole or rollForRole == "" then return nil end
+  -- Map player role to OGRH role bucket (same as Invites module)
+  local function MapPlayerRole(playerRole)
+    if not playerRole or playerRole == "" then return nil end
     
     -- If already in correct format (TANKS/HEALERS/MELEE/RANGED), return as-is
-    if rollForRole == "TANKS" or rollForRole == "HEALERS" or rollForRole == "MELEE" or rollForRole == "RANGED" then
-      return rollForRole
+    if playerRole == "TANKS" or playerRole == "HEALERS" or playerRole == "MELEE" or playerRole == "RANGED" then
+      return playerRole
     end
     
     local roleMap = {
@@ -221,7 +221,7 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
       MageFire = "RANGED", MageFrost = "RANGED", PriestDiscipline = "RANGED", PriestShadow = "RANGED",
       WarlockAffliction = "RANGED", WarlockDemonology = "RANGED", WarlockDestruction = "RANGED", ShamanElemental = "RANGED"
     }
-    return roleMap[rollForRole]
+    return roleMap[playerRole]
   end
   
   -- Track assignments
@@ -272,9 +272,9 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   -- MULTI-PASS ASSIGNMENT:
   -- Standard 2-pass: Pass 1 = class priority, Pass 2 = default roles
   -- Special 3-pass (when any role has invertFillOrder AND allowOtherRoles):
-  --   Pass 1 = default roles top-down (no duplicates)
-  --   Pass 2 = class priority bottom-up (no duplicates) 
-  --   Pass 3 = default roles top-down (allow duplicates to fill remaining)
+  --   Pass 1 = default roles (fill order per role: bottom-up if invertFillOrder, else top-down)
+  --   Pass 2 = class priority (fill order per role: bottom-up if invertFillOrder, else top-down)
+  --   Pass 3 = default roles + allow duplicates (fill order per role: bottom-up if invertFillOrder, else top-down)
   
   local maxPasses = needsThreePass and 3 or 2
   for passNum = 1, maxPasses do
@@ -373,7 +373,7 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
             
             -- Skip if slot is already filled
             if not assignments[currentRoleIndex][slotIdx] then
-              OGRH.AutoAssignRollForSlot(currentRole, currentRoleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers)
+              OGRH.AutoAssignSlot(currentRole, currentRoleIndex, slotIdx, assignments, playerList, assignedPlayers, MapPlayerRole, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers)
               if assignments[currentRoleIndex][slotIdx] then
                 assignmentCount = assignmentCount + 1
               end
@@ -383,15 +383,15 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
           -- SINGLE ROLE: Process each slot sequentially
           local slots = role.slots or 1
           
-          -- Determine slot processing order
+          -- Determine slot processing order based on invertFillOrder (applies to ALL passes)
           local slotOrder = {}
-          if role.invertFillOrder and role.allowOtherRoles and classPriorityOnly then
-            -- 3-pass mode: Pass 2 (class priority) is bottom-up
+          if role.invertFillOrder then
+            -- Fill bottom-up (Slot 5 -> Slot 1)
             for slotIdx = slots, 1, -1 do
               table.insert(slotOrder, slotIdx)
             end
           else
-            -- All other cases: Process slots top-down
+            -- Fill top-down (Slot 1 -> Slot 5)
             for slotIdx = 1, slots do
               table.insert(slotOrder, slotIdx)
             end
@@ -400,7 +400,7 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
           -- Process slots in the determined order
           for _, slotIdx in ipairs(slotOrder) do
             if not assignments[roleIndex][slotIdx] then
-              OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers, needsThreePass)
+              OGRH.AutoAssignSlot(role, roleIndex, slotIdx, assignments, playerList, assignedPlayers, MapPlayerRole, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers, needsThreePass)
               if assignments[roleIndex][slotIdx] then
                 assignmentCount = assignmentCount + 1
               end
@@ -414,8 +414,8 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   -- Note: Change tracking now handled automatically by SVM sync levels
   
   -- Write assignments back to v2 schema using SVM.SetPath for proper sync
-  -- Active Raid (index 1) = REALTIME, others = BATCH
-  local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
+  -- Active Raid (index 1) = REALTIME, others = MANUAL (no auto-sync)
+  local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "MANUAL"
   
   for roleIdx, roleAssignments in pairs(assignments) do
     if encounter.roles[roleIdx] then
@@ -447,8 +447,8 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   return assignmentCount
 end
 
--- Helper function to assign a single slot from RollFor data
-function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollForPlayers, assignedPlayers, MapRollForRole, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers, isThreePassMode)
+-- Helper function to assign a single slot from player list (raid or roster)
+function OGRH.AutoAssignSlot(role, roleIndex, slotIdx, assignments, playerList, assignedPlayers, mapPlayerRoleFn, classPriorityOnly, defaultRolesOnly, allowDuplicates, passNum, tempAssignedPlayers, isThreePassMode)
   local assigned = false
   passNum = passNum or 0  -- Default to 0 if not provided
   tempAssignedPlayers = tempAssignedPlayers or {}  -- Default to empty table if not provided
@@ -475,7 +475,7 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
     for priorityIndex, className in ipairs(priorityList) do
       -- Build list of players with this class
       local classPlayers = {}
-      for _, playerData in ipairs(rollForPlayers) do
+      for _, playerData in ipairs(playerList) do
         -- Check if player is available
         -- assignedPlayers = permanently blocked (role didn't have allowOtherRoles)
         -- tempAssignedPlayers = temporarily blocked in passes 1-2
@@ -497,20 +497,20 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
             if role.classPriorityRoles and role.classPriorityRoles[slotIdx] and role.classPriorityRoles[slotIdx][priorityIndex] then
               local allowedRoles = role.classPriorityRoles[slotIdx][priorityIndex]
               
-              -- Check if ANY checkbox is enabled
-              local anyRoleEnabled = allowedRoles.Tanks or allowedRoles.Healers or allowedRoles.Melee or allowedRoles.Ranged
+              -- Check if ANY checkbox is enabled (check both capital and lowercase for compatibility)
+              local anyRoleEnabled = allowedRoles.Tanks or allowedRoles.tanks or allowedRoles.Healers or allowedRoles.healers or allowedRoles.Melee or allowedRoles.melee or allowedRoles.Ranged or allowedRoles.ranged
               
               if not anyRoleEnabled then
                 -- No checkboxes enabled = accept from any role
                 roleMatches = true
               else
                 -- Checkboxes enabled - need to match role
-                local playerRoleBucket = MapRollForRole(playerData.role)
+                local playerRoleBucket = mapPlayerRoleFn(playerData.role)
                 if playerRoleBucket and (
-                   (playerRoleBucket == "TANKS" and allowedRoles.Tanks) or
-                   (playerRoleBucket == "HEALERS" and allowedRoles.Healers) or
-                   (playerRoleBucket == "MELEE" and allowedRoles.Melee) or
-                   (playerRoleBucket == "RANGED" and allowedRoles.Ranged)) then
+                   (playerRoleBucket == "TANKS" and (allowedRoles.Tanks or allowedRoles.tanks)) or
+                   (playerRoleBucket == "HEALERS" and (allowedRoles.Healers or allowedRoles.healers)) or
+                   (playerRoleBucket == "MELEE" and (allowedRoles.Melee or allowedRoles.melee)) or
+                   (playerRoleBucket == "RANGED" and (allowedRoles.Ranged or allowedRoles.ranged))) then
                   roleMatches = true
                 end
               end
@@ -554,7 +554,7 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
         assigned = true
         
         -- Update class cache
-        for _, playerData in ipairs(rollForPlayers) do
+        for _, playerData in ipairs(playerList) do
           if playerData.name == classPlayers[1] and playerData.class and OGRH.UpdatePlayerClass then
             OGRH.UpdatePlayerClass(playerData.name, playerData.class)
             break
@@ -571,7 +571,7 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
   if not assigned and not classPriorityOnly and role.defaultRoles then
     -- Build list of matching players
     local matchingPlayers = {}
-    for _, playerData in ipairs(rollForPlayers) do
+    for _, playerData in ipairs(playerList) do
       -- Check if player is available
       -- assignedPlayers = permanently blocked (role didn't have allowOtherRoles)
       -- tempAssignedPlayers = temporarily blocked in passes 1-2
@@ -586,7 +586,7 @@ function OGRH.AutoAssignRollForSlot(role, roleIndex, slotIdx, assignments, rollF
       end
       
       if canUsePlayer then
-        local playerRoleBucket = MapRollForRole(playerData.role)
+        local playerRoleBucket = mapPlayerRoleFn(playerData.role)
         
         -- Check if player matches role's defaultRoles
         local matches = false
@@ -835,11 +835,10 @@ function OGRH.ShowEncounterPlanning(encounterName)
     title:SetText("Encounter Planning")
     frame.title = title
     
-    -- Export Raid button (top left)
+    -- Export Raid button (anchored to left of Edit Structure)
     local exportRaidBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     exportRaidBtn:SetWidth(90)
     exportRaidBtn:SetHeight(24)
-    exportRaidBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -10)
     exportRaidBtn:SetText("Export Raid")
     OGRH.StyleButton(exportRaidBtn)
     exportRaidBtn:SetScript("OnClick", function()
@@ -902,6 +901,9 @@ function OGRH.ShowEncounterPlanning(encounterName)
     editStructureBtn:SetText("Edit Structure")
     OGRH.StyleButton(editStructureBtn)
     frame.editStructureBtn = editStructureBtn
+    
+    -- Anchor Export Raid button to the left of Edit Structure button
+    exportRaidBtn:SetPoint("RIGHT", editStructureBtn, "LEFT", -5, 0)
     
     editStructureBtn:SetScript("OnEnter", function()
       GameTooltip:SetOwner(this, "ANCHOR_TOP")
@@ -1674,7 +1676,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
         -- Get planning roster from Invites module
         local planningRoster = OGRH.Invites and OGRH.Invites.GetPlanningRoster and OGRH.Invites.GetPlanningRoster()
         if not planningRoster or type(planningRoster) ~= "table" then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No planning roster available. Import RollFor data first.")
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r No planning roster available. Import roster data first.")
           return
         end
         
@@ -1697,7 +1699,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
         end
         
         if not hasPlayers then
-          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Planning roster is empty. Import RollFor data first.")
+          DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Planning roster is empty. Import roster data first.")
           return
         end
       else
@@ -1751,7 +1753,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
       end
       
       -- Perform auto-assignment
-      local assignmentCount = OGRH.AutoAssignRollForPlayers(frame, playerList)
+      local assignmentCount = OGRH.AutoAssignPlayers(frame, playerList)
       
       -- Show status in label instead of chat
       if frame.ShowStatus then
@@ -2393,8 +2395,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
             -- Assign player to slot if we found a target
             if foundTarget and targetRoleIndex and targetSlotIndex then
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-                -- Active Raid (index 1) = REALTIME, others = BATCH
-                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
+                -- Active Raid (index 1) = REALTIME, others = MANUAL (no auto-sync)
+                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "MANUAL"
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, targetRoleIndex, targetSlotIndex),
@@ -2987,8 +2989,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
               
               -- Save the raid mark assignment via SetPath for proper logging
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-                -- Active Raid (index 1) = REALTIME, others = BATCH
-                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
+                -- Active Raid (index 1) = REALTIME, others = MANUAL (no auto-sync)
+                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "MANUAL"
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.raidMarks.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, capturedRoleIndex, capturedSlotIndex),
@@ -3130,8 +3132,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 end
                 
                 -- Write assignment number using SetPath
-                -- Active Raid (index 1) = REALTIME, others = BATCH
-                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
+                -- Active Raid (index 1) = REALTIME, others = MANUAL (no auto-sync)
+                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "MANUAL"
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignmentNumbers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, capturedRoleIndex, capturedSlotIndex),
@@ -3362,8 +3364,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 end
                 
                 -- Move dragged player to target position
-                -- Active Raid (index 1) = REALTIME, others = BATCH
-                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
+                -- Active Raid (index 1) = REALTIME, others = MANUAL (no auto-sync)
+                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "MANUAL"
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, targetRoleIndex, targetSlotIndex),
@@ -3439,8 +3441,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
               -- Right click: Unassign player using SetPath
               if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then return end
               
-              -- Active Raid (index 1) = REALTIME, others = BATCH
-              local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
+              -- Active Raid (index 1) = REALTIME, others = MANUAL (no auto-sync)
+              local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "MANUAL"
               OGRH.SVM.SetPath(
                 string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                   frame.selectedRaidIdx, frame.selectedEncounterIdx, slotRoleIndex, slotSlotIndex),
@@ -3555,33 +3557,69 @@ function OGRH.ShowEncounterPlanning(encounterName)
               -- Build placeholder text from class priority and default roles
               local placeholderText = "[Empty]"
               
-              -- Get highest priority class if configured
-              local priorityClass = nil
-              if role.classPriority and role.classPriority[slotIdx] and table.getn(role.classPriority[slotIdx]) > 0 then
-                priorityClass = role.classPriority[slotIdx][1]
-              end
+              -- Class abbreviations
+              local classAbbrev = {
+                DRUID = "Dru",
+                HUNTER = "Hnt",
+                MAGE = "Mag",
+                PALADIN = "Pal",
+                PRIEST = "Pst",
+                ROGUE = "Rog",
+                SHAMAN = "Sha",
+                WARLOCK = "Lok",
+                WARRIOR = "War"
+              }
               
-              -- Get default role text
-              local defaultRoleText = nil
-              if role.defaultRoles then
-                local roleNames = {}
-                if role.defaultRoles.tanks then table.insert(roleNames, "Tanks") end
-                if role.defaultRoles.healers then table.insert(roleNames, "Healers") end
-                if role.defaultRoles.melee then table.insert(roleNames, "Melee") end
-                if role.defaultRoles.ranged then table.insert(roleNames, "Ranged") end
-                
-                if table.getn(roleNames) > 0 then
-                  defaultRoleText = table.concat(roleNames, "/")
+              -- Get all class priorities if configured
+              local classPriorityParts = {}
+              if role.classPriority and role.classPriority[slotIdx] and table.getn(role.classPriority[slotIdx]) > 0 then
+                for i, className in ipairs(role.classPriority[slotIdx]) do
+                  local classUpper = string.upper(className)
+                  
+                  -- Get role prefixes from classPriorityRoles configuration (all checked roles)
+                  local rolePrefixes = ""
+                  if role.classPriorityRoles and 
+                     role.classPriorityRoles[slotIdx] and 
+                     role.classPriorityRoles[slotIdx][i] then
+                    local roleFlags = role.classPriorityRoles[slotIdx][i]
+                    
+                    -- Build prefix string with all checked roles (in order T, H, M, R)
+                    if roleFlags.Tanks then rolePrefixes = rolePrefixes .. "T" end
+                    if roleFlags.Healers then rolePrefixes = rolePrefixes .. "H" end
+                    if roleFlags.Melee then rolePrefixes = rolePrefixes .. "M" end
+                    if roleFlags.Ranged then rolePrefixes = rolePrefixes .. "R" end
+                  end
+                  
+                  -- Store full class name for now, we'll decide abbreviation later
+                  table.insert(classPriorityParts, {prefix = rolePrefixes, class = className, classUpper = classUpper})
                 end
               end
               
+              -- Get default role text (singular)
+              local defaultRoleParts = {}
+              if role.defaultRoles then
+                if role.defaultRoles.tanks then table.insert(defaultRoleParts, "Tank") end
+                if role.defaultRoles.healers then table.insert(defaultRoleParts, "Healer") end
+                if role.defaultRoles.melee then table.insert(defaultRoleParts, "Melee") end
+                if role.defaultRoles.ranged then table.insert(defaultRoleParts, "Ranged") end
+              end
+              
+              -- Determine if we should abbreviate (more than 4 total parts)
+              local totalParts = table.getn(classPriorityParts) + table.getn(defaultRoleParts)
+              local shouldAbbreviate = totalParts > 4
+              
               -- Build final text
-              if priorityClass and defaultRoleText then
-                placeholderText = "[" .. priorityClass .. "/" .. defaultRoleText .. "]"
-              elseif priorityClass then
-                placeholderText = "[" .. priorityClass .. "]"
-              elseif defaultRoleText then
-                placeholderText = "[" .. defaultRoleText .. "]"
+              local parts = {}
+              for _, item in ipairs(classPriorityParts) do
+                local className = shouldAbbreviate and (classAbbrev[item.classUpper] or item.class) or item.class
+                table.insert(parts, item.prefix .. className)
+              end
+              for _, part in ipairs(defaultRoleParts) do
+                table.insert(parts, part)
+              end
+              
+              if table.getn(parts) > 0 then
+                placeholderText = "[" .. table.concat(parts, "/") .. "]"
               end
               
               slot.nameText:SetText(placeholderText)

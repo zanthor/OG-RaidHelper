@@ -619,8 +619,8 @@ function OGRH.GetSyncLevel(raidIdx, context)
   local isActive = OGRH.IsActiveRaid(raidIdx)
   
   if context == "EncounterMgmt" then
-    -- Planning window: REALTIME for active, BATCH for saved
-    return isActive and "REALTIME" or "BATCH"
+    -- Planning window: REALTIME for active, MANUAL for saved (no auto-sync)
+    return isActive and "REALTIME" or "MANUAL"
   elseif context == "EncounterSetup" then
     -- Configuration window: BATCH for active, MANUAL for saved
     return isActive and "BATCH" or "MANUAL"

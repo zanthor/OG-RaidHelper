@@ -327,6 +327,17 @@ function OGRH.ShowClassPriorityDialog(raidIdx, encounterIdx, roleIndex, slotInde
         local capturedClass = className
         item:SetScript("OnClick", function()
           table.insert(priorityList, capturedClass)
+          
+          -- Initialize empty role flags for this new class
+          if not roleData.classPriorityRoles then
+            roleData.classPriorityRoles = {}
+          end
+          if not roleData.classPriorityRoles[slotIndex] then
+            roleData.classPriorityRoles[slotIndex] = {}
+          end
+          -- Add empty role flags table at the same index as the new class
+          table.insert(roleData.classPriorityRoles[slotIndex], {})
+          
           RefreshLists()
         end)
       end

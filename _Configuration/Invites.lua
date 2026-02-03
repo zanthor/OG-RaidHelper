@@ -175,7 +175,7 @@ function OGRH.Invites.ParseRaidHelperJSON(jsonString)
       
       if className == "Absence" then
         isAbsent = true
-        -- Will be looked up later from guild roster
+        -- Will be looked up later from cache
         actualClass = nil
       elseif className == "Bench" then
         isBench = true
@@ -183,9 +183,17 @@ function OGRH.Invites.ParseRaidHelperJSON(jsonString)
       elseif className == "Tentative" then
         -- Tentative is active but uncertain - treat as active
         actualClass = nil
+      elseif className == "Tank" or className == "Healer" or className == "Melee" or className == "Ranged" then
+        -- className is actually a role, not a class - need to look up actual class
+        actualClass = nil
       elseif className then
         -- This is an actual class name
         actualClass = string.upper(className)
+      end
+      
+      -- Try to get class from OGRH cache if not available
+      if not actualClass then
+        actualClass = OGRH.GetPlayerClass(playerName)
       end
       
       -- Map roleName to OGRH format
