@@ -200,8 +200,10 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   -- Clear existing assignments for this encounter - v2 schema: clear within each role
   if encounter.roles then
     for roleIdx = 1, table.getn(encounter.roles) do
-      if encounter.roles[roleIdx].assignedPlayers then
-        encounter.roles[roleIdx].assignedPlayers = {}
+      local role = encounter.roles[roleIdx]
+      -- Only initialize assignedPlayers for valid roles with name and roleId
+      if role and type(role) == "table" and role.name and role.name ~= "" and role.roleId then
+        role.assignedPlayers = {}
       end
     end
   end

@@ -303,31 +303,45 @@ OGRH.Msg("[Migration] Warning: Unknown encounter name in roles: " .. encounterNa
                     local v2Roles = {}
                     local roleIdx = 1
                     
-                    -- Add column1 roles
+                    -- Helper to validate if a role entry is valid
+                    local function IsValidRole(roleData)
+                        if type(roleData) ~= "table" then return false end
+                        -- Must have a name (non-empty string)
+                        if not roleData.name or type(roleData.name) ~= "string" or roleData.name == "" then
+                            return false
+                        end
+                        -- Must have roleId
+                        if not roleData.roleId then return false end
+                        return true
+                    end
+                    
+                    -- Add column1 roles (use pairs to handle sparse arrays with gaps)
                     if encounterRoles.column1 then
-                        for _, roleData in ipairs(encounterRoles.column1) do
-                            local v2Role = DeepCopy(roleData)
-                            v2Role.column = 1
-                            -- Assign roleId if missing (v1 roles may not have had this field)
-                            if not v2Role.roleId then
-                                v2Role.roleId = roleIdx
+                        for i, roleData in pairs(encounterRoles.column1) do
+                            if IsValidRole(roleData) then
+                                local v2Role = DeepCopy(roleData)
+                                v2Role.column = 1
+OGRH.Msg(string.format("[Migration] Column1 role '%s': v1.roleId=%s -> v2.roleId=%s", roleData.name, tostring(roleData.roleId), tostring(v2Role.roleId)))
+                                v2Roles[roleIdx] = v2Role
+                                roleIdx = roleIdx + 1
+                            else
+OGRH.Msg(string.format("[Migration] Skipping invalid column1 entry at index %s (no name or roleId)", tostring(i)))
                             end
-                            v2Roles[roleIdx] = v2Role
-                            roleIdx = roleIdx + 1
                         end
                     end
                     
-                    -- Add column2 roles
+                    -- Add column2 roles (use pairs to handle sparse arrays with gaps)
                     if encounterRoles.column2 then
-                        for _, roleData in ipairs(encounterRoles.column2) do
-                            local v2Role = DeepCopy(roleData)
-                            v2Role.column = 2
-                            -- Assign roleId if missing (v1 roles may not have had this field)
-                            if not v2Role.roleId then
-                                v2Role.roleId = roleIdx
+                        for i, roleData in pairs(encounterRoles.column2) do
+                            if IsValidRole(roleData) then
+                                local v2Role = DeepCopy(roleData)
+                                v2Role.column = 2
+OGRH.Msg(string.format("[Migration] Column2 role '%s': v1.roleId=%s -> v2.roleId=%s", roleData.name, tostring(roleData.roleId), tostring(v2Role.roleId)))
+                                v2Roles[roleIdx] = v2Role
+                                roleIdx = roleIdx + 1
+                            else
+OGRH.Msg(string.format("[Migration] Skipping invalid column2 entry at index %s (no name or roleId)", tostring(i)))
                             end
-                            v2Roles[roleIdx] = v2Role
-                            roleIdx = roleIdx + 1
                         end
                     end
                     
@@ -337,6 +351,10 @@ OGRH.Msg("[Migration] Warning: Raid index " .. raidIdx .. " not found in v2 data
                     elseif not v2Data.encounterMgmt.raids[raidIdx].encounters[encIdx] then
 OGRH.Msg("[Migration] Warning: Encounter index " .. encIdx .. " not found in v2 data")
                     else
+                        -- DEBUG: Show what's in v2Roles before assignment
+                        for i = 1, table.getn(v2Roles) do
+OGRH.Msg(string.format("[Migration] BEFORE ASSIGN - Role[%d]: name='%s', roleId=%s, column=%s", i, v2Roles[i].name or "?", tostring(v2Roles[i].roleId), tostring(v2Roles[i].column)))
+                        end
                         v2Data.encounterMgmt.raids[raidIdx].encounters[encIdx].roles = v2Roles
 OGRH.Msg(string.format("[Migration] Migrated %d roles for %s > %s", table.getn(v2Roles), raidName, encounterName))
                     end

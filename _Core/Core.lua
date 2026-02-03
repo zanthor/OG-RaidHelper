@@ -181,42 +181,48 @@ _svf:SetScript("OnEvent", function()
   -- ============================================
   if OGRH.Migration and OGRH.Migration.MigrateToV2 then
     -- Check if v2 exists and is active
-    local needsMigration = false
+    local needsSetup = false
     local isCleanInstall = false
     
     if not OGRH_SV.v2 then
-      -- No v2 at all - needs migration
-      needsMigration = true
+      -- No v2 at all - check if clean install or migration needed
+      needsSetup = true
+      -- Check if this is a clean install (no v1 data)
+      local hasV1Data = false
+      for key, _ in pairs(OGRH_SV) do
+        if key ~= "v2" and key ~= "schemaVersion" and key ~= "firstRun" then
+          hasV1Data = true
+          break
+        end
+      end
+      isCleanInstall = not hasV1Data
     elseif not OGRH_SV.v2.encounterMgmt or OGRH_SV.v2.encounterMgmt.schemaVersion ~= 2 then
       -- v2 exists but not active - needs migration
-      needsMigration = true
-      -- Check if this is a clean install (v2 exists but empty, no v1 data)
-      if OGRH_SV.schemaVersion == "v2" then
-        local hasV1Data = false
-        for key, _ in pairs(OGRH_SV) do
-          if key ~= "v2" and key ~= "schemaVersion" then
-            hasV1Data = true
-            break
-          end
-        end
-        if not hasV1Data then
-          isCleanInstall = true
-        end
-      end
+      needsSetup = true
     end
     
-    if needsMigration then
-      if isCleanInstall then
-OGRH.Msg("|cffffaa00[RH-Migration]|r First-time setup detected. Initializing v2 schema...")
-      else
-OGRH.Msg("|cffffaa00[RH-Migration]|r Detected v1 schema. Auto-migrating to v2...")
-      end
-      OGRH.Migration.MigrateToV2(false)
+    if needsSetup then
+      -- CRITICAL: Set firstRun=false IMMEDIATELY to prevent LoadFactoryDefaults from running
+      OGRH_SV.firstRun = false
       
-      -- Auto-cutover to v2
-      if OGRH_SV.v2 and OGRH.Migration.CutoverToV2 then
+      if isCleanInstall then
+        -- Clean install: Initialize v2 from defaults, no migration
+OGRH.Msg("|cffffaa00[RH-Migration]|r First-time setup detected. Initializing v2 from defaults...")
+        OGRH_SV.v2 = {}
+        OGRH_SV.schemaVersion = "v2"
+        if OGRH.Sync and OGRH.Sync.LoadDefaults then
+          OGRH.Sync.LoadDefaults()
+        end
+      else
+        -- Has v1 data: Migrate v1 → v2, never touch defaults
+OGRH.Msg("|cffffaa00[RH-Migration]|r Detected v1 schema. Auto-migrating to v2...")
+        OGRH.Migration.MigrateToV2(false)
+        
+        -- Auto-cutover to v2
+        if OGRH_SV.v2 and OGRH.Migration.CutoverToV2 then
 OGRH.Msg("|cffffaa00[RH-Migration]|r Auto-activating v2 schema...")
-        OGRH.Migration.CutoverToV2()
+          OGRH.Migration.CutoverToV2()
+        end
       end
       
       -- Refresh ConsumesTracking cache after migration
@@ -227,12 +233,6 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Auto-activating v2 schema...")
       -- Refresh Invites cache after migration
       if OGRH.Invites and OGRH.Invites.cachedCurrentSource then
         OGRH.Invites.cachedCurrentSource = OGRH.SVM.GetPath("invites.currentSource")
-      end
-      
-      -- Load defaults on clean install
-      if isCleanInstall and OGRH.Sync and OGRH.Sync.LoadDefaults then
-OGRH.Msg("|cffffaa00[RH-Migration]|r Loading factory defaults...")
-        OGRH.Sync.LoadDefaults()
       end
     end
   end
@@ -247,11 +247,8 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Loading factory defaults...")
     OGRH.EnsureActiveRaid()
   end
   
-  -- Load factory defaults on first run if configured
-  if OGRH_SV.firstRun ~= false and OGRH.FactoryDefaults and type(OGRH.FactoryDefaults) == "table" and OGRH.FactoryDefaults.version then
-    OGRH.LoadFactoryDefaults()
-    OGRH_SV.firstRun = false
-  end
+  -- REMOVED: LoadFactoryDefaults - handled in migration block above
+  -- firstRun flag is now set during migration/setup to prevent defaults from overwriting migrated data
   
   -- Initialize Phase 1 infrastructure systems
   if OGRH.Permissions and OGRH.Permissions.Initialize then
@@ -282,26 +279,14 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Loading factory defaults...")
   
   elseif event == "PLAYER_ENTERING_WORLD" then
     -- Clean up v1 keys if we're in v2 mode (after all modules have loaded)
+    -- Clean up deprecated v2 fields only (keep v1 data for rollback)
     if OGRH_SV.schemaVersion == "v2" and OGRH_SV.v2 then
-      local v1KeysFound = {}
-      for key, _ in pairs(OGRH_SV) do
-        if key ~= "v2" and key ~= "schemaVersion" then
-          table.insert(v1KeysFound, key)
-        end
-      end
-      if table.getn(v1KeysFound) > 0 then
-OGRH.Msg("|cffffaa00[RH-Cleanup]|r Removing " .. table.getn(v1KeysFound) .. " legacy v1 keys: " .. table.concat(v1KeysFound, ", "))
-        for i = 1, table.getn(v1KeysFound) do
-          OGRH_SV[v1KeysFound[i]] = nil
-        end
-        -- Clean up deprecated v2 fields too
-        local deprecatedCount = 0
-        if OGRH_SV.v2.order then OGRH_SV.v2.order = nil deprecatedCount = deprecatedCount + 1 end
-        if OGRH_SV.v2.Permissions then OGRH_SV.v2.Permissions = nil deprecatedCount = deprecatedCount + 1 end
-        if OGRH_SV.v2.Versioning then OGRH_SV.v2.Versioning = nil deprecatedCount = deprecatedCount + 1 end
-        if deprecatedCount > 0 then
-OGRH.Msg("|cffffaa00[RH-Cleanup]|r Removed " .. deprecatedCount .. " deprecated v2 fields")
-        end
+      local deprecatedCount = 0
+      if OGRH_SV.v2.order then OGRH_SV.v2.order = nil deprecatedCount = deprecatedCount + 1 end
+      if OGRH_SV.v2.Permissions then OGRH_SV.v2.Permissions = nil deprecatedCount = deprecatedCount + 1 end
+      if OGRH_SV.v2.Versioning then OGRH_SV.v2.Versioning = nil deprecatedCount = deprecatedCount + 1 end
+      if deprecatedCount > 0 then
+        OGRH.Msg("|cffffaa00[RH-Cleanup]|r Removed " .. deprecatedCount .. " deprecated v2 fields")
       end
     end
     

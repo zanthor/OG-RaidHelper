@@ -1435,13 +1435,23 @@ local MIGRATION_MAP = {
     },
     { -- [144]
         v1Path = 'OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].roleId',
-        v2Path = 'DEPRECATED - array index is the roleId',
-        transformType = 'DEPRECATED',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].roleId',
+        transformType = 'PATH CHANGE',
         breaking = true,
         uiBindings = '',
         controlName = '',
         fileLocation = 'Raid/EncounterSetup.lua:619',
-        notes = 'roleId field redundant; use array index instead'
+        notes = 'roleId preserved - immutable identifier that persists across reordering'
+    },
+    { -- [144b]
+        v1Path = 'OGRH_SV.encounterMgmt.roles[raidName][encounterName].column2[idx].roleId',
+        v2Path = 'encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx+offset].roleId',
+        transformType = 'PATH CHANGE',
+        breaking = true,
+        uiBindings = '',
+        controlName = '',
+        fileLocation = 'Raid/EncounterSetup.lua:619',
+        notes = 'roleId preserved - immutable identifier that persists across reordering'
     },
     { -- [145]
         v1Path = 'OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].name',
