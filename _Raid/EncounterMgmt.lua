@@ -1789,8 +1789,26 @@ function OGRH.ShowEncounterPlanning(encounterName)
       
       if enabled then
         editToggleBtn:SetText("|cff00ff00Edit: Unlocked|r")
+        -- Show editor, hide preview
+        if frame.announcementScrollFrame then
+          frame.announcementScrollFrame:Show()
+        end
+        if frame.announcementPreviewScrollFrame then
+          frame.announcementPreviewScrollFrame:Hide()
+        end
       else
         editToggleBtn:SetText("|cffff0000Edit: Locked|r")
+        -- Hide editor, show preview
+        if frame.announcementScrollFrame then
+          frame.announcementScrollFrame:Hide()
+        end
+        if frame.announcementPreviewScrollFrame then
+          frame.announcementPreviewScrollFrame:Show()
+        end
+        -- Update preview with current data
+        if frame.UpdateAnnouncementPreview then
+          frame.UpdateAnnouncementPreview()
+        end
       end
       
       -- Enable/disable announcement EditBoxes (only if have permission)
@@ -1848,7 +1866,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
     announcementLabel:SetPoint("TOPLEFT", bottomPanel, "TOPLEFT", 145, -10)
     announcementLabel:SetText("Announcement Builder:")
     
-    -- Announcement Builder scroll frame
+    -- Announcement Builder scroll frame (editor)
     local announcementScrollFrame = CreateFrame("ScrollFrame", nil, bottomPanel)
     announcementScrollFrame:SetWidth(430)
     announcementScrollFrame:SetHeight(106)
@@ -1862,6 +1880,22 @@ function OGRH.ShowEncounterPlanning(encounterName)
       insets = {left = 3, right = 3, top = 3, bottom = 3}
     })
     announcementScrollFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    
+    -- Announcement Preview scroll frame (shown when locked)
+    local announcementPreviewScrollFrame = CreateFrame("ScrollFrame", nil, bottomPanel)
+    announcementPreviewScrollFrame:SetWidth(430)
+    announcementPreviewScrollFrame:SetHeight(106)
+    announcementPreviewScrollFrame:SetPoint("TOPLEFT", announcementLabel, "BOTTOMLEFT", 0, -5)
+    announcementPreviewScrollFrame:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    announcementPreviewScrollFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    announcementPreviewScrollFrame:Hide()  -- Start hidden
     
     -- Scroll child frame
     local announcementFrame = CreateFrame("Frame", nil, announcementScrollFrame)
@@ -1904,6 +1938,49 @@ function OGRH.ShowEncounterPlanning(encounterName)
     
     frame.announcementScrollFrame = announcementScrollFrame
     frame.announcementScrollBar = announcementScrollBar
+    
+    -- Preview scroll child frame
+    local announcementPreviewFrame = CreateFrame("Frame", nil, announcementPreviewScrollFrame)
+    announcementPreviewFrame:SetWidth(410)
+    announcementPreviewScrollFrame:SetScrollChild(announcementPreviewFrame)
+    
+    -- Preview scrollbar
+    local announcementPreviewScrollBar = CreateFrame("Slider", nil, announcementPreviewScrollFrame)
+    announcementPreviewScrollBar:SetPoint("TOPRIGHT", announcementPreviewScrollFrame, "TOPRIGHT", -5, -16)
+    announcementPreviewScrollBar:SetPoint("BOTTOMRIGHT", announcementPreviewScrollFrame, "BOTTOMRIGHT", -5, 16)
+    announcementPreviewScrollBar:SetWidth(16)
+    announcementPreviewScrollBar:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 8,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    announcementPreviewScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    announcementPreviewScrollBar:SetOrientation("VERTICAL")
+    announcementPreviewScrollBar:SetMinMaxValues(0, 1)
+    announcementPreviewScrollBar:SetValue(0)
+    announcementPreviewScrollBar:SetValueStep(22)
+    announcementPreviewScrollBar:SetScript("OnValueChanged", function()
+      announcementPreviewScrollFrame:SetVerticalScroll(this:GetValue())
+    end)
+    
+    -- Preview mouse wheel scroll support
+    announcementPreviewScrollFrame:EnableMouseWheel(true)
+    announcementPreviewScrollFrame:SetScript("OnMouseWheel", function()
+      local delta = arg1
+      local current = announcementPreviewScrollBar:GetValue()
+      local minVal, maxVal = announcementPreviewScrollBar:GetMinMaxValues()
+      
+      if delta > 0 then
+        announcementPreviewScrollBar:SetValue(math.max(minVal, current - 22))
+      else
+        announcementPreviewScrollBar:SetValue(math.min(maxVal, current + 22))
+      end
+    end)
+    
+    frame.announcementPreviewScrollFrame = announcementPreviewScrollFrame
+    frame.announcementPreviewScrollBar = announcementPreviewScrollBar
+    frame.announcementPreviewFrame = announcementPreviewFrame
     
     -- Create individual edit boxes for each line (8 lines)
     frame.announcementLines = {}
@@ -2015,6 +2092,144 @@ function OGRH.ShowEncounterPlanning(encounterName)
     
     -- Store role containers (will be created dynamically)
     frame.roleContainers = {}
+    
+    -- Function to update announcement preview
+    frame.UpdateAnnouncementPreview = function()
+      if not frame.announcementPreviewFrame then return end
+      
+      -- Clear existing preview FontStrings
+      if not frame.announcementPreviewFontStrings then
+        frame.announcementPreviewFontStrings = {}
+      end
+      
+      for _, fs in ipairs(frame.announcementPreviewFontStrings) do
+        fs:Hide()
+        fs:SetText("")
+      end
+      frame.announcementPreviewFontStrings = {}
+      
+      -- Also clear any child frames
+      local children = {frame.announcementPreviewFrame:GetChildren()}
+      for _, child in ipairs(children) do
+        child:Hide()
+        child:SetParent(nil)
+      end
+      
+      -- Check if we have a selected encounter
+      if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then
+        return
+      end
+      
+      -- Check if announcement system is loaded
+      if not OGRH.Announcements or not OGRH.Announcements.ReplaceTags then
+        -- Show fallback message
+        local fallbackText = frame.announcementPreviewFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        fallbackText:SetPoint("CENTER", frame.announcementPreviewFrame, "CENTER", 0, 0)
+        fallbackText:SetText("|cff888888Announcement system not loaded|r")
+        table.insert(frame.announcementPreviewFontStrings, fallbackText)
+        return
+      end
+      
+      -- Get encounter data via SVM
+      local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+      if not encounterMgmt or not encounterMgmt.raids or not encounterMgmt.raids[frame.selectedRaidIdx] or 
+         not encounterMgmt.raids[frame.selectedRaidIdx].encounters or 
+         not encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
+        return
+      end
+      
+      local encounter = encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+      
+      -- Get role data for tag processing
+      local orderedRoles = {}
+      if encounter.roles then
+        for i = 1, table.getn(encounter.roles) do
+          local role = encounter.roles[i]
+          local roleId = role.roleId or i
+          orderedRoles[roleId] = role
+        end
+      end
+      
+      -- Collect assignment data
+      local assignments = {}
+      local raidMarks = {}
+      local assignmentNumbers = {}
+      
+      if encounter.roles then
+        for roleIdx = 1, table.getn(encounter.roles) do
+          local role = encounter.roles[roleIdx]
+          if role then
+            if role.assignedPlayers then
+              assignments[roleIdx] = role.assignedPlayers
+            end
+            if role.raidMarks then
+              raidMarks[roleIdx] = role.raidMarks
+            end
+            if role.assignmentNumbers then
+              assignmentNumbers[roleIdx] = role.assignmentNumbers
+            end
+          end
+        end
+      end
+      
+      local announcementData = encounter.announcements
+      if not announcementData then
+        -- Show "no announcements" message
+        local noAnnouncementsText = frame.announcementPreviewFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        noAnnouncementsText:SetPoint("CENTER", frame.announcementPreviewFrame, "CENTER", 0, 0)
+        noAnnouncementsText:SetText("|cff888888No announcements configured|r")
+        table.insert(frame.announcementPreviewFontStrings, noAnnouncementsText)
+        return
+      end
+      
+      -- Process announcement lines
+      local lineHeight = 14
+      local lineSpacing = 2
+      local yOffset = -5
+      local lineCount = 0
+      
+      for i = 1, 20 do
+        local lineText = announcementData[i]
+        if lineText and lineText ~= "" then
+          local processedText = OGRH.Announcements.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
+          
+          if processedText and processedText ~= "" then
+            -- Create FontString for this line
+            local lineFS = frame.announcementPreviewFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            lineFS:SetPoint("TOPLEFT", frame.announcementPreviewFrame, "TOPLEFT", 5, yOffset)
+            lineFS:SetWidth(400)
+            lineFS:SetJustifyH("LEFT")
+            lineFS:SetText(processedText)
+            table.insert(frame.announcementPreviewFontStrings, lineFS)
+            
+            yOffset = yOffset - (lineHeight + lineSpacing)
+            lineCount = lineCount + 1
+          end
+        end
+      end
+      
+      -- If no lines were processed, show message
+      if lineCount == 0 then
+        local emptyText = frame.announcementPreviewFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        emptyText:SetPoint("CENTER", frame.announcementPreviewFrame, "CENTER", 0, 0)
+        emptyText:SetText("|cff888888No announcement content|r")
+        table.insert(frame.announcementPreviewFontStrings, emptyText)
+      end
+      
+      -- Set the scroll child height based on content
+      local contentHeight = math.max(106, (lineCount * (lineHeight + lineSpacing)) + 10)
+      frame.announcementPreviewFrame:SetHeight(contentHeight)
+      
+      -- Update scrollbar
+      local scrollFrameHeight = frame.announcementPreviewScrollFrame:GetHeight()
+      if contentHeight > scrollFrameHeight then
+        frame.announcementPreviewScrollBar:Show()
+        frame.announcementPreviewScrollBar:SetMinMaxValues(0, contentHeight - scrollFrameHeight)
+        frame.announcementPreviewScrollBar:SetValue(0)
+      else
+        frame.announcementPreviewScrollBar:Hide()
+      end
+    end
     
     -- Function to refresh players list based on role filter
     frame.RefreshPlayersList = function()
@@ -2471,6 +2686,9 @@ function OGRH.ShowEncounterPlanning(encounterName)
         frame.editToggleBtn:Hide()
         announcementLabel:Hide()
         announcementScrollFrame:Hide()
+        if frame.announcementPreviewScrollFrame then
+          frame.announcementPreviewScrollFrame:Hide()
+        end
         
         -- Clear announcement lines when no encounter is selected
         if frame.announcementLines then
@@ -2489,7 +2707,18 @@ function OGRH.ShowEncounterPlanning(encounterName)
       frame.autoAssignBtn:Show()
       frame.editToggleBtn:Show()
       announcementLabel:Show()
-      announcementScrollFrame:Show()
+      -- Show editor or preview based on edit mode
+      if frame.editMode then
+        announcementScrollFrame:Show()
+        if frame.announcementPreviewScrollFrame then
+          frame.announcementPreviewScrollFrame:Hide()
+        end
+      else
+        announcementScrollFrame:Hide()
+        if frame.announcementPreviewScrollFrame then
+          frame.announcementPreviewScrollFrame:Show()
+        end
+      end
       
       -- Load saved announcement text for this encounter via SVM
       -- Use stored indices to access encounter directly
@@ -3022,6 +3251,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 iconTex:SetTexCoord(c[1], c[2], c[3], c[4])
                 iconTex:Show()
               end
+              
+              -- Update preview if in locked mode
+              if not frame.editMode and frame.UpdateAnnouncementPreview then
+                frame.UpdateAnnouncementPreview()
+              end
             end)
           end
           
@@ -3151,6 +3385,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 assignText:SetText("")
               else
                 assignText:SetText(tostring(currentIndex))
+              end
+              
+              -- Update preview if in locked mode
+              if not frame.editMode and frame.UpdateAnnouncementPreview then
+                frame.UpdateAnnouncementPreview()
               end
             end)
           else
@@ -3417,6 +3656,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
             if frame.RefreshRoleContainers then
               frame.RefreshRoleContainers()
             end
+            
+            -- Update preview if in locked mode
+            if not frame.editMode and frame.UpdateAnnouncementPreview then
+              frame.UpdateAnnouncementPreview()
+            end
           end)
           
           -- Click handler on button
@@ -3461,6 +3705,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
               -- Refresh display
               if frame.RefreshRoleContainers then
                 frame.RefreshRoleContainers()
+              end
+              
+              -- Update preview if in locked mode
+              if not frame.editMode and frame.UpdateAnnouncementPreview then
+                frame.UpdateAnnouncementPreview()
               end
             end
             -- Left click: Do nothing (edit button handles class priority)
@@ -3694,6 +3943,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
       -- Apply current edit mode to newly created containers
       if frame.SetEditMode then
         frame.SetEditMode(frame.editMode or false)
+      end
+      
+      -- Update announcement preview if in locked mode
+      if not frame.editMode and frame.UpdateAnnouncementPreview then
+        frame.UpdateAnnouncementPreview()
       end
     end
     
