@@ -641,6 +641,73 @@ end
 | UI/* | `[RH]` or `[RH-UI-Name]` | `[RH]`, `[RH-UI-Roles]`, `[RH-UI-Consumes]` |
 | Modules/* | `[RH-ModuleName]` | `[RH-CThun]`, `[RH-ConsumeHelper]` |
 
+---
+
+### 6. Message Handler Registration: MessageRouter Pattern (REQUIRED)
+
+**ALL message handler registration MUST occur in MessageRouter.RegisterDefaultHandlers().**
+
+Modules provide handler functions but do NOT register them. MessageRouter owns all handler registration.
+
+#### Correct Pattern
+
+```lua
+-- ✅ CORRECT: MessageRouter registers all handlers
+-- _Infrastructure/MessageRouter.lua
+function OGRH.MessageRouter.RegisterDefaultHandlers()
+    -- SYNC.DELTA delegates to SVM
+    self.RegisterHandler("OGRH_SYNC_DELTA", function(sender, data, channel)
+        OGRH.SVM.OnDeltaReceived(sender, data, channel)
+    end)
+    
+    -- CHECKSUM_POLL delegates to SyncIntegrity
+    self.RegisterHandler("OGRH_SYNC_CHECKSUM_POLL", function(sender, data, channel)
+        OGRH.SyncIntegrity.OnChecksumBroadcast(sender, data)
+    end)
+end
+```
+
+**Module provides handler function (doesn't register it):**
+
+```lua
+-- _Core/SavedVariablesManager.lua
+function OGRH.SVM.OnDeltaReceived(sender, data, channel)
+    -- Permission validation
+    if data.componentType == "assignments" then
+        if not OGRH.CanModifyAssignments(sender) then
+            return  -- Reject unauthorized update
+        end
+    end
+    
+    -- Apply data
+    OGRH.SVM.SetPath(data.path, data.value, {syncLevel = "NONE"})
+end
+```
+
+#### Incorrect Pattern (Don't Do This)
+
+```lua
+-- ❌ INCORRECT: Module self-registers handlers
+function OGRH.SVM.RegisterMessageHandlers()
+    OGRH.MessageRouter.RegisterHandler("OGRH_SYNC_DELTA", OGRH.SVM.OnDeltaReceived)
+end
+
+-- ❌ INCORRECT: Delayed registration
+function OGRH.SVM.Initialize()
+    OGRH.ScheduleTimer(function()
+        OGRH.MessageRouter.RegisterHandler("OGRH_SYNC_DELTA", OGRH.SVM.OnDeltaReceived)
+    end, 0.5)
+end
+```
+
+**Why this pattern:**
+- **Single source of truth** - All handlers in MessageRouter.RegisterDefaultHandlers()
+- **No timing issues** - No load order dependencies or delayed registration
+- **Clear separation** - MessageRouter = infrastructure, modules = business logic
+- **Prevents conflicts** - No duplicate/overwriting handler registrations
+
+---
+
 #### Message Queue System
 
 Messages sent before the chat window exists are automatically queued:

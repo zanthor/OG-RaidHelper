@@ -134,6 +134,10 @@ end
 
 -- Broadcast a message to all raid/party members
 function OGRH.MessageRouter.Broadcast(messageType, data, options)
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r Broadcast: messageType=%s", tostring(messageType)))
+    end
+    
     options = options or {}
     options.channel = nil  -- Auto-detect best channel
     
@@ -177,6 +181,10 @@ function OGRH.MessageRouter.OnMessageReceived(sender, messageType, data, channel
         return  -- Ignore messages from self
     end
     
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r OnMessageReceived: sender=%s, messageType=%s", sender, tostring(messageType)))
+    end
+    
     -- Validate message type
     if not messageType then
         return
@@ -207,14 +215,28 @@ function OGRH.MessageRouter.OnMessageReceived(sender, messageType, data, channel
     
     if not handler then
         -- No handler registered - this is normal for some message types
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r No handler for messageType: %s", messageType))
+        end
         return
+    end
+    
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r Calling handler for messageType: %s", messageType))
     end
     
     -- Call the handler with data (already deserialized by OGAddonMsg)
     local success, err = pcall(handler, sender, data, channel)
     
     if not success then
-        OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter]|r Handler error for %s: %s", messageType, tostring(err)))
+        OGRH.Msg(string.format("|cffff0000[RH-MessageRouter ERROR]|r Handler error for %s: %s", messageType, tostring(err)))
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cffff0000[RH-MessageRouter ERROR]|r Full error details: sender=%s, dataType=%s", sender, type(data)))
+        end
+    else
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r Handler completed successfully for: %s", messageType))
+        end
     end
 end
 
@@ -231,6 +253,11 @@ function OGRH.MessageRouter.InitializeOGAddonMsg()
     
     -- Register a wildcard handler for all messages
     OGAddonMsg.RegisterWildcard(function(sender, prefix, data, channel)
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r Wildcard received: sender=%s, prefix=%s, channel=%s", 
+                tostring(sender), tostring(prefix), tostring(channel)))
+        end
+        
         -- Only process OGRH messages
         if string.sub(prefix, 1, 5) == "OGRH_" then
             OGRH.MessageRouter.OnMessageReceived(sender, prefix, data, channel)
@@ -529,6 +556,14 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                     OGRH_EncounterFrame.UpdateAnnouncementBuilder()
                 end
             end
+        end
+    end)
+    
+    -- SYNC delta messages (Phase 2)
+    -- Delegates to SVM for processing
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.SYNC.DELTA, function(sender, data, channel)
+        if OGRH.SVM and OGRH.SVM.OnDeltaReceived then
+            OGRH.SVM.OnDeltaReceived(sender, data, channel)
         end
     end)
     

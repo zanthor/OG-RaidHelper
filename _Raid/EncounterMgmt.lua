@@ -11,7 +11,7 @@ OGRH.EncounterMgmt = OGRH.EncounterMgmt or {}
 -- Storage for encounter assignments
 local encounterData = {}
 
--- Helper: Check if player can edit current selected encounter
+-- Helper: Check if player can edit current selected encounter (structure/settings)
 -- Active Raid (index 1) requires admin, non-Active raids allow anyone
 local function CanEditCurrentEncounter(frame)
   -- Out of raid: anyone can edit
@@ -21,10 +21,59 @@ local function CanEditCurrentEncounter(frame)
   
   -- In raid: check if editing Active Raid (index 1)
   if frame.selectedRaidIdx == 1 then
-    -- Active Raid: requires admin permission
+    -- Active Raid: requires admin permission for structure/settings
     return OGRH.CanModifyStructure and OGRH.CanModifyStructure(UnitName("player"))
   else
     -- Non-Active Raid: anyone can edit
+    return true
+  end
+end
+
+-- Helper: Check if player can edit assignments (player assignments, marks, numbers)
+-- Active Raid allows R/L/Admin, non-Active raids allow anyone
+local function CanEditAssignments(frame)
+  -- Out of raid: anyone can edit
+  if GetNumRaidMembers() == 0 then
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+      OGRH.Msg("|cffff6666[RH-EncounterMgmt][DEBUG]|r CanEditAssignments: Not in raid, allowing edit")
+    end
+    return true
+  end
+  
+  -- In raid: check if editing Active Raid (index 1)
+  if frame.selectedRaidIdx == 1 then
+    -- Active Raid: allow Raid Leader, Assistants, or Raid Admin
+    local playerName = UnitName("player")
+    
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+      OGRH.Msg("|cffff6666[RH-EncounterMgmt][DEBUG]|r CanEditAssignments: In raid, checking Active Raid (idx=1) for " .. playerName)
+    end
+    
+    -- Check if player is Raid Admin
+    if OGRH.CanModifyStructure and OGRH.CanModifyStructure(playerName) then
+      if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffff6666[RH-EncounterMgmt][DEBUG]|r CanEditAssignments: Player is Raid Admin, allowing edit")
+      end
+      return true
+    end
+    
+    -- Check if player is Raid Leader or Assistant
+    if IsRaidLeader() or IsRaidOfficer() then
+      if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffff6666[RH-EncounterMgmt][DEBUG]|r CanEditAssignments: Player is Raid Leader/Assistant, allowing edit")
+      end
+      return true
+    end
+    
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+      OGRH.Msg("|cffff6666[RH-EncounterMgmt][DEBUG]|r CanEditAssignments: Player has no permissions, DENYING edit")
+    end
+    return false
+  else
+    -- Non-Active Raid: anyone can edit
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+      OGRH.Msg("|cffff6666[RH-EncounterMgmt][DEBUG]|r CanEditAssignments: Non-Active Raid (idx=" .. tostring(frame.selectedRaidIdx) .. "), allowing edit")
+    end
     return true
   end
 end
@@ -365,7 +414,8 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
   -- Note: Change tracking now handled automatically by SVM sync levels
   
   -- Write assignments back to v2 schema using SVM.SetPath for proper sync
-  local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
+  -- Active Raid (index 1) = REALTIME, others = BATCH
+  local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
   
   for roleIdx, roleAssignments in pairs(assignments) do
     if encounter.roles[roleIdx] then
@@ -378,7 +428,11 @@ function OGRH.AutoAssignRollForPlayers(frame, rollForPlayers)
           {
             syncLevel = syncLevel,
             componentType = "assignments",
-            scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+            scope = {
+              raid = frame.selectedRaid,
+              encounter = frame.selectedEncounter,
+              isActiveRaid = (frame.selectedRaidIdx == 1)
+            }
           }
         )
       end
@@ -1600,9 +1654,9 @@ function OGRH.ShowEncounterPlanning(encounterName)
     
     -- Auto Assign functionality
     autoAssignBtn:SetScript("OnClick", function()
-      -- Check permission
-      if not CanEditCurrentEncounter(frame) then
-        OGRH.Msg("Only the raid lead can modify assignments.")
+      -- Check permission for assignments
+      if not CanEditAssignments(frame) then
+        OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can modify assignments.")
         return
       end
       
@@ -1776,10 +1830,10 @@ function OGRH.ShowEncounterPlanning(encounterName)
     
     -- Toggle edit mode on click
     editToggleBtn:SetScript("OnClick", function()
-      -- Check permission
+      -- Check permission (structural editing requires admin)
       if not frame.editMode and (not CanEditCurrentEncounter(frame)) then
         if frame.ShowStatus then
-          frame.ShowStatus("Only the raid lead can unlock editing.", 10)
+          frame.ShowStatus("Only the Raid Admin can unlock structural editing (roles, settings, announcements).", 10)
         end
         return
       end
@@ -2260,8 +2314,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
         playerBtn.playerName = playerName
         playerBtn:RegisterForDrag("LeftButton")
         playerBtn:SetScript("OnDragStart", function()
-          -- Check permission
-          if not CanEditCurrentEncounter(frame) then
+          -- Check permission for assignments
+          if not CanEditAssignments(frame) then
             return
           end
           
@@ -2339,7 +2393,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
             -- Assign player to slot if we found a target
             if foundTarget and targetRoleIndex and targetSlotIndex then
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-                local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
+                -- Active Raid (index 1) = REALTIME, others = BATCH
+                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, targetRoleIndex, targetSlotIndex),
@@ -2347,7 +2402,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
                   {
                     syncLevel = syncLevel,
                     componentType = "assignments",
-                    scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                    scope = {
+                      raid = frame.selectedRaid,
+                      encounter = frame.selectedEncounter,
+                      isActiveRaid = (frame.selectedRaidIdx == 1)
+                    }
                   }
                 )
               end
@@ -2928,7 +2987,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
               
               -- Save the raid mark assignment via SetPath for proper logging
               if frame.selectedRaidIdx and frame.selectedEncounterIdx then
-                local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
+                -- Active Raid (index 1) = REALTIME, others = BATCH
+                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.raidMarks.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, capturedRoleIndex, capturedSlotIndex),
@@ -3070,7 +3130,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 end
                 
                 -- Write assignment number using SetPath
-                local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
+                -- Active Raid (index 1) = REALTIME, others = BATCH
+                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignmentNumbers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, capturedRoleIndex, capturedSlotIndex),
@@ -3167,8 +3228,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
             -- Mark that a drag actually started
             this.isDragging = true
             
-            -- Check permission
-            if not CanEditCurrentEncounter(frame) then
+            -- Check permission for assignments
+            if not CanEditAssignments(frame) then
               return
             end
             
@@ -3301,7 +3362,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 end
                 
                 -- Move dragged player to target position
-                local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
+                -- Active Raid (index 1) = REALTIME, others = BATCH
+                local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
                 OGRH.SVM.SetPath(
                   string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                     frame.selectedRaidIdx, frame.selectedEncounterIdx, targetRoleIndex, targetSlotIndex),
@@ -3309,7 +3371,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
                   {
                     syncLevel = syncLevel,
                     componentType = "assignments",
-                    scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                    scope = {
+                      raid = frame.selectedRaid,
+                      encounter = frame.selectedEncounter,
+                      isActiveRaid = (frame.selectedRaidIdx == 1)
+                    }
                   }
                 )
                 
@@ -3323,7 +3389,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
                   {
                     syncLevel = syncLevel,
                     componentType = "assignments",
-                    scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                    scope = {
+                      raid = frame.selectedRaid,
+                      encounter = frame.selectedEncounter,
+                      isActiveRaid = (frame.selectedRaidIdx == 1)
+                    }
                   }
                 )
               end
@@ -3360,16 +3430,17 @@ function OGRH.ShowEncounterPlanning(encounterName)
             local slotSlotIndex = this.slotIndex
             
             if button == "RightButton" then
-              -- Check permission
-              if not CanEditCurrentEncounter(frame) then
-                OGRH.Msg("Only the raid lead can modify assignments.")
+              -- Check permission for assignments
+              if not CanEditAssignments(frame) then
+                OGRH.Msg("Only the Raid Leader, Assistants, or Raid Admin can modify assignments.")
                 return
               end
               
               -- Right click: Unassign player using SetPath
               if not frame.selectedRaidIdx or not frame.selectedEncounterIdx then return end
               
-              local syncLevel = OGRH.GetSyncLevel(frame.selectedRaidIdx, "EncounterMgmt")
+              -- Active Raid (index 1) = REALTIME, others = BATCH
+              local syncLevel = (frame.selectedRaidIdx == 1) and "REALTIME" or "BATCH"
               OGRH.SVM.SetPath(
                 string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
                   frame.selectedRaidIdx, frame.selectedEncounterIdx, slotRoleIndex, slotSlotIndex),
@@ -3377,7 +3448,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
                 {
                   syncLevel = syncLevel,
                   componentType = "assignments",
-                  scope = {raid = frame.selectedRaid, encounter = frame.selectedEncounter}
+                  scope = {
+                    raid = frame.selectedRaid,
+                    encounter = frame.selectedEncounter,
+                    isActiveRaid = (frame.selectedRaidIdx == 1)
+                  }
                 }
               )
               
@@ -3892,18 +3967,25 @@ function OGRH.ShowConsumeSelectionDialog(raidIdx, encounterIdx, roleIndex, slotI
   
   -- Load consumes from saved variables
   OGRH.EnsureSV()
-  if not OGRH_SV.consumes or table.getn(OGRH_SV.consumes) == 0 then
+  local consumes = OGRH.SVM and OGRH.SVM.GetPath("consumes") or OGRH_SV.v2.consumes
+  if not consumes or table.getn(consumes) == 0 then
     local noConsumesText = dialog.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     noConsumesText:SetPoint("CENTER", dialog.scrollChild, "CENTER", 0, 0)
     noConsumesText:SetText("|cff888888No consumes configured\nConfigure in Consumes menu|r")
     noConsumesText:SetJustifyH("CENTER")
-    table.insert(dialog.consumeButtons, {placeholder = noConsumesText})
+    -- Create placeholder button with Hide method to prevent crash on dialog reopen
+    local placeholderBtn = {
+      Hide = function() if noConsumesText then noConsumesText:Hide() end end,
+      SetParent = function() end,
+      textObj = noConsumesText
+    }
+    table.insert(dialog.consumeButtons, placeholderBtn)
     dialog:Show()
     return
   end
   
   local yOffset = -5
-  for i, consumeData in ipairs(OGRH_SV.consumes) do
+  for i, consumeData in ipairs(consumes) do
     local consumeBtn = CreateFrame("Button", nil, dialog.scrollChild)
     consumeBtn:SetWidth(290)
     consumeBtn:SetHeight(20)

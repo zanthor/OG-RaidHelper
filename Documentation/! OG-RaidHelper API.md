@@ -297,6 +297,155 @@ MainUI requires the following modules:
 
 ---
 
+## EncounterMgmt Module (_Raid/EncounterMgmt.lua)
+
+The EncounterMgmt module provides the Encounter Planning UI for configuring encounter roles, player assignments, raid marks, and announcements. It supports both Active Raid (live execution) and saved raids (planning).
+
+---
+
+### Permission Model
+
+**EncounterMgmt implements a two-tier permission system for Active Raid:**
+
+#### Tier 1: Structural Editing (Admin Only)
+**Requires:** Raid Admin only  
+**Controls:** "Edit: Locked/Unlocked" toggle button
+
+**Structural operations include:**
+- Role configuration (adding/removing/editing roles)
+- Advanced settings (consume tracking, thresholds)
+- Announcement editing
+- Consume selection
+- Class priority configuration
+
+**Authorization Check:**
+```lua
+-- Uses CanEditCurrentEncounter() internally
+if frame.selectedRaidIdx == 1 then  -- Active Raid
+  return OGRH.CanModifyStructure(UnitName("player"))  -- Admin only
+else
+  return true  -- Anyone can edit non-Active raids
+end
+```
+
+#### Tier 2: Assignment Editing (Raid Leaders & Assistants)
+**Requires:** Raid Leader, Raid Assistant, OR Raid Admin  
+**Always Active:** No toggle required (works regardless of "Edit" lock state)
+
+**Assignment operations include:**
+- Player drag & drop (from players list or between slots)
+- Right-click to unassign players
+- Raid mark selection (icons 1-8)
+- Assignment numbers (1-9, 0)
+- Auto-assign function
+
+**Authorization Check:**
+```lua
+-- Uses CanEditAssignments() internally
+if frame.selectedRaidIdx == 1 then  -- Active Raid
+  -- Check if player is Admin, Raid Leader, or Assistant
+  if OGRH.CanModifyStructure(playerName) then return true end
+  if IsRaidLeader() or IsRaidOfficer() then return true end
+  return false
+else
+  return true  -- Anyone can edit non-Active raids
+end
+```
+
+---
+
+### Permission Rationale
+
+**Why two tiers?**
+
+1. **Structural changes** affect the encounter template and should be managed by the Raid Admin to maintain consistency
+2. **Assignment changes** are tactical decisions that Raid Leaders/Assistants need to make during live execution
+3. This allows raid officers to help with player positioning without giving them access to modify the encounter structure
+
+**Out of Raid:**
+- All operations allowed (both structural and assignments)
+- No permission checks applied
+
+**Non-Active Raids:**
+- All operations allowed for anyone
+- These are saved templates not actively being used
+
+---
+
+### Public Functions
+
+#### Player Assignment Functions
+
+These functions allow Raid Leaders, Assistants, and Admins to modify player assignments in the Active Raid:
+
+**Drag & Drop Assignment:**
+- Drag from Players List → Drop on Slot
+- Drag from Slot → Drop on another Slot (swaps if occupied)
+- Right-click on assigned slot to unassign
+
+**Auto-Assign:**
+- Click "Auto Assign" button
+- Respects role priorities and class preferences
+- Sources from Raid or Planning Roster
+
+---
+
+### Internal Permission Helpers
+
+#### `CanEditCurrentEncounter(frame)` (local)
+**Type:** Private  
+**Returns:** `boolean`
+
+Checks if player can edit structural elements of the current encounter.
+
+**Behavior:**
+- Out of raid: Returns `true`
+- Active Raid (index 1): Returns `OGRH.CanModifyStructure(UnitName("player"))`
+- Non-Active Raid: Returns `true`
+
+**Used by:**
+- Edit mode toggle button
+- Structural UI elements (role config, settings, announcements)
+
+---
+
+#### `CanEditAssignments(frame)` (local)
+**Type:** Private  
+**Returns:** `boolean`
+
+Checks if player can edit player assignments, marks, and numbers.
+
+**Behavior:**
+- Out of raid: Returns `true`
+- Active Raid (index 1): Returns `true` if player is:
+  - Raid Admin (`OGRH.CanModifyStructure`)
+  - Raid Leader (`IsRaidLeader()`)
+  - Raid Assistant (`IsRaidOfficer()`)
+- Non-Active Raid: Returns `true`
+
+**Used by:**
+- Player drag & drop handlers
+- Right-click unassign
+- Auto-assign button
+- Raid mark selection
+- Assignment number selection
+
+---
+
+### Error Messages
+
+**Assignment Permission Denied:**
+```
+"Only the Raid Leader, Assistants, or Raid Admin can modify assignments."
+```
+
+**Structural Edit Permission Denied:**
+```
+"Only the Raid Admin can unlock structural editing (roles, settings, announcements)."
+```
+
+---
+
 ### Version History
 
 **v2 Schema (Current):**
@@ -2478,16 +2627,1363 @@ local softresData = RollFor.SoftResDataTransformer.transform(decodedData)
 
 ---
 
+## MessageRouter Module (_Infrastructure/MessageRouter.lua)
+
+The MessageRouter module provides centralized message routing and handling for all OGAddonMsg addon communication. It manages message registration, sending, receiving, deduplication, and permission checking.
+
+### Public Functions
+
+#### `OGRH.MessageRouter.RegisterHandler(messageType, handler)`
+**Type:** Public  
+**Returns:** `boolean` - True if registration succeeded
+
+Registers a handler function for a specific message type. The handler will be called when messages of this type are received.
+
+**Parameters:**
+- `messageType` (string) - Full message type string (e.g., "OGRH_STRUCT_SET_ENCOUNTER")
+- `handler` (function) - Function(sender, data, channel) to handle the message
+
+**Behavior:**
+- Validates message type against known types (warns if unknown)
+- Stores handler in internal registry
+- Replaces existing handler if messageType already registered
+
+**Example:**
+```lua
+-- Register handler for structure updates
+OGRH.MessageRouter.RegisterHandler("OGRH_STRUCT_SET_ENCOUNTER", function(sender, data, channel)
+    -- Handle encounter structure update
+    OGRH.ApplyEncounterUpdate(data)
+end)
+```
+
+**Implementation Notes:**
+- Handlers are stored in `OGRH.MessageRouter.State.handlers` table
+- Message type validation uses `OGRH.IsValidMessageType()`
+
+---
+
+#### `OGRH.MessageRouter.UnregisterHandler(messageType)`
+**Type:** Public  
+**Returns:** `boolean` - True if unregistration succeeded
+
+Removes a previously registered handler for a message type.
+
+**Parameters:**
+- `messageType` (string) - Message type to unregister
+
+**Example:**
+```lua
+OGRH.MessageRouter.UnregisterHandler("OGRH_STRUCT_SET_ENCOUNTER")
+```
+
+---
+
+#### `OGRH.MessageRouter.Send(messageType, data, options)`
+**Type:** Public  
+**Authorization:** Automatically checks permissions based on message category  
+**Returns:** `messageId` (string) or `nil` - Message ID from OGAddonMsg, or nil on error
+
+Sends a message via OGAddonMsg with automatic permission checking and serialization.
+
+**Parameters:**
+- `messageType` (string) - Message type from OGRH.MessageTypes
+- `data` (table or string) - Data to send (tables auto-serialized by OGAddonMsg)
+- `options` (table, optional) - Configuration options:
+  - `priority` (string) - "ALERT", "NORMAL", or "BULK" (default: "NORMAL")
+  - `target` (string) - Target player name for targeted messages
+  - `channel` (string) - Specific channel ("RAID", "PARTY", "GUILD", etc.)
+  - `onSuccess` (function) - Callback on successful send
+  - `onFailure` (function) - Callback on send failure
+  - `onComplete` (function) - Callback when send completes (regardless of success)
+
+**Behavior:**
+- Validates message type (warns if unknown)
+- Checks permissions based on message category:
+  - **STRUCT** messages: Requires admin permissions
+  - **ASSIGN** messages: Requires admin permissions
+  - **SYNC/ADMIN/STATE** messages: No restrictions (anyone can query)
+- Auto-detects best channel if not specified
+- Sends via OGAddonMsg with specified priority
+
+**Permission Categories:**
+- `STRUCT` - Structure changes (create/delete raids/encounters)
+- `ASSIGN` - Assignment changes (roles, marks, icons)
+- `SYNC` - Sync requests and responses
+- `ADMIN` - Admin state queries
+- `STATE` - General state queries
+
+**Example:**
+```lua
+-- Send role assignment (REALTIME)
+OGRH.MessageRouter.Send("OGRH_ASSIGN_ROLE", {
+    raid = 1,
+    encounter = 2,
+    role = "tank1",
+    player = "Tankadin"
+}, {
+    priority = "ALERT",
+    onSuccess = function()
+        OGRH.Msg("Role assignment synced")
+    end
+})
+
+-- Send settings update (BATCH)
+OGRH.MessageRouter.Send("OGRH_STRUCT_SET_ENCOUNTER", {
+    raid = 1,
+    encounter = 2,
+    settings = {...}
+}, {
+    priority = "NORMAL"
+})
+```
+
+**Implementation Notes:**
+- Uses `OGAddonMsg.Send()` for actual transmission
+- Prepends target to message type for targeted messages (e.g., "OGRH_SYNC_REQUEST@PlayerName")
+- Returns nil if OGAddonMsg is unavailable
+
+---
+
+#### `OGRH.MessageRouter.SendTo(targetPlayer, messageType, data, options)`
+**Type:** Public  
+**Authorization:** Same as `Send()`  
+**Returns:** `messageId` or `nil`
+
+Sends a targeted message to a specific player. In WoW 1.12, this broadcasts to RAID with target prefix since WHISPER is not supported for addon messages in raids.
+
+**Parameters:**
+- `targetPlayer` (string) - Target player name
+- `messageType` (string) - Message type
+- `data` (table or string) - Message data
+- `options` (table, optional) - Same as `Send()` (target and channel are auto-set)
+
+**Behavior:**
+- Prepends target to message type: `messageType@targetPlayer`
+- Broadcasts to RAID channel
+- Receiver filters messages by target suffix
+
+**Example:**
+```lua
+-- Request sync data from specific player
+OGRH.MessageRouter.SendTo("AdminPlayer", "OGRH_SYNC_REQUEST_COMPONENT", {
+    raid = "MC",
+    encounter = "Rag",
+    component = "roles"
+})
+```
+
+---
+
+#### `OGRH.MessageRouter.Broadcast(messageType, data, options)`
+**Type:** Public  
+**Authorization:** Same as `Send()`  
+**Returns:** `messageId` or `nil`
+
+Broadcasts a message to all raid/party members using auto-detected best channel.
+
+**Parameters:**
+- `messageType` (string) - Message type
+- `data` (table or string) - Message data
+- `options` (table, optional) - Same as `Send()` (channel is auto-detected)
+
+**Example:**
+```lua
+-- Broadcast checksum to all raid members
+OGRH.MessageRouter.Broadcast("OGRH_SYNC_CHECKSUM_BROADCAST", {
+    activeRaid = "abc123",
+    assignments = "def456",
+    roles = "ghi789"
+})
+```
+
+---
+
+### Public Properties
+
+#### `OGRH.MessageRouter.State`
+**Type:** Table  
+**Access:** Public Read-Only (Internal Write)
+
+State management for MessageRouter module.
+
+**Fields:**
+- `handlers` (table) - Registered message handlers (messageType -> function)
+- `messageQueue` (table) - Outgoing message queue
+- `receivedMessages` (table) - Recently received message IDs (for deduplication)
+- `isInitialized` (boolean) - Module initialization status
+
+---
+
+### Private Functions
+
+#### `OnMessageReceived(sender, messageType, data, channel)` (local)
+**Type:** Private
+
+Internal handler called by OGAddonMsg when messages are received.
+
+**Behavior:**
+- Filters targeted messages (only processes if local player is target)
+- Deduplicates messages using message ID tracking
+- Routes to registered handler for message type
+- Logs errors if handler fails
+
+---
+
+#### `InitializeOGAddonMsg()` (local)
+**Type:** Private
+
+Registers OGAddonMsg listener and initializes message routing.
+
+**Behavior:**
+- Validates OGAddonMsg availability
+- Registers `OnMessageReceived` callback
+- Returns true on success
+
+---
+
+### Handler Architecture
+
+**MessageRouter owns ALL handler registration** - modules provide handler functions but do not register them directly.
+
+#### Design Pattern
+
+```lua
+-- ❌ INCORRECT: Module self-registers handlers
+function OGRH.SVM.Initialize()
+    OGRH.MessageRouter.RegisterHandler("OGRH_SYNC_DELTA", OGRH.SVM.OnDeltaReceived)
+end
+
+-- ✅ CORRECT: MessageRouter registers all handlers
+function OGRH.MessageRouter.RegisterDefaultHandlers()
+    -- SYNC.DELTA delegates to SVM
+    self.RegisterHandler("OGRH_SYNC_DELTA", function(sender, data, channel)
+        OGRH.SVM.OnDeltaReceived(sender, data, channel)
+    end)
+end
+```
+
+**Rationale:**
+- Single source of truth for all handler registrations
+- No duplicate/conflicting registrations
+- No timing/load order dependencies
+- Clear separation: MessageRouter = infrastructure, modules = business logic
+
+---
+
+### Message Type Categories
+
+The MessageRouter recognizes the following message categories (prefix-based):
+
+| Category | Prefix | Permission | Purpose |
+|----------|--------|------------|---------|
+| **STRUCT** | `OGRH_STRUCT_` | Admin only | Structure changes (CRUD operations) |
+| **ASSIGN** | `OGRH_ASSIGN_` | Admin only | Player assignments (roles, marks) |
+| **SYNC** | `OGRH_SYNC_` | Anyone | Sync requests and data transfers |
+| **ADMIN** | `OGRH_ADMIN_` | Anyone | Admin state queries |
+| **STATE** | `OGRH_STATE_` | Anyone | General state queries |
+
+---
+
+## SyncRouter Module (_Infrastructure/SyncRouter.lua)
+
+The SyncRouter module provides context-aware sync level routing based on Active Raid status and UI context. It determines the appropriate sync level (REALTIME, BATCH, MANUAL) for data changes.
+
+### Public Functions
+
+#### `OGRH.SyncRouter.DetectContext(raidIdx)`
+**Type:** Public  
+**Returns:** `string` - Context identifier: "active_mgmt", "active_setup", or "nonactive_setup"
+
+Determines the current operational context based on raid index and open UI windows.
+
+**Parameters:**
+- `raidIdx` (number) - Raid index (1 = Active Raid)
+
+**Behavior:**
+- Checks if raid is Active Raid (index 1)
+- Detects open UI: EncounterSetup vs EncounterMgmt
+- Returns context string based on state
+
+**Context Types:**
+- `active_mgmt` - Active Raid + EncounterMgmt open → REALTIME sync
+- `active_setup` - Active Raid + EncounterSetup open → BATCH sync
+- `nonactive_setup` - Non-Active Raid → BATCH sync
+
+**Example:**
+```lua
+local context = OGRH.SyncRouter.DetectContext(1)
+if context == "active_mgmt" then
+    -- Live execution mode, use REALTIME sync
+end
+```
+
+---
+
+#### `OGRH.SyncRouter.DetermineSyncLevel(raidIdx, componentType, changeType)`
+**Type:** Public  
+**Returns:** `string` - Sync level: "REALTIME", "BATCH", or "MANUAL"
+
+Determines the appropriate sync level for a change based on context and component type.
+
+**Parameters:**
+- `raidIdx` (number) - Raid index
+- `componentType` (string) - Component being changed ("roles", "assignments", "settings", "structure", etc.)
+- `changeType` (string, optional) - Type of change
+
+**Behavior:**
+- Structure changes (CRUD) → Always "MANUAL"
+- Active Raid + EncounterMgmt + assignments → "REALTIME"
+- Active Raid + EncounterMgmt + settings → "BATCH"
+- All other contexts → "BATCH"
+
+**Sync Level Decision Matrix:**
+
+| Context | Component Type | Sync Level |
+|---------|---------------|------------|
+| Any | `structure` | MANUAL |
+| `active_mgmt` | `roles`, `assignments`, `marks`, `numbers` | REALTIME |
+| `active_mgmt` | `settings`, `metadata` | BATCH |
+| `active_setup` | Any | BATCH |
+| `nonactive_setup` | Any | BATCH |
+
+**Example:**
+```lua
+-- Determine sync level for role assignment
+local syncLevel = OGRH.SyncRouter.DetermineSyncLevel(1, "roles", "update")
+-- Returns "REALTIME" if in active_mgmt context
+```
+
+---
+
+#### `OGRH.SyncRouter.ExtractScope(raidIdx, encounterIdx, componentType)`
+**Type:** Public  
+**Returns:** `table` - Scope information: `{type, raid, raidIdx, encounter, encounterIdx, component}`
+
+Extracts scope metadata from raid/encounter indices.
+
+**Parameters:**
+- `raidIdx` (number) - Raid index
+- `encounterIdx` (number, optional) - Encounter index
+- `componentType` (string) - Component type
+
+**Example:**
+```lua
+local scope = OGRH.SyncRouter.ExtractScope(1, 2, "roles")
+-- Returns: {type = "encounter", raid = "MC", raidIdx = 1, encounter = "Rag", encounterIdx = 2, component = "roles"}
+```
+
+---
+
+#### `OGRH.SyncRouter.Route(path, value, changeType)`
+**Type:** Public  
+**Returns:** `table` - Sync metadata: `{syncLevel, componentType, scope, changeType}`
+
+Main routing function that determines sync metadata for a data change. Called by SavedVariablesManager on writes.
+
+**Parameters:**
+- `path` (string) - Dot-separated path to data (e.g., "encounterMgmt.raids.1.encounters.2.roles")
+- `value` (any) - New value being written
+- `changeType` (string, optional) - Type of change
+
+**Behavior:**
+- Parses path to extract raid/encounter indices and component type
+- Calls `DetermineSyncLevel()` to get sync level
+- Calls `ExtractScope()` to get scope metadata
+- Returns complete sync metadata table
+
+**Example:**
+```lua
+local syncMetadata = OGRH.SyncRouter.Route("encounterMgmt.raids.1.encounters.2.roles", {...}, "update")
+-- Returns: {syncLevel = "REALTIME", componentType = "roles", scope = {...}, changeType = "update"}
+```
+
+**Implementation Notes:**
+- Integrates with SavedVariablesManager automatic sync triggering
+- Path parsing handles both v1 and v2 schema formats
+
+---
+
+#### `OGRH.SyncRouter.ParsePath(path)`
+**Type:** Public  
+**Returns:** `raidIdx, encounterIdx, componentType` - Parsed path components
+
+Parses a dot-separated path to extract numeric indices and component type.
+
+**Parameters:**
+- `path` (string) - Path to parse
+
+**Example:**
+```lua
+local raidIdx, encounterIdx, componentType = OGRH.SyncRouter.ParsePath("encounterMgmt.raids.1.encounters.2.roles")
+-- Returns: 1, 2, "roles"
+```
+
+---
+
+#### `OGRH.SyncRouter.IsActiveRaid(raidIdx)`
+**Type:** Public  
+**Returns:** `boolean` - True if raid index is the Active Raid
+
+Checks if given raid index is the Active Raid (always index 1 in v2 schema).
+
+**Parameters:**
+- `raidIdx` (number) - Raid index to check
+
+**Example:**
+```lua
+if OGRH.SyncRouter.IsActiveRaid(raidIdx) then
+    -- This is the Active Raid
+end
+```
+
+---
+
+### Public Properties
+
+#### `OGRH.SyncRouter.State`
+**Type:** Table  
+**Access:** Public Read/Write
+
+State management for SyncRouter module.
+
+**Fields:**
+- `currentContext` (string) - Current context: "unknown", "active_mgmt", "active_setup", "nonactive_setup"
+- `activeRaidIdx` (number) - Active Raid index (always 1)
+
+---
+
+## SyncIntegrity Module (_Infrastructure/SyncIntegrity.lua)
+
+The SyncIntegrity module provides checksum verification and automatic repair for Active Raid data. It implements a polling system where the admin broadcasts checksums every 30 seconds, and clients auto-repair on mismatches.
+
+### Public Functions
+
+#### `OGRH.SyncIntegrity.BroadcastChecksums()`
+**Type:** Public  
+**Authorization:** Admin only (auto-checked)  
+**Returns:** `nil`
+
+Broadcasts Active Raid checksums to all raid members. Called automatically every 30 seconds by polling timer.
+
+**Behavior:**
+- Only runs if player is raid admin
+- Skips if in combat, offline, or made recent changes
+- Skips if network queue is busy (prevents traffic storms)
+- Computes checksums for:
+  - Active Raid structure (all encounters, excluding assignments)
+  - Active Encounter assignments (current encounter only)
+  - RolesUI (global role buckets)
+- Broadcasts via MessageRouter with LOW priority
+
+**Checksum Types:**
+- `activeRaidStructure` - Structure checksum (roles, columns, but NO assignments)
+- `activeAssignments` - Current encounter assignments only
+- `rolesUI` - Global TANKS/HEALERS/MELEE/RANGED buckets
+
+**Note:** Global components (consumes, tradeItems) are NOT part of automated sync. Use SyncGranular for manual sync of these components.
+
+**Example:**
+```lua
+-- Called automatically by polling timer
+OGRH.SyncIntegrity.BroadcastChecksums()
+```
+
+**Implementation Notes:**
+- Respects modification cooldown (2 seconds after admin's last change)
+- Uses `OGRH.SyncChecksum.ComputeRaidChecksum()` for structure
+- Uses `OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum()` for assignments
+
+---
+
+#### `OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)`
+**Type:** Public (called by MessageRouter)  
+**Returns:** `nil`
+
+Client handler for checksum broadcasts from admin. Compares local checksums to admin's and triggers repair if mismatched.
+
+**Parameters:**
+- `sender` (string) - Player name of sender (must be current admin)
+- `checksums` (table) - Checksum values: `{activeRaidStructure, activeAssignments, rolesUI}`
+
+**Behavior:**
+- Verifies sender is current raid admin
+- Computes local checksums for comparison
+- Detects mismatches and queues repair requests
+- Broadcasts repair request to admin (buffered for 1 second)
+
+**Mismatch Types:**
+- `ACTIVE_RAID_STRUCTURE` - Structure mismatch (roles, columns)
+- `ACTIVE_ASSIGNMENTS` - Assignment mismatch (current encounter)
+- `ROLES_UI` - Global role bucket mismatch
+
+**Example:**
+```lua
+-- Called automatically when OGRH_SYNC_CHECKSUM_BROADCAST received
+OGRH.SyncIntegrity.OnChecksumBroadcast("AdminPlayer", {
+    activeRaidStructure = "abc123",
+    activeAssignments = "def456",
+    rolesUI = "ghi789"
+})
+```
+
+---
+
+#### `OGRH.SyncIntegrity.RecordAdminModification()`
+**Type:** Public (called by SVM)  
+**Returns:** `nil`
+
+Records timestamp of admin's last modification to delay checksum broadcasts. Prevents broadcasting while admin is actively editing.
+
+**Called automatically by SVM when:**
+1. Change is to Active Raid (`scope.isActiveRaid == true`)
+2. Local player is Raid Admin (`OGRH.IsRaidAdmin()`)
+
+**Behavior:**
+- Updates `lastAdminModification` timestamp
+- Prevents broadcasts until cooldown expires (2 seconds default)
+- Only fires for Active Raid changes made by local admin
+
+**Example:**
+```lua
+-- SVM calls this automatically for Active Raid admin edits
+-- You typically don't call this directly
+OGRH.SyncIntegrity.RecordAdminModification()
+```
+
+**Implementation Notes:**
+- Called by `SVM.SyncRealtime()` for Active Raid REALTIME syncs
+- Called by `SVM.InvalidateChecksum()` for Active Raid checksum invalidations
+- Only fires if both conditions met (Active Raid AND local admin)
+- Cooldown duration: 2 seconds (configurable via `modificationCooldown`)
+- Prevents "flapping" during rapid UI changes
+
+**Rationale:**
+- **Active Raid only**: Non-Active Raids don't have checksum polling
+- **Admin only**: Non-admins don't broadcast checksums (they send SYNC.DELTA)
+- Prevents unnecessary delays for irrelevant changes
+
+---
+
+#### `OGRH.SyncIntegrity.StartIntegrityChecks()`
+**Type:** Public  
+**Returns:** `nil`
+
+Starts the integrity check polling timer (admin only). Broadcasts checksums every 30 seconds.
+
+**Behavior:**
+- Creates repeating timer (30-second interval)
+- Only runs if player is raid admin
+- Automatically stops when admin status lost
+
+**Example:**
+```lua
+-- Called automatically when player becomes raid admin
+OGRH.SyncIntegrity.StartIntegrityChecks()
+```
+
+---
+
+### Public Properties
+
+#### `OGRH.SyncIntegrity.State`
+**Type:** Table  
+**Access:** Public Read/Write
+
+State management for SyncIntegrity module.
+
+**Fields:**
+- `lastChecksumBroadcast` (number) - Timestamp of last broadcast
+- `verificationInterval` (number) - Seconds between broadcasts (default: 30)
+- `checksumCache` (table) - Cached checksum values
+- `pollingTimer` (timer) - Active polling timer reference
+- `enabled` (boolean) - Module enabled state
+- `lastAdminModification` (number) - Timestamp of last admin change
+- `modificationCooldown` (number) - Seconds to wait after change (default: 2)
+- `debug` (boolean) - Debug mode (toggle with `/ogrh debug sync`)
+
+---
+
+### Private Functions
+
+#### `OnRepairRequest(sender, data)` (local)
+**Type:** Private
+
+Admin handler for client repair requests. Buffers requests for 1 second to prevent broadcast storms.
+
+**Behavior:**
+- Validates sender is in raid
+- Adds request to repair buffer
+- Schedules flush after 1 second (or uses existing timer)
+- Broadcasts repair data once per component
+
+---
+
+#### `FlushRepairBuffer()` (local)
+**Type:** Private
+
+Flushes repair buffer and broadcasts repair data to requesting clients.
+
+**Behavior:**
+- Deduplicates requests (one repair per component)
+- Calls appropriate repair broadcast function
+- Clears buffer after flush
+
+---
+
+#### `BroadcastActiveRaidRepair()` (local)
+**Type:** Private
+
+Admin broadcasts Active Raid structure data for repair.
+
+---
+
+#### `BroadcastAssignmentsRepair(encounterIdx)` (local)
+**Type:** Private
+
+Admin broadcasts Active Encounter assignments for repair.
+
+---
+
+#### `BroadcastRolesRepair()` (local)
+**Type:** Private
+
+Admin broadcasts RolesUI data for repair.
+
+---
+
+#### `BroadcastGlobalRepair()` (local)
+**Type:** Private
+
+Admin broadcasts global components for repair.
+
+---
+
+#### `OnActiveRaidRepair(sender, data)` (local)
+**Type:** Private
+
+Client receives and applies Active Raid structure repair.
+
+---
+
+#### `OnAssignmentsRepair(sender, data)` (local)
+**Type:** Private
+
+Client receives and applies assignments repair.
+
+---
+
+#### `OnRolesRepair(sender, data)` (local)
+**Type:** Private
+
+Client receives and applies RolesUI repair.
+
+---
+
+#### `OnGlobalRepair(sender, data)` (local)
+**Type:** Private
+
+Client receives and applies global components repair.
+
+---
+
+## SyncGranular Module (_Infrastructure/SyncGranular.lua)
+
+The SyncGranular module provides surgical data repair at component, encounter, and raid levels. It implements priority-based sync queuing and manual repair requests.
+
+### Public Functions
+
+#### `OGRH.SyncGranular.SetContext(raidName, encounterName)`
+**Type:** Public  
+**Returns:** `nil`
+
+Sets the current UI context for priority calculation. Called automatically when user changes raid/encounter selection.
+
+**Parameters:**
+- `raidName` (string) - Currently selected raid name
+- `encounterName` (string) - Currently selected encounter name
+
+**Behavior:**
+- Updates `currentRaid` and `currentEncounter` state
+- Affects priority of subsequent sync operations
+- Higher priority for current raid/encounter
+
+**Example:**
+```lua
+-- Called when user selects encounter
+OGRH.SyncGranular.SetContext("MC", "Rag")
+```
+
+---
+
+#### `OGRH.SyncGranular.RequestComponentSync(raidName, encounterName, componentName, encounterPosition)`
+**Type:** Public  
+**Returns:** `nil`
+
+Requests sync of a specific component (e.g., "roles", "assignments") from admin/officer.
+
+**Parameters:**
+- `raidName` (string) - Raid name
+- `encounterName` (string) - Encounter name
+- `componentName` (string) - Component to sync ("roles", "assignments", "marks", "numbers", "consumes", "bigwigs")
+- `encounterPosition` (number, optional) - Encounter position in raid
+
+**Behavior:**
+- Broadcasts sync request to raid
+- Queues with automatic priority (based on current context)
+- Admin/officer responds with component data
+- Client applies data when received
+
+**Example:**
+```lua
+-- Request roles for specific encounter
+OGRH.SyncGranular.RequestComponentSync("MC", "Rag", "roles", 5)
+```
+
+---
+
+#### `OGRH.SyncGranular.RequestEncounterSync(raidName, encounterName)`
+**Type:** Public  
+**Returns:** `nil`
+
+Requests sync of all components for a specific encounter.
+
+**Parameters:**
+- `raidName` (string) - Raid name
+- `encounterName` (string) - Encounter name
+
+**Behavior:**
+- Syncs all 6 components: roles, assignments, marks, numbers, consumes, bigwigs
+- Queues with priority based on context
+- More efficient than requesting each component individually
+
+**Example:**
+```lua
+-- Request full encounter sync
+OGRH.SyncGranular.RequestEncounterSync("MC", "Rag")
+```
+
+---
+
+#### `OGRH.SyncGranular.RequestRaidSync(raidName)`
+**Type:** Public  
+**Returns:** `nil`
+
+Requests sync of entire raid (metadata + all encounters).
+
+**Parameters:**
+- `raidName` (string) - Raid name
+
+**Behavior:**
+- Syncs raid metadata (advancedSettings, displayName, etc.)
+- Syncs all encounters in raid
+- Highest-impact sync operation
+
+**Example:**
+```lua
+-- Request full raid sync
+OGRH.SyncGranular.RequestRaidSync("MC")
+```
+
+---
+
+#### `OGRH.SyncGranular.RequestGlobalComponentSync(componentName)`
+**Type:** Public  
+**Returns:** `nil`
+
+Requests sync of global components (consumes, tradeItems, etc.).
+
+**Parameters:**
+- `componentName` (string) - Component to sync ("consumes", "tradeItems")
+
+**Example:**
+```lua
+-- Request consumes sync
+OGRH.SyncGranular.RequestGlobalComponentSync("consumes")
+```
+
+---
+
+#### `OGRH.SyncGranular.RequestRaidMetadataSync(raidName, targetPlayer)`
+**Type:** Public  
+**Returns:** `nil`
+
+Requests sync of raid metadata only (advancedSettings, no encounters).
+
+**Parameters:**
+- `raidName` (string) - Raid name
+- `targetPlayer` (string, optional) - Specific player to request from
+
+**Example:**
+```lua
+-- Request metadata sync
+OGRH.SyncGranular.RequestRaidMetadataSync("MC")
+```
+
+---
+
+#### `OGRH.SyncGranular.QueueRepair(validationResult, targetPlayer)`
+**Type:** Public (called by validation system)  
+**Returns:** `nil`
+
+Queues a repair operation based on validation failure. Automatically determines sync scope and priority.
+
+**Parameters:**
+- `validationResult` (table) - Validation result from integrity check
+- `targetPlayer` (string, optional) - Player to request repair from
+
+**Behavior:**
+- Determines repair scope (component, encounter, or raid)
+- Calculates priority based on current UI context
+- Queues repair operation
+- Processes queue automatically
+
+---
+
+### Public Properties
+
+#### `OGRH.SyncGranular.State`
+**Type:** Table  
+**Access:** Public Read/Write
+
+State management for SyncGranular module.
+
+**Fields:**
+- `syncQueue` (table) - Queued sync operations (prioritized)
+- `activeSyncs` (table) - Currently executing syncs
+- `currentRaid` (string) - Currently selected raid in UI
+- `currentEncounter` (string) - Currently selected encounter in UI
+- `maxConcurrentSyncs` (number) - Max parallel syncs (default: 1)
+- `enabled` (boolean) - Module enabled state
+
+---
+
+### Priority Levels
+
+Sync operations are prioritized based on user's current UI context:
+
+| Priority | Use For | Value |
+|----------|---------|-------|
+| **CRITICAL** | Current raid/encounter (user actively working on it) | 1 |
+| **HIGH** | Other encounters in same raid (likely relevant) | 2 |
+| **NORMAL** | Other raids (fix when convenient) | 3 |
+| **LOW** | Background/deferred syncs | 4 |
+
+**Priority Calculation:**
+- If syncing current raid + encounter → CRITICAL
+- If syncing current raid (different encounter) → HIGH
+- If syncing different raid → NORMAL
+- Manual low-priority requests → LOW
+
+---
+
+## SyncChecksum Module (_Infrastructure/SyncChecksum.lua)
+
+The SyncChecksum module provides centralized checksum computation, serialization, and deep copy utilities. All checksum operations are consolidated here to prevent code duplication.
+
+### Public Functions
+
+#### `OGRH.SyncChecksum.HashString(str)`
+**Type:** Public  
+**Returns:** `string` - Numeric hash as string
+
+Computes a numeric hash for a string using simple additive algorithm.
+
+**Parameters:**
+- `str` (string) - String to hash
+
+**Example:**
+```lua
+local hash = OGRH.SyncChecksum.HashString("Molten Core")
+-- Returns: "12345" (numeric hash as string)
+```
+
+**Implementation Notes:**
+- Uses sum of character codes with simple multiplier
+- Not cryptographic, designed for change detection
+- Consistent results for same input
+
+---
+
+#### `OGRH.SyncChecksum.HashRole(role, columnMultiplier, roleIndex)`
+**Type:** Public  
+**Returns:** `number` - Computed hash value
+
+Computes hash for a role structure including all slots and assignments.
+
+**Parameters:**
+- `role` (table) - Role data structure
+- `columnMultiplier` (number) - Column multiplier for hash calculation
+- `roleIndex` (number) - Index of role in encounter
+
+**Behavior:**
+- Hashes role metadata (name, color, column)
+- Hashes all slot assignments
+- Includes position information in hash
+
+**Example:**
+```lua
+local hash = OGRH.SyncChecksum.HashRole(roleData, 1000, 1)
+```
+
+---
+
+#### `OGRH.SyncChecksum.Serialize(tbl)`
+**Type:** Public  
+**Returns:** `string` - Serialized representation
+
+Serializes a Lua table to string using OGAddonMsg serialization.
+
+**Parameters:**
+- `tbl` (table) - Table to serialize
+
+**Behavior:**
+- Uses OGAddonMsg.TableToString() for compression
+- Falls back to simple serialization if OGAddonMsg unavailable
+- Handles nested tables, circular references
+
+**Example:**
+```lua
+local serialized = OGRH.SyncChecksum.Serialize({name = "MC", encounters = {...}})
+```
+
+**Implementation Notes:**
+- Requires OGAddonMsg for optimal compression
+- Throws error if OGAddonMsg missing (critical dependency)
+
+---
+
+#### `OGRH.SyncChecksum.Deserialize(str)`
+**Type:** Public  
+**Returns:** `table` or `nil` - Deserialized table, or nil on error
+
+Deserializes a string back to Lua table.
+
+**Parameters:**
+- `str` (string) - Serialized string
+
+**Example:**
+```lua
+local tbl = OGRH.SyncChecksum.Deserialize(serializedData)
+```
+
+---
+
+#### `OGRH.SyncChecksum.DeepCopy(original, seen)`
+**Type:** Public  
+**Returns:** `table` - Deep copy of original
+
+Creates a deep copy of a table, handling nested tables and circular references.
+
+**Parameters:**
+- `original` (table) - Table to copy
+- `seen` (table, optional) - Internal tracking for circular references
+
+**Example:**
+```lua
+local copy = OGRH.SyncChecksum.DeepCopy(originalData)
+-- Modifying copy won't affect original
+```
+
+---
+
+#### `OGRH.SyncChecksum.CalculateStructureChecksum(raid, encounter)`
+**Type:** Public  
+**Returns:** `string` - Checksum value
+
+Calculates checksum for encounter structure (excludes assignments).
+
+**Parameters:**
+- `raid` (string) - Raid name
+- `encounter` (string) - Encounter name
+
+**Behavior:**
+- Hashes role definitions (names, colors, columns)
+- Excludes slot assignments (assignments handled separately)
+- Consistent hash for same structure
+
+**Example:**
+```lua
+local checksum = OGRH.SyncChecksum.CalculateStructureChecksum("MC", "Rag")
+```
+
+---
+
+#### `OGRH.SyncChecksum.CalculateAllStructureChecksum()`
+**Type:** Public  
+**Returns:** `string` - Global structure checksum
+
+Calculates checksum for all raids and encounters in SavedVariables.
+
+**Behavior:**
+- Iterates all raids and encounters
+- Combines individual checksums
+- Used for full-database integrity checks
+
+**Example:**
+```lua
+local globalChecksum = OGRH.SyncChecksum.CalculateAllStructureChecksum()
+```
+
+---
+
+#### `OGRH.SyncChecksum.ComputeRaidChecksum(raidName)`
+**Type:** Public  
+**Returns:** `string` - Structure checksum (excludes assignments)
+
+Computes checksum for Active Raid structure (v2 schema).
+
+**Parameters:**
+- `raidName` (string) - Raid name (unused in v2, uses index 1)
+
+**Behavior:**
+- Extracts Active Raid structure (roles, columns)
+- Excludes all slot assignments
+- Serializes and hashes structure
+
+**Example:**
+```lua
+local checksum = OGRH.SyncChecksum.ComputeRaidChecksum("MC")
+```
+
+---
+
+#### `OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(encounterIdx)`
+**Type:** Public  
+**Returns:** `string` - Assignments-only checksum
+
+Computes checksum for Active Encounter assignments only.
+
+**Parameters:**
+- `encounterIdx` (number) - Encounter index
+
+**Behavior:**
+- Extracts slot assignments for specified encounter
+- Excludes structure (roles, columns)
+- Serializes and hashes assignments
+
+**Example:**
+```lua
+local checksum = OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(2)
+```
+
+---
+
+#### `OGRH.SyncChecksum.CalculateRolesUIChecksum()`
+**Type:** Public  
+**Returns:** `string` - RolesUI checksum
+
+Calculates checksum for global role buckets (TANKS, HEALERS, MELEE, RANGED).
+
+**Behavior:**
+- Hashes global role assignments
+- Used for RolesUI integrity checks
+
+**Example:**
+```lua
+local checksum = OGRH.SyncChecksum.CalculateRolesUIChecksum()
+```
+
+---
+
+#### `OGRH.SyncChecksum.GetGlobalComponentChecksums()`
+**Type:** Public  
+**Returns:** `table` - Table of component checksums `{consumes="...", tradeItems="..."}`
+
+Calculates checksums for all global components.
+
+**Example:**
+```lua
+local checksums = OGRH.SyncChecksum.GetGlobalComponentChecksums()
+-- Returns: {consumes = "abc123", tradeItems = "def456"}
+```
+
+---
+
+#### `OGRH.SyncChecksum.MarkEncounterDirty(raidIdx, encounterIdx)`
+**Type:** Public  
+**Returns:** `nil`
+
+Marks encounter as dirty (checksum invalidated). Currently a no-op, reserved for future dirty tracking.
+
+**Parameters:**
+- `raidIdx` (number) - Raid index
+- `encounterIdx` (number) - Encounter index
+
+---
+
+#### `OGRH.SyncChecksum.MarkRaidDirty(raidIdx)`
+**Type:** Public  
+**Returns:** `nil`
+
+Marks raid as dirty (checksum invalidated). Currently a no-op, reserved for future dirty tracking.
+
+**Parameters:**
+- `raidIdx` (number) - Raid index
+
+---
+
+#### `OGRH.SyncChecksum.MarkComponentDirty(componentType)`
+**Type:** Public  
+**Returns:** `nil`
+
+Marks component as dirty (checksum invalidated). Currently a no-op, reserved for future dirty tracking.
+
+**Parameters:**
+- `componentType` (string) - Component type
+
+---
+
+### Backward Compatibility Wrappers
+
+The following functions are backward compatibility wrappers for legacy code. They delegate to `OGRH.SyncChecksum.*` functions:
+
+- `OGRH.HashString()` → `OGRH.SyncChecksum.HashString()`
+- `OGRH.HashRole()` → `OGRH.SyncChecksum.HashRole()`
+- `OGRH.CalculateStructureChecksum()` → `OGRH.SyncChecksum.CalculateStructureChecksum()`
+- `OGRH.CalculateAllStructureChecksum()` → `OGRH.SyncChecksum.CalculateAllStructureChecksum()`
+- `OGRH.CalculateRolesUIChecksum()` → `OGRH.SyncChecksum.CalculateRolesUIChecksum()`
+- `OGRH.ComputeRaidChecksum()` → `OGRH.SyncChecksum.ComputeRaidChecksum()`
+- `OGRH.ComputeActiveAssignmentsChecksum()` → `OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum()`
+- `OGRH.GetGlobalComponentChecksums()` → `OGRH.SyncChecksum.GetGlobalComponentChecksums()`
+- `OGRH.Serialize()` → `OGRH.SyncChecksum.Serialize()`
+- `OGRH.Deserialize()` → `OGRH.SyncChecksum.Deserialize()`
+- `OGRH.DeepCopy()` → `OGRH.SyncChecksum.DeepCopy()`
+
+**Debug Mode:**
+Set `OGRH_CHECKSUM_DEBUG = true` to log all wrapper calls (useful for tracking migration from legacy calls to new namespace).
+
+---
+
+## Permissions Module (_Infrastructure/Permissions.lua)
+
+The Permissions module provides a three-tier permission system for controlling access to raid management functions.
+
+### Permission Levels
+
+| Level | Name | WoW Rank | Access |
+|-------|------|----------|--------|
+| **ADMIN** | Raid Admin | Designated admin | Full control (structure + assignments) |
+| **OFFICER** | Raid Leader/Assistant | Rank >= 1 | Assignment control only |
+| **MEMBER** | Member | Rank 0 | Read-only |
+
+### Public Functions
+
+#### `OGRH.GetPermissionLevel(playerName)`
+**Type:** Public  
+**Returns:** `string` - "ADMIN", "OFFICER", or "MEMBER"
+
+Determines the permission level for a player.
+
+**Parameters:**
+- `playerName` (string, optional) - Player name to check. Defaults to local player if nil.
+
+**Logic:**
+1. Check if player is designated Raid Admin → "ADMIN"
+2. Check if player is Raid Leader or Assistant → "OFFICER"
+3. Otherwise → "MEMBER"
+
+**Example:**
+```lua
+local level = OGRH.GetPermissionLevel("PlayerName")
+if level == "ADMIN" then
+    -- Full access
+elseif level == "OFFICER" then
+    -- Assignment access
+else
+    -- Read-only
+end
+```
+
+---
+
+#### `OGRH.CanModifyStructure(playerName)`
+**Type:** Public  
+**Returns:** `boolean` - True if player can modify raid/encounter structure
+
+Checks if a player can create/delete raids or encounters, modify metadata, etc.
+
+**Parameters:**
+- `playerName` (string, optional) - Player name to check. Defaults to local player if nil.
+
+**Authorization:**
+- **ADMIN only** - Only designated Raid Admin can modify structure
+
+**Example:**
+```lua
+if OGRH.CanModifyStructure(UnitName("player")) then
+    -- Allow creating/deleting raids
+    OGRH.CreateNewRaid(raidName)
+else
+    OGRH.Msg("|cffff0000[OGRH]|r You don't have permission to modify raid structure")
+end
+```
+
+---
+
+#### `OGRH.CanModifyAssignments(playerName)`
+**Type:** Public  
+**Returns:** `boolean` - True if player can modify player assignments
+
+Checks if a player can assign players to roles, set marks/numbers, etc.
+
+**Parameters:**
+- `playerName` (string, optional) - Player name to check. Defaults to local player if nil.
+
+**Authorization:**
+- **ADMIN or OFFICER** - Raid Admin OR Raid Leader/Assistant can modify assignments
+
+**Example:**
+```lua
+if OGRH.CanModifyAssignments(sender) then
+    -- Allow assignment change
+    OGRH.SVM.SetPath(path, playerName, {syncLevel = "NONE"})
+else
+    OGRH.Msg("|cffff0000[OGRH]|r Unauthorized assignment change from " .. sender)
+end
+```
+
+---
+
+#### `OGRH.IsRaidOfficer(playerName)`
+**Type:** Public  
+**Returns:** `boolean` - True if player is Raid Leader or Assistant
+
+Checks if a player has Raid Leader or Raid Assistant status.
+
+**Parameters:**
+- `playerName` (string, optional) - Player name to check. Defaults to local player if nil.
+
+**Implementation:**
+- Scans raid roster for player
+- Checks if `rank >= 1` (1 = Assistant, 2 = Leader)
+
+**Example:**
+```lua
+if OGRH.IsRaidOfficer(UnitName("player")) then
+    -- Player is RL or RA
+end
+```
+
+---
+
+#### `OGRH.IsRaidAdmin(playerName)`
+**Type:** Public  
+**Returns:** `boolean` - True if player is designated Raid Admin
+
+Checks if a player is the designated Raid Admin (controls sync, structure, all permissions).
+
+**Parameters:**
+- `playerName` (string, optional) - Player name to check. Defaults to local player if nil.
+
+**Implementation:**
+- Reads `OGRH_SV.v2.permissions.currentAdmin`
+- Compares to provided player name
+
+**Example:**
+```lua
+if OGRH.IsRaidAdmin(UnitName("player")) then
+    -- Start checksum broadcasting
+    OGRH.SyncIntegrity.StartIntegrityChecks()
+end
+```
+
+---
+
+### Permission Enforcement
+
+Permissions are enforced at **two layers**:
+
+**Layer 1: UI (User Feedback)**
+- Located in UI modules (EncounterMgmt, RolesUI, etc.)
+- Disables buttons, shows error messages
+- Provides immediate feedback to user
+- Example: `EncounterMgmt.CanEditAssignments()`
+
+**Layer 2: SVM (Security)**
+- Located in SavedVariablesManager
+- Validates permission before broadcasting changes
+- Validates permission before applying received changes
+- Prevents circumvention of UI restrictions
+- Example: `SVM.SyncRealtime()` checks permissions before broadcast
+- Example: `SVM.OnDeltaReceived()` checks sender permissions before applying
+
+### Active Raid vs Non-Active Raids
+
+**Active Raid (index 1):**
+- Permission checks enforced
+- Structure: Admin only
+- Assignments: Admin/Leader/Assistant
+- Requires `isActiveRaid = true` in sync metadata
+
+**Non-Active Raids (index != 1):**
+- No permission checks
+- Anyone can edit (planning mode)
+- Used for preparing future raids
+- Set `isActiveRaid = false` or omit
+
+---
+
+## Sync System Overview
+
+The sync system consists of four integrated modules that work together to maintain data consistency across raid members:
+
+### Architecture Flow
+
+```
+1. User makes change → SavedVariablesManager
+2. SVM calls SyncRouter.Route() → Determines sync level
+3. SVM applies change and triggers sync based on level:
+   - REALTIME → Immediate broadcast via MessageRouter
+   - BATCH → Queue for 2-second batch send
+   - MANUAL → No auto-sync (admin must push manually)
+4. Admin broadcasts checksums every 30s → SyncIntegrity
+5. Clients compare checksums → Auto-repair on mismatch
+6. Manual repairs → SyncGranular (component/encounter/raid level)
+```
+
+### Sync Levels
+
+| Level | Use Case | Timing | Priority |
+|-------|----------|--------|----------|
+| **REALTIME** | Combat-critical assignments | Instant | ALERT |
+| **BATCH** | Bulk edits, settings | 2-second delay | NORMAL |
+| **MANUAL** | Structure changes (CRUD) | Admin push only | N/A |
+| **GRANULAR** | Surgical repairs | On-demand | Varies |
+
+### Data Integrity System
+
+**Active Polling (SyncIntegrity):**
+- Admin broadcasts checksums every 30 seconds
+- Covers: Active Raid structure, current encounter assignments, global roles, global components
+- Clients auto-repair on mismatch (1-second buffer prevents storms)
+
+**Manual Repair (SyncGranular):**
+- Component-level: Single component (roles, assignments, etc.)
+- Encounter-level: All 6 components for one encounter
+- Raid-level: Full raid metadata + all encounters
+- Global-level: Consumes, tradeItems, etc.
+
+### Checksum Types (SyncChecksum)
+
+| Type | Covers | Excludes | Use Case |
+|------|--------|----------|----------|
+| **Structure** | Roles, columns, metadata | Assignments | Detect structure changes |
+| **Assignments** | Slot assignments | Structure | Detect assignment changes |
+| **RolesUI** | Global role buckets | Everything else | Detect global role changes |
+| **Global** | Consumes, tradeItems | Raid data | Detect global component changes |
+
+---
+
 ## Future Additions
 
 This document will be expanded to include:
 - **Core Module** - SavedVariablesManager, schema routing, data persistence
 - **EncounterMgmt Module** - Encounter planning, role management, raid configuration
-- **Sync Module** - Realtime synchronization, version control, conflict resolution
 - **Consume Module** - Consume checking, monitoring, logging
 - **Admin Module** - Raid admin management, permissions, polling
 - **Poll Module** - Role polling system, ready checks, response tracking
 
 ---
 
-*Last Updated: February 2, 2026*
+*Last Updated: February 3, 2026*

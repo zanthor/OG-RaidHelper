@@ -327,17 +327,33 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
     local inRaid = GetNumRaidMembers() > 0
     local needsStrictPermission = inRaid and isActiveRaid
     
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff66ff66[RH-SVM][DEBUG]|r SyncRealtime: player=%s, componentType=%s, isActiveRaid=%s, inRaid=%s, needsStrict=%s", 
+            playerName, componentType, tostring(isActiveRaid), tostring(inRaid), tostring(needsStrictPermission)))
+    end
+    
     if componentType == "structure" or componentType == "metadata" then
         -- Structure changes require admin permission for Active Raid
         -- Out of raid, anyone can edit
         if needsStrictPermission and (not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(playerName)) then
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg("|cff66ff66[RH-SVM][DEBUG]|r SyncRealtime: Structure permission DENIED, queuing offline")
+            end
             OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
             return
         end
     elseif componentType == "assignments" or componentType == "roles" or componentType == "marks" or componentType == "numbers" then
         -- Assignment changes for Active Raid require officer/admin permission
         -- Non-Active raids or out of raid: anyone can edit
-        if needsStrictPermission and (not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName)) then
+        local hasPermission = OGRH.CanModifyAssignments and OGRH.CanModifyAssignments(playerName)
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff66ff66[RH-SVM][DEBUG]|r SyncRealtime: Assignment permission check: hasPermission=%s, needsStrict=%s", 
+                tostring(hasPermission), tostring(needsStrictPermission)))
+        end
+        if needsStrictPermission and not hasPermission then
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg("|cff66ff66[RH-SVM][DEBUG]|r SyncRealtime: Assignment permission DENIED, queuing offline")
+            end
             OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
             return
         end
@@ -346,6 +362,9 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
     
     -- Check if we can sync now
     if not OGRH.CanSyncNow or not OGRH.CanSyncNow() then
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff66ff66[RH-SVM][DEBUG]|r SyncRealtime: CanSyncNow returned false, queuing offline")
+        end
         OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
         return
     end
@@ -376,6 +395,9 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
     
     -- Send via MessageRouter with high priority
     if OGRH.MessageRouter and OGRH.MessageTypes then
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff66ff66[RH-SVM][DEBUG]|r SyncRealtime: Broadcasting DELTA message via MessageRouter")
+        end
         OGRH.MessageRouter.Broadcast(
             OGRH.MessageTypes.SYNC.DELTA,
             changeData,
@@ -386,10 +408,16 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
                 end
             }
         )
+    else
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff66ff66[RH-SVM][DEBUG]|r SyncRealtime: MessageRouter or MessageTypes not available!")
+        end
     end
     
-    -- Record modification for checksum system (but don't trigger broadcast - that's periodic)
-    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.RecordAdminModification then
+    -- Record modification for checksum system (only for Active Raid changes by local admin)
+    local isActiveRaid = syncMetadata.scope and syncMetadata.scope.isActiveRaid
+    local isLocalAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin()
+    if isActiveRaid and isLocalAdmin and OGRH.SyncIntegrity and OGRH.SyncIntegrity.RecordAdminModification then
         OGRH.SyncIntegrity.RecordAdminModification(syncMetadata.scope)
     end
     
@@ -539,28 +567,36 @@ end
 -- SYNC: Checksum Invalidation
 -- ============================================
 function OGRH.SVM.InvalidateChecksum(scope)
-    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.RecordAdminModification then
+    -- Only record modification for Active Raid changes made by local admin
+    local isActiveRaid = scope and scope.isActiveRaid
+    local isLocalAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin()
+    if isActiveRaid and isLocalAdmin and OGRH.SyncIntegrity and OGRH.SyncIntegrity.RecordAdminModification then
         OGRH.SyncIntegrity.RecordAdminModification(scope)
     end
 end
 
 -- Invalidate checksums for batch of changes
 function OGRH.SVM.InvalidateChecksumsBatch(updates)
-    if not OGRH.SyncIntegrity or not OGRH.SyncIntegrity.RecordAdminModification then
+    -- Only applies to local admin
+    local isLocalAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin()
+    if not isLocalAdmin or not OGRH.SyncIntegrity or not OGRH.SyncIntegrity.RecordAdminModification then
         return
     end
     
-    -- Collect unique scopes from all updates
+    -- Collect unique scopes from all updates (only Active Raid)
     local scopes = {}
     for i = 1, table.getn(updates) do
         local update = updates[i]
         if update.metadata and update.metadata.scope then
             local scope = update.metadata.scope
-            scopes[scope] = true
+            -- Only track Active Raid scopes
+            if scope.isActiveRaid then
+                scopes[scope] = true
+            end
         end
     end
     
-    -- Invalidate each unique scope once
+    -- Invalidate each unique Active Raid scope once
     for scope, _ in pairs(scopes) do
         OGRH.SyncIntegrity.RecordAdminModification(scope)
     end
@@ -634,12 +670,7 @@ end
 
 -- Handle incoming REALTIME delta update
 function OGRH.SVM.OnDeltaReceived(sender, data, channel)
-    -- Verify sender is admin
-    local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
-    if not currentAdmin or sender ~= currentAdmin then
-        return  -- Ignore updates from non-admins
-    end
-    
+    -- Verify sender has permission (Admin, Leader, or Assistant for assignments)
     -- Don't apply our own updates
     if sender == UnitName("player") then
         return
@@ -650,6 +681,27 @@ function OGRH.SVM.OnDeltaReceived(sender, data, channel)
         OGRH.Msg("|cffff0000[RH-SVM]|r Received invalid delta update (path=" .. tostring(data and data.path or "nil") .. ")")
         return
     end
+    
+    -- Check permissions based on component type
+    local componentType = data.componentType or "generic"
+    if componentType == "structure" or componentType == "metadata" then
+        -- Structure changes: Admin only
+        if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(sender) then
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cff66ff66[RH-SVM][DEBUG]|r OnDeltaReceived: Rejected structure change from %s (not admin)", sender))
+            end
+            return
+        end
+    elseif componentType == "assignments" or componentType == "roles" or componentType == "marks" or componentType == "numbers" then
+        -- Assignment changes: Admin/Leader/Assistant
+        if not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(sender) then
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cff66ff66[RH-SVM][DEBUG]|r OnDeltaReceived: Rejected assignment change from %s (no permission)", sender))
+            end
+            return
+        end
+    end
+    -- Other types (settings, consumes, etc.) accepted from anyone
     
     -- Validate structure checksum if provided
     if data.structureChecksum and data.scope and data.scope.raid then
@@ -738,40 +790,9 @@ function OGRH.SVM.OnBatchReceived(sender, data, channel)
     end
 end
 
--- Register message handlers with MessageRouter
-function OGRH.SVM.RegisterMessageHandlers()
-    if not OGRH.MessageRouter or not OGRH.MessageTypes then
-        -- MessageRouter not loaded yet - will register later
-        return
-    end
-    
-    -- Register handler for realtime delta updates
-    OGRH.MessageRouter.RegisterHandler(
-        OGRH.MessageTypes.SYNC.DELTA,
-        OGRH.SVM.OnDeltaReceived
-    )
-    
-    -- Register handler for batch delta updates
-    OGRH.MessageRouter.RegisterHandler(
-        OGRH.MessageTypes.ASSIGN.DELTA_BATCH,
-        OGRH.SVM.OnBatchReceived
-    )
-end
-
--- ============================================
--- DELAYED INITIALIZATION
--- ============================================
--- Register handlers after MessageRouter loads
-local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("ADDON_LOADED")
-initFrame:SetScript("OnEvent", function()
-    if event == "ADDON_LOADED" and arg1 == "OG-RaidHelper" then
-        -- Wait a moment for all modules to load
-        OGRH.ScheduleTimer(function()
-            OGRH.SVM.RegisterMessageHandlers()
-        end, 0.5)
-    end
-end)
+-- NOTE: Message handlers are now registered in MessageRouter.RegisterDefaultHandlers()
+-- SVM provides the handler functions (OnDeltaReceived, OnBatchReceived) but does not register them
+-- This maintains proper architectural separation - MessageRouter handles all message routing
 
 -- Success message
 if DEFAULT_CHAT_FRAME then

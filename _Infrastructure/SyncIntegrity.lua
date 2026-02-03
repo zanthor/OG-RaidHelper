@@ -119,9 +119,6 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
         -- Global roles (TANKS, HEALERS, MELEE, RANGED)
         rolesUI = OGRH.SyncChecksum.CalculateRolesUIChecksum(),
         
-        -- Global component checksums
-        global = OGRH.SyncChecksum.GetGlobalComponentChecksums(),
-        
         -- Metadata
         timestamp = GetTime(),
         version = OGRH.VERSION or "1.0"
@@ -166,7 +163,7 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
     OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r Received checksum broadcast from admin " .. sender)
     
     -- Validate Active Raid checksums
-    if not (checksums.activeRaidStructure and checksums.rolesUI and checksums.global) then
+    if not (checksums.activeRaidStructure and checksums.rolesUI) then
         OGRH.Msg("|cffff0000[RH-SyncIntegrity]|r ERROR: Invalid checksum format received")
         return
     end
@@ -181,64 +178,65 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
     local activeRaid = OGRH.GetActiveRaid()
     if activeRaid then
         local localStructure = OGRH.SyncChecksum.ComputeRaidChecksum(activeRaid.name)
-        OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Structure checksums: local=%s, admin=%s", localStructure, checksums.activeRaidStructure))
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity][DEBUG]|r Structure checksums: local=%s, admin=%s", localStructure, checksums.activeRaidStructure))
+        end
         if localStructure ~= checksums.activeRaidStructure then
             table.insert(mismatches, {
                 type = "ACTIVE_RAID_STRUCTURE",
                 component = "structure"
             })
-            OGRH.Msg("|cffff8800[RH-SyncIntegrity]|r Active Raid structure mismatch")
+            if OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected - Requesting repair: Active Raid structure")
+            end
         end
     end
     
     -- Validate Active Encounter assignments (if admin has a selected encounter)
     if checksums.activeEncounterIdx and checksums.activeAssignments then
         local localAssignments = OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(checksums.activeEncounterIdx)
-        OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Assignment checksums: local=%s, admin=%s", localAssignments, checksums.activeAssignments))
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity][DEBUG]|r Assignment checksums: local=%s, admin=%s", localAssignments, checksums.activeAssignments))
+        end
         if localAssignments ~= checksums.activeAssignments then
             table.insert(mismatches, {
                 type = "ACTIVE_ASSIGNMENTS",
                 component = "assignments",
                 encounterIdx = checksums.activeEncounterIdx
             })
-            OGRH.Msg("|cffff8800[RH-SyncIntegrity]|r Active Encounter assignments mismatch")
+            if OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected - Requesting repair: Active Encounter assignments (encounter #%d)", checksums.activeEncounterIdx))
+            end
         end
     end
     
     -- Validate RolesUI (global roles)
     local localRolesUI = OGRH.SyncChecksum.CalculateRolesUIChecksum()
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity][DEBUG]|r RolesUI checksums: local=%s, admin=%s", localRolesUI, checksums.rolesUI))
+    end
     if localRolesUI ~= checksums.rolesUI then
         table.insert(mismatches, {
             type = "ROLES_UI",
             component = "roles"
         })
         if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg("|cffff8800[RH-SyncIntegrity]|r RolesUI mismatch")
-        end
-    end
-    
-    -- Validate global components
-    local localGlobal = OGRH.SyncChecksum.GetGlobalComponentChecksums()
-    for componentName, checksum in pairs(checksums.global) do
-        if localGlobal[componentName] ~= checksum then
-            table.insert(mismatches, {
-                type = "GLOBAL_COMPONENT",
-                component = componentName
-            })
-            if OGRH.SyncIntegrity.State.debug then
-                OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity]|r Global component mismatch: %s", componentName))
-            end
+            OGRH.Msg("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected - Requesting repair: RolesUI (global role assignments)")
         end
     end
     
     -- If mismatches found, queue repair requests (1-second buffer)
     if table.getn(mismatches) > 0 then
-        OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity]|r %d checksum mismatch(es) detected, requesting repairs", table.getn(mismatches)))
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity][DEBUG]|r %d checksum mismatch(es) detected, requesting repairs from admin", table.getn(mismatches)))
+        end
         for i = 1, table.getn(mismatches) do
             OGRH.SyncIntegrity.QueueRepairRequest(sender, mismatches[i])
         end
     else
-        OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r All checksums validated successfully")
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff00ff00[RH-SyncIntegrity][DEBUG]|r All checksums validated successfully")
+        end
     end
 end
 
@@ -333,8 +331,6 @@ function OGRH.SyncIntegrity.FlushRepairBuffer()
             OGRH.SyncIntegrity.BroadcastAssignmentsRepair(request.encounterIdx)
         elseif request.component == "roles" then
             OGRH.SyncIntegrity.BroadcastRolesRepair()
-        elseif request.component == "global" then
-            OGRH.SyncIntegrity.BroadcastGlobalRepair()
         else
             OGRH.Msg("|cffff0000[RH-SyncIntegrity DEBUG]|r Unknown component: " .. tostring(request.component))
         end
@@ -442,27 +438,6 @@ function OGRH.SyncIntegrity.BroadcastRolesRepair()
     
     if OGRH.SyncIntegrity.State.debug then
         OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcast RolesUI repair")
-    end
-end
-
--- Admin: Broadcast global components for repair
-function OGRH.SyncIntegrity.BroadcastGlobalRepair()
-    local globalData = {
-        consumes = OGRH_SV.v2.consumes,
-        tradeItems = OGRH_SV.v2.tradeItems
-    }
-    
-    OGRH.MessageRouter.Broadcast(
-        OGRH.MessageTypes.SYNC.REPAIR_GLOBAL,
-        globalData,
-        {
-            priority = "LOW",
-            compress = true
-        }
-    )
-    
-    if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcast global components repair")
     end
 end
 
@@ -578,32 +553,6 @@ function OGRH.SyncIntegrity.OnRolesRepair(sender, data)
     end
 end
 
--- Client: Receive and apply global components repair
-function OGRH.SyncIntegrity.OnGlobalRepair(sender, data)
-    if not data then return end
-    
-    -- Only accept repairs from admin
-    if not OGRH.CanModifyStructure(sender) then
-        return
-    end
-    
-    OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r Received global components repair from " .. sender)
-    
-    -- Apply repair data to global components
-    if data.consumes then
-        OGRH_SV.v2.consumes = OGRH.DeepCopy(data.consumes)
-    end
-    if data.tradeItems then
-        OGRH_SV.v2.tradeItems = OGRH.DeepCopy(data.tradeItems)
-    end
-    
-    if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r Global components repaired from " .. tostring(sender))
-    else
-        OGRH.Msg("|cff00ff00[RH]|r Configuration updated")
-    end
-end
-
 -- Start integrity checks timer (30-second polling)
 function OGRH.SyncIntegrity.StartIntegrityChecks()
     if not OGRH.ScheduleTimer then
@@ -678,13 +627,7 @@ function OGRH.SyncIntegrity.Initialize()
         end
     )
     
-    OGRH.MessageRouter.RegisterHandler(
-        OGRH.MessageTypes.SYNC.REPAIR_GLOBAL,
-        function(sender, data, channel)
-            OGRH.SyncIntegrity.OnGlobalRepair(sender, data)
-        end
-    )
-    
+
     OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Active Raid checksum system loaded")
     
     -- Check periodically if we become admin and start broadcasting

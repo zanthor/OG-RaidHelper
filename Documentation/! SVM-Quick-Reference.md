@@ -28,7 +28,11 @@ OGRH.SVM.SetPath(
     {
         syncLevel = "REALTIME",
         componentType = "roles",
-        scope = {raid = raid, encounter = encounter}
+        scope = {
+            isActiveRaid = (raidIdx == 1),  -- REQUIRED for permission checks
+            raid = raid,
+            encounter = encounter
+        }
     }
 )
 ```
@@ -43,7 +47,10 @@ OGRH.SVM.SetPath(
     {
         syncLevel = "REALTIME",
         componentType = "assignments",
-        scope = "playerAssignments"
+        scope = {
+            isActiveRaid = true,  -- REQUIRED for permission checks
+            path = "playerAssignments"
+        }
     }
 )
 ```
@@ -99,14 +106,18 @@ OGRH.SVM.SetPath(
 | `MANUAL` | Structure changes | No auto-sync, admin push only |
 
 ---
+ Permission | Requires `isActiveRaid` |
+|------|----------|------------|------------------------|
+| `"roles"` | Role assignments | R/L/A | Yes (if Active Raid) |
+| `"assignments"` | Player marks, icons | R/L/A | Yes (if Active Raid) |
+| `"marks"` | Raid marks | Admin only | Yes (if Active Raid) |
+| `"numbers"` | Assignment numbers | Admin only | Yes (if Active Raid) |
+| `"settings"` | Encounter settings | Varies | No |
+| `"structure"` | Raid/encounter creation | Admin only | Yes (if Active Raid) |
+| `"metadata"` | Descriptions, notes | Varies | No |
+| `"consumes"` | Consumable tracking | Varies | No |
 
-## Component Types
-
-| Type | Examples |
-|------|----------|
-| `"roles"` | Role assignments |
-| `"assignments"` | Player marks, icons |
-| `"settings"` | Encounter settings |
+**Note:** `isActiveRaid` flag in scope metadata enables permission checks for Active Raid (index 1). Non-Active Raids have no permission restrictions.
 | `"structure"` | Raid/encounter creation |
 | `"metadata"` | Descriptions, notes |
 | `"consumes"` | Consumable tracking |

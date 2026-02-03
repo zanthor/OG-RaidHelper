@@ -17,6 +17,68 @@ The SavedVariablesManager (SVM) is the **unified write interface** for all OG-Ra
 
 ---
 
+## Permission Model
+
+SVM enforces a **two-tier permission system** for Active Raid writes:
+
+### Tier 1: Structure (Admin Only)
+- Creating/deleting raids or encounters
+- Modifying raid/encounter metadata (display names, descriptions)
+- Checked via `OGRH.CanModifyStructure(playerName)`
+- Only returns `true` for designated Raid Admin
+
+### Tier 2: Assignments (Admin/Leader/Assistant)
+- Player role assignments (dragging players to slots)
+- Assignment marks and numbers (M/N buttons)
+- Player assignments (icons, numbers)
+- Checked via `OGRH.CanModifyAssignments(playerName)`
+- Returns `true` for Raid Admin OR Raid Leader/Assistant
+
+### Permission Enforcement
+
+**Two enforcement layers:**
+
+1. **UI Layer** (`EncounterMgmt.CanEditAssignments()`):
+   - Prevents unauthorized players from interacting with UI
+   - Shows permission error messages
+   - Provides immediate user feedback
+
+2. **SVM Layer** (`SVM.SyncRealtime()` and `SVM.OnDeltaReceived()`):
+   - Validates permission before broadcasting changes
+   - Validates permission before applying received changes
+   - Security enforcement (prevents circumvention)
+
+### Critical Metadata: `isActiveRaid` Flag
+
+**REQUIRED for permission checks to work:**
+
+```lua
+OGRH.SVM.SetPath(path, value, {
+    syncLevel = "REALTIME",
+    componentType = "assignments",
+    scope = {
+        isActiveRaid = (frame.selectedRaidIdx == 1),  -- ← REQUIRED
+        raid = raidName,
+        encounter = encounterName
+    }
+})
+```
+
+**Why `isActiveRaid` is required:**
+- Active Raid (index 1): Permission checks apply (R/L/A for assignments, Admin for structure)
+- Non-Active Raids: No permission checks (planning mode)
+- SVM reads `syncMetadata.scope.isActiveRaid` to determine enforcement
+
+### Non-Active Raids (Planning Mode)
+
+For saved raids (index != 1):
+- **No permission restrictions** - Anyone can edit
+- Used for planning future raids
+- Changes still sync but with `BATCH` level
+- No checksum polling (Active Raid only)
+
+---
+
 ## Core Principle: Use SVM for Reads and Writes
 
 ```lua
@@ -163,11 +225,19 @@ The `syncMetadata` table controls how writes are synced to other raid members.
 | `syncLevel` | string | Sync urgency level (see below) |
 | `componentType` | string | Component being modified ("roles", "assignments", "settings", etc.) |
 
+### Required for Active Raid
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `scope.isActiveRaid` | boolean | **REQUIRED** - Set to `true` if editing Active Raid (enables permission checks) |
+
 ### Optional Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `scope` | table/string | Scope of change (e.g., `{raid = "MC", encounter = "Rag"}` or `"encounterMgmt.roles"`) |
+| `scope` | table/string | Scope of change (e.g., `{isActiveRaid = true, raid = "MC", encounter = "Rag"}`) |
+| `scope.raid` | string | Raid name (for context in debug messages) |
+| `scope.encounter` | string | Encounter name (for context in debug messages) |
 
 ---
 
@@ -483,9 +553,16 @@ OGRH.SVM.SetPath("encounterMgmt.roles.MC.Rag.tank1", "PlayerName", {
 ```
 
 **Integration with SyncIntegrity:**
-- Calls `OGRH.SyncIntegrity.RecordAdminModification(scope)`
-- Suppresses checksum broadcast for 10 seconds (cooldown)
+- Calls `OGRH.SyncIntegrity.RecordAdminModification()` **only if:**
+  1. Change is to Active Raid (`scope.isActiveRaid == true`)
+  2. Local player is Raid Admin (`OGRH.IsRaidAdmin()`)
+- Suppresses checksum broadcast for 2 seconds after admin modification
 - Next broadcast includes new checksum
+
+**Why conditional?**
+- Non-Active Raid edits don't affect checksum system (no polling for saved raids)
+- Non-admin edits broadcast SYNC.DELTA directly (admin broadcasts checksums separately)
+- Prevents unnecessary delays for irrelevant changes
 
 ---
 
@@ -505,6 +582,73 @@ OGRH.SVM.SyncRealtime = function(key, subkey, value, syncMetadata)
     
     -- Call original
     originalSyncRealtime(key, subkey, value, syncMetadata)
+end
+```
+
+---
+
+## Architecture: Handler Registration
+
+**MessageRouter owns ALL handler registration** - modules provide handler functions but do not register them.
+
+### Design Pattern
+
+```lua
+-- ❌ INCORRECT: Module self-registers handlers
+function OGRH.SVM.Initialize()
+    OGRH.MessageRouter.RegisterHandler("OGRH_SYNC_DELTA", OGRH.SVM.OnDeltaReceived)
+end
+
+-- ✅ CORRECT: MessageRouter registers all handlers in RegisterDefaultHandlers()
+function OGRH.MessageRouter.RegisterDefaultHandlers()
+    -- SYNC.DELTA delegates to SVM
+    self.RegisterHandler("OGRH_SYNC_DELTA", function(sender, data, channel)
+        OGRH.SVM.OnDeltaReceived(sender, data, channel)
+    end)
+    
+    -- More handlers...
+end
+```
+
+### Rationale
+
+**Single Source of Truth:**
+- All handlers in one place (`MessageRouter.RegisterDefaultHandlers()`)
+- Easy to audit what messages are handled
+- No duplicate/conflicting handler registrations
+
+**Module Separation:**
+- MessageRouter: Infrastructure (routing, deduplication, permission checks)
+- SVM: Business logic (data persistence, sync propagation)
+- Modules provide handler functions, MessageRouter wires them up
+
+**Timing Issues:**
+- SVM used to register handlers after 0.5s delay (load order dependency)
+- This caused handlers to overwrite MessageRouter's registrations
+- Centralized registration eliminates timing issues
+
+### Handler Delegation Pattern
+
+MessageRouter delegates to module functions:
+
+```lua
+-- MessageRouter registers handler
+RegisterHandler("OGRH_SYNC_DELTA", function(sender, data, channel)
+    -- Delegate to SVM for business logic
+    OGRH.SVM.OnDeltaReceived(sender, data, channel)
+end)
+
+-- SVM provides handler function (but doesn't register it)
+function OGRH.SVM.OnDeltaReceived(sender, data, channel)
+    -- Permission check
+    if data.componentType == "assignments" then
+        if not OGRH.CanModifyAssignments(sender) then
+            return  -- Reject unauthorized update
+        end
+    end
+    
+    -- Apply data
+    OGRH.SVM.SetPath(data.path, data.value, {syncLevel = "NONE"})
 end
 ```
 
