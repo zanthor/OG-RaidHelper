@@ -835,18 +835,20 @@ function OGRH.ShowEncounterPlanning(encounterName)
     title:SetText("Encounter Planning")
     frame.title = title
     
-    -- Export Raid button (anchored to left of Edit Structure)
+    -- Export Raid button (DISABLED for v2.0 - will be re-enabled in future release)
     local exportRaidBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     exportRaidBtn:SetWidth(90)
     exportRaidBtn:SetHeight(24)
     exportRaidBtn:SetText("Export Raid")
     OGRH.StyleButton(exportRaidBtn)
+    exportRaidBtn:Disable()
     exportRaidBtn:SetScript("OnClick", function()
-      if frame.selectedRaid then
-        OGRH.ShowExportRaidWindow(frame.selectedRaid)
-      else
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid first.")
-      end
+      -- Disabled for v2.0 release
+      -- if frame.selectedRaid then
+      --   OGRH.ShowExportRaidWindow(frame.selectedRaid)
+      -- else
+      --   DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid first.")
+      -- end
     end)
     frame.exportRaidBtn = exportRaidBtn
     
