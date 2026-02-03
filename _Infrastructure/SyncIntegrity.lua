@@ -66,9 +66,9 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
         return
     end
     
-    -- Check if network queue is busy (don't add more traffic if repairs are still sending)
+    -- Check if network queue is busy (skip if more than 10 messages pending)
     if OGAddonMsg and OGAddonMsg.stats and OGAddonMsg.stats.queueDepth then
-        if OGAddonMsg.stats.queueDepth > 0 then
+        if OGAddonMsg.stats.queueDepth > 10 then
             if OGRH.SyncIntegrity.State.debug then
                 OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (network queue busy: %d messages pending)", OGAddonMsg.stats.queueDepth))
             end
