@@ -129,14 +129,14 @@ OGST.LIST_ITEM_SPACING = 2
 -- Returns the base path to the OGST folder
 function OGST.GetResourcePath()
   if not OGST._resourcePath then
-    -- Determine path based on where OGST was loaded from
+    -- Try to find where OGST is loaded from by checking known locations
+    -- Priority: standalone _OGST addon, then check for embedded versions
     
+    -- Use the load source determined at initialization
     if OGST.loadSource == "standalone" then
       OGST._resourcePath = "Interface\\AddOns\\_OGST\\"
-    elseif OGST.loadSource == "OG-RaidHelper" then
-      OGST._resourcePath = "Interface\\AddOns\\OG-RaidHelper\\Libs\\OGST\\"
     else
-      -- Generic embedded version - construct path from load source
+      -- Embedded version - construct path from load source
       OGST._resourcePath = "Interface\\AddOns\\" .. (OGST.loadSource or "OG-RaidHelper") .. "\\Libs\\OGST\\"
     end
   end
