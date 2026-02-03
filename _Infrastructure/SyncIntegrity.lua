@@ -32,6 +32,9 @@ OGRH.SyncIntegrity.State = {
     lastAdminModification = 0,  -- timestamp of last admin change
     modificationCooldown = 2,  -- seconds to wait after last change before broadcasting
     
+    -- Player join tracking
+    lastRaidSize = 0,  -- Track raid size to detect joins
+    
     -- Debug mode (toggle with /ogrh debug sync)
     debug = false,  -- Hide verbose sync messages by default
 }
@@ -271,7 +274,14 @@ OGRH.SyncIntegrity.RepairBuffer = {
     timeout = 1.0
 }
 
--- Admin: Handle repair request from clients (buffer for 1 second)
+-- Get repair buffer timeout based on Invite Mode
+local function GetRepairBufferTimeout()
+    -- Check if Invite Mode is active
+    local inviteMode = OGRH_SV and OGRH_SV.v2 and OGRH_SV.v2.invites and OGRH_SV.v2.invites.enabled
+    return inviteMode and 5.0 or 1.0
+end
+
+-- Admin: Handle repair request from clients (buffer dynamically)
 function OGRH.SyncIntegrity.OnRepairRequest(sender, data)
     if not data or not data.component then return end
     
@@ -299,9 +309,14 @@ function OGRH.SyncIntegrity.OnRepairRequest(sender, data)
     -- Track who requested (for debugging)
     table.insert(buffer.requests[key].requesters, sender)
     
-    -- Start/reset timer
+    -- Start/reset timer with dynamic timeout
     if buffer.timer then
         OGRH.CancelTimer(buffer.timer)
+    end
+    
+    local timeout = GetRepairBufferTimeout()
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Buffering repair request (timeout: %.1fs)", timeout))
     end
     
     buffer.timer = OGRH.ScheduleTimer(function()
@@ -388,28 +403,50 @@ function OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
     end
 end
 
--- Admin: Broadcast Active Raid assignments for specific encounter
+-- Admin: Broadcast Active Raid assignments for ALL encounters
 function OGRH.SyncIntegrity.BroadcastAssignmentsRepair(encounterIdx)
     local activeRaid = OGRH_SV.v2.encounterMgmt.raids[1]
-    if not activeRaid or not activeRaid.encounters or not activeRaid.encounters[encounterIdx] then
+    if not activeRaid or not activeRaid.encounters then
         return
     end
     
-    local encounter = activeRaid.encounters[encounterIdx]
-    local assignments = {}
+    -- Extract ALL encounter assignments
+    local allAssignments = {}
+    local singleEncounterSize = 0
+    local totalSize = 0
     
-    -- Extract assignments from encounter
-    if encounter.roles then
-        for i = 1, table.getn(encounter.roles) do
-            assignments[i] = encounter.roles[i].assignedPlayers or {}
+    for encIdx = 1, table.getn(activeRaid.encounters) do
+        local encounter = activeRaid.encounters[encIdx]
+        allAssignments[encIdx] = {}
+        
+        if encounter.roles then
+            for roleIdx = 1, table.getn(encounter.roles) do
+                local role = encounter.roles[roleIdx]
+                allAssignments[encIdx][roleIdx] = {
+                    assignedPlayers = role.assignedPlayers or {},
+                    raidMarks = role.raidMarks or {},
+                    assignmentNumbers = role.assignmentNumbers or {}
+                }
+                
+                -- Track size for debug
+                local encSize = table.getn(role.assignedPlayers or {}) + table.getn(role.raidMarks or {}) + table.getn(role.assignmentNumbers or {})
+                totalSize = totalSize + encSize
+                if encIdx == (encounterIdx or 1) then
+                    singleEncounterSize = singleEncounterSize + encSize
+                end
+            end
         end
+    end
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Assignment payload: Single encounter ~%d items, All encounters ~%d items (%dx larger)", 
+            singleEncounterSize, totalSize, totalSize > 0 and math.floor(totalSize / math.max(singleEncounterSize, 1)) or 0))
     end
     
     OGRH.MessageRouter.Broadcast(
         OGRH.MessageTypes.SYNC.REPAIR_ASSIGNMENTS,
         {
-            encounterIdx = encounterIdx,
-            assignments = assignments
+            allEncounters = allAssignments
         },
         {
             priority = "LOW",
@@ -418,7 +455,7 @@ function OGRH.SyncIntegrity.BroadcastAssignmentsRepair(encounterIdx)
     )
     
     if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcast assignments repair for encounter " .. tostring(encounterIdx))
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcast assignments repair for ALL encounters")
     end
 end
 
@@ -480,27 +517,40 @@ function OGRH.SyncIntegrity.OnActiveRaidRepair(sender, data)
     })
 end
 
--- Client: Receive and apply assignments repair
+-- Client: Receive and apply assignments repair for ALL encounters
 function OGRH.SyncIntegrity.OnAssignmentsRepair(sender, data)
-    if not data or not data.encounterIdx or not data.assignments then return end
+    if not data or not data.allEncounters then return end
     
     -- Only accept repairs from admin
     if not OGRH.CanModifyStructure(sender) then
         return
-    end    
-    OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r Received assignments repair for encounter " .. data.encounterIdx .. " from " .. sender)    
+    end
+    
+    OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r Received assignments repair for ALL encounters from " .. sender)
+    
     local activeRaid = OGRH_SV.v2.encounterMgmt.raids[1]
-    if not activeRaid or not activeRaid.encounters or not activeRaid.encounters[data.encounterIdx] then
+    if not activeRaid or not activeRaid.encounters then
         return
     end
     
-    local encounter = activeRaid.encounters[data.encounterIdx]
-    
-    -- Apply assignments to roles
-    if encounter.roles then
-        for i = 1, table.getn(encounter.roles) do
-            encounter.roles[i].assignedPlayers = data.assignments[i] or {}
+    -- Apply assignments to ALL encounters
+    local repairCount = 0
+    for encIdx, encounterAssignments in pairs(data.allEncounters) do
+        local encounter = activeRaid.encounters[encIdx]
+        if encounter and encounter.roles then
+            for roleIdx, roleAssignments in pairs(encounterAssignments) do
+                if encounter.roles[roleIdx] then
+                    encounter.roles[roleIdx].assignedPlayers = roleAssignments.assignedPlayers or {}
+                    encounter.roles[roleIdx].raidMarks = roleAssignments.raidMarks or {}
+                    encounter.roles[roleIdx].assignmentNumbers = roleAssignments.assignmentNumbers or {}
+                    repairCount = repairCount + 1
+                end
+            end
         end
+    end
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-SyncIntegrity]|r Applied assignments repair for ALL encounters (%d roles updated)", repairCount))
     end
     
     if OGRH.SyncIntegrity.State.debug then
@@ -582,6 +632,76 @@ function OGRH.SyncIntegrity.RecordAdminModification()
     end
 end
 
+-- Client: Request checksums from admin (called when joining raid)
+function OGRH.SyncIntegrity.RequestChecksums()
+    if OGRH.CanModifyStructure and OGRH.CanModifyStructure(UnitName("player")) then
+        return  -- Admin doesn't request from themselves
+    end
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Requesting checksums from admin")
+    end
+    
+    OGRH.MessageRouter.Broadcast(
+        OGRH.MessageTypes.ADMIN.QUERY,
+        {requestType = "checksums"},
+        {priority = "NORMAL"}
+    )
+end
+
+-- Admin: Handle checksum request and respond
+function OGRH.SyncIntegrity.OnAdminQuery(sender, data)
+    if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then
+        return  -- Only admin responds
+    end
+    
+    if data.requestType ~= "checksums" then
+        return
+    end
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Responding to checksum request from %s", sender))
+    end
+    
+    -- First, identify ourselves as admin (so client will accept our checksums)
+    OGRH.MessageRouter.Broadcast(
+        OGRH.MessageTypes.ADMIN.RESPONSE,
+        {
+            currentAdmin = UnitName("player"),
+            timestamp = GetTime(),
+            version = OGRH.VERSION
+        },
+        {priority = "HIGH"}
+    )
+    
+    -- Then send checksums immediately (after short delay to ensure admin response is processed first)
+    OGRH.ScheduleTimer(function()
+        OGRH.SyncIntegrity.BroadcastChecksums()
+    end, 0.1)
+end
+
+-- Detect player joins and request checksums
+local function OnRaidRosterUpdate()
+    local currentRaidSize = GetNumRaidMembers()
+    local previousRaidSize = OGRH.SyncIntegrity.State.lastRaidSize
+    
+    -- Player joined (size increased)
+    if currentRaidSize > previousRaidSize and currentRaidSize > 0 then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Raid size changed: %d -> %d", previousRaidSize, currentRaidSize))
+        end
+        
+        -- If we just joined (went from 0 to >0), request checksums
+        if previousRaidSize == 0 then
+            OGRH.ScheduleTimer(function()
+                OGRH.SyncIntegrity.RequestChecksums()
+            end, 1.0)  -- Wait 1 second for raid to stabilize
+        end
+    end
+    
+    OGRH.SyncIntegrity.State.lastRaidSize = currentRaidSize
+end
+
 -- Initialize (register message handlers)
 function OGRH.SyncIntegrity.Initialize()
     if not OGRH.MessageRouter or not OGRH.MessageTypes then
@@ -627,6 +747,22 @@ function OGRH.SyncIntegrity.Initialize()
         end
     )
     
+    -- Register handler for admin queries
+    OGRH.MessageRouter.RegisterHandler(
+        OGRH.MessageTypes.ADMIN.QUERY,
+        function(sender, data, channel)
+            OGRH.SyncIntegrity.OnAdminQuery(sender, data)
+        end
+    )
+    
+    -- Register RAID_ROSTER_UPDATE event
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+    eventFrame:SetScript("OnEvent", function()
+        if event == "RAID_ROSTER_UPDATE" then
+            OnRaidRosterUpdate()
+        end
+    end)
 
     OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Active Raid checksum system loaded")
     

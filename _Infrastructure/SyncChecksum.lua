@@ -680,28 +680,29 @@ end
 ]]
 function OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(encounterIdx)
     local activeRaid = OGRH.GetActiveRaid and OGRH.GetActiveRaid()
-    if not activeRaid or not activeRaid.encounters or not activeRaid.encounters[encounterIdx] then
+    if not activeRaid or not activeRaid.encounters then
         return "0"
     end
     
-    local encounter = activeRaid.encounters[encounterIdx]
-    if not encounter.roles then
-        return "0"
-    end
-    
-    -- Extract only assignments (assignedPlayers, raidMarks, assignmentNumbers)
-    local assignments = {}
-    for i = 1, table.getn(encounter.roles) do
-        local role = encounter.roles[i]
-        assignments[i] = {
-            assignedPlayers = role.assignedPlayers or {},
-            raidMarks = role.raidMarks or {},
-            assignmentNumbers = role.assignmentNumbers or {}
-        }
+    -- Compute checksum for ALL encounters, not just one
+    local allAssignments = {}
+    for encIdx = 1, table.getn(activeRaid.encounters) do
+        local encounter = activeRaid.encounters[encIdx]
+        if encounter.roles then
+            allAssignments[encIdx] = {}
+            for roleIdx = 1, table.getn(encounter.roles) do
+                local role = encounter.roles[roleIdx]
+                allAssignments[encIdx][roleIdx] = {
+                    assignedPlayers = role.assignedPlayers or {},
+                    raidMarks = role.raidMarks or {},
+                    assignmentNumbers = role.assignmentNumbers or {}
+                }
+            end
+        end
     end
     
     -- Serialize and hash
-    local serialized = SimpleSerialize(assignments)
+    local serialized = SimpleSerialize(allAssignments)
     return OGRH.SyncChecksum.HashString(serialized)
 end
 

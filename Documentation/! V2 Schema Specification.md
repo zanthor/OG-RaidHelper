@@ -108,9 +108,23 @@ OGRH_SV.v2.encounterMgmt = {
                             showRaidIcons = 1,            -- number: Show raid icons (0/1)
                             
                             -- Assignment Data
-                            assignments = {
+                            assignedPlayers = {
                                 [1] = "PlayerName",       -- SLOT INDEX: Assigned player
                                 [2] = "PlayerName2",
+                                -- ... up to slots count
+                            },
+                            
+                            -- Raid Marks (icon assignments)
+                            raidMarks = {
+                                [1] = 8,                  -- Slot 1 gets skull mark
+                                [2] = 7,                  -- Slot 2 gets cross mark
+                                -- ... up to slots count
+                            },
+                            
+                            -- Assignment Numbers (numeric assignments)
+                            assignmentNumbers = {
+                                [1] = 1,                  -- Slot 1 gets number 1
+                                [2] = 2,                  -- Slot 2 gets number 2
                                 -- ... up to slots count
                             },
                             
@@ -168,7 +182,7 @@ OGRH_SV.v2.roles = {
 }
 ```
 
-**Note:** This is a **global role assignment** (cross-encounter). Encounter-specific assignments are in `encounterMgmt.raids[].encounters[].roles[].assignments`.
+**Note:** This is a **global role assignment** (cross-encounter). Encounter-specific assignments are in `encounterMgmt.raids[].encounters[].roles[].assignedPlayers`.
 
 ---
 

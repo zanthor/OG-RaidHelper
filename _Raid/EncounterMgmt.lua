@@ -4652,10 +4652,12 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         menu:AddItem({
           text = "  " .. (raid.displayName or raid.name),  -- Indent with spaces
           onClick = function()
-            -- Check authorization
-            if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then
-              OGRH.Msg("Only the Raid Admin can change the Active Raid.")
-              return
+            -- Check authorization (only required if in a raid)
+            if GetNumRaidMembers() > 0 then
+              if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then
+                OGRH.Msg("Only the Raid Admin can change the Active Raid.")
+                return
+              end
             end
             
             -- Show confirmation dialog
