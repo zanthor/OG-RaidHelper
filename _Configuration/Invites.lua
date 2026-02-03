@@ -307,70 +307,162 @@ function OGRH.Invites.ParseRaidHelperGroupsJSON(jsonString)
     return nil, "Invalid JSON: Root must be an object"
   end
   
-  -- Check for raidDrop array
-  local raidDrop = data.raidDrop
-  if not raidDrop or type(raidDrop) ~= "table" then
-    return nil, "Invalid JSON: Missing 'raidDrop' array"
+  -- Check for new format (slots array) vs old format (raidDrop array)
+  local isNewFormat = (data.slots ~= nil)
+  local isOldFormat = (data.raidDrop ~= nil)
+  
+  if not isNewFormat and not isOldFormat then
+    return nil, "Invalid JSON: Missing 'slots' or 'raidDrop' array"
   end
   
-  -- Extract full player roster
   local players = {}
   local groupAssignments = {} -- { [playerName] = groupNumber }
   
-  for i = 1, table.getn(raidDrop) do
-    local slot = raidDrop[i]
-    if slot and slot.name then
-      local playerName = NormalizeName(slot.name)
-      local groupNum = tonumber(slot.partyId)
-      local isBenched = (slot.class == "Bench")
-      
-      -- Map role_emote to OGRH role format
-      local role = nil
-      if slot.role_emote == "598989638098747403" then
-        role = "TANKS"
-      elseif slot.role_emote == "592438128057253898" then
-        role = "HEALERS"
-      elseif slot.role_emote == "734439523328720913" then
-        role = "MELEE"
-      elseif slot.role_emote == "592446395596931072" then
-        role = "RANGED"
+  if isNewFormat then
+    -- New format (2026+): slots array with groupNumber field
+    local slots = data.slots
+    if type(slots) ~= "table" then
+      return nil, "Invalid JSON: 'slots' must be an array"
+    end
+    
+    for i = 1, table.getn(slots) do
+      local slot = slots[i]
+      if slot and slot.name then
+        local playerName = NormalizeName(slot.name)
+        local groupNum = tonumber(slot.groupNumber)
+        
+        -- Check if benched (no groupNumber or groupNumber > 8)
+        local isBenched = (not groupNum or groupNum > 8)
+        
+        -- Map className to OGRH role format
+        local role = nil
+        local className = slot.className
+        if className == "Tank" then
+          role = "TANKS"
+        elseif className == "Priest" or className == "Paladin" or className == "Shaman" or className == "Druid" then
+          -- Need to check spec for hybrid classes
+          local specName = slot.specName
+          if specName then
+            if string.find(specName, "Holy") or string.find(specName, "Restoration") or string.find(specName, "Discipline") then
+              role = "HEALERS"
+            elseif string.find(specName, "Protection") or string.find(specName, "Guardian") then
+              role = "TANKS"
+            elseif string.find(specName, "Feral") or string.find(specName, "Enhancement") or string.find(specName, "Retribution") then
+              role = "MELEE"
+            else
+              role = "RANGED" -- Balance, Shadow, Elemental, Smite
+            end
+          end
+        elseif className == "Rogue" or className == "Warrior" then
+          role = "MELEE"
+        elseif className == "Mage" or className == "Warlock" or className == "Hunter" then
+          role = "RANGED"
+        end
+        
+        -- Get actual class
+        local actualClass = nil
+        if className and className ~= "Tank" then
+          actualClass = string.upper(className)
+        elseif className == "Tank" then
+          -- Try to infer from spec
+          local specName = slot.specName
+          if specName then
+            if string.find(specName, "Protection") then
+              if string.find(specName, "Protection1") then
+                actualClass = "PALADIN"
+              else
+                actualClass = "WARRIOR"
+              end
+            elseif string.find(specName, "Guardian") then
+              actualClass = "DRUID"
+            end
+          end
+        end
+        
+        -- Try to get class from OGRH cache if not available
+        if not actualClass then
+          actualClass = OGRH.GetPlayerClass(playerName)
+        end
+        
+        -- Create player object
+        local player = {
+          name = playerName,
+          class = actualClass,
+          role = role,
+          group = groupNum,
+          bench = isBenched,
+          absent = false,
+          status = "signed",
+          source = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
+        }
+        
+        table.insert(players, player)
+        
+        -- Store group assignment for non-benched players
+        if not isBenched and groupNum and groupNum >= 1 and groupNum <= 8 then
+          groupAssignments[playerName] = groupNum
+        end
       end
-      
-      -- Get actual class from cache (for benched players and validation)
-      local actualClass = nil
-      if not isBenched and slot.class and slot.class ~= "Bench" then
-        actualClass = string.upper(slot.class)
-      end
-      
-      -- Try to get class from OGRH cache if not available
-      if not actualClass then
-        actualClass = OGRH.GetPlayerClass(playerName)
-      end
-      
-      -- Create player object
-      local player = {
-        name = playerName,
-        class = actualClass,
-        role = role,
-        group = groupNum,
-        bench = isBenched,
-        absent = false,
-        status = "signed",
-        source = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
-      }
-      
-      table.insert(players, player)
-      
-      -- Store group assignment for non-benched players
-      if not isBenched and groupNum and groupNum >= 1 and groupNum <= 8 then
-        groupAssignments[playerName] = groupNum
+    end
+    
+  else
+    -- Old format (pre-2026): raidDrop array with partyId field
+    local raidDrop = data.raidDrop
+    for i = 1, table.getn(raidDrop) do
+      local slot = raidDrop[i]
+      if slot and slot.name then
+        local playerName = NormalizeName(slot.name)
+        local groupNum = tonumber(slot.partyId)
+        local isBenched = (slot.class == "Bench")
+        
+        -- Map role_emote to OGRH role format
+        local role = nil
+        if slot.role_emote == "598989638098747403" then
+          role = "TANKS"
+        elseif slot.role_emote == "592438128057253898" then
+          role = "HEALERS"
+        elseif slot.role_emote == "734439523328720913" then
+          role = "MELEE"
+        elseif slot.role_emote == "592446395596931072" then
+          role = "RANGED"
+        end
+        
+        -- Get actual class from cache (for benched players and validation)
+        local actualClass = nil
+        if not isBenched and slot.class and slot.class ~= "Bench" then
+          actualClass = string.upper(slot.class)
+        end
+        
+        -- Try to get class from OGRH cache if not available
+        if not actualClass then
+          actualClass = OGRH.GetPlayerClass(playerName)
+        end
+        
+        -- Create player object
+        local player = {
+          name = playerName,
+          class = actualClass,
+          role = role,
+          group = groupNum,
+          bench = isBenched,
+          absent = false,
+          status = "signed",
+          source = OGRH.Invites.SOURCE_TYPE.RAIDHELPER
+        }
+        
+        table.insert(players, player)
+        
+        -- Store group assignment for non-benched players
+        if not isBenched and groupNum and groupNum >= 1 and groupNum <= 8 then
+          groupAssignments[playerName] = groupNum
+        end
       end
     end
   end
   
   -- Create final normalized structure
   local result = {
-    hash = data.hash,
+    hash = data.id or data.hash,
     title = data.title or "Composition",
     players = players,
     groupAssignments = groupAssignments
