@@ -82,30 +82,7 @@ function OGRH.CreateChatWindow()
         pfUI.chat.RefreshChat()
     end
     
-    -- Remove channels and message types
-    if frameIndex then
-        -- Remove channels
-        local channels = {GetChatWindowChannels(frameIndex)}
-        for i = 1, table.getn(channels), 2 do
-            local channelName = channels[i]
-            if channelName then
-                RemoveChatWindowChannel(frameIndex, channelName)
-            end
-        end
-        
-        -- Remove message groups
-        local messageGroups = {
-            "SAY", "YELL", "EMOTE",
-            "PARTY", "RAID", "GUILD", "OFFICER",
-            "WHISPER",
-            "CHANNEL",
-            "SYSTEM"
-        }
-        
-        for i = 1, table.getn(messageGroups) do
-            RemoveChatWindowMessages(frameIndex, messageGroups[i])
-        end
-    end
+    -- Note: Channel and message type management removed - users can configure their own window settings
     
     return newFrame
 end
