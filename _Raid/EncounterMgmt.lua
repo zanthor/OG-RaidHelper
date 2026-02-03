@@ -11,6 +11,24 @@ OGRH.EncounterMgmt = OGRH.EncounterMgmt or {}
 -- Storage for encounter assignments
 local encounterData = {}
 
+-- Helper: Check if player can edit current selected encounter
+-- Active Raid (index 1) requires admin, non-Active raids allow anyone
+local function CanEditCurrentEncounter(frame)
+  -- Out of raid: anyone can edit
+  if GetNumRaidMembers() == 0 then
+    return true
+  end
+  
+  -- In raid: check if editing Active Raid (index 1)
+  if frame.selectedRaidIdx == 1 then
+    -- Active Raid: requires admin permission
+    return OGRH.CanModifyStructure and OGRH.CanModifyStructure(UnitName("player"))
+  else
+    -- Non-Active Raid: anyone can edit
+    return true
+  end
+end
+
 -- Upgrade old data structure to new nested structure
 function OGRH.UpgradeEncounterDataStructure()
   OGRH.EnsureSV()
@@ -842,6 +860,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
     editStructureBtn:SetScript("OnClick", function()
       local selectedRaid = frame.selectedRaid
       local selectedEncounter = frame.selectedEncounter
+      local selectedRaidIdx = frame.selectedRaidIdx
       
       if not selectedRaid or not selectedEncounter then
         OGRH.Msg("Select an encounter first.")
@@ -853,7 +872,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
       
       -- Open Encounter Setup with the selected raid and encounter
       if OGRH.ShowEncounterSetup then
-        OGRH.ShowEncounterSetup(selectedRaid, selectedEncounter)
+        OGRH.ShowEncounterSetup(selectedRaid, selectedEncounter, selectedRaidIdx)
       end
     end)
     
@@ -1580,7 +1599,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
     -- Auto Assign functionality
     autoAssignBtn:SetScript("OnClick", function()
       -- Check permission
-      if not OGRH.CanEdit or not OGRH.CanEdit() then
+      if not CanEditCurrentEncounter(frame) then
         OGRH.Msg("Only the raid lead can modify assignments.")
         return
       end
@@ -1698,7 +1717,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
     -- Function to toggle edit mode
     local function SetEditMode(enabled)
       -- Check if player has permission to edit
-      local canEdit = OGRH.CanEdit and OGRH.CanEdit()
+      local canEdit = OGRH.CanEdit and CanEditCurrentEncounter(frame)
       
       -- If trying to enable but no permission, disable and show message
       if enabled and not canEdit then
@@ -1756,7 +1775,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
     -- Toggle edit mode on click
     editToggleBtn:SetScript("OnClick", function()
       -- Check permission
-      if not frame.editMode and (not OGRH.CanEdit or not OGRH.CanEdit()) then
+      if not frame.editMode and (not CanEditCurrentEncounter(frame)) then
         if frame.ShowStatus then
           frame.ShowStatus("Only the raid lead can unlock editing.", 10)
         end
@@ -2240,7 +2259,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
         playerBtn:RegisterForDrag("LeftButton")
         playerBtn:SetScript("OnDragStart", function()
           -- Check permission
-          if not OGRH.CanEdit or not OGRH.CanEdit() then
+          if not CanEditCurrentEncounter(frame) then
             return
           end
           
@@ -3147,7 +3166,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
             this.isDragging = true
             
             -- Check permission
-            if not OGRH.CanEdit or not OGRH.CanEdit() then
+            if not CanEditCurrentEncounter(frame) then
               return
             end
             
@@ -3340,7 +3359,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
             
             if button == "RightButton" then
               -- Check permission
-              if not OGRH.CanEdit or not OGRH.CanEdit() then
+              if not CanEditCurrentEncounter(frame) then
                 OGRH.Msg("Only the raid lead can modify assignments.")
                 return
               end

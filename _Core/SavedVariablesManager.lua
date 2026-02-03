@@ -317,19 +317,27 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
         OGRH.Msg("|cffaaffaa[RH-SVM DEBUG]|r SyncRealtime called: key=" .. tostring(key) .. ", subkey=" .. tostring(subkey))
     end
     
-    -- Check permissions based on componentType
+    -- Check permissions based on componentType and Active Raid status
     local playerName = UnitName("player")
     local componentType = syncMetadata.componentType or "generic"
+    local isActiveRaid = syncMetadata.scope and syncMetadata.scope.isActiveRaid
+    
+    -- Only enforce strict permissions when in raid AND editing Active Raid
+    -- Out of raid or editing non-Active raids: anyone can edit
+    local inRaid = GetNumRaidMembers() > 0
+    local needsStrictPermission = inRaid and isActiveRaid
     
     if componentType == "structure" or componentType == "metadata" then
-        -- Structure changes require admin permission
-        if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(playerName) then
+        -- Structure changes require admin permission for Active Raid
+        -- Out of raid, anyone can edit
+        if needsStrictPermission and (not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(playerName)) then
             OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
             return
         end
     elseif componentType == "assignments" or componentType == "roles" or componentType == "marks" or componentType == "numbers" then
-        -- Assignment changes require officer/admin permission
-        if not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName) then
+        -- Assignment changes for Active Raid require officer/admin permission
+        -- Non-Active raids or out of raid: anyone can edit
+        if needsStrictPermission and (not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName)) then
             OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
             return
         end
@@ -395,19 +403,27 @@ end
 -- SYNC: Batch (Delayed)
 -- ============================================
 function OGRH.SVM.SyncBatch(key, subkey, value, syncMetadata)
-    -- Check permissions based on componentType
+    -- Check permissions based on componentType and Active Raid status
     local playerName = UnitName("player")
     local componentType = syncMetadata.componentType or "generic"
+    local isActiveRaid = syncMetadata.scope and syncMetadata.scope.isActiveRaid
+    
+    -- Only enforce strict permissions when in raid AND editing Active Raid
+    -- Out of raid or editing non-Active raids: anyone can edit
+    local inRaid = GetNumRaidMembers() > 0
+    local needsStrictPermission = inRaid and isActiveRaid
     
     if componentType == "structure" or componentType == "metadata" then
-        -- Structure changes require admin permission
-        if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(playerName) then
+        -- Structure changes require admin permission for Active Raid
+        -- Out of raid, anyone can edit
+        if needsStrictPermission and (not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(playerName)) then
             OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
             return
         end
     elseif componentType == "assignments" or componentType == "roles" or componentType == "marks" or componentType == "numbers" then
-        -- Assignment changes require officer/admin permission
-        if not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName) then
+        -- Assignment changes for Active Raid require officer/admin permission
+        -- Non-Active raids or out of raid: anyone can edit
+        if needsStrictPermission and (not OGRH.CanModifyAssignments or not OGRH.CanModifyAssignments(playerName)) then
             OGRH.SVM.QueueOffline(key, subkey, value, syncMetadata)
             return
         end

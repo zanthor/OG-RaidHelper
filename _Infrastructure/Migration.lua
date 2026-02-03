@@ -308,7 +308,10 @@ OGRH.Msg("[Migration] Warning: Unknown encounter name in roles: " .. encounterNa
                         for _, roleData in ipairs(encounterRoles.column1) do
                             local v2Role = DeepCopy(roleData)
                             v2Role.column = 1
-                            v2Role.roleId = nil  -- DEPRECATED field
+                            -- Assign roleId if missing (v1 roles may not have had this field)
+                            if not v2Role.roleId then
+                                v2Role.roleId = roleIdx
+                            end
                             v2Roles[roleIdx] = v2Role
                             roleIdx = roleIdx + 1
                         end
@@ -319,7 +322,10 @@ OGRH.Msg("[Migration] Warning: Unknown encounter name in roles: " .. encounterNa
                         for _, roleData in ipairs(encounterRoles.column2) do
                             local v2Role = DeepCopy(roleData)
                             v2Role.column = 2
-                            v2Role.roleId = nil  -- DEPRECATED field
+                            -- Assign roleId if missing (v1 roles may not have had this field)
+                            if not v2Role.roleId then
+                                v2Role.roleId = roleIdx
+                            end
                             v2Roles[roleIdx] = v2Role
                             roleIdx = roleIdx + 1
                         end

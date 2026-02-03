@@ -18,19 +18,8 @@ local function CanEditActiveRaid()
   return false
 end
 
--- Check if the given raid is the Active Raid
-local function IsActiveRaid(raidName)
-  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
-  if not raids or table.getn(raids) == 0 then
-    return false
-  end
-  
-  local activeRaid = raids[1]
-  return activeRaid and (activeRaid.name == raidName or activeRaid.id == "__active__")
-end
-
 -- Function to show Encounter Setup Window
-function OGRH.ShowEncounterSetup(raidName, encounterName)
+function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
   -- Check if encounter data exists, if not show Share window
   OGRH.EnsureSV()
   local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
@@ -143,6 +132,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
     
     -- Track selected raid
     frame.selectedRaid = nil
+    frame.selectedRaidIdx = nil
     
     -- Function to refresh raids list
     local function RefreshRaidsList()
@@ -192,6 +182,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           else
             -- Left-click: Select
             frame.selectedRaid = capturedRaidName
+            frame.selectedRaidIdx = capturedIndex
             RefreshRaidsList()
             if frame.RefreshEncountersList then
               frame.RefreshEncountersList()
@@ -401,6 +392,12 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           table.getn(encounters),
           function()
             -- Move up
+            -- Permission check for Active Raid
+            if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
+              OGRH.Msg("|cffff0000[RH-Encounter]|r Only the Raid Admin can modify the Active Raid structure.")
+              return
+            end
+            
             local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
             local raidObj = nil
             for i = 1, table.getn(raids) do
@@ -425,6 +422,12 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           end,
           function()
             -- Move down
+            -- Permission check for Active Raid
+            if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
+              OGRH.Msg("|cffff0000[RH-Encounter]|r Only the Raid Admin can modify the Active Raid structure.")
+              return
+            end
+            
             local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
             local raidObj = nil
             for i = 1, table.getn(raids) do
@@ -449,6 +452,12 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           end,
           function()
             -- Delete
+            -- Permission check for Active Raid
+            if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
+              OGRH.Msg("|cffff0000[RH-Encounter]|r Only the Raid Admin can modify the Active Raid structure.")
+              return
+            end
+            
             StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1 = capturedEncounterName
             StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg2 = capturedRaid
             StaticPopup_Show("OGRH_CONFIRM_DELETE_ENCOUNTER", capturedEncounterName)
@@ -469,6 +478,12 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       
       local capturedRaid = frame.selectedRaid
       addEncounterBtn:SetScript("OnClick", function()
+        -- Permission check for Active Raid
+        if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
+          OGRH.Msg("|cffff0000[RH-Encounter]|r Only the Raid Admin can modify the Active Raid structure.")
+          return
+        end
+        
         StaticPopupDialogs["OGRH_ADD_ENCOUNTER"].text_arg1 = capturedRaid
         StaticPopup_Show("OGRH_ADD_ENCOUNTER")
       end)
@@ -588,6 +603,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
     end)
     
     -- Function to get next available role ID (v2: flat array)
+    -- Returns the next unused role ID (max existing + 1)
     local function GetNextRoleId(roles)
       local maxId = 0
       for _, role in ipairs(roles or {}) do
@@ -622,6 +638,9 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       
       if not raidIdx or not encIdx then return end
       
+      -- Active Raid is always index 1
+      local isActiveRaid = (raidIdx == 1)
+      
       -- Auto-detect sync level if not provided, based on Active Raid status
       if not syncLevel then
         syncLevel = OGRH.GetSyncLevel(raidIdx, "EncounterSetup")
@@ -632,7 +651,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       OGRH.SVM.SetPath(path, roles, {
         syncLevel = syncLevel,
         componentType = "settings",
-        scope = {raid = raidName, encounter = encounterName}
+        scope = {raid = raidName, encounter = encounterName, isActiveRaid = isActiveRaid}
       })
     end
     
@@ -681,8 +700,6 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       
       local allRoles = encounter.roles
       
-      local allRoles = encounter.roles
-      
       local yOffset1 = -5
       local yOffset2 = -5
       
@@ -711,8 +728,9 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
         
         -- Click to edit role
         roleBtn:SetScript("OnClick", function()
-          if not OGRH.CanEdit or not OGRH.CanEdit() then
-            OGRH.Msg("Only the raid lead can edit roles.")
+          -- Permission check for Active Raid only
+          if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
+            OGRH.Msg("|cffff0000[RH-Encounter]|r Only the Raid Admin can modify the Active Raid structure.")
             return
           end
           
@@ -784,7 +802,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
             if posInColumn <= 1 then return end
             
             -- Permission check for Active Raid
-            if IsActiveRaid(frame.selectedRaid) and not CanEditActiveRaid() then
+            if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
               OGRH.Msg("Only the Raid Admin can modify the Active Raid structure.")
               return
             end
@@ -814,7 +832,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
             if posInColumn >= sameColumnCount then return end
             
             -- Permission check for Active Raid
-            if IsActiveRaid(frame.selectedRaid) and not CanEditActiveRaid() then
+            if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
               OGRH.Msg("Only the Raid Admin can modify the Active Raid structure.")
               return
             end
@@ -842,7 +860,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
           function()
             -- Delete
             -- Permission check for Active Raid
-            if IsActiveRaid(frame.selectedRaid) and not CanEditActiveRaid() then
+            if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
               OGRH.Msg("Only the Raid Admin can modify the Active Raid structure.")
               return
             end
@@ -885,12 +903,21 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       
       addRoleBtn1:SetScript("OnClick", function()
         -- Permission check for Active Raid
-        if IsActiveRaid(frame.selectedRaid) and not CanEditActiveRaid() then
+        if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
           OGRH.Msg("Only the Raid Admin can modify the Active Raid structure.")
           return
         end
         
+        -- Debug: Show current roleIds
+        local existingIds = {}
+        for _, r in ipairs(allRoles) do
+          table.insert(existingIds, "R" .. (r.roleId or "?"))
+        end
+        OGRH.Msg("Existing roles: " .. table.concat(existingIds, ", "))
+        
         local newRoleId = GetNextRoleId(allRoles)
+        OGRH.Msg("Creating new role with ID: R" .. newRoleId)
+        
         local newRole = {
           name = "New Role", 
           slots = 1, 
@@ -918,7 +945,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
       
       addRoleBtn2:SetScript("OnClick", function()
         -- Permission check for Active Raid
-        if IsActiveRaid(frame.selectedRaid) and not CanEditActiveRaid() then
+        if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
           OGRH.Msg("Only the Raid Admin can modify the Active Raid structure.")
           return
         end
@@ -982,6 +1009,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName)
   -- Set specific raid and encounter if provided
   if raidName and encounterName then
     frame.selectedRaid = raidName
+    frame.selectedRaidIdx = raidIdx
     frame.selectedEncounter = encounterName
     frame.RefreshRaidsList()
     frame.RefreshEncountersList()

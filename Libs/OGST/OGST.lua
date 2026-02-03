@@ -15,12 +15,11 @@ local OGST_LOAD_SOURCE = nil  -- Will be set to "standalone" or addon name
 -- Determine where we're being loaded from
 do
   local loadedFrom = debugstack()
+  -- Check if loaded from standalone _OGST addon
   if string.find(loadedFrom, "Interface\\AddOns\\_OGST\\") then
     OGST_LOAD_SOURCE = "standalone"
-  elseif string.find(loadedFrom, "Interface\\AddOns\\OG%-RaidHelper\\Libs\\OGST\\") then
-    OGST_LOAD_SOURCE = "OG-RaidHelper"
   elseif string.find(loadedFrom, "Interface\\AddOns\\") then
-    -- Extract addon name from path
+    -- Extract addon name from path (works for any addon)
     local _, _, addonName = string.find(loadedFrom, "Interface\\AddOns\\([^\\]+)\\")
     OGST_LOAD_SOURCE = addonName or "unknown"
   else
@@ -129,15 +128,21 @@ OGST.LIST_ITEM_SPACING = 2
 -- Returns the base path to the OGST folder
 function OGST.GetResourcePath()
   if not OGST._resourcePath then
-    -- Try to find where OGST is loaded from by checking known locations
-    -- Priority: standalone _OGST addon, then check for embedded versions
+    -- Detect path dynamically from where OGST.lua was loaded
+    local loadedFrom = debugstack()
     
-    -- Use the load source determined at initialization
     if OGST.loadSource == "standalone" then
+      -- Standalone _OGST addon
       OGST._resourcePath = "Interface\\AddOns\\_OGST\\"
     else
-      -- Embedded version - construct path from load source
-      OGST._resourcePath = "Interface\\AddOns\\" .. (OGST.loadSource or "OG-RaidHelper") .. "\\Libs\\OGST\\"
+      -- Embedded version - check if it's in a Libs subfolder
+      local _, _, embedPath = string.find(loadedFrom, "Interface\\AddOns\\([^\n]+OGST)\\")
+      if embedPath then
+        OGST._resourcePath = "Interface\\AddOns\\" .. embedPath .. "\\"
+      else
+        -- Fallback: assume Libs/OGST structure
+        OGST._resourcePath = "Interface\\AddOns\\" .. (OGST.loadSource or "UnknownAddon") .. "\\Libs\\OGST\\"
+      end
     end
   end
   
