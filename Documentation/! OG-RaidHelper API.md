@@ -3055,7 +3055,22 @@ State management for SyncRouter module.
 
 ## SyncIntegrity Module (_Infrastructure/SyncIntegrity.lua)
 
-The SyncIntegrity module provides checksum verification and automatic repair for Active Raid data. It implements a polling system where the admin broadcasts checksums every 30 seconds, and clients auto-repair on mismatches.
+The SyncIntegrity module provides checksum verification and automatic repair for Active Raid data. It implements both **player-initiated sync** (when joining raids) and **periodic polling** (every 30 seconds) for background integrity checks.
+
+### Sync Triggers
+
+**1. Player Join (Immediate Sync):**
+- New player joins raid → `RAID_ROSTER_UPDATE` event fires
+- New player broadcasts `ADMIN.QUERY` requesting checksums
+- Admin responds with `ADMIN.RESPONSE` identifying as admin
+- Admin broadcasts checksums (0.1s delay for processing)
+- New player compares checksums and requests repairs if needed
+- No waiting for 30-second timer
+
+**2. Periodic Polling (Background Integrity):**
+- Admin broadcasts checksums every 30 seconds
+- All clients compare and request repairs on mismatch
+- Catches drift from missed messages or offline periods
 
 ### Public Functions
 
@@ -3064,35 +3079,39 @@ The SyncIntegrity module provides checksum verification and automatic repair for
 **Authorization:** Admin only (auto-checked)  
 **Returns:** `nil`
 
-Broadcasts Active Raid checksums to all raid members. Called automatically every 30 seconds by polling timer.
+Broadcasts Active Raid checksums to all raid members. Called automatically every 30 seconds by polling timer, or immediately when responding to player join (`ADMIN.QUERY`).
 
 **Behavior:**
 - Only runs if player is raid admin
-- Skips if in combat, offline, or made recent changes
+- Skips if in combat, offline, or made recent changes (periodic polling only)
 - Skips if network queue is busy (prevents traffic storms)
 - Computes checksums for:
   - Active Raid structure (all encounters, excluding assignments)
-  - Active Encounter assignments (current encounter only)
+  - **ALL encounter assignments** (not just current encounter)
   - RolesUI (global role buckets)
 - Broadcasts via MessageRouter with LOW priority
 
 **Checksum Types:**
 - `activeRaidStructure` - Structure checksum (roles, columns, but NO assignments)
-- `activeAssignments` - Current encounter assignments only
+- `activeAssignments` - **ALL encounter assignments** (composite checksum covering all encounters)
 - `rolesUI` - Global TANKS/HEALERS/MELEE/RANGED buckets
 
 **Note:** Global components (consumes, tradeItems) are NOT part of automated sync. Use SyncGranular for manual sync of these components.
 
 **Example:**
 ```lua
--- Called automatically by polling timer
+-- Called automatically by polling timer (every 30s)
 OGRH.SyncIntegrity.BroadcastChecksums()
+
+-- Or called immediately when player joins and requests checksums
+OGRH.SyncIntegrity.OnAdminQuery(sender, {requestType = "checksums"})
 ```
 
 **Implementation Notes:**
-- Respects modification cooldown (2 seconds after admin's last change)
+- Respects modification cooldown (2 seconds after admin's last change) for periodic broadcasts
+- Bypasses cooldown when responding to `ADMIN.QUERY` (immediate player join sync)
 - Uses `OGRH.SyncChecksum.ComputeRaidChecksum()` for structure
-- Uses `OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum()` for assignments
+- Uses `OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum()` for **all** encounter assignments
 
 ---
 
@@ -3107,25 +3126,32 @@ Client handler for checksum broadcasts from admin. Compares local checksums to a
 - `checksums` (table) - Checksum values: `{activeRaidStructure, activeAssignments, rolesUI}`
 
 **Behavior:**
-- Verifies sender is current raid admin
+- Verifies sender is current raid admin (requires `OGRH.GetRaidAdmin()` to return sender name)
+- Ignores checksums from non-admin players
+- Ignores own broadcasts (admin doesn't repair against themselves)
 - Computes local checksums for comparison
 - Detects mismatches and queues repair requests
-- Broadcasts repair request to admin (buffered for 1 second)
+- Broadcasts repair request to admin (buffered with context-aware timeout)
 
 **Mismatch Types:**
 - `ACTIVE_RAID_STRUCTURE` - Structure mismatch (roles, columns)
-- `ACTIVE_ASSIGNMENTS` - Assignment mismatch (current encounter)
+- `ACTIVE_ASSIGNMENTS` - Assignment mismatch (**ALL encounters**, not just current)
 - `ROLES_UI` - Global role bucket mismatch
 
 **Example:**
 ```lua
--- Called automatically when OGRH_SYNC_CHECKSUM_BROADCAST received
+-- Called automatically when OGRH_SYNC_CHECKSUM_POLL received
 OGRH.SyncIntegrity.OnChecksumBroadcast("AdminPlayer", {
     activeRaidStructure = "abc123",
-    activeAssignments = "def456",
+    activeAssignments = "def456",  -- Composite checksum for ALL encounters
     rolesUI = "ghi789"
 })
 ```
+
+**Admin Discovery:**
+- Clients must receive `ADMIN.RESPONSE` message first to set `currentAdmin`
+- Without known admin, checksums are rejected with "Ignoring: sender is not admin"
+- Player join flow ensures admin identity is established before checksums arrive
 
 ---
 
@@ -3165,6 +3191,64 @@ OGRH.SyncIntegrity.RecordAdminModification()
 
 ---
 
+#### `OGRH.SyncIntegrity.RequestChecksums()`
+**Type:** Public  
+**Returns:** `nil`
+
+Client function to request checksums from admin. Called automatically when player joins raid.
+
+**Behavior:**
+- Only runs if player is NOT admin (admins don't request from themselves)
+- Broadcasts `ADMIN.QUERY` with `requestType = "checksums"`
+- Admin responds with `ADMIN.RESPONSE` (identifying as admin)
+- Admin then broadcasts checksums (0.1s delay)
+- Triggered automatically on `RAID_ROSTER_UPDATE` when joining raid (1-second stabilization delay)
+
+**Example:**
+```lua
+-- Called automatically when player joins raid
+-- You typically don't call this directly
+OGRH.SyncIntegrity.RequestChecksums()
+```
+
+**Implementation Notes:**
+- Registered with `RAID_ROSTER_UPDATE` event handler
+- Only triggers when local player transitions from 0 to >0 raid members (player join)
+- 1-second delay allows raid roster to stabilize before requesting
+
+---
+
+#### `OGRH.SyncIntegrity.OnAdminQuery(sender, data)`
+**Type:** Public (called by MessageRouter)  
+**Returns:** `nil`
+
+Admin handler for checksum requests from clients. Responds immediately with admin identity and checksums.
+
+**Parameters:**
+- `sender` (string) - Player name requesting checksums
+- `data` (table) - Query data: `{requestType = "checksums"}`
+
+**Behavior:**
+- Only runs if player is raid admin
+- Verifies `requestType == "checksums"`
+- Broadcasts `ADMIN.RESPONSE` to identify as admin
+- Broadcasts checksums (0.1s delay to ensure admin response processed first)
+- Bypasses modification cooldown (immediate response required)
+
+**Example:**
+```lua
+-- Called automatically when ADMIN.QUERY received
+-- You typically don't call this directly
+OGRH.SyncIntegrity.OnAdminQuery("NewPlayer", {requestType = "checksums"})
+```
+
+**Implementation Notes:**
+- Ensures client knows admin identity before checksums arrive
+- 0.1-second delay prevents race condition (admin response must be processed first)
+- Registered via MessageRouter for `ADMIN.QUERY` message type
+
+---
+
 #### `OGRH.SyncIntegrity.StartIntegrityChecks()`
 **Type:** Public  
 **Returns:** `nil`
@@ -3200,6 +3284,7 @@ State management for SyncIntegrity module.
 - `enabled` (boolean) - Module enabled state
 - `lastAdminModification` (number) - Timestamp of last admin change
 - `modificationCooldown` (number) - Seconds to wait after change (default: 2)
+- `lastRaidSize` (number) - Tracks raid size to detect player joins
 - `debug` (boolean) - Debug mode (toggle with `/ogrh debug sync`)
 
 ---
@@ -3209,13 +3294,16 @@ State management for SyncIntegrity module.
 #### `OnRepairRequest(sender, data)` (local)
 **Type:** Private
 
-Admin handler for client repair requests. Buffers requests for 1 second to prevent broadcast storms.
+Admin handler for client repair requests. Buffers requests with context-aware timeout to prevent broadcast storms.
 
 **Behavior:**
 - Validates sender is in raid
 - Adds request to repair buffer
-- Schedules flush after 1 second (or uses existing timer)
+- Schedules flush after timeout:
+  - **5 seconds** if Invite Mode active (batches multiple concurrent joins)
+  - **1 second** otherwise (normal operation)
 - Broadcasts repair data once per component
+- Timeout dynamically determined by checking `OGRH_SV.v2.invites.enabled`
 
 ---
 
@@ -3241,7 +3329,25 @@ Admin broadcasts Active Raid structure data for repair.
 #### `BroadcastAssignmentsRepair(encounterIdx)` (local)
 **Type:** Private
 
-Admin broadcasts Active Encounter assignments for repair.
+Admin broadcasts **ALL encounter assignments** for repair (not just single encounter).
+
+**Parameters:**
+- `encounterIdx` (number) - DEPRECATED: Ignored, kept for backward compatibility
+
+**Behavior:**
+- Extracts assignments for **all encounters** in Active Raid
+- Sends composite payload: `{allEncounters = {[encIdx] = {[roleIdx] = {assignedPlayers, raidMarks, assignmentNumbers}}}}`
+- Debug logging shows single encounter vs all encounters payload size comparison
+- Broadcasts via MessageRouter with LOW priority and compression enabled
+
+**Payload Size:**
+- Typical: 3-5 message chunks for full raid vs 1 chunk for single encounter
+- Transmission time: +0.5-1s for complete sync (negligible impact)
+
+**Rationale:**
+- Ensures assignments across all encounters stay synchronized
+- Prevents partial sync where only current encounter is updated
+- Single broadcast more efficient than 37 separate encounter syncs
 
 ---
 
@@ -3652,19 +3758,24 @@ local checksum = OGRH.SyncChecksum.ComputeRaidChecksum("MC")
 **Type:** Public  
 **Returns:** `string` - Assignments-only checksum
 
-Computes checksum for Active Encounter assignments only.
+Computes checksum for **ALL encounters** in Active Raid assignments (not just one encounter).
 
 **Parameters:**
-- `encounterIdx` (number) - Encounter index
+- `encounterIdx` (number) - DEPRECATED: Parameter ignored, kept for backward compatibility
 
 **Behavior:**
-- Extracts slot assignments for specified encounter
+- Extracts slot assignments (`assignedPlayers`, `raidMarks`, `assignmentNumbers`) for **all encounters** in Active Raid
 - Excludes structure (roles, columns)
-- Serializes and hashes assignments
+- Serializes and hashes all encounter assignments as single composite checksum
+- Ensures all encounter assignments stay synchronized across clients
+
+**Rationale:**
+Previously only checksummed the currently selected encounter, causing assignments in other encounters to become desynchronized. Now checksums all encounters to maintain full integrity.
 
 **Example:**
 ```lua
-local checksum = OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(2)
+-- Checksums ALL encounters in Active Raid
+local checksum = OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum()
 ```
 
 ---
@@ -3937,9 +4048,15 @@ The sync system consists of four integrated modules that work together to mainta
    - REALTIME → Immediate broadcast via MessageRouter
    - BATCH → Queue for 2-second batch send
    - MANUAL → No auto-sync (admin must push manually)
-4. Admin broadcasts checksums every 30s → SyncIntegrity
-5. Clients compare checksums → Auto-repair on mismatch
-6. Manual repairs → SyncGranular (component/encounter/raid level)
+4. Player joins raid → RAID_ROSTER_UPDATE event
+5. New player broadcasts ADMIN.QUERY → Requests checksums
+6. Admin responds with ADMIN.RESPONSE → Identifies as admin
+7. Admin broadcasts checksums (0.1s later) → SyncIntegrity
+8. Clients compare checksums → Auto-repair on mismatch
+9. Admin buffers repair requests (5s Invite Mode, 1s normal)
+10. Admin broadcasts repairs → Full assignment sync for ALL encounters
+11. Periodic checksums → Admin broadcasts every 30s
+12. Manual repairs → SyncGranular (component/encounter/raid level)
 ```
 
 ### Sync Levels
@@ -3953,10 +4070,31 @@ The sync system consists of four integrated modules that work together to mainta
 
 ### Data Integrity System
 
+**Player Join Sync (SyncIntegrity):**
+- New player joins raid → Triggers `RAID_ROSTER_UPDATE` event
+- New player broadcasts `ADMIN.QUERY` requesting checksums
+- Admin responds with `ADMIN.RESPONSE` (identifies as admin)
+- Admin then broadcasts checksums (0.1s delay for processing)
+- New player receives checksums, compares local state
+- If mismatch detected → Requests repairs automatically
+- **Immediate sync** - No waiting for 30-second timer
+
 **Active Polling (SyncIntegrity):**
-- Admin broadcasts checksums every 30 seconds
-- Covers: Active Raid structure, current encounter assignments, global roles, global components
-- Clients auto-repair on mismatch (1-second buffer prevents storms)
+- Admin broadcasts checksums every 30 seconds (background integrity check)
+- Covers: Active Raid structure, **ALL encounter assignments**, global roles, global components
+- Clients auto-repair on mismatch
+- Admin buffers repair requests:
+  - **5 seconds** if Invite Mode active (batches multiple concurrent joins)
+  - **1 second** otherwise (normal operation)
+- Prevents broadcast storms when multiple players join simultaneously
+
+**Assignment Sync Behavior:**
+- Checksums and repairs now cover **ALL encounters** in Active Raid (not just current encounter)
+- Ensures assignments across all encounters stay synchronized
+- Single composite checksum for all encounter assignments
+- Repair broadcasts send full assignment data for all encounters
+- Payload size: ~3-5 message chunks vs 1 chunk for single encounter
+- Transmission time: +0.5-1s for full sync (negligible impact)
 
 **Manual Repair (SyncGranular):**
 - Component-level: Single component (roles, assignments, etc.)
@@ -3969,9 +4107,11 @@ The sync system consists of four integrated modules that work together to mainta
 | Type | Covers | Excludes | Use Case |
 |------|--------|----------|----------|
 | **Structure** | Roles, columns, metadata | Assignments | Detect structure changes |
-| **Assignments** | Slot assignments | Structure | Detect assignment changes |
+| **Assignments** | All encounter slot assignments | Structure | Detect assignment changes across ALL encounters |
 | **RolesUI** | Global role buckets | Everything else | Detect global role changes |
 | **Global** | Consumes, tradeItems | Raid data | Detect global component changes |
+
+**Note:** Assignment checksums now cover **all encounters** in the Active Raid as a single composite checksum, ensuring complete synchronization rather than only syncing the currently selected encounter.
 
 ---
 

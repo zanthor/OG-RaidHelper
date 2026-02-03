@@ -650,15 +650,14 @@ function OGRH.SyncChecksum.ComputeRaidChecksum(raidName)
         return "0"
     end
     
-    -- Deep copy and strip assignments for structure-only checksum
+    -- Deep copy and strip only assignedPlayers (keep raidMarks and assignmentNumbers for structure checksum)
     local raidCopy = OGRH.SyncChecksum.DeepCopy(targetRaid)
     if raidCopy.encounters then
         for i = 1, table.getn(raidCopy.encounters) do
             if raidCopy.encounters[i].roles then
                 for j = 1, table.getn(raidCopy.encounters[i].roles) do
-                    raidCopy.encounters[i].roles[j].assignedPlayers = nil
-                    raidCopy.encounters[i].roles[j].raidMarks = nil
-                    raidCopy.encounters[i].roles[j].assignmentNumbers = nil
+                    raidCopy.encounters[i].roles[j].assignedPlayers = nil  -- Only strip player names
+                    -- Keep raidMarks and assignmentNumbers in structure checksum
                 end
             end
         end
@@ -685,6 +684,7 @@ function OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(encounterIdx)
     end
     
     -- Compute checksum for ALL encounters, not just one
+    -- ONLY includes assignedPlayers (raidMarks and assignmentNumbers are in structure checksum)
     local allAssignments = {}
     for encIdx = 1, table.getn(activeRaid.encounters) do
         local encounter = activeRaid.encounters[encIdx]
@@ -693,9 +693,8 @@ function OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(encounterIdx)
             for roleIdx = 1, table.getn(encounter.roles) do
                 local role = encounter.roles[roleIdx]
                 allAssignments[encIdx][roleIdx] = {
-                    assignedPlayers = role.assignedPlayers or {},
-                    raidMarks = role.raidMarks or {},
-                    assignmentNumbers = role.assignmentNumbers or {}
+                    assignedPlayers = role.assignedPlayers or {}
+                    -- raidMarks and assignmentNumbers excluded - they're in structure checksum
                 }
             end
         end

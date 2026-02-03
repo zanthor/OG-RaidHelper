@@ -35,6 +35,11 @@ OGRH.SyncIntegrity.State = {
     -- Player join tracking
     lastRaidSize = 0,  -- Track raid size to detect joins
     
+    -- Encounter broadcast
+    lastEncounterBroadcast = 0,  -- timestamp of last encounter broadcast
+    encounterBroadcastInterval = 15,  -- seconds
+    encounterBroadcastTimer = nil,
+    
     -- Debug mode (toggle with /ogrh debug sync)
     debug = false,  -- Hide verbose sync messages by default
 }
@@ -374,16 +379,9 @@ function OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
         OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Active raid exists, preparing copy")
     end
     
-    -- Deep copy and strip assignments for structure-only sync
+    -- Deep copy Active Raid with ALL data (structure + assignments)
+    -- Structure repair includes everything: roles, columns, metadata, assignedPlayers, raidMarks, assignmentNumbers
     local raidCopy = OGRH.DeepCopy(activeRaid)
-    for i = 1, table.getn(raidCopy.encounters or {}) do
-        local enc = raidCopy.encounters[i]
-        if enc.roles then
-            for j = 1, table.getn(enc.roles) do
-                enc.roles[j].assignedPlayers = {} -- Strip assignments
-            end
-        end
-    end
     
     if OGRH.SyncIntegrity.State.debug then
         OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Calling MessageRouter.Broadcast...")
@@ -612,15 +610,68 @@ function OGRH.SyncIntegrity.StartIntegrityChecks()
     
     OGRH.SyncIntegrity.State.enabled = true
     
-    -- Start repeating timer (30 seconds)
+    -- Start repeating timer (30 seconds) for checksums
     OGRH.SyncIntegrity.State.timer = OGRH.ScheduleTimer(function()
         if OGRH.CanModifyStructure(UnitName("player")) then
             OGRH.SyncIntegrity.BroadcastChecksums()
         end
     end, 30, true)  -- 30 seconds, repeating
     
+    -- Start repeating timer (15 seconds) for encounter selection
+    OGRH.SyncIntegrity.State.encounterBroadcastTimer = OGRH.ScheduleTimer(function()
+        OGRH.SyncIntegrity.BroadcastCurrentEncounter()
+    end, 15, true)  -- 15 seconds, repeating
+    
     if OGRH.SyncIntegrity.State.debug then
         OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Active Raid checksum polling started (broadcasts every 30s)")
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Encounter broadcast started (every 15s)")
+    end
+end
+
+-- Broadcast current encounter selection to raid
+function OGRH.SyncIntegrity.BroadcastCurrentEncounter()
+    -- Only admin broadcasts
+    if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then
+        return
+    end
+    
+    -- Skip if not in raid
+    if GetNumRaidMembers() == 0 then
+        return
+    end
+    
+    -- Skip if in combat
+    if UnitAffectingCombat("player") then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffffaa00[RH-SyncIntegrity][DEBUG]|r Skipping encounter broadcast (in combat)")
+        end
+        return
+    end
+    
+    -- Get current encounter selection
+    local raidIdx = OGRH.SVM.Get("ui", "selectedRaidIndex")
+    local encounterIdx = OGRH.SVM.Get("ui", "selectedEncounterIndex")
+    
+    if not raidIdx or not encounterIdx then
+        return
+    end
+    
+    -- Broadcast encounter selection
+    OGRH.MessageRouter.Broadcast(
+        OGRH.MessageTypes.STATE.CHANGE_ENCOUNTER,
+        {
+            raidIndex = raidIdx,
+            encounterIndex = encounterIdx
+        },
+        {
+            priority = "LOW"
+        }
+    )
+    
+    OGRH.SyncIntegrity.State.lastEncounterBroadcast = GetTime()
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Broadcast encounter selection: raid=%d, encounter=%d", raidIdx, encounterIdx))
     end
 end
 
@@ -653,6 +704,29 @@ end
 function OGRH.SyncIntegrity.OnAdminQuery(sender, data)
     if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then
         return  -- Only admin responds
+    end
+    
+    -- Handle case where data might be nil or string (defensive)
+    if not data then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffff0000[RH-SyncIntegrity][DEBUG]|r OnAdminQuery: data is nil")
+        end
+        return
+    end
+    
+    -- If data is a string, it might need deserialization (shouldn't happen with MessageRouter, but defensive)
+    if type(data) == "string" then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffffaa00[RH-SyncIntegrity][DEBUG]|r OnAdminQuery: data is string, attempting deserialize")
+        end
+        data = OGRH.SyncChecksum.Deserialize(data) or {}
+    end
+    
+    if type(data) ~= "table" then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cffff0000[RH-SyncIntegrity][DEBUG]|r OnAdminQuery: data is %s, expected table", type(data)))
+        end
+        return
     end
     
     if data.requestType ~= "checksums" then
@@ -791,6 +865,10 @@ function OGRH.SyncIntegrity.CheckAdminStatus()
         if OGRH.SyncIntegrity.State.timer then
             OGRH.CancelTimer(OGRH.SyncIntegrity.State.timer)
             OGRH.SyncIntegrity.State.timer = nil
+        end
+        if OGRH.SyncIntegrity.State.encounterBroadcastTimer then
+            OGRH.CancelTimer(OGRH.SyncIntegrity.State.encounterBroadcastTimer)
+            OGRH.SyncIntegrity.State.encounterBroadcastTimer = nil
         end
         OGRH.SyncIntegrity.State.enabled = false
     end
