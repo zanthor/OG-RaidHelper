@@ -1270,32 +1270,15 @@ function RosterMgmt.CreateToolbar(window)
   toolbar:SetPoint("BOTTOMLEFT", window.contentFrame, "BOTTOMLEFT", 5, 5)
   toolbar:SetPoint("BOTTOMRIGHT", window.contentFrame, "BOTTOMRIGHT", -5, 5)
   
-  -- Add Player button
-  local addBtn = CreateFrame("Button", nil, toolbar)
-  addBtn:SetWidth(100)
-  addBtn:SetHeight(24)
-  addBtn:SetPoint("LEFT", toolbar, "LEFT", 5, 0)
-  
-  local addText = addBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  addText:SetPoint("CENTER", addBtn, "CENTER", 0, 0)
-  addText:SetText("Add Player")
-  addText:SetTextColor(1, 0.82, 0, 1)
-  
-  OGST.StyleButton(addBtn)
-  
-  addBtn:SetScript("OnClick", function()
-    RosterMgmt.ShowAddPlayerDialog()
-  end)
-  
-  -- Manual Import button
+  -- Import button
   local manualImportBtn = CreateFrame("Button", nil, toolbar)
   manualImportBtn:SetWidth(100)
   manualImportBtn:SetHeight(24)
-  manualImportBtn:SetPoint("LEFT", addBtn, "RIGHT", 10, 0)
+  manualImportBtn:SetPoint("LEFT", toolbar, "LEFT", 5, 0)
   
   local manualImportText = manualImportBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   manualImportText:SetPoint("CENTER", manualImportBtn, "CENTER", 0, 0)
-  manualImportText:SetText("Manual Import")
+  manualImportText:SetText("Import")
   manualImportText:SetTextColor(1, 0.82, 0, 1)
   
   OGST.StyleButton(manualImportBtn)
@@ -1303,54 +1286,6 @@ function RosterMgmt.CreateToolbar(window)
   manualImportBtn:SetScript("OnClick", function()
     RosterMgmt.ShowManualImportDialog()
   end)
-  
-  -- ShaguDPS button
-  local shaguBtn = CreateFrame("Button", nil, toolbar)
-  shaguBtn:SetWidth(80)
-  shaguBtn:SetHeight(24)
-  shaguBtn:SetPoint("LEFT", manualImportBtn, "RIGHT", 10, 0)
-  
-  local shaguText = shaguBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  shaguText:SetPoint("CENTER", shaguBtn, "CENTER", 0, 0)
-  shaguText:SetText("ShaguDPS")
-  
-  OGST.StyleButton(shaguBtn)
-  
-  -- Check if ShaguDPS is available
-  local hasShaguDPS = ShaguDPS ~= nil
-  if hasShaguDPS then
-    shaguText:SetTextColor(1, 0.82, 0, 1)
-    shaguBtn:SetScript("OnClick", function()
-      -- TODO: Open ShaguDPS import interface
-    end)
-  else
-    shaguText:SetTextColor(0.5, 0.5, 0.5, 1)
-    shaguBtn:Disable()
-  end
-  
-  -- DPSMate button
-  local dpsMateBtn = CreateFrame("Button", nil, toolbar)
-  dpsMateBtn:SetWidth(80)
-  dpsMateBtn:SetHeight(24)
-  dpsMateBtn:SetPoint("LEFT", shaguBtn, "RIGHT", 10, 0)
-  
-  local dpsMateText = dpsMateBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  dpsMateText:SetPoint("CENTER", dpsMateBtn, "CENTER", 0, 0)
-  dpsMateText:SetText("DPSMate")
-  
-  OGST.StyleButton(dpsMateBtn)
-  
-  -- Check if DPSMate is available
-  local hasDPSMate = DPSMate ~= nil
-  if hasDPSMate then
-    dpsMateText:SetTextColor(1, 0.82, 0, 1)
-    dpsMateBtn:SetScript("OnClick", function()
-      -- TODO: Open DPSMate import interface
-    end)
-  else
-    dpsMateText:SetTextColor(0.5, 0.5, 0.5, 1)
-    dpsMateBtn:Disable()
-  end
   
   window.toolbar = toolbar
 end
@@ -1489,7 +1424,7 @@ function RosterMgmt.ShowManualImportDialog()
     name = "OGRH_ManualImportWindow",
     width = windowWidth,
     height = windowHeight,
-    title = "Manual Import - DPS Meter Data",
+    title = "Import Ranking Data",
     closeButton = true,
     escapeCloses = true,
     closeOnNewWindow = false
@@ -1564,7 +1499,7 @@ function RosterMgmt.ShowManualImportDialog()
   OGST.StyleButton(updateEloBtn)
   
   -- Declare CSV controls first (needed by ParseAndPopulate function)
-  local csvLabel, csvBackdrop, csvEditBox
+  local csvBackdrop, csvEditBox
   
   -- Refresh display from current parsedPlayers data (without re-parsing CSV)
   local function RefreshDisplay()
@@ -1873,25 +1808,83 @@ function RosterMgmt.ShowManualImportDialog()
     roleLists[role] = listFrame
   end
   
-  -- CSV label - span from left edge to Tanks label using OGST
-  csvLabel = OGST.CreateStaticText(window.contentFrame, {
-    text = "Paste CSV Data:",
-    font = "GameFontNormal",
-    align = "LEFT"
+  -- Track selected import source
+  window.importSource = "DPSMate"
+  
+  -- Forward declare controls for use in menu onClick handlers
+  local csvBackdrop, csvEditBox
+  local dpsMeterList
+  local sourceMenuContainer, sourceMenuBtn
+  
+  -- Function to update UI based on selected source
+  local function UpdateSourceUI(source)
+    window.importSource = source
+    sourceMenuBtn:SetText(source)
+    
+    if source == "CSV" then
+      csvBackdrop:Show()
+      dpsMeterList:Hide()
+    else
+      csvBackdrop:Hide()
+      dpsMeterList:Show()
+    end
+  end
+  
+  -- Import source menu button - create first so it can be referenced
+  sourceMenuContainer, sourceMenuBtn = OGST.CreateMenuButton(window.contentFrame, {
+    label = "Source:",
+    labelAnchor = "LEFT",
+    buttonText = "DPSMate",
+    menuItems = {
+      {
+        text = "DPSMate",
+        selected = true,
+        onClick = function()
+          UpdateSourceUI("DPSMate")
+        end
+      },
+      {
+        text = "ShaguDPS",
+        onClick = function()
+          UpdateSourceUI("ShaguDPS")
+        end
+      },
+      {
+        text = "CSV",
+        onClick = function()
+          UpdateSourceUI("CSV")
+        end
+      }
+    },
+    singleSelect = true
   })
-  OGST.AnchorElement(csvLabel, window.contentFrame, {
+  
+  OGST.AnchorElement(sourceMenuContainer, window.contentFrame, {
     position = "spanHorizontal",
     rightElement = roleLabels["TANKS"],
     verticalAlign = "top"
   })
   
-  -- CSV text box - fill space between CSV label and Import CSV button using OGST
+  -- CSV text box - fill space between source menu button and Import CSV button
   csvBackdrop, csvEditBox = OGST.CreateScrollingTextBox(window.contentFrame, 0, 0)
-  OGST.AnchorElement(csvBackdrop, csvLabel, {
+  OGST.AnchorElement(csvBackdrop, sourceMenuContainer, {
     position = "fillBetween",
     bottomElement = importCsvBtn,
+    offsetYTop = 8,
     offsetYBottom = 5
   })
+  
+  -- DPS Meter list - fill same space as CSV text box
+  dpsMeterList = OGST.CreateStyledScrollList(window.contentFrame, 0, 0, true)
+  OGST.AnchorElement(dpsMeterList, sourceMenuContainer, {
+    position = "fillBetween",
+    bottomElement = importCsvBtn,
+    offsetYTop = 8,
+    offsetYBottom = 5
+  })
+  
+  -- Initialize UI to show DPS meter list
+  UpdateSourceUI("DPSMate")
   
   window:Show()
 end
