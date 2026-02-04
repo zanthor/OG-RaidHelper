@@ -4646,13 +4646,19 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         menu:AddItem({
           text = "  " .. (raid.displayName or raid.name),  -- Indent with spaces
           onClick = function()
-            -- Check authorization (only required if in a raid)
-            if GetNumRaidMembers() > 0 then
+            -- Check authorization:
+            -- - Out of raid: Anyone can change Active Raid (for planning)
+            -- - In raid: Only Raid Admin can change Active Raid
+            local inRaid = GetNumRaidMembers() > 0
+            
+            if inRaid then
+              -- In raid: require Admin permission
               if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then
-                OGRH.Msg("Only the Raid Admin can change the Active Raid.")
+                OGRH.Msg("|cffffaa00[RH]|r Only the Raid Admin can change the Active Raid while in a raid.")
                 return
               end
             end
+            -- Not in raid: Anyone can change (skip permission check)
             
             -- Show confirmation dialog
             OGRH.ShowSetActiveRaidConfirmation(capturedIdx)

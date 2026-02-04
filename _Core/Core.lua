@@ -527,6 +527,11 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
   activeRaid.sourceRaidId = sourceRaid.id
   activeRaid.displayName = "[AR] " .. (sourceRaid.name or sourceRaid.displayName or "Unknown")
   
+  -- Copy raid-level advancedSettings (BigWigs, consume tracking, etc.)
+  if sourceRaid.advancedSettings then
+    activeRaid.advancedSettings = DeepCopyForActiveRaid(sourceRaid.advancedSettings)
+  end
+  
   if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
     OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Set Active Raid to: %s", sourceRaid.name or sourceRaid.displayName))
   end
