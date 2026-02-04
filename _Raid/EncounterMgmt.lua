@@ -4684,18 +4684,11 @@ function OGRH.MarkPlayersFromMainUI()
     return
   end
   
-  -- Get selected raid and encounter from frame or saved variables
-  local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounter()
+  -- Get selected raid and encounter indices (v2 schema)
+  local raidIdx, encIdx = OGRH.GetCurrentEncounter()
   
-  if not selectedRaid or not selectedEncounter then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
-    return
-  end
-  
-  -- Find raid and encounter indices from names
-  local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(selectedRaid, selectedEncounter)
   if not raidIdx or not encIdx then
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Encounter not found.")
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGRH:|r Please select a raid and encounter first.")
     return
   end
   
