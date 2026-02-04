@@ -43,15 +43,11 @@ The existing `SRValidation.lua` has critical flaws:
 - Increases by +10 each week for same item (consecutive raids attended)
 - Resets to 0 if switching items
 - Resets to 0 if item is won
-- Can miss raids without reset (based on "Previous Raid SR+ Sheet")
+- Can miss raids without reset based on historic records, not dependent on previous SR+ Sheets.
 
 **Limits:**
 - 40-person raids: Max 2 SR+ entries (2 items)
 - 20-person raids: Max 1 SR+ entry (1 item)
-
-**Raider Responsibility:**
-- Track their "Previous Raid SR+ Sheet" when missing raids
-- Reference sheet link to Raid Leads/Master Looters when needed
 
 ---
 
@@ -509,7 +505,7 @@ Officer A (Master Looter)          Officer B (Offline)          Officer C (Onlin
         |                                   |                            |
         |                                   | Send Missing Blocks        |
         |                                   |<---------------------------|
-        |                                   | (Batch via whisper)        |
+        |                                   | (Batch via raid/guild)     |
         |                                   |                            |
         |                                   | Verify & Rebuild Chain     |
         |                                   | Detect Conflicts (if any)  |
