@@ -112,6 +112,7 @@ Create a standardized window frame with optional close button, ESC handling, res
   - `title` (string): Window title text (required)
   - `closeButton` (boolean): Add close button (default: true)
   - `escapeCloses` (boolean): ESC key closes window (default: true)
+  - `closeOnClickOutside` (boolean): Close window when clicking outside it (default: false)
   - `closeOnNewWindow` (boolean): Close when other windows open (default: false)
   - `resizable` (boolean): Add resize handle in bottom-right corner (default: false)
   - `minWidth` (number): Minimum width when resizing (default: 200)

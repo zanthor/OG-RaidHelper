@@ -1,0 +1,17 @@
+## Interface: 11200
+## Title: OGAddonMsg
+## Notes: Unified addon network interface with automatic chunking, retry, and self-healing
+## Author: OG
+## Version: 1.0.0
+## SavedVariables: OGAddonMsg_Config
+
+Core.lua
+Config.lua
+Serialization.lua
+Chunker.lua
+Queue.lua
+Retry.lua
+Handlers.lua
+API.lua
+StatsPanel.lua
+Commands.lua

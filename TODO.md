@@ -2,16 +2,16 @@
 
 ## Current Tasks
 
-### Phase 1: Encounter Setup Extraction (IN PROGRESS)
-- ✅ Created OGRH_EncounterSetup.lua file
-- ✅ Updated OG-RaidHelper.toc to load new file
-- ✅ Copied lines 3138-5476 from OGRH_EncounterMgmt.lua
-- ⏸️ **BLOCKED:** Fix `InitializeSavedVars()` dependency error
-  - Need to copy function or use `OGRH.EnsureSV()` instead
-- ⏳ Test Phase 2 after fix
-- ⏳ Remove extracted code from OGRH_EncounterMgmt.lua (Phase 3)
+### [Issue] Interface Security Review Needed
+**Description:**
+Review all interface elements and define security restrictions:
+- Determine which UI elements should be locked based on permission levels (ADMIN/OFFICER/MEMBER)
+- Define what actions require ADMIN vs OFFICER vs MEMBER permissions
+- Ensure all modification operations have appropriate permission checks
+- Document security model for each interface component
 
-## Discovered Issues
+**Status:** Open
+**Priority:** High
 
 ### [Issue] Roles list doesn't clear when selecting different raid
 **Description:** 
@@ -20,16 +20,6 @@ In the Encounter Setup interface the roles lists do not clear when you select a 
 **Status:** Open
 
 ## Feature Requests
-
-### Raid Invites System Improvements
-**Description:**
-Enhancements to the Raid Invites system for better automation and visibility:
-- Add Toggle for "Active Invite" mode - periodically scans the guild roster for signed up players not in raid and invites them
-- Add status panel below main UI showing X/Total in raid
-- Periodically announce to guild "Whisper *player* for raid invites"
-- Automatically toggle off when all players invited
-
-**Status:** Planned
 
 ### Add Cooldown Role to Encounter Setup/Manager
 **Description:**
@@ -85,6 +75,12 @@ Add advanced setting to link an encounter to activate when a specific encounter 
 ### Cooldown Assignment Tag
 **Description:**
 Add "Cooldown Assignment tag" which will add a player to an announcement from a list based on if their cooldown is available. This allows dynamic cooldown rotation announcements.
+
+**Status:** Planned
+
+### Update Auto-Assign Right-Click for Invite Method
+**Description:**
+Update the auto-assign right-click functionality to respect the current invite method (RollFor, Raid Roster, or other sources) when assigning players to roles.
 
 **Status:** Planned
 
