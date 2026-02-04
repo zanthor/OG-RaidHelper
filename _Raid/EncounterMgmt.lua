@@ -4350,21 +4350,15 @@ InitializeSavedVars()
 
 -- Functions for MainUI encounter navigation
 function OGRH.ShowAnnouncementTooltip(anchorFrame)
-  -- Get the current encounter from main UI (not from Encounter Planning window)
-  local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounter()
+  -- Get the current encounter indices from main UI (not from Encounter Planning window)
+  local raidIdx, encIdx = OGRH.GetCurrentEncounter()
   
-  if not selectedRaid or not selectedEncounter then
+  if not raidIdx or not encIdx then
     return
   end
   
   -- Check if announcement system is loaded
   if not OGRH.Announcements or not OGRH.Announcements.ReplaceTags then
-    return
-  end
-  
-  -- Find raid and encounter indices from names
-  local raidIdx, encIdx = OGRH.FindRaidAndEncounterIndices(selectedRaid, selectedEncounter)
-  if not raidIdx or not encIdx then
     return
   end
   
