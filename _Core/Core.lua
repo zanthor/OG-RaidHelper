@@ -4940,10 +4940,10 @@ local function CreateMinimapButton()
       if OGRH_Main then
         if OGRH_Main:IsVisible() then
           OGRH_Main:Hide()
-          OGRH_SV.ui.hidden = true
+          OGRH.SVM.Set("ui", "hidden", true)
         else
           OGRH_Main:Show()
-          OGRH_SV.ui.hidden = false
+          OGRH.SVM.Set("ui", "hidden", false)
         end
       end
     end
