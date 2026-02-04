@@ -1,11 +1,17 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 1.31.3
+## Version: 2.0.42
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 ## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV
 
-OGRH_Backport.lua
+## ===================================================================
+## Phase 0: Compatibility & External Libraries
+## ===================================================================
+_Core\Backport.lua
+
+## Chat Window - Load FIRST before any messages
+_Core\ChatWindow.lua
 
 Libs\LibStub\LibStub.lua
 Libs\Libs.xml
@@ -13,33 +19,88 @@ Libs\OGST\OGST.lua
 Libs\OGST\OGST_Sample.lua
 Libs\json.lua
 
-OGRH_Core.lua
-OGRH_Defaults.lua
-OGRH_ConTrack_Defaults.lua
-OGRH_RaidLead.lua
-OGRH_Announce.lua
-OGRH_Sync.lua
-OGRH_MainUI.lua
-OGRH_RolesUI.lua
-OGRH_EncounterMgmt.lua
-OGRH_EncounterSetup.lua
-OGRH_AdvancedSettings.lua
-OGRH_BigWigs.lua
-OGRH_ClassPriority.lua
-OGRH_LinkRole.lua
-OGRH_Poll.lua
-OGRH_Trade.lua
-OGRH_Invites.lua
-OGRH_Invites_Test.lua
-OGRH_SRValidation.lua
-OGRH_AddonAudit.lua
-OGRH_Consumes.lua
-OGRH_ConsumesTracking.lua
-OGRH_Promotes.lua
-OGRH_Recruitment.lua
-OGRH_RGO.lua
-OGRH_RGO_Roster.lua
+## OGAddonMsg - Embedded Communication Library
+Libs\OGAddonMsg\Core.lua
+Libs\OGAddonMsg\Config.lua
+Libs\OGAddonMsg\Serialization.lua
+Libs\OGAddonMsg\Chunker.lua
+Libs\OGAddonMsg\Queue.lua
+Libs\OGAddonMsg\Retry.lua
+Libs\OGAddonMsg\Handlers.lua
+Libs\OGAddonMsg\API.lua
+Libs\OGAddonMsg\StatsPanel.lua
+Libs\OGAddonMsg\Commands.lua
 
-Modules\cthun.lua
-Modules\OGRH-ConsumeHelperDefaults.lua
-Modules\OGRH-ConsumeHelper.lua
+## ===================================================================
+## Phase 1: Core System - Namespace & Utilities
+## ===================================================================
+_Core\Core.lua
+_Core\SavedVariablesManager.lua
+_Core\Utilities.lua
+_Core\Defaults.lua
+_Core\ConTrack_Defaults.lua
+
+## ===================================================================
+## Phase 2: Infrastructure - Communication & Sync
+## ===================================================================
+_Infrastructure\MessageTypes.lua
+_Infrastructure\Permissions.lua
+_Infrastructure\Versioning.lua
+_Infrastructure\MessageRouter.lua
+_Infrastructure\MigrationMap.lua
+_Infrastructure\Migration.lua
+_Infrastructure\SyncChecksum.lua
+_Infrastructure\SyncRouter.lua
+_Infrastructure\DataManagement.lua
+_Infrastructure\SyncIntegrity.lua
+_Infrastructure\SyncGranular.lua
+
+## ===================================================================
+## Phase 3: Configuration - Roster & Consumables
+## ===================================================================
+_Configuration\Invites.lua
+_Configuration\Roster.lua
+_Configuration\Promotes.lua
+_Configuration\Consumes.lua
+_Configuration\ConsumesTracking.lua
+
+## ===================================================================
+## Phase 4: Raid - Encounters & Roles
+## ===================================================================
+_Raid\EncounterMgmt.lua
+_Raid\EncounterSetup.lua
+_Raid\RolesUI.lua
+_Raid\ClassPriority.lua
+_Raid\LinkRole.lua
+_Raid\Poll.lua
+_Raid\Announce.lua
+_Raid\AdvancedSettings.lua
+_Raid\BigWigs.lua
+_Raid\Trade.lua
+
+## ===================================================================
+## Phase 5: Administration - Guild & Validation
+## ===================================================================
+_Administration\AdminSelection.lua
+_Administration\Recruitment.lua
+_Administration\SRValidation.lua
+_Administration\AddonAudit.lua
+
+## ===================================================================
+## Phase 6: UI - Main Interface
+## ===================================================================
+_UI\MainUI.lua
+
+## ===================================================================
+## Phase 7: Modules - Encounter-Specific
+## ===================================================================
+
+_Modules\cthun.lua
+_Modules\OGRH-ConsumeHelperDefaults.lua
+_Modules\OGRH-ConsumeHelper.lua
+
+## ===================================================================
+## Phase 8: Tests (Debug Mode Only)
+## ===================================================================
+_Tests\test_svm.lua
+_Tests\test_phase1.lua

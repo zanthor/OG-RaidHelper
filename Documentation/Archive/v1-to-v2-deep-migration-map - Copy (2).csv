@@ -1,0 +1,177 @@
+V1 Path,V2 Path (PER DESIGN DOC),Transformation Type,Breaking Change,UI Bindings,Control Name,File Location,Notes
+OGRH_SV.encounterMgmt.roles[raidName],ELIMINATED - roles moved into encounters,STRUCTURAL,YES,,,"Entire separate roles table eliminated; roles nested into encounter.roles array"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName],ELIMINATED - roles moved into encounters,STRUCTURAL,YES,,,"Role data moved to encounterMgmt.raids[raidIdx].encounters[encIdx].roles"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1,ELIMINATED - flattened into roles array,STRUCTURAL,YES,,,"column1 array flattened; each role gets column=1 field"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column2,ELIMINATED - flattened into roles array,STRUCTURAL,YES,,,"column2 array flattened; each role gets column=2 field"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx],encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx],STRING KEY -> NUMERIC INDEX + FLATTEN,YES,,,"Role becomes sequential in single array; add column=1 field; raidName/encounterName become indices"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column2[idx],encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx+offset],STRING KEY -> NUMERIC INDEX + FLATTEN,YES,,,"Role becomes sequential in single array; add column=2 field; offset by column1 count"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].name,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].name,PATH CHANGE,YES,UI10-1,"nameText (display), nameEditBox (edit)",Raid/EncounterSetup.lua:664,1663,"Role name preserved; path completely different"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].slots,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].slots,PATH CHANGE,YES,UI11-9,countEditBox,Raid/EncounterSetup.lua:1779,"Slots count preserved; path completely different"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].fillOrder,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].fillOrder,PATH CHANGE,YES,UI11-4,invertFillOrderCheckbox,Raid/EncounterSetup.lua:1700,"Fill order preserved; path completely different"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].sortOrder,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].sortOrder,PATH CHANGE,YES,UI10-1,"roleBtn (drag/drop, up/down)",Raid/EncounterSetup.lua:750-797,"Sort order preserved; path completely different"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].defaultRoles,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].defaultRoles,PATH CHANGE,YES,UI11-8,"tanksCheck, healersCheck, meleeCheck, rangedCheck",Raid/EncounterSetup.lua:1808-1842,"Default roles mapping preserved; path completely different"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].showRaidIcons,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].showRaidIcons,PATH CHANGE,YES,UI11-5,raidIconsCheckbox,Raid/EncounterSetup.lua:1713,"Raid icon flag preserved; path completely different"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].classPriority,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].classPriority,PATH CHANGE,YES,UI5-1,frame.leftScrollChild (list items),Raid/ClassPriority.lua:144-283,"Class priority array preserved; path completely different"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].classPriorityRoles,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].classPriorityRoles,PATH CHANGE,YES,UI5-1,checkBox (role flags per class),Raid/ClassPriority.lua:250-279,"Class priority roles preserved; path completely different"
+OGRH_SV.encounterMgmt.roles[raidName][encounterName].column1[idx].roleId,DEPRECATED - array index is the roleId,DEPRECATED,YES,,,"roleId field redundant; use array index instead"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].invertFillOrder,NEW FIELD ADDED,NO,UI11-4,invertFillOrderCheckbox,Raid/EncounterSetup.lua:1700,"Invert fill order flag for auto-assignment"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].linkRole,NEW FIELD ADDED,NO,UI11-3,linkRoleCheckbox,Raid/EncounterSetup.lua:1687,"Link role flag for synchronized assignments"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].showAssignment,NEW FIELD ADDED,NO,UI11-7,showAssignmentCheckbox,Raid/EncounterSetup.lua:1723,"Show assignment text in UI"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].markPlayer,NEW FIELD ADDED,NO,UI11-8,markPlayerCheckbox,Raid/EncounterSetup.lua:1733,"Mark assigned players with raid icons"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].allowOtherRoles,NEW FIELD ADDED,NO,UI11-6,allowOtherRolesCheckbox,Raid/EncounterSetup.lua:1743,"Allow players from other roles to fill slots"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].isConsumeCheck,NEW FIELD ADDED,NO,UI11-1,"roleTypeBtn (Consume Check)",Raid/EncounterSetup.lua:1540,"Role is a consume check tracker"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].classes,NEW FIELD ADDED,NO,UI11-12,"allCheck, warriorCheck, rogueCheck, etc",Raid/EncounterSetup.lua:1860-2009,"Class selection for consume checks"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].isCustomModule,NEW FIELD ADDED,NO,UI11-1,"roleTypeBtn (Custom Module)",Raid/EncounterSetup.lua:1540,"Role is a custom module container"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].modules,NEW FIELD ADDED,NO,UI11-13,"leftListChild (selected modules)",Raid/EncounterSetup.lua:2110-2180,"Selected custom modules for role"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].roleType,NEW FIELD ADDED,NO,UI11-1,roleTypeBtn,Raid/EncounterSetup.lua:1540,"Role type: raider/consume/custom"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].column,NEW FIELD ADDED,YES,UI10-1,"roleBtn (drag between columns)",Raid/EncounterSetup.lua:716-735,"New field: 1 or 2 to indicate which UI column role appears in"
+OGRH_SV.encounterMgmt.raids[raidName],encounterMgmt.raids[raidIdx],STRING KEY -> NUMERIC INDEX,YES,,,"Raid name becomes array index; name stored in .name field; Example: 'MC' at index 1"
+OGRH_SV.encounterMgmt.raids[raidName].name,encounterMgmt.raids[raidIdx].name,PATH CHANGE,YES,UI1-1,OGRH_EncounterRaidMenu (submenu items),Raid/EncounterMgmt.lua:4497-4605,"Raid name becomes metadata field instead of key"
+OGRH_SV.encounterMgmt.raids[raidName].sortOrder,encounterMgmt.raids[raidIdx].sortOrder,PATH CHANGE,YES,,"Sort order preserved but path uses numeric index"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName],encounterMgmt.raids[raidIdx].encounters[encIdx],STRING KEY -> NUMERIC INDEX (NESTED),YES,,"Encounter name becomes array index; name stored in .name field; Example: 'Razorgore' at index 1 within BWL"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].name,encounterMgmt.raids[raidIdx].encounters[encIdx].name,PATH CHANGE,YES,UI1-2,OGRH_EncounterRaidMenu (submenu items),Raid/EncounterMgmt.lua:4546-4583,"Encounter name becomes metadata field instead of key; USER-EDITABLE without breaking references"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].sortOrder,encounterMgmt.raids[raidIdx].encounters[encIdx].sortOrder,PATH CHANGE,YES,,"Sort order preserved but path uses numeric indices"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings,PATH CHANGE,YES,,,"Advanced settings structure preserved but path uses numeric indices"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings.consumeTracking,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings.consumeTracking,PATH CHANGE,YES,,,"Consume tracking settings preserved but path uses numeric indices"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings.consumeTracking.enabled,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings.consumeTracking.enabled,PATH CHANGE,YES,UI4-1,dialog.consumeCheck,Raid/AdvancedSettings.lua:144,"Consume tracking enabled checkbox for encounter"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings.consumeTracking.readyThreshold,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings.consumeTracking.readyThreshold,PATH CHANGE,YES,UI4-2,dialog.thresholdInput,Raid/AdvancedSettings.lua:157,"Ready threshold percentage for encounter"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings.consumeTracking.requiredFlaskRoles,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings.consumeTracking.requiredFlaskRoles,PATH CHANGE,YES,UI4-3,dialog.flaskRoleCheckboxes,Raid/AdvancedSettings.lua:178-218,"Flask role requirement checkboxes array (Tanks/Healers/Melee/Ranged)"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings.bigwigs,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings.bigwigs,PATH CHANGE,YES,,,"BigWigs settings preserved but path uses numeric indices"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings.bigwigs.enabled,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings.bigwigs.enabled,PATH CHANGE,YES,UI4-4,dialog.bigwigsCheck,Raid/AdvancedSettings.lua:253,"BigWigs enabled checkbox for encounter"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings.bigwigs.autoAnnounce,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings.bigwigs.autoAnnounce,PATH CHANGE,YES,UI4-5,dialog.autoAnnounceCheck,Raid/AdvancedSettings.lua:262,"Auto-announce checkbox for encounter BigWigs"
+OGRH_SV.encounterMgmt.raids[raidName].encounters[encounterName].advancedSettings.bigwigs.encounterId,encounterMgmt.raids[raidIdx].encounters[encIdx].advancedSettings.bigwigs.encounterIds,PATH CHANGE + SEMANTIC,YES,UI4-6,dialog.encounterMenuBtn,Raid/AdvancedSettings.lua:270-350,"Encounter ID changed from single to array (encounterIds); UI button for selection"
+OGRH_SV.encounterMgmt.raids[raidName].advancedSettings,encounterMgmt.raids[raidIdx].advancedSettings,PATH CHANGE,YES,,,"Raid-level settings preserved but path uses numeric index"
+OGRH_SV.encounterMgmt.raids[raidName].advancedSettings.consumeTracking,encounterMgmt.raids[raidIdx].advancedSettings.consumeTracking,PATH CHANGE,YES,,,"Raid-level consume tracking settings"
+OGRH_SV.encounterMgmt.raids[raidName].advancedSettings.consumeTracking.enabled,encounterMgmt.raids[raidIdx].advancedSettings.consumeTracking.enabled,PATH CHANGE,YES,UI3-1,dialog.consumeCheck,Raid/AdvancedSettings.lua:144,"Consume tracking enabled checkbox for raid"
+OGRH_SV.encounterMgmt.raids[raidName].advancedSettings.consumeTracking.readyThreshold,encounterMgmt.raids[raidIdx].advancedSettings.consumeTracking.readyThreshold,PATH CHANGE,YES,UI3-2,dialog.thresholdInput,Raid/AdvancedSettings.lua:157,"Ready threshold percentage for raid"
+OGRH_SV.encounterMgmt.raids[raidName].advancedSettings.consumeTracking.requiredFlaskRoles,encounterMgmt.raids[raidIdx].advancedSettings.consumeTracking.requiredFlaskRoles,PATH CHANGE,YES,UI3-3,dialog.flaskRoleCheckboxes,Raid/AdvancedSettings.lua:178-218,"Flask role requirement checkboxes array (Tanks/Healers/Melee/Ranged) for raid"
+OGRH_SV.encounterMgmt.raids[raidName].advancedSettings.bigwigs,encounterMgmt.raids[raidIdx].advancedSettings.bigwigs,PATH CHANGE,YES,,,"Raid-level BigWigs settings"
+OGRH_SV.encounterMgmt.raids[raidName].advancedSettings.bigwigs.enabled,encounterMgmt.raids[raidIdx].advancedSettings.bigwigs.enabled,PATH CHANGE,YES,UI3-4,dialog.bigwigsCheck,Raid/AdvancedSettings.lua:253,"BigWigs enabled checkbox for raid"
+OGRH_SV.encounterMgmt.raids[raidName].advancedSettings.bigwigs.raidZone,encounterMgmt.raids[raidIdx].advancedSettings.bigwigs.raidZones,PATH CHANGE + SEMANTIC,YES,UI3-5,dialog.raidMenuBtn,Raid/AdvancedSettings.lua:270-350,"Raid zone changed from single to array (raidZones); UI button for selection"
+[NEW] N/A,encounterMgmt.raids[raidIdx].id,NEW FIELD ADDED,NO,,,"Optional semantic ID for code readability (e.g., 'mc', 'bwl')"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].id,NEW FIELD ADDED,NO,,,"Optional semantic ID for code readability (e.g., 'razorgore', 'vael')"
+[NEW] N/A,encounterMgmt.raids[raidIdx].encounters[encIdx].roles[roleIdx].id,NEW FIELD ADDED,NO,,,"Optional semantic ID for code readability (e.g., 'mt', 'ot', 'decurse')"
+OGRH_SV.encounterAssignments[raidName],encounterAssignments[raidIdx],STRING KEY -> NUMERIC INDEX,YES,,,"Raid name 'MC' becomes numeric index (e.g., 1); FIXES SPACES IN NAMES BUG"
+OGRH_SV.encounterAssignments[raidName][encounterName],encounterAssignments[raidIdx][encIdx],STRING KEY -> NUMERIC INDEX (NESTED),YES,,,"Encounter name 'Tanks and Heals' becomes numeric index (e.g., 5); FIXES SPACES BUG"
+OGRH_SV.encounterAssignments[raidName][encounterName][roleIdx][slotIdx],encounterAssignments[raidIdx][encIdx][roleIdx][slotIdx],STRING KEYS -> NUMERIC INDICES,YES,UI2-2,slot.assignBtn (text),Raid/EncounterMgmt.lua:1866-1867,"Role/slot already numeric but raid/encounter become indices; Example: [1][5][1][4] = 'Kinduosen'"
+OGRH_SV.encounterAssignmentNumbers[raidName],encounterAssignmentNumbers[raidIdx],STRING KEY -> NUMERIC INDEX,YES,,,"Same transformation as encounterAssignments"
+OGRH_SV.encounterAssignmentNumbers[raidName][encounterName][roleIdx][slotIdx],encounterAssignmentNumbers[raidIdx][encIdx][roleIdx][slotIdx],STRING KEYS -> NUMERIC INDICES,YES,UI2-3,slot.assignBtn.assignIndex,Raid/EncounterMgmt.lua:3112-3130,"Assignment numbers follow same index structure"
+OGRH_SV.encounterRaidMarks[raidName],encounterRaidMarks[raidIdx],STRING KEY -> NUMERIC INDEX,YES,,,"Same transformation as encounterAssignments"
+OGRH_SV.encounterRaidMarks[raidName][encounterName][roleIdx][slotIdx],encounterRaidMarks[raidIdx][encIdx][roleIdx][slotIdx],STRING KEYS -> NUMERIC INDICES,YES,UI2-1,slot.iconBtn,Raid/EncounterMgmt.lua:1862-1863,"Raid marks follow same index structure"
+OGRH_SV.encounterAnnouncements[raidName],encounterAnnouncements[raidIdx],STRING KEY -> NUMERIC INDEX,YES,,,"Same transformation as encounterAssignments"
+OGRH_SV.encounterAnnouncements[raidName][encounterName],encounterAnnouncements[raidIdx][encIdx],STRING KEY -> NUMERIC INDEX (NESTED),YES,,,"Announcements follow same index structure"
+OGRH_SV.encounterAnnouncements[raidName][encounterName][announcementIdx].enabled,encounterAnnouncements[raidIdx][encIdx][announcementIdx].enabled,PATH CHANGE,YES,,,"Announcement data preserved but path uses numeric indices"
+OGRH_SV.encounterAnnouncements[raidName][encounterName][announcementIdx].channel,encounterAnnouncements[raidIdx][encIdx][announcementIdx].channel,PATH CHANGE,YES,,,"Channel preserved but path uses numeric indices"
+OGRH_SV.encounterAnnouncements[raidName][encounterName][announcementIdx].text,encounterAnnouncements[raidIdx][encIdx][announcementIdx].text,PATH CHANGE,YES,UI2-4,frame.announcementLines[idx],Raid/EncounterMgmt.lua:1845-1850,"Announcement text preserved but path uses numeric indices"
+OGRH_SV.rosterManagement.players[playerName],rosterManagement.players[playerName],NO CHANGE,NO,,,"Player names stable (players don't rename characters); structure unchanged"
+OGRH_SV.rosterManagement.players[playerName].class,rosterManagement.players[playerName].class,NO CHANGE,NO,,,Player class preserved
+OGRH_SV.rosterManagement.players[playerName].primaryRole,rosterManagement.players[playerName].primaryRole,NO CHANGE,NO,UI21-1,primaryRoleButton,Configuration/Roster.lua:804-811,Primary role preserved
+OGRH_SV.rosterManagement.players[playerName].secondaryRoles,rosterManagement.players[playerName].secondaryRoles,NO CHANGE,NO,UI21-7,role checkboxes (All Players view),Configuration/Roster.lua:533-631,Secondary roles preserved
+OGRH_SV.rosterManagement.players[playerName].rankings,rosterManagement.players[playerName].rankings,NO CHANGE,NO,,,ELO rankings structure preserved
+OGRH_SV.rosterManagement.players[playerName].rankings.HEALERS,rosterManagement.players[playerName].rankings.HEALERS,NO CHANGE,NO,UI21-4,rankingTextBoxes.HEALERS,Configuration/Roster.lua:928-1000,Healer ELO preserved
+OGRH_SV.rosterManagement.players[playerName].rankings.TANKS,rosterManagement.players[playerName].rankings.TANKS,NO CHANGE,NO,UI21-3,rankingTextBoxes.TANKS,Configuration/Roster.lua:928-1000,Tank ELO preserved
+OGRH_SV.rosterManagement.players[playerName].rankings.MELEE,rosterManagement.players[playerName].rankings.MELEE,NO CHANGE,NO,UI21-5,rankingTextBoxes.MELEE,Configuration/Roster.lua:928-1000,Melee ELO preserved
+OGRH_SV.rosterManagement.players[playerName].rankings.RANGED,rosterManagement.players[playerName].rankings.RANGED,NO CHANGE,NO,UI21-6,rankingTextBoxes.RANGED,Configuration/Roster.lua:928-1000,Ranged ELO preserved
+OGRH_SV.rosterManagement.players[playerName].notes,rosterManagement.players[playerName].notes,NO CHANGE,NO,UI21-2,notesTextBox.editBox,Configuration/Roster.lua:893-906,Player notes preserved
+OGRH_SV.rosterManagement.players[playerName].lastUpdated,rosterManagement.players[playerName].lastUpdated,NO CHANGE,NO,,,Timestamp preserved
+OGRH_SV.rosterManagement.config,rosterManagement.config,NO CHANGE,NO,,,Config structure preserved
+OGRH_SV.rosterManagement.syncMeta,rosterManagement.syncMeta,NO CHANGE,NO,,,Sync metadata preserved
+OGRH_SV.rosterManagement.rankingHistory,rosterManagement.rankingHistory,NO CHANGE,NO,,,Ranking history preserved
+OGRH_SV.consumesTracking.history[idx],consumesTracking.history[idx],NO CHANGE,NO,,,Consume tracking history unchanged
+OGRH_SV.consumesTracking.trackingProfiles,consumesTracking.trackingProfiles,NO CHANGE,NO,,,Tracking profiles unchanged
+OGRH_SV.consumesTracking.pullTriggers,consumesTracking.pullTriggers,NO CHANGE,NO,,,Pull triggers unchanged
+OGRH_SV.consumesTracking.conflicts,consumesTracking.conflicts,NO CHANGE,NO,,,Conflict data unchanged
+OGRH_SV.consumesTracking.weights,consumesTracking.weights,NO CHANGE,NO,,,Weights unchanged
+OGRH_SV.consumesTracking.enabled,consumesTracking.enabled,NO CHANGE,NO,,,Enabled flag unchanged
+OGRH_SV.consumesTracking.trackOnPull,consumesTracking.trackOnPull,NO CHANGE,NO,,,Track on pull setting unchanged
+OGRH_SV.consumesTracking.maxEntries,consumesTracking.maxEntries,NO CHANGE,NO,,,Max entries unchanged
+OGRH_SV.consumesTracking.roleMapping,consumesTracking.roleMapping,NO CHANGE,NO,,,Role mapping unchanged
+OGRH_SV.consumesTracking.mapping,consumesTracking.mapping,NO CHANGE,NO,,,General mapping unchanged
+OGRH_SV.consumesTracking.secondsBeforePull,consumesTracking.secondsBeforePull,NO CHANGE,NO,,,Timing unchanged
+OGRH_SV.consumesTracking.logToMemory,consumesTracking.logToMemory,NO CHANGE,NO,,,Memory logging unchanged
+OGRH_SV.consumesTracking.logToCombatLog,consumesTracking.logToCombatLog,NO CHANGE,NO,,,Combat log unchanged
+OGRH_SV.ui.minimized,ui.minimized,NO CHANGE,NO,,,UI state unchanged
+OGRH_SV.ui.hidden,ui.hidden,NO CHANGE,NO,,,UI state unchanged
+OGRH_SV.ui.locked,ui.locked,NO CHANGE,NO,,,UI state unchanged
+OGRH_SV.ui.point,ui.point,NO CHANGE,NO,,,UI position unchanged
+OGRH_SV.ui.relPoint,ui.relPoint,NO CHANGE,NO,,,UI position unchanged
+OGRH_SV.ui.x,ui.x,NO CHANGE,NO,,,UI position unchanged
+OGRH_SV.ui.y,ui.y,NO CHANGE,NO,,,UI position unchanged
+OGRH_SV.ui.selectedRaid,ui.selectedRaidIndex,SEMANTIC CHANGE,YES,,,"Store raid INDEX instead of name; prevents lookup on every access"
+OGRH_SV.ui.selectedEncounter,ui.selectedEncounterIndex,SEMANTIC CHANGE,YES,,,"Store encounter INDEX instead of name; prevents lookup on every access"
+OGRH_SV.rolesUI.point,rolesUI.point,NO CHANGE,NO,,,UI position unchanged
+OGRH_SV.rolesUI.relPoint,rolesUI.relPoint,NO CHANGE,NO,,,UI position unchanged
+OGRH_SV.rolesUI.x,rolesUI.x,NO CHANGE,NO,,,UI position unchanged
+OGRH_SV.rolesUI.y,rolesUI.y,NO CHANGE,NO,,,UI position unchanged
+OGRH_SV.roles[playerName],roles[playerName],NO CHANGE,NO,,,"Player role assignments; playerName is stable key"
+OGRH_SV.playerElo[playerName],DEPRECATED - migrated to rosterManagement.players[playerName].rankings,DEPRECATED,YES,,,"Duplicate data; consolidated into rosterManagement"
+OGRH_SV.Permissions.currentAdmin,Permissions.currentAdmin,NO CHANGE,NO,UI1-3,adminBtn (UpdateAdminButtonColor),UI/MainUI.lua:82-94,Admin tracking unchanged
+OGRH_SV.Permissions.adminHistory[idx],Permissions.adminHistory[idx],NO CHANGE,NO,,,Admin history unchanged
+OGRH_SV.Permissions.permissionDenials,Permissions.permissionDenials,NO CHANGE,NO,,,Denial log unchanged
+OGRH_SV.Versioning.globalVersion,Versioning.globalVersion,NO CHANGE,NO,,,Version counter unchanged
+OGRH_SV.Versioning.encounterVersions,Versioning.encounterVersions,NO CHANGE,NO,,,Per-encounter versions unchanged
+OGRH_SV.Versioning.assignmentVersions,Versioning.assignmentVersions,NO CHANGE,NO,,,Assignment versions unchanged
+OGRH_SV.invites.raidhelperData,invites.raidhelperData,NO CHANGE,NO,,,RaidHelper integration unchanged
+OGRH_SV.invites.raidhelperGroupsData,invites.raidhelperGroupsData,NO CHANGE,NO,,,Groups data unchanged
+OGRH_SV.invites.inviteMode,invites.inviteMode,NO CHANGE,NO,,,Invite mode settings parent object
+OGRH_SV.invites.inviteMode.enabled,invites.inviteMode.enabled,NO CHANGE,NO,UI30-2,inviteModeBtn (Start/Stop Invite Mode),Configuration/Invites.lua:1030-1044,Toggle auto-invite mode on/off
+OGRH_SV.invites.inviteMode.interval,invites.inviteMode.interval,NO CHANGE,NO,UI30-1,intervalInput,Configuration/Invites.lua:1052-1072,Seconds between auto-invites (10-300)
+OGRH_SV.invites.history[idx],invites.history[idx],NO CHANGE,NO,,,History unchanged
+OGRH_SV.invites.autoSortEnabled,invites.autoSortEnabled,NO CHANGE,NO,,,Auto-sort unchanged
+OGRH_SV.invites.declinedPlayers,invites.declinedPlayers,NO CHANGE,NO,,,Declined list unchanged
+OGRH_SV.invites.currentSource,invites.currentSource,NO CHANGE,NO,,,Source setting unchanged
+OGRH_SV.invites.invitePanelPosition,invites.invitePanelPosition,NO CHANGE,NO,,,Panel position unchanged
+OGRH_SV.recruitment.messages[idx],recruitment.messages[idx],NO CHANGE,NO,UI40-1,messageBox,Administration/Recruitment.lua:480-493,Primary recruitment message (255 char max)
+OGRH_SV.recruitment.messages2[idx],recruitment.messages2[idx],NO CHANGE,NO,UI40-2,messageBox2,Administration/Recruitment.lua:540-555,Second recruitment message (255 char max)
+OGRH_SV.recruitment.whisperHistory,recruitment.whisperHistory,NO CHANGE,NO,UI40-7,contact list (left panel),Administration/Recruitment.lua:203-279,Whisper conversation history per player
+OGRH_SV.recruitment.contacts,recruitment.contacts,NO CHANGE,NO,,,Contacts unchanged
+OGRH_SV.recruitment.deletedContacts,recruitment.deletedContacts,NO CHANGE,NO,,,Deleted contacts unchanged
+OGRH_SV.recruitment.playerCache,recruitment.playerCache,NO CHANGE,NO,,,Player cache unchanged
+OGRH_SV.recruitment.enabled,recruitment.enabled,NO CHANGE,NO,,,Enabled flag unchanged
+OGRH_SV.recruitment.interval,recruitment.interval,NO CHANGE,NO,UI40-4,intervalBox,Administration/Recruitment.lua:613-640,Minutes between advertisements
+OGRH_SV.recruitment.targetTime,recruitment.targetTime,NO CHANGE,NO,UI40-5,targetTimeBox,Administration/Recruitment.lua:641-676,Target raid start time (HHMM format)
+OGRH_SV.recruitment.selectedChannel,recruitment.selectedChannel,NO CHANGE,NO,UI40-3,radioButtons (general/trade/world/raid),Administration/Recruitment.lua:568-605,Selected advertising channel
+OGRH_SV.recruitment.rotateMessages,recruitment.rotateMessages,NO CHANGE,NO,UI40-6,rotateCheckboxes (1-5),Administration/Recruitment.lua:678-707,Enable message rotation per slot
+OGRH_SV.recruitment.selectedMessageIndex,recruitment.selectedMessageIndex,NO CHANGE,NO,UI40-8,messageSelectorBtn,Administration/Recruitment.lua:316-420,Currently active message slot (1-5)
+OGRH_SV.recruitment.isRecruiting,recruitment.isRecruiting,NO CHANGE,NO,UI40-9,recruitBtn (Start/Stop Recruiting),Administration/Recruitment.lua:706-720,Toggle recruitment mode on/off
+OGRH_SV.recruitment.lastAdTime,recruitment.lastAdTime,NO CHANGE,NO,,,Last ad time unchanged
+OGRH_SV.recruitment.autoAd,recruitment.autoAd,NO CHANGE,NO,,,Auto-ad unchanged
+OGRH_SV.consumes[idx],consumes[idx],NO CHANGE,NO,,,Consumables list unchanged
+OGRH_SV.consumes[idx].primaryName,consumes[idx].primaryName,NO CHANGE,NO,,,Item names unchanged
+OGRH_SV.autoPromotes[idx],autoPromotes[idx],NO CHANGE,NO,,,Auto-promote list unchanged
+OGRH_SV.autoPromotes[idx].name,autoPromotes[idx].name,NO CHANGE,NO,,,Player names unchanged
+OGRH_SV.autoPromotes[idx].class,autoPromotes[idx].class,NO CHANGE,NO,,,Classes unchanged
+OGRH_SV.order.HEALERS,order.HEALERS,NO CHANGE,NO,,,Sort order unchanged
+OGRH_SV.order.TANKS,order.TANKS,NO CHANGE,NO,,,Sort order unchanged
+OGRH_SV.order.MELEE,order.MELEE,NO CHANGE,NO,,,Sort order unchanged
+OGRH_SV.order.RANGED,order.RANGED,NO CHANGE,NO,,,Sort order unchanged
+OGRH_SV.srValidation.records[playerName],srValidation.records[playerName],NO CHANGE,NO,,,NEEDS V2 OVERHAUL: Validation records parent per player
+OGRH_SV.srValidation.records[playerName][idx],srValidation.records[playerName][idx],NO CHANGE,NO,UI50-1,validation history list,Administration/SRValidation.lua:1040-1178,NEEDS V2 OVERHAUL: Individual validation snapshot
+OGRH_SV.srValidation.records[playerName][idx].date,srValidation.records[playerName][idx].date,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: Validation date (YYYY-MM-DD)
+OGRH_SV.srValidation.records[playerName][idx].time,srValidation.records[playerName][idx].time,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: Validation time (HH:MM:SS)
+OGRH_SV.srValidation.records[playerName][idx].validator,srValidation.records[playerName][idx].validator,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: Who performed validation
+OGRH_SV.srValidation.records[playerName][idx].instance,srValidation.records[playerName][idx].instance,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: Raid instance ID at validation time
+OGRH_SV.srValidation.records[playerName][idx].srPlus,srValidation.records[playerName][idx].srPlus,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: Total SR+ value at validation
+OGRH_SV.srValidation.records[playerName][idx].items,srValidation.records[playerName][idx].items,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: Items array parent
+OGRH_SV.srValidation.records[playerName][idx].items[idx],srValidation.records[playerName][idx].items[idx],NO CHANGE,NO,UI50-1,item detail display,Administration/SRValidation.lua:968-1080,NEEDS V2 OVERHAUL: Individual item snapshot
+OGRH_SV.srValidation.records[playerName][idx].items[idx].name,srValidation.records[playerName][idx].items[idx].name,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: Item name at validation time
+OGRH_SV.srValidation.records[playerName][idx].items[idx].plus,srValidation.records[playerName][idx].items[idx].plus,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: SR+ value for this item
+OGRH_SV.srValidation.records[playerName][idx].items[idx].itemId,srValidation.records[playerName][idx].items[idx].itemId,NO CHANGE,NO,,,NEEDS V2 OVERHAUL: WoW item ID
+OGRH_SV.tradeItems[idx],tradeItems[idx],NO CHANGE,NO,UI70-1,item list with edit/delete/reorder,Core/Core.lua:4734-4851,Trade items array (itemId + quantity + name)
+OGRH_SV.tradeItems[idx].itemId,tradeItems[idx].itemId,NO CHANGE,NO,UI70-2,itemIdInput (Add/Edit dialog),Core/Core.lua:4858-5115,WoW item ID for trade automation
+OGRH_SV.tradeItems[idx].quantity,tradeItems[idx].quantity,NO CHANGE,NO,UI70-3,qtyInput (Add/Edit dialog),Core/Core.lua:4858-5115,Stack size to trade
+OGRH_SV.tradeItems[idx].name,tradeItems[idx].name,NO CHANGE,NO,,,Display name (auto-filled from itemId)
+OGRH_SV.minimap.angle,minimap.angle,NO CHANGE,NO,,,Minimap button unchanged
+OGRH_SV.playerAssignments[playerName],playerAssignments[playerName],NO CHANGE,NO,,,Player assignments unchanged
+OGRH_SV.sorting.speed,sorting.speed,NO CHANGE,NO,,,Sorting speed unchanged
+OGRH_SV.monitorConsumes,monitorConsumes,NO CHANGE,NO,,,Monitor flag unchanged
+OGRH_SV.raidLead,raidLead,NO CHANGE,NO,,,Raid leader unchanged
+OGRH_SV.allowRemoteReadyCheck,allowRemoteReadyCheck,NO CHANGE,NO,,,Remote ready check unchanged
+OGRH_SV.firstRun,firstRun,NO CHANGE,NO,,,First run flag unchanged
+OGRH_SV.syncLocked,syncLocked,NO CHANGE,NO,,,Sync lock unchanged
+OGRH_SV.pollTime,pollTime,NO CHANGE,NO,,,Poll interval unchanged
+OGRH_SV.schemaVersion,DEPRECATED,DEPRECATED,YES,,,"Replaced by encounterMgmt.schemaVersion = 2"
+OGRH_SV.healerBoss,DEPRECATED,DEPRECATED,YES,,,Legacy data removed
+OGRH_SV.healerIcon,DEPRECATED,DEPRECATED,YES,,,Legacy data removed
+OGRH_SV.tankCategory,DEPRECATED,DEPRECATED,YES,,,Legacy data removed
+OGRH_SV.tankIcon,DEPRECATED,DEPRECATED,YES,,,Legacy data removed
