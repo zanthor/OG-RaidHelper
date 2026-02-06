@@ -83,6 +83,15 @@ OG-RaidHelper v2.0 introduces the Active Raid concept.  Instead of trying to syn
        - Invokes Auto-Marker otherwise.
   7. Repeat as necessary.
 
+This of course is a very high level overview of OG-RaidHelper.  Nearly every aspect of the Raid/Encounter can be configured to meet any need you can imagine - and if it can't please let me know by opening an issue here and if I can, I'll add support!
+
+There are many other features that need overview but this should be enough to get most people up and running.
+
+ * *Raid/Encounter Advanced Settings* allows you to enable Consume Tracking, Ready Threholds, Flasks, Etc.
+ * *Class Priority System* allows you to set specific class priorities for use during Auto-Assign.
+ * *Track Consumes* Utilizes RABuffs and extends the logging capabilities with a laser focus on what consumes matter the most based on class and role at the time of the pull.
+ * *Roster Management* is an upcoming ELO based ranking system that will work with your DPS Meters to rank players based on performance - this data will be able to be used in auto-assignments for raid comp building and encounter management.
+ * 
 
 ---
 

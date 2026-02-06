@@ -34,9 +34,8 @@ function OGAddonMsg.IsDuplicate(msgId, sender, prefix, data)
         if now - lastSeen < 60 then
             -- Duplicate within 60 second window
             if OGAddonMsg_Config.debug then
-                DEFAULT_CHAT_FRAME:AddMessage(
-                    string.format("OGAddonMsg: Duplicate message from %s (hash: %s)", sender, hash),
-                    1, 1, 0
+                OGAddonMsg.Msg(
+                    string.format("OGAddonMsg: Duplicate message from %s (hash: %s)", sender, hash)
                 )
             end
             return true
@@ -73,9 +72,8 @@ function OGAddonMsg.StoreForRetry(msgId, chunks)
     }
     
     if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Stored %s for retry (%d chunks)", msgId, table.getn(chunks)),
-            0.5, 0.5, 1
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Stored %s for retry (%d chunks)", msgId, table.getn(chunks))
         )
     end
 end
@@ -106,14 +104,12 @@ function OGAddonMsg.SendRetryRequest(sender, msgId, missingChunks, channel)
     OGAddonMsg.stats.retriesRequested = OGAddonMsg.stats.retriesRequested + 1
     
     if success then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Retry requested from %s via %s (total: %d)", sender, channel or "RAID", OGAddonMsg.stats.retriesRequested),
-            1, 1, 0
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Retry requested from %s via %s (total: %d)", sender, channel or "RAID", OGAddonMsg.stats.retriesRequested)
         )
     else
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Retry request to %s failed (total: %d)", sender, OGAddonMsg.stats.retriesRequested),
-            1, 0.5, 0
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Retry request to %s failed (total: %d)", sender, OGAddonMsg.stats.retriesRequested)
         )
     end
 end
@@ -123,51 +119,46 @@ function OGAddonMsg.OnRetryRequest(sender, msgId, data)
     -- Format: [target]:[missing chunks]
     -- Parse target and missing chunks
     
-    DEFAULT_CHAT_FRAME:AddMessage(
-        string.format("[DEBUG] OnRetryRequest: sender=%s msgId=%s data='%s'", sender, msgId, data or "nil"),
-        1, 1, 0
+    OGAddonMsg.Msg(
+        string.format("[DEBUG] OnRetryRequest: sender=%s msgId=%s data='%s'", sender, msgId, data or "nil")
     )
     
     local target, missingStr = string.match(data, "^([^:]+):(.*)$")
     
-    DEFAULT_CHAT_FRAME:AddMessage(
+    OGAddonMsg.Msg(
         string.format("[DEBUG] Parsed: target='%s' missingStr='%s' myName='%s'", 
-            target or "nil", missingStr or "nil", UnitName("player")),
-        1, 1, 0
+            target or "nil", missingStr or "nil", UnitName("player"))
     )
     
     if not target then
         -- Old format without target, process anyway
         missingStr = data
-        DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] No target found, using old format", 1, 1, 0)
+        OGAddonMsg.Msg("[DEBUG] No target found, using old format")
     elseif target ~= UnitName("player") then
         -- Not for us, ignore
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("[DEBUG] Ignoring retry request for %s (I am %s)", target, UnitName("player")),
-            1, 0.5, 0
+        OGAddonMsg.Msg(
+            string.format("[DEBUG] Ignoring retry request for %s (I am %s)", target, UnitName("player"))
         )
         return
     else
-        DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] Target matches, processing retry", 0, 1, 0)
+        OGAddonMsg.Msg("[DEBUG] Target matches, processing retry")
     end
     
     -- Re-enqueue requested chunks with HIGH priority
     
     local entry = OGAddonMsg.retryBuffer[msgId]
     
-    DEFAULT_CHAT_FRAME:AddMessage(
-        string.format("[DEBUG] RetryBuffer lookup for msgId=%s: %s", msgId, entry and "FOUND" or "NOT FOUND"),
-        1, 1, 0
+    OGAddonMsg.Msg(
+        string.format("[DEBUG] RetryBuffer lookup for msgId=%s: %s", msgId, entry and "FOUND" or "NOT FOUND")
     )
     
     if not entry then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            "OGAddonMsg: Retry request for expired message from " .. sender,
-            1, 1, 0
+        OGAddonMsg.Msg(
+            "OGAddonMsg: Retry request for expired message from " .. sender
         )
-        DEFAULT_CHAT_FRAME:AddMessage("[DEBUG] Available msgIds in retryBuffer:", 1, 0.5, 0)
+        OGAddonMsg.Msg("[DEBUG] Available msgIds in retryBuffer:")
         for id, _ in pairs(OGAddonMsg.retryBuffer) do
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("  - %s", id), 1, 0.5, 0)
+            OGAddonMsg.Msg(string.format("  - %s", id))
         end
         return
     end
@@ -197,10 +188,9 @@ function OGAddonMsg.OnRetryRequest(sender, msgId, data)
     end
     
     if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(
+        OGAddonMsg.Msg(
             string.format("OGAddonMsg: Honoring retry request from %s for %s (%d chunks)", 
-                sender, msgId, table.getn(chunksToSend)),
-            0.5, 1, 0.5
+                sender, msgId, table.getn(chunksToSend))
         )
     end
     
@@ -212,9 +202,8 @@ function OGAddonMsg.OnRetryRequest(sender, msgId, data)
     end
     
     OGAddonMsg.stats.retriesSent = OGAddonMsg.stats.retriesSent + 1
-    DEFAULT_CHAT_FRAME:AddMessage(
-        string.format("OGAddonMsg: Retry sent to %s (%d chunks, total: %d)", sender, table.getn(chunksToSend), OGAddonMsg.stats.retriesSent),
-        0.5, 1, 0.5
+    OGAddonMsg.Msg(
+        string.format("OGAddonMsg: Retry sent to %s (%d chunks, total: %d)", sender, table.getn(chunksToSend), OGAddonMsg.stats.retriesSent)
     )
 end
 
@@ -227,7 +216,7 @@ function OGAddonMsg.CleanupRetryBuffer()
             OGAddonMsg.retryBuffer[msgId] = nil
             
             if OGAddonMsg_Config.debug then
-                DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Expired retry buffer for " .. msgId, 0.7, 0.7, 0.7)
+                OGAddonMsg.Msg("OGAddonMsg: Expired retry buffer for " .. msgId)
             end
         end
     end
@@ -258,19 +247,17 @@ function OGAddonMsg.CheckIncompleteMessages()
             OGAddonMsg.SendRetryRequest(entry.sender, msgId, missingChunks, entry.channel)
             
             if OGAddonMsg_Config.debug then
-                DEFAULT_CHAT_FRAME:AddMessage(
+                OGAddonMsg.Msg(
                     string.format("OGAddonMsg: Requesting retry for incomplete %s (%d/%d chunks, missing: %d)",
-                        msgId, entry.receivedCount, entry.totalChunks, table.getn(missingChunks)),
-                    1, 1, 0
+                        msgId, entry.receivedCount, entry.totalChunks, table.getn(missingChunks))
                 )
             end
         end
     end
     
     if incomplete > 0 then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Found %d incomplete messages after zone, requesting retries", incomplete),
-            1, 1, 0
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Found %d incomplete messages after zone, requesting retries", incomplete)
         )
     end
 end

@@ -2,9 +2,11 @@
 ## Title: OGAddonMsg
 ## Notes: Unified addon network interface with automatic chunking, retry, and self-healing
 ## Author: OG
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariables: OGAddonMsg_Config
+## OptionalDeps: _OGAALogger
 
+MessageRouter.lua
 Core.lua
 Config.lua
 Serialization.lua

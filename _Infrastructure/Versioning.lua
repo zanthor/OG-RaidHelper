@@ -338,7 +338,7 @@ function OGRH.Versioning.Initialize()
         -- Don't load changeLog (session only)
     end
     
-    OGRH.Msg(string.format("|cff00ccff[Versioning]|r Initialized (v%d)", OGRH.Versioning.State.globalVersion))
+    OGRH.Msg(string.format("|cff00ccff[RH-Versioning]|r Initialized (v%d)", OGRH.Versioning.State.globalVersion))
 end
 
 -- Save versioning state to SavedVariables

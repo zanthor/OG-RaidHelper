@@ -68,14 +68,14 @@ function OGST_Sample.Show()
         content = "This is a sample dialog demonstrating OGST.CreateDialog().\n\nThe dialog supports:\n- Modal backdrop (dims background)\n- Configurable title\n- Content frame for custom UI\n- Multiple buttons with callbacks\n- ESC key closes dialog",
         buttons = {
           {text = "OK", onClick = function()
-            DEFAULT_CHAT_FRAME:AddMessage("Sample Dialog: OK clicked")
+            OGST.Msg("Sample Dialog: OK clicked")
           end},
           {text = "Cancel", onClick = function()
-            DEFAULT_CHAT_FRAME:AddMessage("Sample Dialog: Cancel clicked")
+            OGST.Msg("Sample Dialog: Cancel clicked")
           end}
         },
         onClose = function()
-          DEFAULT_CHAT_FRAME:AddMessage("Sample Dialog closed")
+          OGST.Msg("Sample Dialog closed")
         end
       })
       
@@ -131,22 +131,22 @@ function OGST_Sample.Show()
       {text = "Anchor Left", selected = true, onClick = function()
         OGST_Sample.horizontalAlignment = "left"
         OGST_Sample.CreateDockedPanels(window)
-        DEFAULT_CHAT_FRAME:AddMessage("Horizontal panels anchor: LEFT")
+        OGST.Msg("Horizontal panels anchor: LEFT")
       end},
       {text = "Anchor Right", selected = false, onClick = function()
         OGST_Sample.horizontalAlignment = "right"
         OGST_Sample.CreateDockedPanels(window)
-        DEFAULT_CHAT_FRAME:AddMessage("Horizontal panels anchor: RIGHT")
+        OGST.Msg("Horizontal panels anchor: RIGHT")
       end},
       {text = "Anchor Bottom", selected = true, onClick = function()
         OGST_Sample.verticalAlignment = "bottom"
         OGST_Sample.CreateDockedPanels(window)
-        DEFAULT_CHAT_FRAME:AddMessage("Vertical panels anchor: BOTTOM")
+        OGST.Msg("Vertical panels anchor: BOTTOM")
       end},
       {text = "Anchor Top", selected = false, onClick = function()
         OGST_Sample.verticalAlignment = "top"
         OGST_Sample.CreateDockedPanels(window)
-        DEFAULT_CHAT_FRAME:AddMessage("Vertical panels anchor: TOP")
+        OGST.Msg("Vertical panels anchor: TOP")
       end}
     }
     
@@ -234,7 +234,7 @@ function OGST_Sample.Show()
       labelWidth = 100,
       checked = true,
       onChange = function(isChecked)
-        DEFAULT_CHAT_FRAME:AddMessage("Auto Move: " .. (isChecked and "ON" or "OFF"))
+        OGST.Msg("Auto Move: " .. (isChecked and "ON" or "OFF"))
         OGST_Sample.autoMove = isChecked
         if OGST_Sample.dockedPanels then
           for _, panel in ipairs(OGST_Sample.dockedPanels) do
@@ -261,7 +261,7 @@ function OGST_Sample.Show()
       labelWidth = 100,
       checked = false,
       onChange = function(isChecked)
-        DEFAULT_CHAT_FRAME:AddMessage("Hide in Combat: " .. (isChecked and "ON" or "OFF"))
+        OGST.Msg("Hide in Combat: " .. (isChecked and "ON" or "OFF"))
         OGST_Sample.hideInCombat = isChecked
         if OGST_Sample.dockedPanels then
           for _, panel in ipairs(OGST_Sample.dockedPanels) do
@@ -536,20 +536,20 @@ SlashCmdList["OGST"] = function(msg)
     OGST_Sample.SpyUI()
   elseif msg == "version" or msg == "v" then
     -- Show version info
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Standard Templates Library")
-    DEFAULT_CHAT_FRAME:AddMessage("  Version: |cffffffff" .. OGST.version .. "|r")
-    DEFAULT_CHAT_FRAME:AddMessage("  Load Source: |cffffffff" .. (OGST.loadSource or "unknown") .. "|r")
+    OGST.Msg("|cff00ff00OGST:|r Standard Templates Library")
+    OGST.Msg("  Version: |cffffffff" .. OGST.version .. "|r")
+    OGST.Msg("  Load Source: |cffffffff" .. (OGST.loadSource or "unknown") .. "|r")
     if OGST.previousLoadSource then
-      DEFAULT_CHAT_FRAME:AddMessage("  Previous Source: |cff888888" .. OGST.previousLoadSource .. "|r")
+      OGST.Msg("  Previous Source: |cff888888" .. OGST.previousLoadSource .. "|r")
     end
   elseif msg == "help" or msg == "?" then
     -- Show help
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST Commands:|r")
-    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst|r - Show sample window")
-    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst spy|r - UI Spy interface")
-    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst version|r - Show version information")
-    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst design|r - Toggle design mode")
-    DEFAULT_CHAT_FRAME:AddMessage("  |cffffffff/ogst help|r - Show this help")
+    OGST.Msg("|cff00ff00OGST Commands:|r")
+    OGST.Msg("  |cffffffff/ogst|r - Show sample window")
+    OGST.Msg("  |cffffffff/ogst spy|r - UI Spy interface")
+    OGST.Msg("  |cffffffff/ogst version|r - Show version information")
+    OGST.Msg("  |cffffffff/ogst design|r - Toggle design mode")
+    OGST.Msg("  |cffffffff/ogst help|r - Show this help")
   elseif msg == "design" then
     -- Use library function to toggle design mode
     OGST.ToggleDesignMode()
@@ -719,4 +719,4 @@ end
 SLASH_OGST1 = "/ogst"
 
 -- Load message
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST Sample:|r Type /ogst to test docked panel positioning or /ogst spy to inspect UI elements")
+OGST.Msg("|cff00ff00OGST Sample:|r Type /ogst to test docked panel positioning or /ogst spy to inspect UI elements")
