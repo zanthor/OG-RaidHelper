@@ -509,7 +509,73 @@ OGRH_SV.v2.rosterManagement = {
         lastSync = 0,                    -- number: Timestamp of last sync
     },
     
-    rankingHistory = {}  -- table: Historical ranking data
+    rankingHistory = {},  -- table: Historical ranking data
+    
+    -- NEW: Pending Segments (DPSMate AutoRank System)
+    pendingSegments = {
+        [1] = {
+            -- Metadata
+            segmentId = "seg_1234567890_ragnaros",  -- string: Unique identifier
+            name = "Ragnaros - 19:30:45",            -- string: Display name (from DPSMate)
+            timestamp = 1234567890,                  -- number: Unix timestamp
+            createdAt = "2026-02-06 19:30:45",      -- string: Human-readable datetime
+            
+            -- Source Context
+            raidName = "Molten Core",                -- string: Active Raid name
+            raidIndex = 1,                           -- number: Active Raid index
+            encounterName = "Ragnaros",              -- string: Active Encounter name (if applicable)
+            encounterIndex = 9,                      -- number: Active Encounter index (if applicable)
+            
+            -- Combat Metrics
+            combatTime = 120.5,                      -- number: Total combat duration (seconds)
+            effectiveCombatTime = {                  -- table: Per-player effective time
+                ["PlayerName"] = 118.2,
+                ["PlayerName2"] = 115.8,
+            },
+            
+            -- Performance Data
+            damageData = {                           -- table: From DPSMateDamageDone[2]
+                ["PlayerName"] = {
+                    total = 50000,                   -- number: Total damage
+                    value = 50000,                   -- number: Total damage (for ranking)
+                },
+            },
+            
+            totalHealingData = {                     -- table: From DPSMateTHealing[2]
+                ["PlayerName"] = {
+                    total = 30000,                   -- number: Total healing
+                    value = 30000,                   -- number: Total healing (for ranking)
+                },
+            },
+            
+            effectiveHealingData = {                 -- table: From DPSMateEHealing[2]
+                ["PlayerName"] = {
+                    total = 25000,                   -- number: Effective healing
+                    value = 25000,                   -- number: Effective healing (for ranking)
+                },
+            },
+            
+            -- Role Assignments (captured at segment creation time)
+            playerRoles = {                          -- table: Player role assignments
+                ["PlayerName"] = "MELEE",            -- string: TANKS, HEALERS, MELEE, RANGED
+                ["PlayerName2"] = "HEALERS",
+            },
+            
+            -- State Management
+            imported = false,                        -- boolean: Has been imported for ELO update
+            importedAt = nil,                        -- number: Timestamp when imported (nil if not imported)
+            importedBy = nil,                        -- string: Player who imported (nil if not imported)
+            
+            -- Expiration
+            expiresAt = 1234740690,                  -- number: timestamp + (2 days * 86400)
+            
+            -- Optional: Preview Data
+            playerCount = 25,                        -- number: Number of players in segment
+            topDPS = "PlayerName",                   -- string: Top DPS player
+            topHealer = "HealerName",                -- string: Top healer
+        },
+        [2] = { },  -- ... array of pending segments (newest first)
+    }
 }
 ```
 

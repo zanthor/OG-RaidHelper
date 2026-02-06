@@ -5,8 +5,17 @@
     Maintains session markers and provides message management.
 ]]
 
+-- Version check for multi-copy loading (newest version wins)
+local LIB_VERSION = 1.0
+
+if OGAALogger and OGAALogger.__version and OGAALogger.__version >= LIB_VERSION then
+    -- Newer or equal version already loaded, abort
+    return
+end
+
 -- Global namespace
 OGAALogger = OGAALogger or {}
+OGAALogger.__version = LIB_VERSION
 
 -- Internal state
 OGAALogger.State = {

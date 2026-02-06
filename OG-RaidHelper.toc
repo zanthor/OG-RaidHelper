@@ -4,7 +4,7 @@
 ## Version: 2.0.55
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 ## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV, OGAAL_SV
-## OptionalDeps: _OGAALogger, _OGAddonMsg, _OGST
+## OptionalDeps: _OGAddonMsg, _OGST, _OGAALogger 
 
 ## ===================================================================
 ## Phase 0: Compatibility & External Libraries
@@ -68,10 +68,9 @@ _Infrastructure\SyncIntegrity.lua
 _Infrastructure\SyncGranular.lua
 
 ## ===================================================================
-## Phase 3: Configuration - Roster & Consumables
+## Phase 3: Configuration - Consumables
 ## ===================================================================
 _Configuration\Invites.lua
-_Configuration\Roster.lua
 _Configuration\Promotes.lua
 _Configuration\Consumes.lua
 _Configuration\ConsumesTracking.lua
@@ -94,6 +93,8 @@ _Raid\Trade.lua
 ## Phase 5: Administration - Guild & Validation
 ## ===================================================================
 _Administration\AdminSelection.lua
+_Administration\Roster.lua
+_Administration\PendingSegments.lua
 _Administration\Recruitment.lua
 _Administration\SRValidation.lua
 _Administration\AddonAudit.lua

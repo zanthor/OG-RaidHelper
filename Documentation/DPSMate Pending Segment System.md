@@ -825,7 +825,132 @@ end
 
 ---
 
+## Implementation Phases
+
+### Phase 1: Core Capture System
+**Estimated Time:** 30-45 minutes
+
+**Scope:**
+- Create new file: `_Configuration/PendingSegments.lua`
+- Hook `DPSMate.Options:CreateSegment()`
+- Implement permission checks (`ShouldCaptureSegment()`)
+- Implement data capture (`CaptureSegmentData()`)
+- Add helper functions:
+  - `ExtractDamageData()`
+  - `ExtractHealingData()`
+  - `CountPlayers()`
+  - `GetTopPlayer()`
+- Initialize `pendingSegments` schema in `rosterManagement`
+- Update `! V2 Schema Specification.md` with `pendingSegments` structure
+
+**Testing:**
+- [x] Hook installs without errors on addon load
+- [x] DPSMate segment creation still works normally (no interference)
+- [x] Enable AutoRank on test raid/encounter
+- [x] Kill a boss (or create DPSMate segment manually)
+- [x] Verify segment captured in `OGRH_SV.v2.rosterManagement.pendingSegments`
+- [x] Check all required fields populated (damage, healing, metadata)
+- [x] Verify permission check blocks capture when not Raid Admin/Lead/Assist
+- [x] Test with AutoRank disabled - should NOT capture
+
+**Success Criteria:**
+- Segments automatically captured when AutoRank enabled
+- No errors in chat or Lua errors
+- Data persists between reloads
+- Capture only happens with proper permissions
+
+**Rollback Plan:**
+- Comment out hook installation if issues arise
+- System can be disabled without affecting other OGRH features
+
+---
+
+### Phase 2: Purge System
+**Estimated Time:** 15 minutes
+
+**Scope:**
+- Implement `PurgeExpiredSegments()`
+- Schedule repeating timer (hourly)
+- Trigger purge on login
+- Add manual purge command (optional)
+
+**Testing:**
+- [x] Manually set `expiresAt` to past timestamp
+- [x] Run purge manually or wait for timer
+- [x] Verify expired segments removed
+- [x] Test imported segment purge (2 days after import)
+- [x] Verify active segments NOT purged
+- [x] Check purge runs on login
+
+**Success Criteria:**
+- Old segments automatically removed
+- No errors during purge
+- Active segments preserved
+- Purge count displayed in chat
+
+**Dependencies:**
+- Phase 1 must be complete and working
+
+---
+
+### Phase 3: UI Integration + Import
+**Estimated Time:** 45-60 minutes
+
+**Scope:**
+- Read existing `_Configuration/Roster.lua` Import Ranking Data code
+- Add "Pending Segments" source to source dropdown menu
+- Create segment selector dropdown (shows when source selected)
+- Implement segment loading:
+  - `LoadPendingSegment(segmentIndex)`
+  - `ExtractTankRankings(segment)`
+  - `ExtractHealerRankings(segment)`
+  - `ExtractMeleeRankings(segment)`
+  - `ExtractRangedRankings(segment)`
+- Populate existing four role columns with segment data
+- Implement import logic:
+  - `ImportSelectedPendingSegment()`
+  - Mark segment as imported
+  - Update `importedAt` and `importedBy`
+- Add time formatting helper (`FormatTimeAgo()`)
+- Handle already-imported segments (show warning or gray out)
+
+**Testing:**
+- [ ] "Pending Segments" source appears in dropdown
+- [ ] Source shows correct count badge
+- [ ] Segment selector displays all segments
+- [ ] Already-imported segments marked/grayed
+- [ ] Selected segment populates role columns correctly
+- [ ] DPS/HPS values match segment data
+- [ ] Player names mapped to correct roles
+- [ ] Remove player with X button still works
+- [ ] "Update ELO" button triggers import
+- [ ] Segment marked as imported after successful import
+- [ ] Re-import prevented or shows warning
+- [ ] ELO updates applied correctly
+- [ ] Count badge decrements after import
+
+**Success Criteria:**
+- Seamless integration with existing Import UI
+- Segment data displays accurately
+- Import process matches existing DPSMate/CSV flow
+- No regressions in existing import sources
+- User-friendly error messages
+
+**Dependencies:**
+- Phase 1 must be complete (data must exist)
+- Phase 2 recommended but not required
+
+**UI Research Required:**
+- Understand existing source dropdown implementation
+- Identify how DPSMate segment selector works
+- Map role ranking data structure (TANKS, HEALERS, MELEE, RANGED)
+- Understand ELO update mechanism from existing imports
+
+---
+
 ## Testing Checklist
+
+**Full Integration Testing (After All Phases):**
 
 ### Capture Testing
 - [ ] Hook installs correctly when DPSMate loads
@@ -868,7 +993,9 @@ end
 
 ## Future Enhancements
 
-### Phase 2 Features
+**Note:** These are post-launch features, not part of the initial 3-phase implementation.
+
+### Future Feature Ideas
 1. **Segment Comparison:** Compare multiple segments side-by-side
 2. **Batch Import:** Import multiple segments at once
 3. **Segment Notes:** Add custom notes to segments
