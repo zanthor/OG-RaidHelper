@@ -87,7 +87,7 @@ local function QueueSync(syncType, raidName, encounterName, componentName, targe
         local activeKey = syncOp.syncType .. ":" .. (syncOp.raidName or "global") .. ":" .. (syncOp.encounterName or "") .. ":" .. (syncOp.componentName or "")
         if activeKey == syncKey then
             if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncGranular]|r Skipping duplicate sync (already active): %s", syncKey))
+                OGRH.Msg(string.format("|cff888888[RH-SyncGranular]|r Skipping duplicate sync (already active): %s", syncKey))
             end
             return  -- Already in progress
         end
@@ -99,7 +99,7 @@ local function QueueSync(syncType, raidName, encounterName, componentName, targe
         local queuedKey = queuedOp.syncType .. ":" .. (queuedOp.raidName or "global") .. ":" .. (queuedOp.encounterName or "") .. ":" .. (queuedOp.componentName or "")
         if queuedKey == syncKey then
             if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncGranular]|r Skipping duplicate sync (already queued): %s", syncKey))
+                OGRH.Msg(string.format("|cff888888[RH-SyncGranular]|r Skipping duplicate sync (already queued): %s", syncKey))
             end
             return  -- Already queued
         end
@@ -194,7 +194,7 @@ end
 -- Request component sync from admin/officer
 function OGRH.SyncGranular.RequestComponentSync(raidName, encounterName, componentName, encounterPosition)
     if not OGRH.MessageRouter or not OGRH.MessageTypes then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
         return
     end
     
@@ -214,7 +214,7 @@ function OGRH.SyncGranular.RequestComponentSync(raidName, encounterName, compone
         {priority = "NORMAL"}
     )
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Requesting component sync: %s > %s > %s", raidName, encounterName, componentName))
+    OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Requesting component sync: %s > %s > %s", raidName, encounterName, componentName))
 end
 
 -- Send component data to requesting player (admin/officer only)
@@ -223,7 +223,7 @@ function OGRH.SyncGranular.SendComponentSync(raidName, encounterName, componentN
     local componentData = OGRH.SyncGranular.ExtractComponentData(raidName, encounterName, componentName)
     
     if not componentData then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Failed to extract component: %s", componentName))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Failed to extract component: %s", componentName))
         OGRH.SyncGranular.CompleteSyncOperation(syncId, false)
         return
     end
@@ -277,7 +277,7 @@ end
 function OGRH.SyncGranular.ReceiveComponentSync(sender, syncData)
     -- Validate sender permission
     if not OGRH.CanModifyStructure(sender) and not OGRH.CanModifyAssignments(sender) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Permission denied: %s cannot send component sync", sender))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Permission denied: %s cannot send component sync", sender))
         return
     end
     
@@ -287,13 +287,13 @@ function OGRH.SyncGranular.ReceiveComponentSync(sender, syncData)
     local data = syncData.data
     
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncGranular]|r Receiving: %s > %s > %s from %s", 
+        OGRH.Msg(string.format("|cff00ccff[RH-SyncGranular]|r Receiving: %s > %s > %s from %s", 
             raidName, encounterName, componentName, sender))
     end
     
     -- Validate component exists
     if not OGRH.SyncGranular.ValidateComponentStructure(raidName, encounterName, componentName, data) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Invalid component structure: %s", componentName))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Invalid component structure: %s", componentName))
         return
     end
     
@@ -305,7 +305,7 @@ function OGRH.SyncGranular.ReceiveComponentSync(sender, syncData)
     
     if success then
         if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Applied: %s > %s > %s", 
+            OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Applied: %s > %s > %s", 
                 raidName, encounterName, componentName))
         end
         
@@ -320,7 +320,7 @@ function OGRH.SyncGranular.ReceiveComponentSync(sender, syncData)
             end
         end
     else
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Failed to apply: %s", componentName))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Failed to apply: %s", componentName))
     end
 end
 
@@ -334,13 +334,13 @@ function OGRH.SyncGranular.ExtractComponentData(raidName, encounterName, compone
         -- Return encounter object itself (excluding components stored elsewhere)
         local raid = OGRH.FindRaidByName(raidName)
         if not raid then 
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Raid not found: %s", tostring(raidName)))
+            OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Raid not found: %s", tostring(raidName)))
             return nil 
         end
         
         local encounter = OGRH.FindEncounterByName(raid, encounterName)
         if not encounter then 
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Encounter not found: %s > %s", tostring(raidName), tostring(encounterName)))
+            OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Encounter not found: %s > %s", tostring(raidName), tostring(encounterName)))
             return nil 
         end
         
@@ -406,7 +406,7 @@ function OGRH.SyncGranular.ApplyComponentData(raidName, encounterName, component
         local raid = OGRH.FindRaidByName(raidName)
         if not raid then
             -- Raid doesn't exist - component repair won't work, need FULL RAID SYNC
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Cannot apply component - raid missing: %s", raidName))
+            OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Cannot apply component - raid missing: %s", raidName))
             return false
         end
         
@@ -422,12 +422,12 @@ function OGRH.SyncGranular.ApplyComponentData(raidName, encounterName, component
             if encounterPosition and encounterPosition <= table.getn(raid.encounters) + 1 then
                 table.insert(raid.encounters, encounterPosition, encounter)
                 if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-                    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Created encounter at position %d: %s > %s", encounterPosition, raidName, encounterName))
+                    OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Created encounter at position %d: %s > %s", encounterPosition, raidName, encounterName))
                 end
             else
                 table.insert(raid.encounters, encounter)
                 if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-                    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Created encounter: %s > %s", raidName, encounterName))
+                    OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Created encounter: %s > %s", raidName, encounterName))
                 end
             end
         end
@@ -504,7 +504,7 @@ end
 -- Request full encounter sync
 function OGRH.SyncGranular.RequestEncounterSync(raidName, encounterName)
     if not OGRH.MessageRouter or not OGRH.MessageTypes then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
         return
     end
     
@@ -522,7 +522,7 @@ function OGRH.SyncGranular.RequestEncounterSync(raidName, encounterName)
     )
     
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Requesting encounter sync: %s > %s", raidName, encounterName))
+        OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Requesting encounter sync: %s > %s", raidName, encounterName))
     end
 end
 
@@ -545,7 +545,7 @@ function OGRH.SyncGranular.SendEncounterSync(raidName, encounterName, targetPlay
         encounterData[componentName] = OGRH.SyncGranular.ExtractComponentData(raidName, encounterName, componentName)
         
         if not encounterData[componentName] then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Failed to extract component: %s", componentName))
+            OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Failed to extract component: %s", componentName))
             OGRH.SyncGranular.CompleteSyncOperation(syncId, false)
             return
         end
@@ -597,7 +597,7 @@ end
 function OGRH.SyncGranular.ReceiveEncounterSync(sender, syncData)
     -- Validate sender permission
     if not OGRH.CanModifyStructure(sender) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Permission denied: %s cannot send encounter sync", sender))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Permission denied: %s cannot send encounter sync", sender))
         return
     end
     
@@ -606,7 +606,7 @@ function OGRH.SyncGranular.ReceiveEncounterSync(sender, syncData)
     local components = syncData.components
     
     if not components then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r Invalid encounter sync data")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r Invalid encounter sync data")
         return
     end
     
@@ -628,7 +628,7 @@ function OGRH.SyncGranular.ReceiveEncounterSync(sender, syncData)
         if componentData then
             local success = OGRH.SyncGranular.ApplyComponentData(raidName, encounterName, componentName, componentData)
             if not success then
-                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Failed to apply component: %s", componentName))
+                OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Failed to apply component: %s", componentName))
                 allSuccess = false
             end
         end
@@ -645,10 +645,10 @@ function OGRH.SyncGranular.ReceiveEncounterSync(sender, syncData)
             OGRH.RefreshEncounterUI(raidName, encounterName)
         end
         
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Applied encounter sync: %s > %s (from %s)", 
+        OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Applied encounter sync: %s > %s (from %s)", 
             raidName, encounterName, sender))
     else
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff8800[RH-SyncGranular]|r Partially applied encounter sync: %s > %s", 
+        OGRH.Msg(string.format("|cffff8800[RH-SyncGranular]|r Partially applied encounter sync: %s > %s", 
             raidName, encounterName))
     end
 end
@@ -660,7 +660,7 @@ end
 -- Request full raid sync
 function OGRH.SyncGranular.RequestRaidSync(raidName)
     if not OGRH.MessageRouter or not OGRH.MessageTypes then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
         return
     end
     
@@ -677,7 +677,7 @@ function OGRH.SyncGranular.RequestRaidSync(raidName)
     )
     
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Requesting raid sync: %s", raidName))
+        OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Requesting raid sync: %s", raidName))
     end
 end
 
@@ -685,7 +685,7 @@ end
 function OGRH.SyncGranular.SendRaidSync(raidName, targetPlayer, syncId)
     local raid = OGRH.FindRaidByName(raidName)
     if not raid then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Raid not found: %s", raidName))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Raid not found: %s", raidName))
         OGRH.SyncGranular.CompleteSyncOperation(syncId, false)
         return
     end
@@ -769,7 +769,7 @@ end
 function OGRH.SyncGranular.ReceiveRaidSync(sender, syncData)
     -- Validate sender permission
     if not OGRH.CanModifyStructure(sender) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Permission denied: %s cannot send raid sync", sender))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Permission denied: %s cannot send raid sync", sender))
         return
     end
     
@@ -778,7 +778,7 @@ function OGRH.SyncGranular.ReceiveRaidSync(sender, syncData)
     local encounters = syncData.encounters
     
     if not raidMetadata or not encounters then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r Invalid raid sync data")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r Invalid raid sync data")
         return
     end
     
@@ -793,7 +793,7 @@ function OGRH.SyncGranular.ReceiveRaidSync(sender, syncData)
             advancedSettings = OGRH.DeepCopy(raidMetadata.advancedSettings)
         }
         table.insert(OGRH_SV.encounterMgmt.raids, raid)
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Created missing raid: %s", raidName))
+        OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Created missing raid: %s", raidName))
     else
         -- Clear existing encounters array to rebuild from scratch
         raid.encounters = {}
@@ -840,7 +840,7 @@ function OGRH.SyncGranular.ReceiveRaidSync(sender, syncData)
         table.insert(raid.encounters, encounter)
         
         if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncGranular]|r Applying encounter %d: %s", i, encounterName))
+            OGRH.Msg(string.format("|cff888888[RH-SyncGranular]|r Applying encounter %d: %s", i, encounterName))
         end
         
         -- Now apply all other components (roles, assignments, etc.)
@@ -850,7 +850,7 @@ function OGRH.SyncGranular.ReceiveRaidSync(sender, syncData)
             if encounterData[componentName] then
                 local success = OGRH.SyncGranular.ApplyComponentData(raidName, encounterName, componentName, encounterData[componentName])
                 if not success and OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-                    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff8800[RH-SyncGranular]|r Failed to apply %s for %s", componentName, encounterName))
+                    OGRH.Msg(string.format("|cffff8800[RH-SyncGranular]|r Failed to apply %s for %s", componentName, encounterName))
                 end
             end
         end
@@ -873,7 +873,7 @@ function OGRH.SyncGranular.ReceiveRaidSync(sender, syncData)
         OGRH.SyncIntegrity.State.pendingFullSync[raidName] = nil
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Applied raid sync: %s (%d encounters, from %s)", 
+    OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Applied raid sync: %s (%d encounters, from %s)", 
         raidName, encounterCount, sender))
 end
 
@@ -884,7 +884,7 @@ end
 -- Request global component sync
 function OGRH.SyncGranular.RequestGlobalComponentSync(componentName)
     if not OGRH.MessageRouter or not OGRH.MessageTypes then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
         return
     end
     
@@ -900,7 +900,7 @@ function OGRH.SyncGranular.RequestGlobalComponentSync(componentName)
         {priority = "NORMAL"}
     )
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Requesting global component sync: %s", componentName))
+    OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Requesting global component sync: %s", componentName))
 end
 
 -- Send global component data
@@ -913,12 +913,12 @@ function OGRH.SyncGranular.SendGlobalComponentSync(componentName, targetPlayer, 
         componentData = OGRH.DeepCopy(OGRH_SV.consumes or {})
     -- RGO deprecated - no longer synced
     else
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Unknown global component: %s", componentName))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Unknown global component: %s", componentName))
         OGRH.SyncGranular.CompleteSyncOperation(syncId, false)
         return
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Sending global component: %s to %s", componentName, targetPlayer or "ALL"))
+    OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Sending global component: %s to %s", componentName, targetPlayer or "ALL"))
     
     local syncData = {
         componentName = componentName,
@@ -965,7 +965,7 @@ end
 function OGRH.SyncGranular.ReceiveGlobalComponentSync(sender, syncData)
     -- Validate sender permission
     if not OGRH.CanModifyStructure(sender) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Permission denied: %s cannot send global component sync", sender))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Permission denied: %s cannot send global component sync", sender))
         return
     end
     
@@ -973,7 +973,7 @@ function OGRH.SyncGranular.ReceiveGlobalComponentSync(sender, syncData)
     local data = syncData.data
     
     if not componentName or not data then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r Invalid global component sync data")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r Invalid global component sync data")
         return
     end
     
@@ -984,7 +984,7 @@ function OGRH.SyncGranular.ReceiveGlobalComponentSync(sender, syncData)
         OGRH_SV.consumes = OGRH.DeepCopy(data)
     -- RGO deprecated - no longer synced
     else
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Unknown global component: %s", componentName))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Unknown global component: %s", componentName))
         return
     end
     
@@ -995,7 +995,7 @@ function OGRH.SyncGranular.ReceiveGlobalComponentSync(sender, syncData)
     
     -- RGO deprecated - UI refresh no longer needed
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Applied global component sync: %s (from %s)", 
+    OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Applied global component sync: %s (from %s)", 
         componentName, sender))
 end
 
@@ -1006,16 +1006,16 @@ end
 -- Request raid metadata (advancedSettings) sync
 function OGRH.SyncGranular.RequestRaidMetadataSync(raidName, targetPlayer)
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncGranular]|r RequestRaidMetadataSync called for %s", raidName))
+        OGRH.Msg(string.format("|cff888888[RH-SyncGranular]|r RequestRaidMetadataSync called for %s", raidName))
     end
     
     if not OGRH.MessageRouter or not OGRH.MessageTypes then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r MessageRouter not available")
         return
     end
     
     if not OGRH.MessageTypes.SYNC or not OGRH.MessageTypes.SYNC.RAID_METADATA_REQUEST then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r RAID_METADATA_REQUEST message type not defined")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r RAID_METADATA_REQUEST message type not defined")
         return
     end
     
@@ -1032,13 +1032,13 @@ function OGRH.SyncGranular.RequestRaidMetadataSync(raidName, targetPlayer)
         {priority = "NORMAL"}
     )
     
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Requesting raid metadata sync: %s", raidName))
+    OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Requesting raid metadata sync: %s", raidName))
 end
 
 -- Handle raid metadata request (admin/officer only)
 function OGRH.SyncGranular.OnRaidMetadataRequest(sender, requestData)
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncGranular]|r Received raid metadata request from %s", sender))
+        OGRH.Msg(string.format("|cff888888[RH-SyncGranular]|r Received raid metadata request from %s", sender))
     end
     
     -- Verify we're authorized to send
@@ -1046,20 +1046,20 @@ function OGRH.SyncGranular.OnRaidMetadataRequest(sender, requestData)
     local playerName = UnitName("player")
     if not currentAdmin or playerName ~= currentAdmin then
         if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[RH-SyncGranular]|r Not admin (currentAdmin=%s, playerName=%s) - ignoring metadata request", tostring(currentAdmin), tostring(playerName)))
+            OGRH.Msg(string.format("|cff888888[RH-SyncGranular]|r Not admin (currentAdmin=%s, playerName=%s) - ignoring metadata request", tostring(currentAdmin), tostring(playerName)))
         end
         return  -- Only admin sends metadata
     end
     
     local raidName = requestData.raidName
     if not raidName then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r Metadata request missing raid name")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r Metadata request missing raid name")
         return
     end
     
     local raid = OGRH.FindRaidByName(raidName)
     if not raid then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Cannot send metadata - raid not found: %s", raidName))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Cannot send metadata - raid not found: %s", raidName))
         return
     end
     
@@ -1078,7 +1078,7 @@ function OGRH.SyncGranular.OnRaidMetadataRequest(sender, requestData)
     )
     
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Sent raid metadata: %s", raidName))
+        OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Sent raid metadata: %s", raidName))
     end
 end
 
@@ -1094,13 +1094,13 @@ function OGRH.SyncGranular.OnRaidMetadataReceived(sender, syncData)
     local advancedSettings = syncData.advancedSettings
     
     if not raidName or not advancedSettings then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r Invalid raid metadata sync data")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r Invalid raid metadata sync data")
         return
     end
     
     local raid = OGRH.FindRaidByName(raidName)
     if not raid then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff0000[RH-SyncGranular]|r Cannot apply metadata - raid not found: %s", raidName))
+        OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Cannot apply metadata - raid not found: %s", raidName))
         return
     end
     
@@ -1110,10 +1110,10 @@ function OGRH.SyncGranular.OnRaidMetadataReceived(sender, syncData)
     -- Verify checksum now matches (if we have validation)
     if OGRH.SyncChecksum and OGRH.SyncChecksum.ComputeRaidChecksum then
         local newChecksum = OGRH.SyncChecksum.ComputeRaidChecksum(raidName)
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Applied raid metadata: %s (checksum=%s)", 
+        OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Applied raid metadata: %s (checksum=%s)", 
             raidName, tostring(newChecksum)))
     else
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00[RH-SyncGranular]|r Applied raid metadata: %s (from %s)", 
+        OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Applied raid metadata: %s (from %s)", 
             raidName, sender))
     end
 end
@@ -1132,7 +1132,7 @@ function OGRH.SyncGranular.QueueRepair(validationResult, targetPlayer)
     if validationResult.corrupted and validationResult.corrupted.global then
         for i = 1, table.getn(validationResult.corrupted.global) do
             local componentName = validationResult.corrupted.global[i]
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncGranular]|r Queueing global repair: %s (from %s)", componentName, targetPlayer or "?"))
+            OGRH.Msg(string.format("|cff00ccff[RH-SyncGranular]|r Queueing global repair: %s (from %s)", componentName, targetPlayer or "?"))
             QueueSync("global", nil, nil, componentName, targetPlayer, nil)
         end
     end
@@ -1144,7 +1144,7 @@ function OGRH.SyncGranular.QueueRepair(validationResult, targetPlayer)
                 if raidData.raidLevel then
                     -- Full raid sync
                     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-                        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncGranular]|r Queueing raid repair: %s", raidName))
+                        OGRH.Msg(string.format("|cff00ccff[RH-SyncGranular]|r Queueing raid repair: %s", raidName))
                     end
                     QueueSync("raid", raidName, nil, nil, targetPlayer, nil)
                 elseif raidData.encounters then
@@ -1159,7 +1159,7 @@ function OGRH.SyncGranular.QueueRepair(validationResult, targetPlayer)
                             if componentCount >= 3 then
                                 -- 3+ components = encounter sync
                                 if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-                                    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncGranular]|r Queueing encounter repair: %s > %s", raidName, encounterName))
+                                    OGRH.Msg(string.format("|cff00ccff[RH-SyncGranular]|r Queueing encounter repair: %s > %s", raidName, encounterName))
                                 end
                                 QueueSync("encounter", raidName, encounterName, nil, targetPlayer, position)
                             else
@@ -1167,7 +1167,7 @@ function OGRH.SyncGranular.QueueRepair(validationResult, targetPlayer)
                                 for j = 1, componentCount do
                                     local componentName = components[j]
                                     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-                                        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[RH-SyncGranular]|r Queueing component repair: %s > %s > %s", raidName, encounterName, componentName))
+                                        OGRH.Msg(string.format("|cff00ccff[RH-SyncGranular]|r Queueing component repair: %s > %s > %s", raidName, encounterName, componentName))
                                     end
                                     QueueSync("component", raidName, encounterName, componentName, targetPlayer, position)
                                 end
@@ -1183,7 +1183,7 @@ end
 -- Initialize module (register message handlers)
 function OGRH.SyncGranular.Initialize()
     if not OGRH.MessageRouter then
-        DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH-SyncGranular]|r Cannot initialize: MessageRouter not available")
+        OGRH.Msg("|cffff0000[RH-SyncGranular]|r Cannot initialize: MessageRouter not available")
         return
     end
     
@@ -1241,5 +1241,5 @@ function OGRH.SyncGranular.Initialize()
         OGRH.SyncGranular.OnRaidMetadataReceived(sender, data)
     end)
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[RH-SyncGranular]|r Initialized granular sync system")
+    OGRH.Msg("|cff00ff00[RH-SyncGranular]|r Initialized granular sync system")
 end

@@ -58,29 +58,49 @@ if not OGST then
   OGST = {}
   OGST.version = OGST_NEW_VERSION
   OGST.loadSource = OGST_LOAD_SOURCE
-  DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Initialized v" .. OGST_NEW_VERSION .. " from " .. OGST_LOAD_SOURCE)
+  if OGST.Msg then
+    OGST.Msg("|cff00ff00OGST:|r Initialized v" .. OGST_NEW_VERSION .. " from " .. OGST_LOAD_SOURCE)
+  else
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Initialized v" .. OGST_NEW_VERSION .. " from " .. OGST_LOAD_SOURCE)
+  end
 elseif OGST.version then
-  -- OGST already exists - check version
+  -- OGST already exists - preserve it and check version
   local comparison = CompareVersions(OGST_NEW_VERSION, OGST.version)
   
   if comparison > 0 then
     -- New version is newer - we'll initialize below
-    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00OGST:|r Upgrading from v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
+    if OGST.Msg then
+      OGST.Msg("|cffffff00OGST:|r Upgrading from v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
+    else
+      DEFAULT_CHAT_FRAME:AddMessage("|cffffff00OGST:|r Upgrading from v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
+    end
     OGST.version = OGST_NEW_VERSION
     OGST.previousLoadSource = OGST.loadSource
     OGST.loadSource = OGST_LOAD_SOURCE
   elseif comparison == 0 then
     -- Same version - skip initialization
-    DEFAULT_CHAT_FRAME:AddMessage("|cff888888OGST:|r v" .. OGST.version .. " already loaded from " .. (OGST.loadSource or "unknown") .. ", skipping duplicate load from " .. OGST_LOAD_SOURCE)
+    if OGST.Msg then
+      OGST.Msg("|cff888888OGST:|r v" .. OGST.version .. " already loaded from " .. (OGST.loadSource or "unknown") .. ", skipping duplicate load from " .. OGST_LOAD_SOURCE)
+    else
+      DEFAULT_CHAT_FRAME:AddMessage("|cff888888OGST:|r v" .. OGST.version .. " already loaded from " .. (OGST.loadSource or "unknown") .. ", skipping duplicate load from " .. OGST_LOAD_SOURCE)
+    end
     return  -- Exit early, don't reinitialize
   else
     -- Old version - skip initialization
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGST:|r v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") is newer than v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. "), keeping existing version")
+    if OGST.Msg then
+      OGST.Msg("|cffff8800OGST:|r v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") is newer than v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. "), keeping existing version")
+    else
+      DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGST:|r v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") is newer than v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. "), keeping existing version")
+    end
     return  -- Exit early, don't reinitialize
   end
 else
   -- OGST exists but has no version (legacy)
-  DEFAULT_CHAT_FRAME:AddMessage("|cffffff00OGST:|r Upgrading legacy version to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
+  if OGST.Msg then
+    OGST.Msg("|cffffff00OGST:|r Upgrading legacy version to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
+  else
+    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00OGST:|r Upgrading legacy version to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
+  end
   OGST.version = OGST_NEW_VERSION
   OGST.loadSource = OGST_LOAD_SOURCE
 end
@@ -3510,4 +3530,8 @@ if not OGST.DockedPanels.updateFrame then
 end
 
 -- Library loaded message
-DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Standard Templates Library v" .. OGST.version .. " loaded")
+if OGST.Msg then
+    OGST.Msg("|cff00ff00OGST:|r Standard Templates Library v" .. OGST.version .. " loaded")
+else
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Standard Templates Library v" .. OGST.version .. " loaded")
+end

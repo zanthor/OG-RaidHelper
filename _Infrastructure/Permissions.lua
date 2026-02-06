@@ -457,7 +457,7 @@ function OGRH.Permissions.Initialize()
         end
     end
     
-    OGRH.Msg("|cff00ccff[Permissions]|r System initialized")
+    OGRH.Msg("|cff00ccff[RH-Permissions]|r System initialized")
 end
 
 -- Save permission state to SavedVariables

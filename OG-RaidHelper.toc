@@ -3,23 +3,35 @@
 ## Author: Gnuzmas
 ## Version: 2.0.45
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
-## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV
+## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV, OGAAL_SV
+## OptionalDeps: _OGAALogger, _OGAddonMsg, _OGST
 
 ## ===================================================================
 ## Phase 0: Compatibility & External Libraries
 ## ===================================================================
 _Core\Backport.lua
 
-## Chat Window - Load FIRST before any messages
+## OGAALogger - Embedded Logging Library (Load FIRST)
+Libs\OGAALogger\Core.lua
+Libs\OGAALogger\API.lua
+Libs\OGAALogger\UI.lua
+Libs\OGAALogger\Commands.lua
+
+## Chat Window - Load AFTER OGAALogger
 _Core\ChatWindow.lua
 
 Libs\LibStub\LibStub.lua
 Libs\Libs.xml
+
+## OGST - Embedded UI Library
+Libs\OGST\MessageRouter.lua
 Libs\OGST\OGST.lua
 Libs\OGST\OGST_Sample.lua
+
 Libs\json.lua
 
 ## OGAddonMsg - Embedded Communication Library
+Libs\OGAddonMsg\MessageRouter.lua
 Libs\OGAddonMsg\Core.lua
 Libs\OGAddonMsg\Config.lua
 Libs\OGAddonMsg\Serialization.lua

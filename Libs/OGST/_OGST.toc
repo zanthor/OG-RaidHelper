@@ -6,6 +6,8 @@
 ## X-Category: Library
 ## X-License: MIT
 ## X-Website: https://github.com/yourusername/_OGST
+## OptionalDeps: _OGAALogger
 
+MessageRouter.lua
 OGST.lua
 OGST_Sample.lua

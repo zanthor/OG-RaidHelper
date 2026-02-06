@@ -1270,32 +1270,15 @@ function RosterMgmt.CreateToolbar(window)
   toolbar:SetPoint("BOTTOMLEFT", window.contentFrame, "BOTTOMLEFT", 5, 5)
   toolbar:SetPoint("BOTTOMRIGHT", window.contentFrame, "BOTTOMRIGHT", -5, 5)
   
-  -- Add Player button
-  local addBtn = CreateFrame("Button", nil, toolbar)
-  addBtn:SetWidth(100)
-  addBtn:SetHeight(24)
-  addBtn:SetPoint("LEFT", toolbar, "LEFT", 5, 0)
-  
-  local addText = addBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  addText:SetPoint("CENTER", addBtn, "CENTER", 0, 0)
-  addText:SetText("Add Player")
-  addText:SetTextColor(1, 0.82, 0, 1)
-  
-  OGST.StyleButton(addBtn)
-  
-  addBtn:SetScript("OnClick", function()
-    RosterMgmt.ShowAddPlayerDialog()
-  end)
-  
-  -- Manual Import button
+  -- Import button
   local manualImportBtn = CreateFrame("Button", nil, toolbar)
   manualImportBtn:SetWidth(100)
   manualImportBtn:SetHeight(24)
-  manualImportBtn:SetPoint("LEFT", addBtn, "RIGHT", 10, 0)
+  manualImportBtn:SetPoint("LEFT", toolbar, "LEFT", 5, 0)
   
   local manualImportText = manualImportBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   manualImportText:SetPoint("CENTER", manualImportBtn, "CENTER", 0, 0)
-  manualImportText:SetText("Manual Import")
+  manualImportText:SetText("Import")
   manualImportText:SetTextColor(1, 0.82, 0, 1)
   
   OGST.StyleButton(manualImportBtn)
@@ -1303,54 +1286,6 @@ function RosterMgmt.CreateToolbar(window)
   manualImportBtn:SetScript("OnClick", function()
     RosterMgmt.ShowManualImportDialog()
   end)
-  
-  -- ShaguDPS button
-  local shaguBtn = CreateFrame("Button", nil, toolbar)
-  shaguBtn:SetWidth(80)
-  shaguBtn:SetHeight(24)
-  shaguBtn:SetPoint("LEFT", manualImportBtn, "RIGHT", 10, 0)
-  
-  local shaguText = shaguBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  shaguText:SetPoint("CENTER", shaguBtn, "CENTER", 0, 0)
-  shaguText:SetText("ShaguDPS")
-  
-  OGST.StyleButton(shaguBtn)
-  
-  -- Check if ShaguDPS is available
-  local hasShaguDPS = ShaguDPS ~= nil
-  if hasShaguDPS then
-    shaguText:SetTextColor(1, 0.82, 0, 1)
-    shaguBtn:SetScript("OnClick", function()
-      -- TODO: Open ShaguDPS import interface
-    end)
-  else
-    shaguText:SetTextColor(0.5, 0.5, 0.5, 1)
-    shaguBtn:Disable()
-  end
-  
-  -- DPSMate button
-  local dpsMateBtn = CreateFrame("Button", nil, toolbar)
-  dpsMateBtn:SetWidth(80)
-  dpsMateBtn:SetHeight(24)
-  dpsMateBtn:SetPoint("LEFT", shaguBtn, "RIGHT", 10, 0)
-  
-  local dpsMateText = dpsMateBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  dpsMateText:SetPoint("CENTER", dpsMateBtn, "CENTER", 0, 0)
-  dpsMateText:SetText("DPSMate")
-  
-  OGST.StyleButton(dpsMateBtn)
-  
-  -- Check if DPSMate is available
-  local hasDPSMate = DPSMate ~= nil
-  if hasDPSMate then
-    dpsMateText:SetTextColor(1, 0.82, 0, 1)
-    dpsMateBtn:SetScript("OnClick", function()
-      -- TODO: Open DPSMate import interface
-    end)
-  else
-    dpsMateText:SetTextColor(0.5, 0.5, 0.5, 1)
-    dpsMateBtn:Disable()
-  end
   
   window.toolbar = toolbar
 end
@@ -1478,7 +1413,7 @@ function RosterMgmt.ShowManualImportDialog()
   -- Calculate column dimensions
   -- Available width = windowWidth - left padding (5) - right padding (5) - gaps between 5 columns (4 * 5 = 20)
   local availableWidth = windowWidth - 10 - 20
-  local columnWidth = math.floor(availableWidth / 5)
+  local columnWidth = math.floor(availableWidth / 5) - 15
   
   -- Calculate text box height
   -- Available height = windowHeight - header (40) - bottom padding (5) - label (~15) - gap (0) - autorank gap (5) - autorank button (24)
@@ -1489,7 +1424,7 @@ function RosterMgmt.ShowManualImportDialog()
     name = "OGRH_ManualImportWindow",
     width = windowWidth,
     height = windowHeight,
-    title = "Manual Import - DPS Meter Data",
+    title = "Import Ranking Data",
     closeButton = true,
     escapeCloses = true,
     closeOnNewWindow = false
@@ -1512,8 +1447,16 @@ function RosterMgmt.ShowManualImportDialog()
     RANGED = {}
   }
   
-  -- Flag to track if Rank ELO has been used on current import
-  local hasRankedElo = false
+  -- Storage for original player data (before ELO calculations)
+  local parsedPlayersOriginal = {
+    TANKS = {},
+    HEALERS = {},
+    MELEE = {},
+    RANGED = {}
+  }
+  
+  -- Session-based tracking of segments used for Update ELO (resets when window closes)
+  window.importedSegments = {}
   
   -- Storage for include checkboxes
   local includeCheckboxes = {}
@@ -1537,24 +1480,11 @@ function RosterMgmt.ShowManualImportDialog()
   
   OGST.StyleButton(importCsvBtn)
   
-  -- Rank ELO button
-  local rankEloBtn = CreateFrame("Button", nil, window.contentFrame)
-  rankEloBtn:SetHeight(24)
-  rankEloBtn:SetWidth(75)
-  rankEloBtn:SetPoint("LEFT", importCsvBtn, "RIGHT", 5, 0)
-  
-  local rankEloText = rankEloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  rankEloText:SetPoint("CENTER", rankEloBtn, "CENTER", 0, 0)
-  rankEloText:SetText("Rank ELO")
-  rankEloText:SetTextColor(1, 0.82, 0, 1)
-  
-  OGST.StyleButton(rankEloBtn)
-  
   -- Update ELO button - saves current ELO rankings
   local updateEloBtn = CreateFrame("Button", nil, window.contentFrame)
   updateEloBtn:SetHeight(24)
   updateEloBtn:SetWidth(85)
-  updateEloBtn:SetPoint("LEFT", rankEloBtn, "RIGHT", 5, 0)
+  updateEloBtn:SetPoint("LEFT", importCsvBtn, "RIGHT", 5, 0)
   
   local updateEloText = updateEloBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   updateEloText:SetPoint("CENTER", updateEloBtn, "CENTER", 0, 0)
@@ -1564,7 +1494,51 @@ function RosterMgmt.ShowManualImportDialog()
   OGST.StyleButton(updateEloBtn)
   
   -- Declare CSV controls first (needed by ParseAndPopulate function)
-  local csvLabel, csvBackdrop, csvEditBox
+  local csvBackdrop, csvEditBox
+  
+  -- Function to calculate ELO rankings for all included roles
+  local function RankELO()
+    local kFactor = 32  -- ELO adjustment sensitivity
+    
+    for _, role in ipairs(ROLES) do
+      if includeCheckboxes[role] and includeCheckboxes[role]:GetChecked() then
+        local players = parsedPlayers[role]
+        
+        if players and table.getn(players) > 1 then
+          -- Sort by DPS descending
+          table.sort(players, function(a, b)
+            return a.dps > b.dps
+          end)
+          
+          -- Sequential comparison: compare each player with the one below them
+          for i = 1, table.getn(players) - 1 do
+            local playerA = players[i]  -- Higher DPS
+            local playerB = players[i + 1]  -- Lower DPS
+            
+            -- Calculate expected scores using ELO formula
+            local expectedA = 1 / (1 + 10 ^ ((playerB.elo - playerA.elo) / 400))
+            local expectedB = 1 / (1 + 10 ^ ((playerA.elo - playerB.elo) / 400))
+            
+            -- Actual scores: winner gets 1, loser gets 0
+            local actualA = 1  -- PlayerA has higher DPS
+            local actualB = 0  -- PlayerB has lower DPS
+            
+            -- Calculate ELO changes
+            local changeA = math.floor(kFactor * (actualA - expectedA) + 0.5)
+            local changeB = math.floor(kFactor * (actualB - expectedB) + 0.5)
+            
+            -- Update ELO values
+            playerA.elo = playerA.elo + changeA
+            playerB.elo = playerB.elo + changeB
+            
+            -- Update adjustments for display
+            playerA.adjustment = (playerA.adjustment or 0) + changeA
+            playerB.adjustment = (playerB.adjustment or 0) + changeB
+          end
+        end
+      end
+    end
+  end
   
   -- Refresh display from current parsedPlayers data (without re-parsing CSV)
   local function RefreshDisplay()
@@ -1595,7 +1569,9 @@ function RosterMgmt.ShowManualImportDialog()
           
           -- Capture role in closure
           local playerRole = role
-          roleLists[role]:AddItem({
+          local playerData = player
+          
+          local item = roleLists[role]:AddItem({
             text = displayText,
             textColor = {r = r, g = g, b = b, a = 1},
             onDelete = function()
@@ -1611,6 +1587,85 @@ function RosterMgmt.ShowManualImportDialog()
               RefreshDisplay()  -- Refresh without re-parsing CSV
             end
           })
+          
+          -- Enable drag on the item (similar to RolesUI.lua pattern)
+          if item then
+            item:RegisterForDrag("LeftButton")
+            item:SetMovable(true)
+            
+            -- Create a drag frame that follows the cursor
+            local dragFrame = CreateFrame("Frame", nil, UIParent)
+            dragFrame:SetWidth(150)
+            dragFrame:SetHeight(20)
+            dragFrame:SetFrameStrata("TOOLTIP")
+            dragFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            dragFrame:Hide()
+            
+            -- Add background to make it visible
+            local dragBg = dragFrame:CreateTexture(nil, "BACKGROUND")
+            dragBg:SetAllPoints()
+            dragBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+            dragBg:SetVertexColor(0.3, 0.3, 0.3, 0.9)
+            
+            local dragText = dragFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            dragText:SetPoint("CENTER", dragFrame, "CENTER", 0, 0)
+            dragText:SetText(displayText)
+            dragText:SetTextColor(r, g, b, 1)
+            
+            item:SetScript("OnDragStart", function()
+              dragFrame:Show()
+              dragFrame:SetScript("OnUpdate", function()
+                local x, y = GetCursorPosition()
+                local scale = UIParent:GetEffectiveScale()
+                dragFrame:ClearAllPoints()
+                dragFrame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x/scale, y/scale)
+              end)
+            end)
+            
+            item:SetScript("OnDragStop", function()
+              dragFrame:Hide()
+              dragFrame:SetScript("OnUpdate", nil)
+              
+              -- Find which role list we're over
+              local x, y = GetCursorPosition()
+              local scale = UIParent:GetEffectiveScale()
+              x = x/scale
+              y = y/scale
+              
+              local targetRole = nil
+              for checkRole, checkList in pairs(roleLists) do
+                local left, right, bottom, top = checkList:GetLeft(), checkList:GetRight(), checkList:GetBottom(), checkList:GetTop()
+                if left and right and bottom and top and x >= left and x <= right and y >= bottom and y <= top then
+                  targetRole = checkRole
+                  break
+                end
+              end
+              
+              -- Only move if we're dropping into a different role
+              if targetRole and targetRole ~= playerRole then
+                -- Remove from source role
+                if parsedPlayers[playerRole] then
+                  for k = 1, table.getn(parsedPlayers[playerRole]) do
+                    if parsedPlayers[playerRole][k].name == playerData.name then
+                      table.remove(parsedPlayers[playerRole], k)
+                      break
+                    end
+                  end
+                end
+                
+                -- Add to target role
+                table.insert(parsedPlayers[targetRole], {
+                  name = playerData.name,
+                  class = playerData.class,
+                  dps = playerData.dps,
+                  elo = playerData.elo,
+                  adjustment = playerData.adjustment
+                })
+                
+                RefreshDisplay()
+              end
+            end)
+          end
         end
       end
     end
@@ -1684,15 +1739,28 @@ function RosterMgmt.ShowManualImportDialog()
         local adjustment = 0
         
         -- Store player data
-        table.insert(parsedPlayers[role], {
+        local playerData = {
           name = name,
           class = class,
           dps = tonumber(dps) or 0,
           elo = currentElo,
           adjustment = adjustment
+        }
+        table.insert(parsedPlayers[role], playerData)
+        
+        -- Backup original data (before ELO)
+        table.insert(parsedPlayersOriginal[role], {
+          name = name,
+          class = class,
+          dps = tonumber(dps) or 0,
+          elo = currentElo,
+          adjustment = 0
         })
       end
     end
+    
+    -- Automatically rank ELO after parsing
+    RankELO()
     
     -- Refresh display
     RefreshDisplay()
@@ -1700,78 +1768,28 @@ function RosterMgmt.ShowManualImportDialog()
   
   importCsvBtn:SetScript("OnClick", function()
     ParseAndPopulate()
-    -- Reset Rank ELO state for new import
-    hasRankedElo = false
-    rankEloBtn:Enable()
-    rankEloText:SetTextColor(1, 0.82, 0, 1)
-  end)
-  
-  -- Rank ELO button - Process ELO rankings using sequential comparison
-  -- TODO: Add aura tracking and ELO modifiers
-  -- Track if the winner has specific raid buffs/auras (Boomkin aura, Windfury totem, 
-  -- Atiesh, etc.) and apply modifiers to ELO adjustments. Players with these buffs 
-  -- gain artificial DPS advantage, so their ELO gains should be reduced and their 
-  -- opponents' losses should be minimized to reflect true skill differences.
-  rankEloBtn:SetScript("OnClick", function()
-    -- Calculate ELO adjustments for included roles
-    local kFactor = 32  -- ELO adjustment sensitivity
-    
-    for _, role in ipairs(ROLES) do
-      if includeCheckboxes[role] then
-        local isChecked = includeCheckboxes[role]:GetChecked()
-        if isChecked then
-          local players = parsedPlayers[role]
-          
-          if players and table.getn(players) > 1 then
-            -- Sort by DPS (already done, but ensure order)
-            table.sort(players, function(a, b)
-              return a.dps > b.dps
-            end)
-            
-            -- Sequential comparison: compare each player with the one below them
-            for i = 1, table.getn(players) - 1 do
-              local playerA = players[i]  -- Higher DPS
-              local playerB = players[i + 1]  -- Lower DPS
-              
-              -- Calculate expected scores using ELO formula
-              local expectedA = 1 / (1 + 10 ^ ((playerB.elo - playerA.elo) / 400))
-              local expectedB = 1 / (1 + 10 ^ ((playerA.elo - playerB.elo) / 400))
-              
-              -- Actual scores: winner gets 1, loser gets 0
-              local actualA = 1  -- PlayerA has higher DPS
-              local actualB = 0  -- PlayerB has lower DPS
-              
-              -- Calculate ELO changes
-              local changeA = math.floor(kFactor * (actualA - expectedA) + 0.5)
-              local changeB = math.floor(kFactor * (actualB - expectedB) + 0.5)
-              
-              -- Update ELO values
-              playerA.elo = playerA.elo + changeA
-              playerB.elo = playerB.elo + changeB
-              
-              -- Update adjustments for display
-              playerA.adjustment = (playerA.adjustment or 0) + changeA
-              playerB.adjustment = (playerB.adjustment or 0) + changeB
-            end
-          end
-        end
-      end
-    end
-    
-    -- Refresh all displays with updated ELO values
-    RefreshDisplay()
-    
-    -- Disable Rank ELO button after first use
-    hasRankedElo = true
-    rankEloBtn:Disable()
-    rankEloText:SetTextColor(0.5, 0.5, 0.5, 1)
-    
-    OGRH.Msg("|cffffaa00[RH-Roster]|r ELO rankings calculated. Use 'Update ELO' to save these rankings.")
   end)
   
   -- Update ELO button - saves current rankings to player records
   updateEloBtn:SetScript("OnClick", function()
     if not RosterMgmt.EnsureSV() then
+      return
+    end
+    
+    -- Check if this segment has already been used for Update ELO
+    local segmentKey
+    if window.selectedSegment then
+      if window.selectedSegment.type == "current" then
+        segmentKey = "current"
+      elseif window.selectedSegment.type == "total" then
+        segmentKey = "total"
+      elseif window.selectedSegment.type == "segment" then
+        segmentKey = "segment_" .. tostring(window.selectedSegment.index)
+      end
+    end
+    
+    if segmentKey and window.importedSegments[segmentKey] then
+      OGRH.Msg("|cffff8800[RH-Roster]|r This segment has already been used for Update ELO. Select a different segment.")
       return
     end
     
@@ -1820,6 +1838,20 @@ function RosterMgmt.ShowManualImportDialog()
       OGRH.Msg(string.format("|cff00ff00[RH-Roster]|r Updated ELO ratings for %d players", updateCount))
     end
     
+    -- Mark this segment as used
+    if segmentKey then
+      window.importedSegments[segmentKey] = true
+    end
+    
+    -- Disable the Update ELO button
+    updateEloBtn:Disable()
+    updateEloText:SetTextColor(0.5, 0.5, 0.5, 1)
+    
+    -- Refresh the DPS Meter segment list to remove the used segment
+    if window.PopulateDPSMateList and window.importSource == "DPSMate" then
+      window.PopulateDPSMateList()
+    end
+    
     -- Refresh the main roster display if it's open
     if OGRH_RosterWindow and OGRH_RosterWindow:IsVisible() then
       RosterMgmt.RefreshPlayerList()
@@ -1863,6 +1895,86 @@ function RosterMgmt.ShowManualImportDialog()
     
     includeCheckboxes[role] = checkButton
     
+    -- Add onChange handler to recalculate or restore ELO when checkbox changes
+    local capturedRole = role
+    checkButton:SetScript("OnClick", function()
+      if checkButton:GetChecked() then
+        -- Checkbox checked: restore original values first, then recalculate ELO
+        if parsedPlayersOriginal[capturedRole] then
+          for i = 1, table.getn(parsedPlayers[capturedRole]) do
+            local player = parsedPlayers[capturedRole][i]
+            -- Find matching original player
+            for j = 1, table.getn(parsedPlayersOriginal[capturedRole]) do
+              if parsedPlayersOriginal[capturedRole][j].name == player.name then
+                player.elo = parsedPlayersOriginal[capturedRole][j].elo
+                player.adjustment = 0
+                break
+              end
+            end
+          end
+        end
+        -- Recalculate ELO for all checked roles
+        RankELO()
+      else
+        -- Checkbox unchecked: restore original values without ELO
+        if parsedPlayersOriginal[capturedRole] then
+          for i = 1, table.getn(parsedPlayers[capturedRole]) do
+            local player = parsedPlayers[capturedRole][i]
+            -- Find matching original player
+            for j = 1, table.getn(parsedPlayersOriginal[capturedRole]) do
+              if parsedPlayersOriginal[capturedRole][j].name == player.name then
+                player.elo = parsedPlayersOriginal[capturedRole][j].elo
+                player.adjustment = 0
+                break
+              end
+            end
+          end
+        end
+      end
+      -- Refresh display to show updated values
+      RefreshDisplay()
+    end)
+    
+    -- Add onChange handler to recalculate or restore ELO when checkbox changes
+    local capturedRole = role
+    checkButton:SetScript("OnClick", function()
+      if checkButton:GetChecked() then
+        -- Checkbox checked: restore original values first, then recalculate ELO
+        if parsedPlayersOriginal[capturedRole] then
+          for i = 1, table.getn(parsedPlayers[capturedRole]) do
+            local player = parsedPlayers[capturedRole][i]
+            -- Find matching original player
+            for j = 1, table.getn(parsedPlayersOriginal[capturedRole]) do
+              if parsedPlayersOriginal[capturedRole][j].name == player.name then
+                player.elo = parsedPlayersOriginal[capturedRole][j].elo
+                player.adjustment = 0
+                break
+              end
+            end
+          end
+        end
+        -- Recalculate ELO for all checked roles
+        RankELO()
+      else
+        -- Checkbox unchecked: restore original values without ELO
+        if parsedPlayersOriginal[capturedRole] then
+          for i = 1, table.getn(parsedPlayers[capturedRole]) do
+            local player = parsedPlayers[capturedRole][i]
+            -- Find matching original player
+            for j = 1, table.getn(parsedPlayersOriginal[capturedRole]) do
+              if parsedPlayersOriginal[capturedRole][j].name == player.name then
+                player.elo = parsedPlayersOriginal[capturedRole][j].elo
+                player.adjustment = 0
+                break
+              end
+            end
+          end
+        end
+      end
+      -- Refresh display to show updated values
+      RefreshDisplay()
+    end)
+    
     -- Create scrollable list for this role - fill space between label and checkbox
     local listFrame = OGST.CreateStyledScrollList(window.contentFrame, columnWidth, 0, true)
     OGST.AnchorElement(listFrame, roleLabel, {
@@ -1873,25 +1985,423 @@ function RosterMgmt.ShowManualImportDialog()
     roleLists[role] = listFrame
   end
   
-  -- CSV label - span from left edge to Tanks label using OGST
-  csvLabel = OGST.CreateStaticText(window.contentFrame, {
-    text = "Paste CSV Data:",
-    font = "GameFontNormal",
-    align = "LEFT"
+  -- Track selected import source
+  window.importSource = "DPSMate"
+  
+  -- Forward declare controls for use in menu onClick handlers
+  local csvBackdrop, csvEditBox
+  local dpsMeterList
+  local sourceMenuContainer, sourceMenuBtn
+  
+  -- Forward declare import function
+  local ImportFromDPSMate
+  local PopulateDPSMateList
+  
+  -- Function to populate DPSMate segment list
+  PopulateDPSMateList = function()
+    dpsMeterList:Clear()
+    
+    if not DPSMateHistory or not DPSMateHistory.names then
+      dpsMeterList:AddItem({
+        text = "DPSMate not loaded or no data available",
+        textAlign = "LEFT",
+        onClick = function() end
+      })
+      return
+    end
+    
+    -- Add "Current Fight" option
+    local isCurrentUsed = window.importedSegments["current"]
+    dpsMeterList:AddItem({
+      text = isCurrentUsed and "Current Fight [IMPORTED]" or "Current Fight",
+      textAlign = "LEFT",
+      textColor = isCurrentUsed and {r = 0.5, g = 0.5, b = 0.5, a = 1} or nil,
+      onClick = function()
+        if isCurrentUsed then
+          OGRH.Msg("|cffff8800[RH-Roster]|r This segment has already been imported.")
+          return
+        end
+        window.selectedSegment = {type = "current"}
+        ImportFromDPSMate("current")
+      end
+    })
+    
+    -- Add "Total" option
+    local isTotalUsed = window.importedSegments["total"]
+    dpsMeterList:AddItem({
+      text = isTotalUsed and "Total [IMPORTED]" or "Total",
+      textAlign = "LEFT",
+      textColor = isTotalUsed and {r = 0.5, g = 0.5, b = 0.5, a = 1} or nil,
+      onClick = function()
+        if isTotalUsed then
+          OGRH.Msg("|cffff8800[RH-Roster]|r This segment has already been imported.")
+          return
+        end
+        window.selectedSegment = {type = "total"}
+        ImportFromDPSMate("total")
+      end
+    })
+    
+    -- Add each segment (only if it has data)
+    local segmentCount = table.getn(DPSMateHistory.names)
+    for i = 1, segmentCount do
+      local segmentName = DPSMateHistory.names[i]
+      if segmentName then
+        local segmentKey = "segment_" .. i
+        
+        -- Check if segment has any data
+        local hasDamageData = DPSMateHistory.DMGDone and DPSMateHistory.DMGDone[i] and next(DPSMateHistory.DMGDone[i]) ~= nil
+        local hasHealingData = DPSMateHistory.EHealing and DPSMateHistory.EHealing[i] and next(DPSMateHistory.EHealing[i]) ~= nil
+        
+        if hasDamageData or hasHealingData then
+          local capturedIndex = i  -- Capture in closure
+          local isSegmentUsed = window.importedSegments[segmentKey]
+          
+          dpsMeterList:AddItem({
+            text = isSegmentUsed and (segmentName .. " [IMPORTED]") or segmentName,
+            textAlign = "LEFT",
+            textColor = isSegmentUsed and {r = 0.5, g = 0.5, b = 0.5, a = 1} or nil,
+            onClick = function()
+              if window.importedSegments["segment_" .. capturedIndex] then
+                OGRH.Msg("|cffff8800[RH-Roster]|r This segment has already been imported.")
+                return
+              end
+              window.selectedSegment = {type = "segment", index = capturedIndex}
+              ImportFromDPSMate("segment", capturedIndex)
+            end
+          })
+        end
+      end
+    end
+  end
+  
+  -- Store on window for use by Update ELO button
+  window.PopulateDPSMateList = PopulateDPSMateList
+  
+  -- Function to populate ShaguDPS segment list (placeholder for now)
+  local function PopulateShaguDPSList()
+    dpsMeterList:Clear()
+    
+    dpsMeterList:AddItem({
+      text = "ShaguDPS integration coming soon",
+      textAlign = "LEFT",
+      onClick = function()
+        window.selectedSegment = {type = "none"}
+      end
+    })
+  end
+  
+  -- Define import function (forward declared above)
+  ImportFromDPSMate = function(segmentType, segmentIndex)
+    -- Clear existing data
+    for role in pairs(parsedPlayers) do
+      parsedPlayers[role] = {}
+      parsedPlayersOriginal[role] = {}
+    end
+    
+    -- Re-enable Update ELO button for new segment
+    updateEloBtn:Enable()
+    updateEloText:SetTextColor(1, 0.82, 0, 1)
+    
+    -- Determine which data set to use
+    local damageData, healingData
+    if segmentType == "current" then
+      damageData = DPSMateDamageDone and DPSMateDamageDone[2]
+      healingData = DPSMateEHealing and DPSMateEHealing[2]
+    elseif segmentType == "total" then
+      damageData = DPSMateDamageDone and DPSMateDamageDone[1]
+      healingData = DPSMateEHealing and DPSMateEHealing[1]
+    elseif segmentType == "segment" and segmentIndex then
+      damageData = DPSMateHistory and DPSMateHistory.DMGDone and DPSMateHistory.DMGDone[segmentIndex]
+      healingData = DPSMateHistory and DPSMateHistory.EHealing and DPSMateHistory.EHealing[segmentIndex]
+    end
+    
+    if not damageData and not healingData then
+      OGRH.Msg("|cffff0000[RH-Roster]|r No data available for selected segment")
+      -- Clear the lists
+      for role in pairs(parsedPlayers) do
+        parsedPlayers[role] = {}
+      end
+      RefreshDisplay()
+      return
+    end
+    
+    local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+    
+    -- Track which players have been added to prevent duplicates
+    local addedPlayers = {}
+    
+    -- Build reverse lookup: playerID -> playerName
+    local playerIdToName = {}
+    if DPSMateUser then
+      for playerName, playerInfo in pairs(DPSMateUser) do
+        local playerId = playerInfo[1]
+        if playerId then
+          playerIdToName[tostring(playerId)] = playerName
+        end
+      end
+    end
+    
+    -- Process healers FIRST (before damage dealers) so they get healing values
+    if healingData then
+      for playerId, playerData in pairs(healingData) do
+        local playerName = playerIdToName[tostring(playerId)]
+        
+        if playerName and DPSMateUser and DPSMateUser[playerName] and not addedPlayers[playerName] then
+          local class = DPSMateUser[playerName][2] or "UNKNOWN"
+          
+          -- Handle different data structures
+          local healing = 0
+          if type(playerData) == "number" then
+            healing = playerData
+          elseif type(playerData) == "table" then
+            if playerData.i then
+              if type(playerData.i) == "number" then
+                healing = playerData.i
+              elseif type(playerData.i) == "table" then
+                healing = playerData.i[1] or 0
+              end
+            elseif playerData[1] then
+              healing = playerData[1]
+            end
+          end
+          
+          OGRH.Msg("|cff00ff00[RH-Roster]|r Healer: " .. playerName .. " = " .. healing .. " healing")
+          
+          -- Determine if player should be in HEALERS based on role assignment
+          local shouldBeHealer = false
+          
+          -- 1. Check RolesUI
+          if OGRH_GetPlayerRole then
+            local rolesUIRole = OGRH_GetPlayerRole(playerName)
+            if rolesUIRole == "HEALERS" then
+              shouldBeHealer = true
+            elseif rolesUIRole then
+              -- Player has a different role assigned in RolesUI, skip them
+              shouldBeHealer = false
+            end
+          end
+          
+          -- 2. Check rosterManagement primaryRole (only if RolesUI didn't have them)
+          if shouldBeHealer == false and not OGRH_GetPlayerRole or not OGRH_GetPlayerRole(playerName) then
+            if allPlayers[playerName] and allPlayers[playerName].primaryRole then
+              if allPlayers[playerName].primaryRole == "HEALERS" then
+                shouldBeHealer = true
+              else
+                -- Player has a different role in rosterManagement, skip them
+                shouldBeHealer = false
+              end
+            end
+          end
+          
+          -- 3. If no role assigned anywhere, check if they're a healing class with >2k healing
+          if shouldBeHealer == false and not OGRH_GetPlayerRole or not OGRH_GetPlayerRole(playerName) then
+            if not allPlayers[playerName] or not allPlayers[playerName].primaryRole then
+              local upperClass = string.upper(class)
+              local isHealingClass = (upperClass == "PRIEST" or upperClass == "PALADIN" or upperClass == "DRUID" or upperClass == "SHAMAN")
+              if healing > 2000 and isHealingClass then
+                shouldBeHealer = true
+              end
+            end
+          end
+          
+          if shouldBeHealer then
+            local currentElo = 1000
+            if allPlayers[playerName] and allPlayers[playerName].rankings and allPlayers[playerName].rankings["HEALERS"] then
+              currentElo = allPlayers[playerName].rankings["HEALERS"]
+            end
+            
+            local playerData = {
+              name = playerName,
+              class = string.upper(class),
+              dps = healing,
+              elo = currentElo,
+              adjustment = 0
+            }
+            table.insert(parsedPlayers["HEALERS"], playerData)
+            
+            -- Backup original data
+            table.insert(parsedPlayersOriginal["HEALERS"], {
+              name = playerName,
+              class = string.upper(class),
+              dps = healing,
+              elo = currentElo,
+              adjustment = 0
+            })
+            
+            addedPlayers[playerName] = true
+          end
+        end
+      end
+    end
+    
+    -- Process damage dealers AFTER healers
+    if damageData then
+      local damageCount = 0
+      for playerId, playerData in pairs(damageData) do
+        damageCount = damageCount + 1
+        
+        local playerName = playerIdToName[tostring(playerId)]
+        
+        if playerName and DPSMateUser and DPSMateUser[playerName] and not addedPlayers[playerName] then
+          local class = DPSMateUser[playerName][2] or "UNKNOWN"
+          
+          -- Handle different data structures
+          local damage = 0
+          if type(playerData) == "number" then
+            damage = playerData
+          elseif type(playerData) == "table" then
+            if playerData.i then
+              if type(playerData.i) == "number" then
+                damage = playerData.i
+              elseif type(playerData.i) == "table" then
+                damage = playerData.i[1] or 0
+              end
+            elseif playerData[1] then
+              damage = playerData[1]
+            end
+          end
+          
+          -- Determine role with priority: RolesUI > rosterManagement primaryRole > class-based
+          local role
+          
+          -- 1. Check RolesUI - accept any role (TANKS, HEALERS, MELEE, RANGED)
+          if OGRH_GetPlayerRole then
+            local rolesUIRole = OGRH_GetPlayerRole(playerName)
+            if rolesUIRole then
+              role = rolesUIRole
+            end
+          end
+          
+          -- 2. Check rosterManagement primaryRole - accept any role
+          if not role then
+            if allPlayers[playerName] and allPlayers[playerName].primaryRole then
+              role = allPlayers[playerName].primaryRole
+            end
+          end
+          
+          -- 3. Assign based on class
+          if not role then
+            local upperClass = string.upper(class)
+            if upperClass == "MAGE" or upperClass == "WARLOCK" or upperClass == "PRIEST" or upperClass == "HUNTER" then
+              role = "RANGED"
+            else
+              role = "MELEE"  -- WARRIOR, ROGUE, PALADIN, DRUID, SHAMAN
+            end
+          end
+          
+          local currentElo = 1000
+          if allPlayers[playerName] and allPlayers[playerName].rankings and allPlayers[playerName].rankings[role] then
+            currentElo = allPlayers[playerName].rankings[role]
+          end
+          
+          local playerData = {
+            name = playerName,
+            class = string.upper(class),
+            dps = damage,
+            elo = currentElo,
+            adjustment = 0
+          }
+          table.insert(parsedPlayers[role], playerData)
+          
+          -- Backup original data
+          table.insert(parsedPlayersOriginal[role], {
+            name = playerName,
+            class = string.upper(class),
+            dps = damage,
+            elo = currentElo,
+            adjustment = 0
+          })
+          
+          addedPlayers[playerName] = true
+        end
+      end
+    end
+    
+    -- Automatically rank ELO after import
+    RankELO()
+    
+    -- Refresh display
+    RefreshDisplay()
+  end
+  
+  -- Function to update UI based on selected source
+  local function UpdateSourceUI(source)
+    window.importSource = source
+    sourceMenuBtn:SetText(source)
+    
+    if source == "CSV" then
+      csvBackdrop:Show()
+      dpsMeterList:Hide()
+      importCsvBtn:Enable()
+      importCsvText:SetTextColor(1, 0.82, 0, 1)
+    elseif source == "DPSMate" then
+      csvBackdrop:Hide()
+      dpsMeterList:Show()
+      PopulateDPSMateList()
+      importCsvBtn:Disable()
+      importCsvText:SetTextColor(0.5, 0.5, 0.5, 1)
+    elseif source == "ShaguDPS" then
+      csvBackdrop:Hide()
+      dpsMeterList:Show()
+      PopulateShaguDPSList()
+      importCsvBtn:Disable()
+      importCsvText:SetTextColor(0.5, 0.5, 0.5, 1)
+    end
+  end
+  
+  -- Import source menu button - create first so it can be referenced
+  sourceMenuContainer, sourceMenuBtn = OGST.CreateMenuButton(window.contentFrame, {
+    label = "Source:",
+    labelAnchor = "LEFT",
+    buttonText = "DPSMate",
+    menuItems = {
+      {
+        text = "DPSMate",
+        selected = true,
+        onClick = function()
+          UpdateSourceUI("DPSMate")
+        end
+      },
+      {
+        text = "ShaguDPS",
+        onClick = function()
+          UpdateSourceUI("ShaguDPS")
+        end
+      },
+      {
+        text = "CSV",
+        onClick = function()
+          UpdateSourceUI("CSV")
+        end
+      }
+    },
+    singleSelect = true
   })
-  OGST.AnchorElement(csvLabel, window.contentFrame, {
+  
+  OGST.AnchorElement(sourceMenuContainer, window.contentFrame, {
     position = "spanHorizontal",
     rightElement = roleLabels["TANKS"],
     verticalAlign = "top"
   })
   
-  -- CSV text box - fill space between CSV label and Import CSV button using OGST
-  csvBackdrop, csvEditBox = OGST.CreateScrollingTextBox(window.contentFrame, 0, 0)
-  OGST.AnchorElement(csvBackdrop, csvLabel, {
-    position = "fillBetween",
-    bottomElement = importCsvBtn,
-    offsetYBottom = 5
+  -- CSV text box - fill space between source menu button and Import CSV button
+  csvBackdrop, csvEditBox = OGST.CreateScrollingTextBox(window.contentFrame, columnWidth + 96, textBoxHeight - 8)
+  OGST.AnchorElement(csvBackdrop, sourceMenuContainer, {
+    position = "below",
+    offsetY = 6
   })
+  
+  -- DPS Meter list - fill same space as CSV text box
+  dpsMeterList = OGST.CreateStyledScrollList(window.contentFrame, columnWidth + 96, textBoxHeight - 8, false)
+  window.dpsMeterList = dpsMeterList  -- Store reference on window for Update ELO button access
+  OGST.AnchorElement(dpsMeterList, sourceMenuContainer, {
+    position = "below",
+    offsetY = 6
+  })
+  
+  -- Initialize UI to show DPS meter list
+  UpdateSourceUI("DPSMate")
   
   window:Show()
 end
