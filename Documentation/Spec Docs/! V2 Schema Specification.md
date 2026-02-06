@@ -82,6 +82,19 @@ OGRH_SV.v2.encounterMgmt = {
             name = "Molten Core",         -- string: Display name (user-editable)
             displayName = "Molten Core",  -- string: Alias for name
             sortOrder = 1,                -- number: UI display order
+            enabled = true,               -- boolean: Whether raid is enabled (default: true)
+            autoRank = false,             -- boolean: Automatically rank players after raid encounters (default: false)
+            
+            -- Boss Tracking
+            findBossMobs = false,         -- boolean: Auto-detect boss GUIDs in combat logs
+            bossMobs = {                  -- table: Detected boss mobs
+                ["GUID-12345"] = {        -- Boss GUID as key
+                    name = "Ragnaros",    -- string: Mob name
+                    location = "Molten Core", -- string: Location when first found
+                    firstSeen = 1234567890,   -- number: Timestamp when first detected
+                },
+                -- ... more boss mobs
+            },
             
             -- Encounters
             encounters = {
@@ -91,6 +104,8 @@ OGRH_SV.v2.encounterMgmt = {
                     name = "Lucifron",            -- string: Display name (user-editable)
                     displayName = "Lucifron",     -- string: Alias for name
                     sortOrder = 1,                -- number: UI display order
+                    enabled = true,               -- boolean: Whether encounter is enabled (default: true)
+                    autoRank = false,             -- boolean: Automatically rank players after encounter (default: false)
                     
                     -- Roles Structure
                     roles = {
