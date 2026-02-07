@@ -65,6 +65,32 @@ function OGRH.RefreshBigWigsEncounters()
   DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGRH:|r BigWigs encounter list refreshed.")
 end
 
+-- Helper function to find raid index by name
+local function FindRaidIndexByName(raidName)
+  local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
+  if not raids then return nil end
+  
+  for i = 1, table.getn(raids) do
+    if raids[i].name == raidName or raids[i].displayName == raidName then
+      return i
+    end
+  end
+  return nil
+end
+
+-- Helper function to find encounter index by name within a raid
+local function FindEncounterIndexByName(raidIdx, encounterName)
+  local encounters = OGRH.SVM.GetPath("encounterMgmt.raids." .. raidIdx .. ".encounters")
+  if not encounters then return nil end
+  
+  for i = 1, table.getn(encounters) do
+    if encounters[i].name == encounterName or encounters[i].displayName == encounterName then
+      return i
+    end
+  end
+  return nil
+end
+
 -- Show advanced settings dialog for raid or encounter
 -- @param forceMode: "raid" to force raid mode, "encounter" to force encounter mode, nil to auto-detect
 function OGRH.ShowAdvancedSettingsDialog(forceMode)
@@ -116,19 +142,91 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     -- Calculate panel height based on content type
     local panelHeight = 150  -- Base height for raid settings (consume tracking only)
     
-    -- Content panel for consume settings (positioned first)
+    -- Content panel for consume settings (left side, half width)
     local consumePanel = OGST.CreateContentPanel(content, {
+      width = 230,
       height = panelHeight
     })
-    OGST.AnchorElement(consumePanel, content, {position = "top", fill = "horizontal"})
-    consumePanel:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    OGST.AnchorElement(consumePanel, content, {position = "top", align = "left"})
     dialog.consumePanel = consumePanel
     
-    -- Consume Tracking Requirements header (inside panel)
-    local consumeHeader = OGST.CreateStaticText(consumePanel, {
-      text = "Consume Tracking Requirements",
+    -- Content panel for other settings (right side, fills remaining space)
+    local otherPanel = OGST.CreateContentPanel(content, {
+      width = 230,
+      height = panelHeight
+    })
+    OGST.AnchorElement(otherPanel, consumePanel, {position = "right", fill = true})
+    otherPanel:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    dialog.otherPanel = otherPanel
+    
+    -- Other Settings header
+    local otherHeader = OGST.CreateStaticText(otherPanel, {
+      text = "Other Settings",
       font = "GameFontNormalLarge",
-      width = 460
+      width = 220
+    })
+    OGST.AnchorElement(otherHeader, otherPanel, {position = "top"})
+    dialog.otherHeader = otherHeader
+    
+    -- Display Name textbox
+    local displayNameContainer, displayNameBackdrop, displayNameInput, displayNameLabel = OGST.CreateSingleLineTextBox(otherPanel, 180, 24, {
+      label = "Display Name:",
+      labelAnchor = "LEFT",
+      labelWidth = 80,
+      textBoxWidth = 120,
+      maxLetters = 50,
+      align = "LEFT"
+    })
+    OGST.AnchorElement(displayNameContainer, otherHeader, {position = "below"})
+    dialog.displayNameInput = displayNameInput
+    
+    -- Enabled checkbox
+    local enabledCheckContainer, enabledCheck, enabledCheckLabel = OGST.CreateCheckbox(otherPanel, {
+      label = "Enabled",
+      labelAnchor = "RIGHT",
+      checked = false,
+      labelWidth = 60
+    })
+    OGST.AnchorElement(enabledCheckContainer, displayNameContainer, {position = "below"})
+    dialog.enabledCheck = enabledCheck
+    
+    -- AutoRank checkbox (for both raid and encounter)
+    local autoRankCheckContainer, autoRankCheck, autoRankCheckLabel = OGST.CreateCheckbox(otherPanel, {
+      label = "AutoRank",
+      labelAnchor = "RIGHT",
+      checked = false,
+      labelWidth = 70
+    })
+    OGST.AnchorElement(autoRankCheckContainer, enabledCheckContainer, {position = "below"})
+    dialog.autoRankCheck = autoRankCheck
+    
+    -- Raid-only settings
+    local findBossCheckContainer, findBossCheck, findBossCheckLabel = OGST.CreateCheckbox(otherPanel, {
+      label = "Find Boss GUIDs",
+      labelAnchor = "RIGHT",
+      checked = false,
+      labelWidth = 100
+    })
+    OGST.AnchorElement(findBossCheckContainer, autoRankCheckContainer, {position = "below"})
+    dialog.findBossCheck = findBossCheck
+    
+    local viewBossGuidsBtn = CreateFrame("Button", nil, otherPanel, "UIPanelButtonTemplate")
+    viewBossGuidsBtn:SetWidth(50)
+    viewBossGuidsBtn:SetHeight(24)
+    viewBossGuidsBtn:SetText("View")
+    OGST.StyleButton(viewBossGuidsBtn)
+    OGST.AnchorElement(viewBossGuidsBtn, findBossCheckLabel, {position = "right", align = "center"})
+    viewBossGuidsBtn:SetScript("OnClick", function()
+      -- TODO: Implement View Boss GUIDs functionality
+      OGRH.Msg("View Boss GUIDs - Not yet implemented")
+    end)
+    dialog.viewBossGuidsBtn = viewBossGuidsBtn
+    
+    -- Consume Tracking header (inside panel)
+    local consumeHeader = OGST.CreateStaticText(consumePanel, {
+      text = "Consume Tracking",
+      font = "GameFontNormalLarge",
+      width = 220
     })
     OGST.AnchorElement(consumeHeader, consumePanel, {position = "top"})
     dialog.consumeHeader = consumeHeader
@@ -143,7 +241,7 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     OGST.AnchorElement(consumeCheckContainer, consumeHeader, {position = "below"})
     dialog.consumeCheck = consumeCheck
     
-    -- Ready threshold textbox (to the right of checkbox)
+    -- Ready threshold textbox (below checkbox)
     local thresholdContainer, thresholdBackdrop, thresholdInput, thresholdLabel = OGST.CreateSingleLineTextBox(consumePanel, 180, 24, {
       label = "Ready Threshold (%):",
       labelAnchor = "LEFT",
@@ -153,12 +251,12 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
       numeric = true,
       align = "CENTER"
     })
-    OGST.AnchorElement(thresholdContainer, consumeCheckContainer, {position = "right"})
+    OGST.AnchorElement(thresholdContainer, consumeCheckContainer, {position = "below"})
     dialog.thresholdInput = thresholdInput
     
     -- Raid threshold info label (only shown in encounter mode)
     local raidThresholdLabel = OGST.CreateStaticText(consumePanel, {
-      text = "Raid set to: %",
+      text = "Raid: %",
       width = 110
     })
     OGST.AnchorElement(raidThresholdLabel, thresholdContainer, {position = "right", align = "center"})
@@ -169,9 +267,9 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     local flaskLabel = OGST.CreateStaticText(consumePanel, {
       text = "Flask Requirements (by Role):",
       font = "GameFontNormal",
-      width = 440
+      width = 176
     })
-    OGST.AnchorElement(flaskLabel, consumeCheckContainer, {position = "below"})
+    OGST.AnchorElement(flaskLabel, thresholdContainer, {position = "below"})
     
     -- Flask role checkboxes (2x2 grid)
     local roles = {"Tanks", "Healers", "Melee", "Ranged"}
@@ -217,14 +315,14 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     rangedCheck.roleName = "Ranged"
     table.insert(dialog.flaskRoleCheckboxes, rangedCheck)
     
-    -- Info text
-    local consumeInfo = OGST.CreateStaticText(consumePanel, {
-      text = "Only roles checked will be required to have flasks for raid readiness checks.",
-      font = "GameFontHighlightSmall",
-      width = 440,
-      multiline = true
+    -- Other Settings header
+    local otherHeader = OGST.CreateStaticText(otherPanel, {
+      text = "Other Settings",
+      font = "GameFontNormalLarge",
+      width = 220
     })
-    OGST.AnchorElement(consumeInfo, meleeCB, {position = "below"})
+    OGST.AnchorElement(otherHeader, otherPanel, {position = "top"})
+    dialog.otherHeader = otherHeader
     
     -- BigWigs section (encounter-only, positioned below consume tracking)
     local bigwigsPanel = OGST.CreateContentPanel(content, {
@@ -244,20 +342,20 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     
     -- BigWigs enable checkbox
     local bigwigsCheckContainer, bigwigsCheck, bigwigsCheckLabel = OGST.CreateCheckbox(bigwigsPanel, {
-      label = "Enable BigWigs Auto-Select",
+      label = "Auto-Select",
       labelAnchor = "RIGHT",
       checked = false,
-      labelWidth = 120
+      labelWidth = 72
     })
     OGST.AnchorElement(bigwigsCheckContainer, bigwigsHeader, {position = "below"})
     dialog.bigwigsCheck = bigwigsCheck
     
     -- Auto Announce checkbox (to the right of BigWigs checkbox)
     local autoAnnounceCheckContainer, autoAnnounceCheck, autoAnnounceCheckLabel = OGST.CreateCheckbox(bigwigsPanel, {
-      label = "Auto Announce on Select",
+      label = "Auto Announce",
       labelAnchor = "RIGHT",
       checked = false,
-      labelWidth = 140
+      labelWidth = 84
     })
     OGST.AnchorElement(autoAnnounceCheckContainer, bigwigsCheckLabel, {position = "right", align = "center"})
     dialog.autoAnnounceCheck = autoAnnounceCheck
@@ -396,8 +494,10 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
         end
       end
       
-      -- Truncate if necessary (300px button width minus some padding)
-      displayText = TruncateText(displayText, 280)
+      -- Truncate to 35 characters with ellipsis
+      if string.len(displayText) > 35 then
+        displayText = string.sub(displayText, 1, 35) .. "..."
+      end
       menuBtn.button:SetText(displayText)
     end
     
@@ -427,11 +527,8 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     
     -- Create raid mode menu button
     local raidMenuBtn = OGST.CreateMenuButton(bigwigsPanel, {
-      label = "BigWigs Raid:",
-      labelAnchor = "LEFT",
-      labelWidth = 130,
       buttonText = "<None Selected>",
-      buttonWidth = 300,
+      buttonWidth = 215,
       buttonHeight = 24,
       menuItems = raidMenuItems,
       singleSelect = false
@@ -472,8 +569,10 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
         end
       end
       
-      -- Truncate if necessary (300px button width minus some padding)
-      displayText = TruncateText(displayText, 280)
+      -- Truncate to 35 characters with ellipsis
+      if string.len(displayText) > 35 then
+        displayText = string.sub(displayText, 1, 35) .. "..."
+      end
       menuBtn.button:SetText(displayText)
     end
     
@@ -515,11 +614,8 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     
     -- Create encounter mode menu button
     local encounterMenuBtn = OGST.CreateMenuButton(bigwigsPanel, {
-      label = "BigWigs Encounter:",
-      labelAnchor = "LEFT",
-      labelWidth = 130,
       buttonText = "<None Selected>",
-      buttonWidth = 300,
+      buttonWidth = 215,
       buttonHeight = 24,
       menuItems = encounterMenuItems,
       singleSelect = false
@@ -543,15 +639,6 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
         originalEncounterOnClick()
       end
     end)
-    
-    -- BigWigs info text
-    local bigwigsInfo = OGST.CreateStaticText(bigwigsPanel, {
-      text = "When BigWigs detects this encounter, OGRH will automatically select this raid/encounter.",
-      font = "GameFontHighlightSmall",
-      width = 440,
-      multiline = true
-    })
-    OGST.AnchorElement(bigwigsInfo, encounterMenuBtn, {position = "below"})
     
     -- Save button (bottom right)
     local saveBtn = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
@@ -586,20 +673,12 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
   -- Update title
   dialog.titleText:SetText(title)
   
-  -- Update BigWigs section label and info text based on mode
-  if dialog.bigwigsHeader and dialog.bigwigsInfo then
+  -- Update BigWigs section label based on mode
+  if dialog.bigwigsHeader then
     if isRaid then
       dialog.bigwigsHeader:SetText("BigWigs Raid Selection")
-      dialog.bigwigsInfo:SetText("Select the BigWigs raid zone. Individual encounters can then be configured in their settings.")
-      if dialog.encounterMenuBtn and dialog.encounterMenuBtn.label then
-        dialog.encounterMenuBtn.label:SetText("BigWigs Raid:")
-      end
     else
       dialog.bigwigsHeader:SetText("BigWigs Encounter Detection")
-      dialog.bigwigsInfo:SetText("When BigWigs detects this encounter, OGRH will automatically select this raid/encounter.")
-      if dialog.encounterMenuBtn and dialog.encounterMenuBtn.label then
-        dialog.encounterMenuBtn.label:SetText("BigWigs Encounter:")
-      end
     end
   end
   
@@ -645,6 +724,60 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
     settings = OGRH.GetCurrentEncounterAdvancedSettings()
   end
   
+  -- Load common Other Settings fields
+  if isRaid then
+    -- Get raid index from the Encounter Planning window's selected raid
+    local raidIdx = FindRaidIndexByName(frame.selectedRaid)
+    if not raidIdx then
+      OGRH.Msg("Could not find raid: " .. tostring(frame.selectedRaid))
+      return
+    end
+    local raid = OGRH.SVM.GetPath("encounterMgmt.raids." .. raidIdx)
+    if raid then
+      if dialog.displayNameInput then
+        dialog.displayNameInput:SetText(raid.displayName or raid.name or "")
+      end
+      if dialog.enabledCheck then
+        dialog.enabledCheck:SetChecked(raid.enabled ~= false)  -- Default to true
+      end
+      if dialog.findBossCheck then
+        dialog.findBossCheck:SetChecked(raid.findBossMobs or false)
+      end
+      if dialog.autoRankCheck then
+        dialog.autoRankCheck:SetChecked(raid.autoRank or false)
+      end
+    end
+    -- Store indices for save function
+    dialog.editingRaidIdx = raidIdx
+  else
+    -- Get raid and encounter indices from the Encounter Planning window's selections
+    local raidIdx = FindRaidIndexByName(frame.selectedRaid)
+    if not raidIdx then
+      OGRH.Msg("Could not find raid: " .. tostring(frame.selectedRaid))
+      return
+    end
+    local encounterIdx = FindEncounterIndexByName(raidIdx, frame.selectedEncounter)
+    if not encounterIdx then
+      OGRH.Msg("Could not find encounter: " .. tostring(frame.selectedEncounter))
+      return
+    end
+    local encounter = OGRH.SVM.GetPath("encounterMgmt.raids." .. raidIdx .. ".encounters." .. encounterIdx)
+    if encounter then
+      if dialog.displayNameInput then
+        dialog.displayNameInput:SetText(encounter.displayName or encounter.name or "")
+      end
+      if dialog.enabledCheck then
+        dialog.enabledCheck:SetChecked(encounter.enabled ~= false)  -- Default to true
+      end
+      if dialog.autoRankCheck then
+        dialog.autoRankCheck:SetChecked(encounter.autoRank or false)
+      end
+    end
+    -- Store indices for save function
+    dialog.editingRaidIdx = raidIdx
+    dialog.editingEncounterIdx = encounterIdx
+  end
+  
   -- Reset menu button state before loading new settings
   if dialog.raidMenuBtn then
     dialog.raidMenuBtn.selectedItems = {}
@@ -664,10 +797,16 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
       -- Raid mode: show raid menu, hide encounter menu
       dialog.raidMenuBtn:Show()
       dialog.encounterMenuBtn:Hide()
+      -- Show raid-specific Other Settings fields
+      if dialog.findBossCheck then dialog.findBossCheck:GetParent():Show() end
+      if dialog.viewBossGuidsBtn then dialog.viewBossGuidsBtn:Show() end
     else
       -- Encounter mode: hide raid menu, show encounter menu
       dialog.raidMenuBtn:Hide()
       dialog.encounterMenuBtn:Show()
+      -- Hide raid-specific Other Settings fields
+      if dialog.findBossCheck then dialog.findBossCheck:GetParent():Hide() end
+      if dialog.viewBossGuidsBtn then dialog.viewBossGuidsBtn:Hide() end
       
         -- Check if raid-level BigWigs is enabled
         local raidSettings = OGRH.GetCurrentRaidAdvancedSettings()
@@ -857,7 +996,7 @@ function OGRH.ShowAdvancedSettingsDialog(forceMode)
         local raid = OGRH.FindRaidByName(frame.selectedRaid)
         if raid and raid.advancedSettings and raid.advancedSettings.consumeTracking and raid.advancedSettings.consumeTracking.enabled then
           local raidThreshold = raid.advancedSettings.consumeTracking.readyThreshold or 85
-          dialog.raidThresholdLabel:SetText("|cffaaaaaa(Raid set to: " .. raidThreshold .. "%)|r")
+          dialog.raidThresholdLabel:SetText("|cffaaaaaa(Raid: " .. raidThreshold .. "%)|r")
           dialog.raidThresholdLabel:Show()
         else
           dialog.raidThresholdLabel:Hide()
@@ -956,8 +1095,52 @@ function OGRH.SaveAdvancedSettingsDialog()
   local success = false
   if isRaid then
     success = OGRH.SaveCurrentRaidAdvancedSettings(newSettings)
+    -- Save raid-specific Other Settings fields using stored index
+    local raidIdx = dialog.editingRaidIdx
+    if not raidIdx then
+      OGRH.Msg("Error: No raid index stored for saving")
+      return
+    end
+    local raid = OGRH.SVM.GetPath("encounterMgmt.raids." .. raidIdx)
+    if raid then
+      if dialog.displayNameInput then
+        raid.displayName = dialog.displayNameInput:GetText()
+      end
+      if dialog.enabledCheck then
+        raid.enabled = dialog.enabledCheck:GetChecked()
+      end
+      if dialog.findBossCheck then
+        raid.findBossMobs = dialog.findBossCheck:GetChecked()
+      end
+      if dialog.autoRankCheck then
+        raid.autoRank = dialog.autoRankCheck:GetChecked()
+      end
+      -- Initialize bossMobs if not present
+      if not raid.bossMobs then
+        raid.bossMobs = {}
+      end
+    end
   else
     success = OGRH.SaveCurrentEncounterAdvancedSettings(newSettings)
+    -- Save encounter-specific Other Settings fields using stored indices
+    local raidIdx = dialog.editingRaidIdx
+    local encounterIdx = dialog.editingEncounterIdx
+    if not raidIdx or not encounterIdx then
+      OGRH.Msg("Error: No raid/encounter indices stored for saving")
+      return
+    end
+    local encounter = OGRH.SVM.GetPath("encounterMgmt.raids." .. raidIdx .. ".encounters." .. encounterIdx)
+    if encounter then
+      if dialog.displayNameInput then
+        encounter.displayName = dialog.displayNameInput:GetText()
+      end
+      if dialog.enabledCheck then
+        encounter.enabled = dialog.enabledCheck:GetChecked()
+      end
+      if dialog.autoRankCheck then
+        encounter.autoRank = dialog.autoRankCheck:GetChecked()
+      end
+    end
   end
   
   if not success then

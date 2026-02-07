@@ -82,6 +82,19 @@ OGRH_SV.v2.encounterMgmt = {
             name = "Molten Core",         -- string: Display name (user-editable)
             displayName = "Molten Core",  -- string: Alias for name
             sortOrder = 1,                -- number: UI display order
+            enabled = true,               -- boolean: Whether raid is enabled (default: true)
+            autoRank = false,             -- boolean: Automatically rank players after raid encounters (default: false)
+            
+            -- Boss Tracking
+            findBossMobs = false,         -- boolean: Auto-detect boss GUIDs in combat logs
+            bossMobs = {                  -- table: Detected boss mobs
+                ["GUID-12345"] = {        -- Boss GUID as key
+                    name = "Ragnaros",    -- string: Mob name
+                    location = "Molten Core", -- string: Location when first found
+                    firstSeen = 1234567890,   -- number: Timestamp when first detected
+                },
+                -- ... more boss mobs
+            },
             
             -- Encounters
             encounters = {
@@ -91,6 +104,8 @@ OGRH_SV.v2.encounterMgmt = {
                     name = "Lucifron",            -- string: Display name (user-editable)
                     displayName = "Lucifron",     -- string: Alias for name
                     sortOrder = 1,                -- number: UI display order
+                    enabled = true,               -- boolean: Whether encounter is enabled (default: true)
+                    autoRank = false,             -- boolean: Automatically rank players after encounter (default: false)
                     
                     -- Roles Structure
                     roles = {
@@ -251,7 +266,56 @@ OGRH_SV.v2.invites = {
     
     -- v2 Invites Update (NEW - February 2026)
     autoSort = false,      -- boolean: Auto-organize raid groups (default: false)
-    planningRoster = {},   -- array: Planning roster for EncounterMgmt integration
+    planningRoster = {     -- table: Planning roster for EncounterMgmt integration (organized by role buckets)
+        TANKS = {
+            [1] = {
+                name = "PlayerName",
+                class = "WARRIOR",
+                role = "TANKS",
+                source = "raidhelper",      -- string: Data source ("raidhelper" or "rollfor")
+                group = 1,                  -- number: Assigned group (1-8, or nil)
+                benched = false,            -- boolean: Player is benched
+                online = false              -- boolean: Player online status
+            },
+            -- ... array of tank players
+        },
+        HEALERS = {
+            [1] = {
+                name = "PlayerName",
+                class = "PRIEST",
+                role = "HEALERS",
+                source = "raidhelper",
+                group = 2,
+                benched = false,
+                online = false
+            },
+            -- ... array of healer players
+        },
+        MELEE = {
+            [1] = {
+                name = "PlayerName",
+                class = "ROGUE",
+                role = "MELEE",
+                source = "raidhelper",
+                group = 1,
+                benched = false,
+                online = false
+            },
+            -- ... array of melee players
+        },
+        RANGED = {
+            [1] = {
+                name = "PlayerName",
+                class = "MAGE",
+                role = "RANGED",
+                source = "raidhelper",
+                group = 1,
+                benched = false,
+                online = false
+            },
+            -- ... array of ranged players
+        }
+    },
     
     -- UI State
     invitePanelPosition = {
@@ -273,6 +337,57 @@ OGRH_SV.v2.invites = {
 
 **Planning Roster Structure:**
 ```lua
+OGRH_SV.v2.invites.planningRoster = {
+    TANKS = {
+        [1] = {
+            name = "PlayerName",
+            class = "WARRIOR",
+            role = "TANKS",
+            source = "raidhelper",      -- "raidhelper" or "rollfor"
+            group = 1,                  -- Assigned group (1-8, or nil)
+            benched = false,            -- Player benched status
+            online = false              -- Player online status
+        }
+    },
+    HEALERS = {
+        [1] = {
+            name = "PlayerName",
+            class = "PRIEST", 
+            role = "HEALERS",
+            source = "raidhelper",
+            group = 2,
+            benched = false,
+            online = false
+        }
+    },
+    MELEE = {
+        [1] = {
+            name = "PlayerName",
+            class = "ROGUE",
+            role = "MELEE",
+            source = "raidhelper",
+            group = 1,
+            benched = false,
+            online = false
+        }
+    },
+    RANGED = {
+        [1] = {
+            name = "PlayerName",
+            class = "MAGE",
+            role = "RANGED",
+            source = "raidhelper",
+            group = 1,
+            benched = false,
+            online = false
+        }
+    }
+}
+```
+
+**Note:** Planning roster is organized as role bucket tables (TANKS, HEALERS, MELEE, RANGED), 
+not a flat array. Each bucket contains player data objects with full metadata including source,
+group assignment, benched status, and online status.
 OGRH_SV.v2.invites.planningRoster = {
     [1] = {
         name = "PlayerName",
@@ -494,7 +609,73 @@ OGRH_SV.v2.rosterManagement = {
         lastSync = 0,                    -- number: Timestamp of last sync
     },
     
-    rankingHistory = {}  -- table: Historical ranking data
+    rankingHistory = {},  -- table: Historical ranking data
+    
+    -- NEW: Pending Segments (DPSMate AutoRank System)
+    pendingSegments = {
+        [1] = {
+            -- Metadata
+            segmentId = "seg_1234567890_ragnaros",  -- string: Unique identifier
+            name = "Ragnaros - 19:30:45",            -- string: Display name (from DPSMate)
+            timestamp = 1234567890,                  -- number: Unix timestamp
+            createdAt = "2026-02-06 19:30:45",      -- string: Human-readable datetime
+            
+            -- Source Context
+            raidName = "Molten Core",                -- string: Active Raid name
+            raidIndex = 1,                           -- number: Active Raid index
+            encounterName = "Ragnaros",              -- string: Active Encounter name (if applicable)
+            encounterIndex = 9,                      -- number: Active Encounter index (if applicable)
+            
+            -- Combat Metrics
+            combatTime = 120.5,                      -- number: Total combat duration (seconds)
+            effectiveCombatTime = {                  -- table: Per-player effective time
+                ["PlayerName"] = 118.2,
+                ["PlayerName2"] = 115.8,
+            },
+            
+            -- Performance Data
+            damageData = {                           -- table: From DPSMateDamageDone[2]
+                ["PlayerName"] = {
+                    total = 50000,                   -- number: Total damage
+                    value = 50000,                   -- number: Total damage (for ranking)
+                },
+            },
+            
+            totalHealingData = {                     -- table: From DPSMateTHealing[2]
+                ["PlayerName"] = {
+                    total = 30000,                   -- number: Total healing
+                    value = 30000,                   -- number: Total healing (for ranking)
+                },
+            },
+            
+            effectiveHealingData = {                 -- table: From DPSMateEHealing[2]
+                ["PlayerName"] = {
+                    total = 25000,                   -- number: Effective healing
+                    value = 25000,                   -- number: Effective healing (for ranking)
+                },
+            },
+            
+            -- Role Assignments (captured at segment creation time)
+            playerRoles = {                          -- table: Player role assignments
+                ["PlayerName"] = "MELEE",            -- string: TANKS, HEALERS, MELEE, RANGED
+                ["PlayerName2"] = "HEALERS",
+            },
+            
+            -- State Management
+            imported = false,                        -- boolean: Has been imported for ELO update
+            importedAt = nil,                        -- number: Timestamp when imported (nil if not imported)
+            importedBy = nil,                        -- string: Player who imported (nil if not imported)
+            
+            -- Expiration
+            expiresAt = 1234740690,                  -- number: timestamp + (2 days * 86400)
+            
+            -- Optional: Preview Data
+            playerCount = 25,                        -- number: Number of players in segment
+            topDPS = "PlayerName",                   -- string: Top DPS player
+            topHealer = "HealerName",                -- string: Top healer
+        },
+        [2] = { },  -- ... array of pending segments (newest first)
+    }
 }
 ```
 

@@ -1497,6 +1497,56 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Test system not loaded. Available: test svm, test phase1")
     end
+  -- Pending Segments Debug Command
+  elseif sub == "segments" or sub == "pendingsegments" or sub == "ps" then
+    if OGRH.PendingSegments and OGRH.PendingSegments.PrintSegmentList then
+      OGRH.PendingSegments.PrintSegmentList()
+    else
+      OGRH.Msg("PendingSegments module not loaded.")
+    end
+  -- Test: Manually create DPSMate segment
+  elseif string.find(sub, "^saveseg") then
+    local _, _, segmentName = string.find(fullMsg, "^%s*saveseg%s+(.+)$")
+    if not segmentName or segmentName == "" then
+      OGRH.Msg("Usage: /ogrh saveseg <segmentname>")
+      OGRH.Msg("Example: /ogrh saveseg Test Segment")
+    else
+      if DPSMate and DPSMate.Options and DPSMate.Options.NewSegment then
+        DPSMate.Options:NewSegment(segmentName)
+        OGRH.Msg("Created DPSMate segment: " .. segmentName)
+      else
+        OGRH.Msg("DPSMate not loaded.")
+      end
+    end
+  -- Manually trigger segment purge
+  elseif sub == "purgesegments" or sub == "purgeseg" then
+    if OGRH.PendingSegments and OGRH.PendingSegments.ManualPurge then
+      OGRH.PendingSegments.ManualPurge()
+    else
+      OGRH.Msg("PendingSegments module not loaded.")
+    end
+  -- Test: Set segment expiresAt to 3 days ago
+  elseif string.find(sub, "^segexp") then
+    local _, _, indexStr = string.find(fullMsg, "^%s*segexp%s+(%d+)$")
+    if not indexStr then
+      OGRH.Msg("Usage: /ogrh segexp <index>")
+      OGRH.Msg("Sets segment expiresAt to 3 days ago for purge testing")
+    else
+      local index = tonumber(indexStr)
+      local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+      if index < 1 or index > table.getn(pendingSegments) then
+        OGRH.Msg("Invalid index. Valid range: 1-" .. table.getn(pendingSegments))
+      else
+        local segment = pendingSegments[index]
+        segment.expiresAt = time() - (3 * 86400) -- 3 days ago
+        OGRH.SVM.SetPath("rosterManagement.pendingSegments", pendingSegments, {
+          source = "MainUI",
+          action = "test_expire",
+          sync = false,
+        })
+        OGRH.Msg("Set segment " .. index .. " (" .. segment.name .. ") to expire 3 days ago")
+      end
+    end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
     OGRH.Msg("Commands:")
@@ -1520,6 +1570,10 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     OGRH.Msg("Test Commands:")
     OGRH.Msg("  test svm - Run SavedVariablesManager tests")
     OGRH.Msg("  test phase1 - Run Phase 1 Core Infrastructure tests")
+    OGRH.Msg("  segments - Show pending DPSMate segments for ranking import")
+    OGRH.Msg("  saveseg <name> - Manually create a DPSMate segment")
+    OGRH.Msg("  segexp <index> - Set segment expiresAt to 3 days ago (test purge)")
+    OGRH.Msg("  purgesegments - Manually purge expired segments")
   else
     OGRH.Msg("Unknown command. Type /" .. OGRH.CMD .. " help for usage.")
   end

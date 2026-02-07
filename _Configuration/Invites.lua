@@ -355,7 +355,15 @@ function OGRH.Invites.ParseRaidHelperGroupsJSON(jsonString)
           end
         elseif className == "Rogue" or className == "Warrior" then
           role = "MELEE"
-        elseif className == "Mage" or className == "Warlock" or className == "Hunter" then
+        elseif className == "Hunter" then
+          -- Check spec for Hunters (Survival = MELEE, Marksmanship/Beast Mastery = RANGED)
+          local specName = slot.specName
+          if specName and string.find(specName, "Survival") then
+            role = "MELEE"
+          else
+            role = "RANGED" -- Default to RANGED (Marksmanship, Beast Mastery, or unknown)
+          end
+        elseif className == "Mage" or className == "Warlock" then
           role = "RANGED"
         end
         
@@ -1250,12 +1258,12 @@ function OGRH.Invites.ShowWindow()
   end
   
   -- Interval input with label using OGST
-  local intervalContainer, intervalBackdrop, intervalInput, intervalLabel = OGST.CreateSingleLineTextBox(frame, 40, 28, {
+  local intervalContainer, intervalBackdrop, intervalInput, intervalLabel = OGST.CreateSingleLineTextBox(frame, 50, 28, {
     label = "Invite every",
     labelAnchor = "LEFT",
     labelWidth = 80,
     labelAlign = "RIGHT",
-    textBoxWidth = 40,
+    textBoxWidth = 50,
     gap = 5,
     numeric = true,
     maxLetters = 3,
@@ -1263,7 +1271,7 @@ function OGRH.Invites.ShowWindow()
     onChange = function(text)
       local value = tonumber(text) or 10
       if value < 10 then value = 10 end
-      if value > 300 then value = 300 end
+      if value > 999 then value = 999 end
       local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
       inviteMode.interval = value
       OGRH.SVM.SetPath("invites.inviteMode", inviteMode, {syncLevel = "MANUAL", componentType = "settings"})

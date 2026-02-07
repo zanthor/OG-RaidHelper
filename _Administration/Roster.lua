@@ -1496,18 +1496,44 @@ function RosterMgmt.ShowManualImportDialog()
   -- Declare CSV controls first (needed by ParseAndPopulate function)
   local csvBackdrop, csvEditBox
   
+  -- Function to reset all players to original ELO values (before any adjustments)
+  local function ResetToOriginalELO()
+    for _, role in ipairs(ROLES) do
+      if parsedPlayers[role] then
+        for i = 1, table.getn(parsedPlayers[role]) do
+          local player = parsedPlayers[role][i]
+          -- Find original data across all roles (player may have been dragged)
+          for _, origRole in ipairs(ROLES) do
+            if parsedPlayersOriginal[origRole] then
+              for j = 1, table.getn(parsedPlayersOriginal[origRole]) do
+                if parsedPlayersOriginal[origRole][j].name == player.name then
+                  player.elo = parsedPlayersOriginal[origRole][j].elo
+                  player.adjustment = 0
+                  break
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  
   -- Function to calculate ELO rankings for all included roles
   local function RankELO()
     local kFactor = 32  -- ELO adjustment sensitivity
+    
+    -- Reset all players to original ELO before recalculating
+    ResetToOriginalELO()
     
     for _, role in ipairs(ROLES) do
       if includeCheckboxes[role] and includeCheckboxes[role]:GetChecked() then
         local players = parsedPlayers[role]
         
         if players and table.getn(players) > 1 then
-          -- Sort by DPS descending
+          -- Sort by value (damage or healing) descending
           table.sort(players, function(a, b)
-            return a.dps > b.dps
+            return a.value > b.value
           end)
           
           -- Sequential comparison: compare each player with the one below them
@@ -1531,9 +1557,9 @@ function RosterMgmt.ShowManualImportDialog()
             playerA.elo = playerA.elo + changeA
             playerB.elo = playerB.elo + changeB
             
-            -- Update adjustments for display
-            playerA.adjustment = (playerA.adjustment or 0) + changeA
-            playerB.adjustment = (playerB.adjustment or 0) + changeB
+            -- Update adjustments for display (set directly, not accumulate)
+            playerA.adjustment = playerA.adjustment + changeA
+            playerB.adjustment = playerB.adjustment + changeB
           end
         end
       end
@@ -1550,9 +1576,9 @@ function RosterMgmt.ShowManualImportDialog()
     -- Populate role lists from parsedPlayers
     for _, role in ipairs(ROLES) do
       if roleLists[role] and parsedPlayers[role] then
-        -- Sort by DPS descending
+        -- Sort by value (damage or healing) descending
         table.sort(parsedPlayers[role], function(a, b)
-          return a.dps > b.dps
+          return a.value > b.value
         end)
         
         -- Add to list
@@ -1584,7 +1610,20 @@ function RosterMgmt.ShowManualImportDialog()
                   end
                 end
               end
-              RefreshDisplay()  -- Refresh without re-parsing CSV
+              
+              -- Also remove from original data
+              if parsedPlayersOriginal[playerRole] then
+                for k = 1, table.getn(parsedPlayersOriginal[playerRole]) do
+                  if parsedPlayersOriginal[playerRole][k].name == player.name then
+                    table.remove(parsedPlayersOriginal[playerRole], k)
+                    break
+                  end
+                end
+              end
+              
+              -- Recalculate ELO for remaining players
+              RankELO()
+              RefreshDisplay()
             end
           })
           
@@ -1653,15 +1692,96 @@ function RosterMgmt.ShowManualImportDialog()
                   end
                 end
                 
-                -- Add to target role
+                -- Look up the proper damage/healing value for the target role from segment data
+                local targetValue = 0
+                local foundData = false
+                
+                if window.selectedSegment and window.selectedSegment.type == "pending" then
+                  local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+                  local segment = pendingSegments[window.selectedSegment.index]
+                  
+                  if segment then
+                    if targetRole == "HEALERS" then
+                      -- Look for effective healing data (use value, fallback to total)
+                      if segment.effectiveHealingData and segment.effectiveHealingData[playerData.name] then
+                        local healingData = segment.effectiveHealingData[playerData.name]
+                        if type(healingData) == "table" then
+                          targetValue = healingData.value or healingData.total or 0
+                        else
+                          targetValue = healingData or 0
+                        end
+                        foundData = true
+                      end
+                    else
+                      -- Look for damage data (use value, fallback to total)
+                      if segment.damageData and segment.damageData[playerData.name] then
+                        local damageData = segment.damageData[playerData.name]
+                        if type(damageData) == "table" then
+                          targetValue = damageData.value or damageData.total or 0
+                        else
+                          targetValue = damageData or 0
+                        end
+                        foundData = true
+                      end
+                    end
+                  end
+                end
+                
+                -- Fallback: look in parsedPlayersOriginal if no segment data found
+                if not foundData then
+                  for _, origRole in ipairs(ROLES) do
+                    if parsedPlayersOriginal[origRole] then
+                      for j = 1, table.getn(parsedPlayersOriginal[origRole]) do
+                        if parsedPlayersOriginal[origRole][j].name == playerData.name then
+                          targetValue = parsedPlayersOriginal[origRole][j].value
+                          break
+                        end
+                      end
+                    end
+                  end
+                end
+                
+                -- Look up the player's ELO for the TARGET role from their profile
+                local targetELO = 1000  -- Default
+                local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+                if allPlayers[playerData.name] and 
+                   allPlayers[playerData.name].rankings and
+                   allPlayers[playerData.name].rankings[targetRole] then
+                  targetELO = allPlayers[playerData.name].rankings[targetRole]
+                end
+                
+                -- Add to target role with correct value and target role's ELO
                 table.insert(parsedPlayers[targetRole], {
                   name = playerData.name,
                   class = playerData.class,
-                  dps = playerData.dps,
-                  elo = playerData.elo,
-                  adjustment = playerData.adjustment
+                  value = targetValue,
+                  elo = targetELO,
+                  adjustment = 0  -- Reset adjustment since we'll recalculate
                 })
                 
+                -- Also update parsedPlayersOriginal for this player in the target role
+                -- First remove from original role if exists
+                for _, origRole in ipairs(ROLES) do
+                  if parsedPlayersOriginal[origRole] then
+                    for k = 1, table.getn(parsedPlayersOriginal[origRole]) do
+                      if parsedPlayersOriginal[origRole][k].name == playerData.name then
+                        table.remove(parsedPlayersOriginal[origRole], k)
+                        break
+                      end
+                    end
+                  end
+                end
+                -- Then add to target role in original data
+                table.insert(parsedPlayersOriginal[targetRole], {
+                  name = playerData.name,
+                  class = playerData.class,
+                  value = targetValue,
+                  elo = targetELO,
+                  adjustment = 0
+                })
+                
+                -- Recalculate ELO and refresh
+                RankELO()
                 RefreshDisplay()
               end
             end)
@@ -1671,11 +1791,15 @@ function RosterMgmt.ShowManualImportDialog()
     end
   end
   
-  -- Parse CSV and populate role lists
+  -- Parse CSV and populate role lists (supports both legacy CSV and segment recovery format)
   local function ParseAndPopulate()
     -- Clear existing data
     for role in pairs(parsedPlayers) do
       parsedPlayers[role] = {}
+    end
+    
+    for role in pairs(parsedPlayersOriginal) do
+      parsedPlayersOriginal[role] = {}
     end
     
     -- Clear role lists
@@ -1696,66 +1820,215 @@ function RosterMgmt.ShowManualImportDialog()
       table.insert(lines, line)
     end
     
-    -- Parse each line
-    for i = 1, table.getn(lines) do
-      local line = lines[i]
-      -- Parse CSV: PlayerName,Damage,DPS
-      local name, damage, dps = string.match(line, "([^,]+),([^,]+),([^,]+)")
+    if table.getn(lines) == 0 then return end
+    
+    -- Detect format: check first line for segment recovery format
+    local firstLine = lines[1]
+    local isSegmentFormat = string.match(firstLine, "^SEGMENT_META%|")
+    
+    if isSegmentFormat then
+      -- SEGMENT RECOVERY FORMAT
+      -- Parse metadata from first line
+      local metaParts = {}
+      for part in string.gfind(firstLine, "[^|]+") do
+        table.insert(metaParts, part)
+      end
       
-      if name and dps then
-        -- Trim whitespace
-        name = string.gsub(name, "^%s*(.-)%s*$", "%1")
-        dps = string.gsub(dps, "^%s*(.-)%s*$", "%1")
-        
-        -- Get player class from OGRH cache
-        local class = OGRH.GetPlayerClass(name)
-        if not class then
-          class = "UNKNOWN"
+      if table.getn(metaParts) < 8 or metaParts[1] ~= "SEGMENT_META" then
+        OGRH.Msg("|cffff0000[RH-Roster]|r Invalid segment format")
+        return
+      end
+      
+      local segmentName = metaParts[2]
+      local createdAt = metaParts[3]
+      local raidName = metaParts[4]
+      local raidIndex = tonumber(metaParts[5]) or 0
+      local encounterName = metaParts[6]
+      local encounterIndex = tonumber(metaParts[7]) or 0
+      local combatTime = tonumber(metaParts[8]) or 0
+      
+      -- Build segment data structures
+      local damageData = {}
+      local effectiveHealingData = {}
+      local totalHealingData = {}
+      local playerRoles = {}
+      local playerCount = 0
+      
+      -- Parse player lines (format: Name|Class|Role|Damage|EffHealing|TotalHealing)
+      for i = 2, table.getn(lines) do
+        local line = lines[i]
+        local parts = {}
+        for part in string.gfind(line, "[^|]+") do
+          table.insert(parts, part)
         end
         
-        -- Determine role: check roster data first, then RolesUI saved data, then default
-        local role = "RANGED"  -- Default fallback
-        local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
-        if allPlayers[name] then
-          -- Player exists in roster management
-          role = allPlayers[name].primaryRole
-        elseif OGRH_GetPlayerRole and OGRH_GetPlayerRole(name) then
-          -- Player has saved role from RolesUI (via SVM)
-          role = OGRH_GetPlayerRole(name)
-        else
-          -- Use default role for class
-          role = RosterMgmt.GetDefaultRoleForClass(class)
+        if table.getn(parts) >= 6 then
+          local playerName = parts[1]
+          local class = parts[2]
+          local role = parts[3]
+          local damage = tonumber(parts[4]) or 0
+          local effectiveHealing = tonumber(parts[5]) or 0
+          local totalHealing = tonumber(parts[6]) or 0
+          
+          playerCount = playerCount + 1
+          playerRoles[playerName] = role
+          
+          if damage > 0 then
+            damageData[playerName] = {total = damage, value = damage}
+          end
+          
+          if effectiveHealing > 0 then
+            effectiveHealingData[playerName] = {total = effectiveHealing, value = effectiveHealing}
+          end
+          
+          if totalHealing > 0 then
+            totalHealingData[playerName] = {total = totalHealing, value = totalHealing}
+          end
+          
+          -- Get player's ELO for their assigned role
+          local currentElo = 1000
+          local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+          if allPlayers[playerName] and 
+             allPlayers[playerName].rankings and
+             allPlayers[playerName].rankings[role] then
+            currentElo = allPlayers[playerName].rankings[role]
+          end
+          
+          -- Add to appropriate role list based on their assigned role
+          local playerData = {
+            name = playerName,
+            class = class,
+            value = (role == "HEALERS") and effectiveHealing or damage,
+            elo = currentElo,
+            adjustment = 0
+          }
+          
+          table.insert(parsedPlayers[role], playerData)
+          table.insert(parsedPlayersOriginal[role], {
+            name = playerName,
+            class = class,
+            value = playerData.value,
+            elo = currentElo,
+            adjustment = 0
+          })
         end
+      end
+      
+      -- Create a pending segment entry from recovered data
+      local timestamp = time()
+      local segmentId = "recovered_" .. timestamp .. "_" .. string.gsub(string.lower(segmentName), "%s", "_")
+      
+      local segment = {
+        segmentId = segmentId,
+        name = segmentName .. " [RECOVERED]",
+        timestamp = timestamp,
+        createdAt = createdAt,
         
-        -- Get current ELO or default
-        local currentElo = 1000
-        if allPlayers[name] and 
-           allPlayers[name].rankings and
-           allPlayers[name].rankings[role] then
-          currentElo = allPlayers[name].rankings[role]
+        raidName = raidName,
+        raidIndex = raidIndex,
+        encounterName = encounterName ~= "" and encounterName or nil,
+        encounterIndex = encounterIndex,
+        
+        combatTime = combatTime,
+        effectiveCombatTime = {},  -- Not recoverable from combat log
+        
+        damageData = damageData,
+        totalHealingData = totalHealingData,
+        effectiveHealingData = effectiveHealingData,
+        playerRoles = playerRoles,
+        
+        imported = false,
+        importedAt = nil,
+        importedBy = nil,
+        
+        expiresAt = timestamp + (2 * 86400),  -- 2 days
+        
+        playerCount = playerCount,
+      }
+      
+      -- Add to pending segments
+      local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+      table.insert(pendingSegments, 1, segment)  -- Insert at front (newest first)
+      
+      OGRH.SVM.SetPath("rosterManagement.pendingSegments", pendingSegments, {
+        source = "Roster",
+        action = "recover",
+        sync = false,
+      })
+      
+      -- Store segment reference so we can import it
+      window.selectedSegment = {type = "pending", index = 1}
+      
+      OGRH.Msg("|cff00ff00[RH-Roster]|r Recovered segment: " .. segmentName)
+      OGRH.Msg("|cffaaaaaa[RH-Roster]|r " .. playerCount .. " players, " .. string.format("%.1f", combatTime) .. "s combat")
+      
+      -- Refresh pending segments list if it exists
+      if window.PopulatePendingSegmentsList then
+        window.PopulatePendingSegmentsList()
+      end
+      
+    else
+      -- LEGACY CSV FORMAT (Name,Damage,DPS)
+      for i = 1, table.getn(lines) do
+        local line = lines[i]
+        -- Parse CSV: PlayerName,Damage,DPS
+        local name, damage, dps = string.match(line, "([^,]+),([^,]+),([^,]+)")
+        
+        if name and dps then
+          -- Trim whitespace
+          name = string.gsub(name, "^%s*(.-)%s*$", "%1")
+          dps = string.gsub(dps, "^%s*(.-)%s*$", "%1")
+          
+          -- Get player class from OGRH cache
+          local class = OGRH.GetPlayerClass(name)
+          if not class then
+            class = "UNKNOWN"
+          end
+          
+          -- Determine role: check roster data first, then RolesUI saved data, then default
+          local role = "RANGED"  -- Default fallback
+          local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+          if allPlayers[name] then
+            -- Player exists in roster management
+            role = allPlayers[name].primaryRole
+          elseif OGRH_GetPlayerRole and OGRH_GetPlayerRole(name) then
+            -- Player has saved role from RolesUI (via SVM)
+            role = OGRH_GetPlayerRole(name)
+          else
+            -- Use default role for class
+            role = RosterMgmt.GetDefaultRoleForClass(class)
+          end
+          
+          -- Get current ELO or default
+          local currentElo = 1000
+          if allPlayers[name] and 
+             allPlayers[name].rankings and
+             allPlayers[name].rankings[role] then
+            currentElo = allPlayers[name].rankings[role]
+          end
+          
+          -- TODO: Calculate adjustment (placeholder)
+          local adjustment = 0
+          
+          -- Store player data
+          local playerData = {
+            name = name,
+            class = class,
+            value = tonumber(dps) or 0,  -- Still parsing DPS from CSV for backwards compatibility
+            elo = currentElo,
+            adjustment = adjustment
+          }
+          table.insert(parsedPlayers[role], playerData)
+          
+          -- Backup original data (before ELO)
+          table.insert(parsedPlayersOriginal[role], {
+            name = name,
+            class = class,
+            value = tonumber(dps) or 0,
+            elo = currentElo,
+            adjustment = 0
+          })
         end
-        
-        -- TODO: Calculate adjustment (placeholder)
-        local adjustment = 0
-        
-        -- Store player data
-        local playerData = {
-          name = name,
-          class = class,
-          dps = tonumber(dps) or 0,
-          elo = currentElo,
-          adjustment = adjustment
-        }
-        table.insert(parsedPlayers[role], playerData)
-        
-        -- Backup original data (before ELO)
-        table.insert(parsedPlayersOriginal[role], {
-          name = name,
-          class = class,
-          dps = tonumber(dps) or 0,
-          elo = currentElo,
-          adjustment = 0
-        })
       end
     end
     
@@ -1785,6 +2058,12 @@ function RosterMgmt.ShowManualImportDialog()
         segmentKey = "total"
       elseif window.selectedSegment.type == "segment" then
         segmentKey = "segment_" .. tostring(window.selectedSegment.index)
+      elseif window.selectedSegment.type == "pending" then
+        local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+        local segment = pendingSegments[window.selectedSegment.index]
+        if segment then
+          segmentKey = "pending_" .. tostring(segment.segmentId or window.selectedSegment.index)
+        end
       end
     end
     
@@ -1843,6 +2122,22 @@ function RosterMgmt.ShowManualImportDialog()
       window.importedSegments[segmentKey] = true
     end
     
+    -- If pending segment, mark it as imported in SavedVariables
+    if window.selectedSegment and window.selectedSegment.type == "pending" then
+      local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+      local segment = pendingSegments[window.selectedSegment.index]
+      if segment then
+        segment.imported = true
+        segment.importedAt = time()
+        segment.importedBy = UnitName("player")
+        OGRH.SVM.SetPath("rosterManagement.pendingSegments", pendingSegments, {
+          source = "RosterMgmt",
+          action = "import_segment",
+          sync = false,
+        })
+      end
+    end
+    
     -- Disable the Update ELO button
     updateEloBtn:Disable()
     updateEloText:SetTextColor(0.5, 0.5, 0.5, 1)
@@ -1850,6 +2145,8 @@ function RosterMgmt.ShowManualImportDialog()
     -- Refresh the DPS Meter segment list to remove the used segment
     if window.PopulateDPSMateList and window.importSource == "DPSMate" then
       window.PopulateDPSMateList()
+    elseif window.PopulatePendingSegmentsList and window.importSource == "Pending Segments" then
+      window.PopulatePendingSegmentsList()
     end
     
     -- Refresh the main roster display if it's open
@@ -1898,79 +2195,12 @@ function RosterMgmt.ShowManualImportDialog()
     -- Add onChange handler to recalculate or restore ELO when checkbox changes
     local capturedRole = role
     checkButton:SetScript("OnClick", function()
-      if checkButton:GetChecked() then
-        -- Checkbox checked: restore original values first, then recalculate ELO
-        if parsedPlayersOriginal[capturedRole] then
-          for i = 1, table.getn(parsedPlayers[capturedRole]) do
-            local player = parsedPlayers[capturedRole][i]
-            -- Find matching original player
-            for j = 1, table.getn(parsedPlayersOriginal[capturedRole]) do
-              if parsedPlayersOriginal[capturedRole][j].name == player.name then
-                player.elo = parsedPlayersOriginal[capturedRole][j].elo
-                player.adjustment = 0
-                break
-              end
-            end
-          end
-        end
-        -- Recalculate ELO for all checked roles
-        RankELO()
-      else
-        -- Checkbox unchecked: restore original values without ELO
-        if parsedPlayersOriginal[capturedRole] then
-          for i = 1, table.getn(parsedPlayers[capturedRole]) do
-            local player = parsedPlayers[capturedRole][i]
-            -- Find matching original player
-            for j = 1, table.getn(parsedPlayersOriginal[capturedRole]) do
-              if parsedPlayersOriginal[capturedRole][j].name == player.name then
-                player.elo = parsedPlayersOriginal[capturedRole][j].elo
-                player.adjustment = 0
-                break
-              end
-            end
-          end
-        end
-      end
-      -- Refresh display to show updated values
-      RefreshDisplay()
-    end)
-    
-    -- Add onChange handler to recalculate or restore ELO when checkbox changes
-    local capturedRole = role
-    checkButton:SetScript("OnClick", function()
-      if checkButton:GetChecked() then
-        -- Checkbox checked: restore original values first, then recalculate ELO
-        if parsedPlayersOriginal[capturedRole] then
-          for i = 1, table.getn(parsedPlayers[capturedRole]) do
-            local player = parsedPlayers[capturedRole][i]
-            -- Find matching original player
-            for j = 1, table.getn(parsedPlayersOriginal[capturedRole]) do
-              if parsedPlayersOriginal[capturedRole][j].name == player.name then
-                player.elo = parsedPlayersOriginal[capturedRole][j].elo
-                player.adjustment = 0
-                break
-              end
-            end
-          end
-        end
-        -- Recalculate ELO for all checked roles
-        RankELO()
-      else
-        -- Checkbox unchecked: restore original values without ELO
-        if parsedPlayersOriginal[capturedRole] then
-          for i = 1, table.getn(parsedPlayers[capturedRole]) do
-            local player = parsedPlayers[capturedRole][i]
-            -- Find matching original player
-            for j = 1, table.getn(parsedPlayersOriginal[capturedRole]) do
-              if parsedPlayersOriginal[capturedRole][j].name == player.name then
-                player.elo = parsedPlayersOriginal[capturedRole][j].elo
-                player.adjustment = 0
-                break
-              end
-            end
-          end
-        end
-      end
+      -- Always reset all players to original ELO first
+      ResetToOriginalELO()
+      
+      -- Then recalculate ELO for all currently checked roles
+      RankELO()
+      
       -- Refresh display to show updated values
       RefreshDisplay()
     end)
@@ -1986,7 +2216,7 @@ function RosterMgmt.ShowManualImportDialog()
   end
   
   -- Track selected import source
-  window.importSource = "DPSMate"
+  window.importSource = "Pending Segments"
   
   -- Forward declare controls for use in menu onClick handlers
   local csvBackdrop, csvEditBox
@@ -1996,6 +2226,8 @@ function RosterMgmt.ShowManualImportDialog()
   -- Forward declare import function
   local ImportFromDPSMate
   local PopulateDPSMateList
+  local PopulatePendingSegmentsList
+  local ImportFromPendingSegment
   
   -- Function to populate DPSMate segment list
   PopulateDPSMateList = function()
@@ -2090,6 +2322,64 @@ function RosterMgmt.ShowManualImportDialog()
       end
     })
   end
+  
+  -- Function to populate Pending Segments list
+  PopulatePendingSegmentsList = function()
+    dpsMeterList:Clear()
+    
+    local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+    
+    if table.getn(pendingSegments) == 0 then
+      dpsMeterList:AddItem({
+        text = "No pending segments captured yet",
+        textAlign = "LEFT",
+        onClick = function() end
+      })
+      return
+    end
+    
+    -- Display segments (newest first)
+    for i = 1, table.getn(pendingSegments) do
+      local segment = pendingSegments[i]
+      local segmentKey = "pending_" .. tostring(segment.segmentId or i)
+      local isSegmentUsed = window.importedSegments[segmentKey] or segment.imported
+      
+      -- Format: "Magmadar [11] - 260206 19:44"
+      local displayName = segment.name or "Unknown"
+      if segment.playerCount then
+        displayName = displayName .. " [" .. segment.playerCount .. "]"
+      end
+      
+      -- Add timestamp in format YYMMDD HH:MM
+      if segment.timestamp then
+        local timeStr = date("%y%m%d %H:%M", segment.timestamp)
+        displayName = displayName .. " - " .. timeStr
+      end
+      
+      if isSegmentUsed then
+        displayName = displayName .. " [IMPORTED]"
+      end
+      
+      local capturedIndex = i  -- Capture in closure
+      
+      dpsMeterList:AddItem({
+        text = displayName,
+        textAlign = "LEFT",
+        textColor = isSegmentUsed and {r = 0.5, g = 0.5, b = 0.5, a = 1} or nil,
+        onClick = function()
+          if window.importedSegments["pending_" .. tostring(pendingSegments[capturedIndex].segmentId or capturedIndex)] or pendingSegments[capturedIndex].imported then
+            OGRH.Msg("|cffff8800[RH-Roster]|r This segment has already been imported.")
+            return
+          end
+          window.selectedSegment = {type = "pending", index = capturedIndex}
+          ImportFromPendingSegment(capturedIndex)
+        end
+      })
+    end
+  end
+  
+  -- Store on window for use by Update ELO button
+  window.PopulatePendingSegmentsList = PopulatePendingSegmentsList
   
   -- Define import function (forward declared above)
   ImportFromDPSMate = function(segmentType, segmentIndex)
@@ -2325,10 +2615,209 @@ function RosterMgmt.ShowManualImportDialog()
     RefreshDisplay()
   end
   
+  -- Function to import from Pending Segment
+  ImportFromPendingSegment = function(segmentIndex)
+    -- Clear existing data
+    for role in pairs(parsedPlayers) do
+      parsedPlayers[role] = {}
+      parsedPlayersOriginal[role] = {}
+    end
+    
+    -- Re-enable Update ELO button for new segment
+    updateEloBtn:Enable()
+    updateEloText:SetTextColor(1, 0.82, 0, 1)
+    
+    local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+    local segment = pendingSegments[segmentIndex]
+    
+    if not segment then
+      OGRH.Msg("|cffff0000[RH-Roster]|r Segment not found")
+      RefreshDisplay()
+      return
+    end
+    
+    local allPlayers = OGRH.SVM.GetPath("rosterManagement.players") or {}
+    local addedPlayers = {}
+    
+    -- Process healers FIRST
+    if segment.effectiveHealingData then
+      for playerName, healingData in pairs(segment.effectiveHealingData) do
+        if not addedPlayers[playerName] then
+          local class = OGRH.GetPlayerClass(playerName) or "UNKNOWN"
+          
+          -- Extract numeric healing value (use value field, fallback to total)
+          local healing = 0
+          if type(healingData) == "number" then
+            healing = healingData
+          elseif type(healingData) == "table" then
+            healing = healingData.value or healingData.total or 0
+          end
+          
+          -- Check if player should be in HEALERS using stored role
+          local shouldBeHealer = false
+          if segment.playerRoles and segment.playerRoles[playerName] == "HEALERS" then
+            shouldBeHealer = true
+          else
+            -- Fallback to old logic if no stored role
+            -- Check RolesUI
+            if OGRH_GetPlayerRole then
+              local rolesUIRole = OGRH_GetPlayerRole(playerName)
+              if rolesUIRole == "HEALERS" then
+                shouldBeHealer = true
+              elseif rolesUIRole then
+                shouldBeHealer = false
+              end
+            end
+            
+            -- Check rosterManagement primaryRole
+            if shouldBeHealer == false and (not OGRH_GetPlayerRole or not OGRH_GetPlayerRole(playerName)) then
+              if allPlayers[playerName] and allPlayers[playerName].primaryRole then
+                if allPlayers[playerName].primaryRole == "HEALERS" then
+                  shouldBeHealer = true
+                else
+                  shouldBeHealer = false
+                end
+              end
+            end
+            
+            -- If no role assigned, check if healing class with >2k healing
+            if shouldBeHealer == false and (not OGRH_GetPlayerRole or not OGRH_GetPlayerRole(playerName)) then
+              if not allPlayers[playerName] or not allPlayers[playerName].primaryRole then
+                local upperClass = string.upper(class)
+                local isHealingClass = (upperClass == "PRIEST" or upperClass == "PALADIN" or upperClass == "DRUID" or upperClass == "SHAMAN")
+                if healing > 2000 and isHealingClass then
+                  shouldBeHealer = true
+                end
+              end
+            end
+          end
+          
+          if shouldBeHealer then
+            local currentElo = 1000
+            if allPlayers[playerName] and allPlayers[playerName].rankings and allPlayers[playerName].rankings["HEALERS"] then
+              currentElo = allPlayers[playerName].rankings["HEALERS"]
+            end
+            
+            table.insert(parsedPlayers["HEALERS"], {
+              name = playerName,
+              class = string.upper(class),
+              value = healing,
+              elo = currentElo,
+              adjustment = 0
+            })
+            
+            table.insert(parsedPlayersOriginal["HEALERS"], {
+              name = playerName,
+              class = string.upper(class),
+              value = healing,
+              elo = currentElo,
+              adjustment = 0
+            })
+            
+            addedPlayers[playerName] = true
+          end
+        end
+      end
+    end
+    
+    -- Process damage dealers AFTER healers
+    if segment.damageData then
+      for playerName, damageData in pairs(segment.damageData) do
+        if not addedPlayers[playerName] then
+          local class = OGRH.GetPlayerClass(playerName) or "UNKNOWN"
+          local upperClass = string.upper(class)
+          
+          -- Extract numeric damage value (use value field, fallback to total)
+          local damage = 0
+          if type(damageData) == "number" then
+            damage = damageData
+          elseif type(damageData) == "table" then
+            damage = damageData.value or damageData.total or 0
+          end
+          
+          -- Determine role using stored playerRoles first
+          local role = "RANGED"
+          if segment.playerRoles and segment.playerRoles[playerName] then
+            role = segment.playerRoles[playerName]
+          else
+            -- Fallback to old logic if no stored role
+            -- Check RolesUI first
+            if OGRH_GetPlayerRole then
+              local rolesUIRole = OGRH_GetPlayerRole(playerName)
+              if rolesUIRole and rolesUIRole ~= "HEALERS" then
+                role = rolesUIRole
+              end
+            end
+            
+            -- Check rosterManagement primaryRole
+            if (not OGRH_GetPlayerRole or not OGRH_GetPlayerRole(playerName)) and allPlayers[playerName] and allPlayers[playerName].primaryRole then
+              if allPlayers[playerName].primaryRole ~= "HEALERS" then
+                role = allPlayers[playerName].primaryRole
+              end
+            end
+            
+            -- Use default role for class if no role assigned
+            if (not OGRH_GetPlayerRole or not OGRH_GetPlayerRole(playerName)) and (not allPlayers[playerName] or not allPlayers[playerName].primaryRole) then
+              role = RosterMgmt.GetDefaultRoleForClass(upperClass)
+            end
+          end
+          
+          -- Skip if they ended up as HEALERS
+          if role ~= "HEALERS" then
+            local currentElo = 1000
+            if allPlayers[playerName] and allPlayers[playerName].rankings and allPlayers[playerName].rankings[role] then
+              currentElo = allPlayers[playerName].rankings[role]
+            end
+            
+            table.insert(parsedPlayers[role], {
+              name = playerName,
+              class = upperClass,
+              value = damage,
+              elo = currentElo,
+              adjustment = 0
+            })
+            
+            table.insert(parsedPlayersOriginal[role], {
+              name = playerName,
+              class = upperClass,
+              value = damage,
+              elo = currentElo,
+              adjustment = 0
+            })
+            
+            addedPlayers[playerName] = true
+          end
+        end
+      end
+    end
+    
+    -- Automatically rank ELO after import
+    RankELO()
+    
+    -- Refresh display
+    RefreshDisplay()
+  end
+  
   -- Function to update UI based on selected source
   local function UpdateSourceUI(source)
     window.importSource = source
-    sourceMenuBtn:SetText(source)
+    
+    -- Count pending segments for display
+    local pendingCount = 0
+    if OGRH.SVM and OGRH.SVM.GetPath then
+      local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+      for i = 1, table.getn(pendingSegments) do
+        if not pendingSegments[i].imported then
+          pendingCount = pendingCount + 1
+        end
+      end
+    end
+    
+    local displayText = source
+    if source == "Pending Segments" then
+      displayText = "Pending Segments (" .. pendingCount .. ")"
+    end
+    sourceMenuBtn:SetText(displayText)
     
     if source == "CSV" then
       csvBackdrop:Show()
@@ -2347,18 +2836,41 @@ function RosterMgmt.ShowManualImportDialog()
       PopulateShaguDPSList()
       importCsvBtn:Disable()
       importCsvText:SetTextColor(0.5, 0.5, 0.5, 1)
+    elseif source == "Pending Segments" then
+      csvBackdrop:Hide()
+      dpsMeterList:Show()
+      PopulatePendingSegmentsList()
+      importCsvBtn:Disable()
+      importCsvText:SetTextColor(0.5, 0.5, 0.5, 1)
     end
   end
   
   -- Import source menu button - create first so it can be referenced
+  -- Calculate pending segment count for default display
+  local initialPendingCount = 0
+  if OGRH.SVM and OGRH.SVM.GetPath then
+    local pendingSegs = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+    for i = 1, table.getn(pendingSegs) do
+      if not pendingSegs[i].imported then
+        initialPendingCount = initialPendingCount + 1
+      end
+    end
+  end
+  
   sourceMenuContainer, sourceMenuBtn = OGST.CreateMenuButton(window.contentFrame, {
     label = "Source:",
     labelAnchor = "LEFT",
-    buttonText = "DPSMate",
+    buttonText = "Pending Segments (" .. initialPendingCount .. ")",
     menuItems = {
       {
-        text = "DPSMate",
+        text = "Pending Segments",
         selected = true,
+        onClick = function()
+          UpdateSourceUI("Pending Segments")
+        end
+      },
+      {
+        text = "DPSMate",
         onClick = function()
           UpdateSourceUI("DPSMate")
         end
@@ -2400,8 +2912,8 @@ function RosterMgmt.ShowManualImportDialog()
     offsetY = 6
   })
   
-  -- Initialize UI to show DPS meter list
-  UpdateSourceUI("DPSMate")
+  -- Initialize UI to show Pending Segments list
+  UpdateSourceUI("Pending Segments")
   
   window:Show()
 end
