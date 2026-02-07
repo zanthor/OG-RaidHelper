@@ -266,7 +266,56 @@ OGRH_SV.v2.invites = {
     
     -- v2 Invites Update (NEW - February 2026)
     autoSort = false,      -- boolean: Auto-organize raid groups (default: false)
-    planningRoster = {},   -- array: Planning roster for EncounterMgmt integration
+    planningRoster = {     -- table: Planning roster for EncounterMgmt integration (organized by role buckets)
+        TANKS = {
+            [1] = {
+                name = "PlayerName",
+                class = "WARRIOR",
+                role = "TANKS",
+                source = "raidhelper",      -- string: Data source ("raidhelper" or "rollfor")
+                group = 1,                  -- number: Assigned group (1-8, or nil)
+                benched = false,            -- boolean: Player is benched
+                online = false              -- boolean: Player online status
+            },
+            -- ... array of tank players
+        },
+        HEALERS = {
+            [1] = {
+                name = "PlayerName",
+                class = "PRIEST",
+                role = "HEALERS",
+                source = "raidhelper",
+                group = 2,
+                benched = false,
+                online = false
+            },
+            -- ... array of healer players
+        },
+        MELEE = {
+            [1] = {
+                name = "PlayerName",
+                class = "ROGUE",
+                role = "MELEE",
+                source = "raidhelper",
+                group = 1,
+                benched = false,
+                online = false
+            },
+            -- ... array of melee players
+        },
+        RANGED = {
+            [1] = {
+                name = "PlayerName",
+                class = "MAGE",
+                role = "RANGED",
+                source = "raidhelper",
+                group = 1,
+                benched = false,
+                online = false
+            },
+            -- ... array of ranged players
+        }
+    },
     
     -- UI State
     invitePanelPosition = {
@@ -288,6 +337,57 @@ OGRH_SV.v2.invites = {
 
 **Planning Roster Structure:**
 ```lua
+OGRH_SV.v2.invites.planningRoster = {
+    TANKS = {
+        [1] = {
+            name = "PlayerName",
+            class = "WARRIOR",
+            role = "TANKS",
+            source = "raidhelper",      -- "raidhelper" or "rollfor"
+            group = 1,                  -- Assigned group (1-8, or nil)
+            benched = false,            -- Player benched status
+            online = false              -- Player online status
+        }
+    },
+    HEALERS = {
+        [1] = {
+            name = "PlayerName",
+            class = "PRIEST", 
+            role = "HEALERS",
+            source = "raidhelper",
+            group = 2,
+            benched = false,
+            online = false
+        }
+    },
+    MELEE = {
+        [1] = {
+            name = "PlayerName",
+            class = "ROGUE",
+            role = "MELEE",
+            source = "raidhelper",
+            group = 1,
+            benched = false,
+            online = false
+        }
+    },
+    RANGED = {
+        [1] = {
+            name = "PlayerName",
+            class = "MAGE",
+            role = "RANGED",
+            source = "raidhelper",
+            group = 1,
+            benched = false,
+            online = false
+        }
+    }
+}
+```
+
+**Note:** Planning roster is organized as role bucket tables (TANKS, HEALERS, MELEE, RANGED), 
+not a flat array. Each bucket contains player data objects with full metadata including source,
+group assignment, benched status, and online status.
 OGRH_SV.v2.invites.planningRoster = {
     [1] = {
         name = "PlayerName",
