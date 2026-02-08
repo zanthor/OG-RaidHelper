@@ -1,0 +1,11 @@
+## Interface: 11200
+## Title: |cff00ccffOG|r Auto Addon Logger
+## Notes: Captures addon output for easy viewing and export
+## Author: OG Development
+## Version: 1.0.0
+## SavedVariables: OGAAL_SV
+
+Core.lua
+API.lua
+UI.lua
+Commands.lua

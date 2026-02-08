@@ -527,6 +527,11 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
   activeRaid.sourceRaidId = sourceRaid.id
   activeRaid.displayName = "[AR] " .. (sourceRaid.name or sourceRaid.displayName or "Unknown")
   
+  -- Copy raid-level advancedSettings (BigWigs, consume tracking, etc.)
+  if sourceRaid.advancedSettings then
+    activeRaid.advancedSettings = DeepCopyForActiveRaid(sourceRaid.advancedSettings)
+  end
+  
   if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
     OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Set Active Raid to: %s", sourceRaid.name or sourceRaid.displayName))
   end
@@ -4935,10 +4940,10 @@ local function CreateMinimapButton()
       if OGRH_Main then
         if OGRH_Main:IsVisible() then
           OGRH_Main:Hide()
-          OGRH_SV.ui.hidden = true
+          OGRH.SVM.Set("ui", "hidden", true)
         else
           OGRH_Main:Show()
-          OGRH_SV.ui.hidden = false
+          OGRH.SVM.Set("ui", "hidden", false)
         end
       end
     end

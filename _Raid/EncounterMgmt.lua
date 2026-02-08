@@ -2529,9 +2529,12 @@ function OGRH.ShowEncounterPlanning(encounterName)
           nameText:SetTextColor(1, 1, 1)
         end
         
-        -- Make draggable
+        -- Make draggable and right-clickable
         playerBtn.playerName = playerName
+        playerBtn.playerSection = playerData.section
         playerBtn:RegisterForDrag("LeftButton")
+        playerBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        
         playerBtn:SetScript("OnDragStart", function()
           -- Check permission for assignments
           if not CanEditAssignments(frame) then
@@ -2564,6 +2567,14 @@ function OGRH.ShowEncounterPlanning(encounterName)
           
           frame.currentDragFrame = dragFrame
           frame.draggedPlayerName = playerName
+        end)
+        
+        -- Right-click menu for planning roster players
+        playerBtn:SetScript("OnClick", function()
+          if arg1 == "RightButton" and unitSource == "Roster" then
+            -- Show role change menu for planning roster players
+            OGRH.ShowPlanningRosterRoleMenu(this, this.playerName, this.playerSection)
+          end
         end)
         
         playerBtn:SetScript("OnDragStop", function()
@@ -4646,13 +4657,19 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         menu:AddItem({
           text = "  " .. (raid.displayName or raid.name),  -- Indent with spaces
           onClick = function()
-            -- Check authorization (only required if in a raid)
-            if GetNumRaidMembers() > 0 then
+            -- Check authorization:
+            -- - Out of raid: Anyone can change Active Raid (for planning)
+            -- - In raid: Only Raid Admin can change Active Raid
+            local inRaid = GetNumRaidMembers() > 0
+            
+            if inRaid then
+              -- In raid: require Admin permission
               if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then
-                OGRH.Msg("Only the Raid Admin can change the Active Raid.")
+                OGRH.Msg("|cffffaa00[RH]|r Only the Raid Admin can change the Active Raid while in a raid.")
                 return
               end
             end
+            -- Not in raid: Anyone can change (skip permission check)
             
             -- Show confirmation dialog
             OGRH.ShowSetActiveRaidConfirmation(capturedIdx)
@@ -5443,6 +5460,164 @@ function OGRH.SaveCurrentEncounterAdvancedSettings(settings)
   end
   
   return true
+end
+
+-- ============================================
+-- PLANNING ROSTER ROLE CHANGE MENU
+-- ============================================
+
+function OGRH.ShowPlanningRosterRoleMenu(anchorBtn, playerName, currentSection)
+  -- Map section to role key
+  local currentRoleKey = nil
+  if currentSection == "tanks" then
+    currentRoleKey = "TANKS"
+  elseif currentSection == "healers" then
+    currentRoleKey = "HEALERS"
+  elseif currentSection == "melee" then
+    currentRoleKey = "MELEE"
+  elseif currentSection == "ranged" then
+    currentRoleKey = "RANGED"
+  end
+  
+  -- Build menu items (exclude current role)
+  local menuItems = {}
+  local roles = {
+    {key = "TANKS", label = "Tanks"},
+    {key = "HEALERS", label = "Healers"},
+    {key = "MELEE", label = "Melee"},
+    {key = "RANGED", label = "Ranged"}
+  }
+  
+  for _, roleData in ipairs(roles) do
+    if roleData.key ~= currentRoleKey then
+      -- Capture roleData.key in local scope for closure
+      local capturedKey = roleData.key
+      local capturedLabel = roleData.label
+      table.insert(menuItems, {
+        text = capturedLabel,
+        onClick = function()
+          OGRH.ChangePlanningRosterRole(playerName, capturedKey)
+        end
+      })
+    end
+  end
+  
+  -- Create menu using OGST (recreate each time for simplicity)
+  local menuName = "OGRH_PlanningRosterRoleMenu"
+  
+  -- Hide and clean up old menu if it exists
+  if OGRH_PlanningRosterRoleMenu then
+    OGRH_PlanningRosterRoleMenu:Hide()
+    if OGRH_PlanningRosterRoleMenu.items then
+      for _, item in ipairs(OGRH_PlanningRosterRoleMenu.items) do
+        if item then
+          item:Hide()
+          item:SetParent(nil)
+        end
+      end
+    end
+  end
+  
+  -- Create fresh menu
+  local menu = OGST.CreateStandardMenu({
+    name = menuName,
+    width = 120,
+    register = false
+  })
+  
+  OGRH_PlanningRosterRoleMenu = menu
+  
+  -- Add menu items
+  for _, itemConfig in ipairs(menuItems) do
+    menu:AddItem(itemConfig)
+  end
+  
+  -- Finalize menu (sets height based on items)
+  menu:Finalize()
+  
+  -- Position menu at cursor
+  menu:ClearAllPoints()
+  local x, y = GetCursorPosition()
+  local scale = UIParent:GetEffectiveScale()
+  menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+  menu:Show()
+end
+
+-- Change a player's role in the planning roster
+function OGRH.ChangePlanningRosterRole(playerName, newRoleKey)
+  if not OGRH.Invites or not OGRH.Invites.GetPlanningRoster then
+    OGRH.Msg("|cffff0000[RH-EncounterMgmt]|r Invites module not available.")
+    return
+  end
+  
+  local planningRoster = OGRH.Invites.GetPlanningRoster()
+  if not planningRoster or type(planningRoster) ~= "table" then
+    OGRH.Msg("|cffff0000[RH-EncounterMgmt]|r No planning roster available.")
+    return
+  end
+  
+  -- Ensure all role buckets exist
+  if not planningRoster.TANKS then planningRoster.TANKS = {} end
+  if not planningRoster.HEALERS then planningRoster.HEALERS = {} end
+  if not planningRoster.MELEE then planningRoster.MELEE = {} end
+  if not planningRoster.RANGED then planningRoster.RANGED = {} end
+  
+  -- Find and remove player from their current role
+  local playerData = nil
+  local oldRoleKey = nil
+  for roleKey, players in pairs(planningRoster) do
+    if type(players) == "table" and type(roleKey) == "string" then
+      for i = table.getn(players), 1, -1 do
+        if type(players[i]) == "table" and players[i].name == playerName then
+          playerData = players[i]
+          oldRoleKey = roleKey
+          table.remove(players, i)
+          break
+        end
+      end
+    end
+    if playerData then break end
+  end
+  
+  if not playerData then
+    OGRH.Msg("|cffff0000[RH-EncounterMgmt]|r Player not found in planning roster: " .. tostring(playerName))
+    return
+  end
+  
+  -- Update the player's role
+  playerData.role = newRoleKey
+  
+  -- Add to new role bucket
+  if not planningRoster[newRoleKey] then
+    planningRoster[newRoleKey] = {}
+  end
+  table.insert(planningRoster[newRoleKey], playerData)
+  
+  -- Save back to SVM
+  OGRH.SVM.SetPath("invites.planningRoster", planningRoster, {
+    syncLevel = "MANUAL",
+    componentType = "settings"
+  })
+  
+  -- Refresh the encounter planning window if it's open
+  if OGRH_EncounterFrame and OGRH_EncounterFrame:IsVisible() then
+    if OGRH_EncounterFrame.RefreshPlayersList then
+      OGRH_EncounterFrame.RefreshPlayersList()
+    end
+  end
+  
+  -- Get role names for message
+  local roleNames = {
+    TANKS = "Tanks",
+    HEALERS = "Healers",
+    MELEE = "Melee",
+    RANGED = "Ranged"
+  }
+  
+  local oldRoleName = roleNames[oldRoleKey] or tostring(oldRoleKey)
+  local newRoleName = roleNames[newRoleKey] or tostring(newRoleKey)
+  
+  OGRH.Msg("|cff00ff00[RH-EncounterMgmt]|r Moved " .. playerName .. " from " .. oldRoleName .. " to " .. newRoleName .. ".")
 end
 
 -- Note: Encounter frame is created on-demand when first accessed, not on load

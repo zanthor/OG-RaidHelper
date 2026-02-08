@@ -70,6 +70,17 @@ end)
 -- ReadyCheck button
 local readyCheck = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); readyCheck:SetWidth(33); readyCheck:SetHeight(20); readyCheck:SetText("Rdy"); readyCheck:SetPoint("LEFT", rhBtn, "RIGHT", 2, 0); OGRH.StyleButton(readyCheck)
 
+readyCheck:SetScript("OnEnter", function()
+  GameTooltip:SetOwner(readyCheck, "ANCHOR_TOP")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("Ready Check", 1, 1, 1)
+  GameTooltip:Show()
+end)
+
+readyCheck:SetScript("OnLeave", function()
+  GameTooltip:Hide()
+end)
+
 -- Admin button - Manage raid admin and poll
 local adminBtn = CreateFrame("Button", nil, H, "UIPanelButtonTemplate"); adminBtn:SetWidth(45); adminBtn:SetHeight(20); adminBtn:SetText("Admin"); adminBtn:SetPoint("LEFT", readyCheck, "RIGHT", 2, 0); OGRH.StyleButton(adminBtn)
 
@@ -84,6 +95,19 @@ btnRoles:SetPoint("RIGHT", btnLock, "LEFT", -2, 0)
 btnRoles:SetText("Roles")
 OGRH.StyleButton(btnRoles)
 OGRH.MainUI_RolesBtn = btnRoles  -- Store reference for menu access
+
+btnRoles:SetScript("OnEnter", function()
+  GameTooltip:SetOwner(btnRoles, "ANCHOR_TOP")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("Roles UI", 1, 1, 1)
+  GameTooltip:AddLine("Assign Player roles for Tanks, Healers, Melee and Ranged", 0.8, 0.8, 0.8, 1)
+  GameTooltip:Show()
+end)
+
+btnRoles:SetScript("OnLeave", function()
+  GameTooltip:Hide()
+end)
+
 adminBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
 -- Function to update admin button color based on admin status
@@ -201,6 +225,21 @@ markBtn:SetPoint("LEFT", encounterNav, "LEFT", 0, 0)
 markBtn:SetText("M")
 OGRH.StyleButton(markBtn)
 markBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+markBtn:SetScript("OnEnter", function()
+  GameTooltip:SetOwner(markBtn, "ANCHOR_TOP")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("Mark Players", 1, 1, 1)
+  GameTooltip:AddLine(" ")
+  GameTooltip:AddLine("Left Click: Mark from encounter", 0.5, 1, 0.5)
+  GameTooltip:AddLine("Right Click: Clear all marks", 0.5, 1, 0.5)
+  GameTooltip:Show()
+end)
+
+markBtn:SetScript("OnLeave", function()
+  GameTooltip:Hide()
+end)
+
 markBtn:SetScript("OnClick", function()
   local btn = arg1 or "LeftButton"
   
@@ -373,6 +412,18 @@ prevEncBtn:SetHeight(20)
 prevEncBtn:SetPoint("LEFT", announceBtn, "RIGHT", 2, 0)
 prevEncBtn:SetText("<")
 OGRH.StyleButton(prevEncBtn)
+
+prevEncBtn:SetScript("OnEnter", function()
+  GameTooltip:SetOwner(prevEncBtn, "ANCHOR_TOP")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("Previous Encounter", 1, 1, 1)
+  GameTooltip:Show()
+end)
+
+prevEncBtn:SetScript("OnLeave", function()
+  GameTooltip:Hide()
+end)
+
 prevEncBtn:SetScript("OnClick", function()
   if OGRH.NavigateToPreviousEncounter then
     OGRH.NavigateToPreviousEncounter()
@@ -387,6 +438,18 @@ nextEncBtn:SetHeight(20)
 nextEncBtn:SetPoint("RIGHT", encounterNav, "RIGHT", 0, 0)
 nextEncBtn:SetText(">")
 OGRH.StyleButton(nextEncBtn)
+
+nextEncBtn:SetScript("OnEnter", function()
+  GameTooltip:SetOwner(nextEncBtn, "ANCHOR_TOP")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("Next Encounter", 1, 1, 1)
+  GameTooltip:Show()
+end)
+
+nextEncBtn:SetScript("OnLeave", function()
+  GameTooltip:Hide()
+end)
+
 nextEncBtn:SetScript("OnClick", function()
   if OGRH.NavigateToNextEncounter then
     OGRH.NavigateToNextEncounter()
@@ -402,6 +465,21 @@ encounterBtn:SetPoint("RIGHT", nextEncBtn, "LEFT", -2, 0)
 encounterBtn:SetText("Select Raid")
 OGRH.StyleButton(encounterBtn)
 encounterBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+encounterBtn:SetScript("OnEnter", function()
+  GameTooltip:SetOwner(encounterBtn, "ANCHOR_TOP")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("Encounter Selection", 1, 1, 1)
+  GameTooltip:AddLine(" ")
+  GameTooltip:AddLine("Left Click: Encounter Planning", 0.5, 1, 0.5)
+  GameTooltip:AddLine("Right Click: Select Active Raid or Encounter", 0.5, 1, 0.5)
+  GameTooltip:Show()
+end)
+
+encounterBtn:SetScript("OnLeave", function()
+  GameTooltip:Hide()
+end)
+
 encounterBtn:SetScript("OnClick", function()
   if arg1 == "RightButton" then
     -- Show raid selection menu
@@ -699,6 +777,18 @@ local function applyLocked(lock)
     btnLock:SetText("|cffffff00L|r")  -- Yellow when unlocked
   end
 end
+
+btnLock:SetScript("OnEnter", function()
+  GameTooltip:SetOwner(btnLock, "ANCHOR_TOP")
+  GameTooltip:ClearLines()
+  GameTooltip:AddLine("Lock Window", 1, 1, 1)
+  GameTooltip:Show()
+end)
+
+btnLock:SetScript("OnLeave", function()
+  GameTooltip:Hide()
+end)
+
 btnLock:SetScript("OnClick", function() ensureSV(); local locked = not OGRH.SVM.Get("ui", "locked"); OGRH.SVM.Set("ui", "locked", locked); applyLocked(locked) end)
 
 -- ReadyCheck button handler
@@ -1407,6 +1497,56 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Test system not loaded. Available: test svm, test phase1")
     end
+  -- Pending Segments Debug Command
+  elseif sub == "segments" or sub == "pendingsegments" or sub == "ps" then
+    if OGRH.PendingSegments and OGRH.PendingSegments.PrintSegmentList then
+      OGRH.PendingSegments.PrintSegmentList()
+    else
+      OGRH.Msg("PendingSegments module not loaded.")
+    end
+  -- Test: Manually create DPSMate segment
+  elseif string.find(sub, "^saveseg") then
+    local _, _, segmentName = string.find(fullMsg, "^%s*saveseg%s+(.+)$")
+    if not segmentName or segmentName == "" then
+      OGRH.Msg("Usage: /ogrh saveseg <segmentname>")
+      OGRH.Msg("Example: /ogrh saveseg Test Segment")
+    else
+      if DPSMate and DPSMate.Options and DPSMate.Options.NewSegment then
+        DPSMate.Options:NewSegment(segmentName)
+        OGRH.Msg("Created DPSMate segment: " .. segmentName)
+      else
+        OGRH.Msg("DPSMate not loaded.")
+      end
+    end
+  -- Manually trigger segment purge
+  elseif sub == "purgesegments" or sub == "purgeseg" then
+    if OGRH.PendingSegments and OGRH.PendingSegments.ManualPurge then
+      OGRH.PendingSegments.ManualPurge()
+    else
+      OGRH.Msg("PendingSegments module not loaded.")
+    end
+  -- Test: Set segment expiresAt to 3 days ago
+  elseif string.find(sub, "^segexp") then
+    local _, _, indexStr = string.find(fullMsg, "^%s*segexp%s+(%d+)$")
+    if not indexStr then
+      OGRH.Msg("Usage: /ogrh segexp <index>")
+      OGRH.Msg("Sets segment expiresAt to 3 days ago for purge testing")
+    else
+      local index = tonumber(indexStr)
+      local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
+      if index < 1 or index > table.getn(pendingSegments) then
+        OGRH.Msg("Invalid index. Valid range: 1-" .. table.getn(pendingSegments))
+      else
+        local segment = pendingSegments[index]
+        segment.expiresAt = time() - (3 * 86400) -- 3 days ago
+        OGRH.SVM.SetPath("rosterManagement.pendingSegments", pendingSegments, {
+          source = "MainUI",
+          action = "test_expire",
+          sync = false,
+        })
+        OGRH.Msg("Set segment " .. index .. " (" .. segment.name .. ") to expire 3 days ago")
+      end
+    end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
     OGRH.Msg("Commands:")
@@ -1430,6 +1570,10 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     OGRH.Msg("Test Commands:")
     OGRH.Msg("  test svm - Run SavedVariablesManager tests")
     OGRH.Msg("  test phase1 - Run Phase 1 Core Infrastructure tests")
+    OGRH.Msg("  segments - Show pending DPSMate segments for ranking import")
+    OGRH.Msg("  saveseg <name> - Manually create a DPSMate segment")
+    OGRH.Msg("  segexp <index> - Set segment expiresAt to 3 days ago (test purge)")
+    OGRH.Msg("  purgesegments - Manually purge expired segments")
   else
     OGRH.Msg("Unknown command. Type /" .. OGRH.CMD .. " help for usage.")
   end

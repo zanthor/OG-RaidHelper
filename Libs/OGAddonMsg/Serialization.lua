@@ -74,9 +74,8 @@ end
 ]]
 function OGAddonMsg.Deserialize(str)
     if type(str) ~= "string" then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Deserialize expected string, got %s", type(str)),
-            1, 0, 0
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Deserialize expected string, got %s", type(str))
         )
         return nil
     end
@@ -84,9 +83,8 @@ function OGAddonMsg.Deserialize(str)
     -- Use loadstring to evaluate serialized table
     local func, err = loadstring("return " .. str)
     if not func then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Deserialize parse error: %s", tostring(err)),
-            1, 0, 0
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Deserialize parse error: %s", tostring(err))
         )
         return nil
     end
@@ -94,9 +92,8 @@ function OGAddonMsg.Deserialize(str)
     -- Execute in protected call
     local success, result = pcall(func)
     if not success then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Deserialize execution error: %s", tostring(result)),
-            1, 0, 0
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Deserialize execution error: %s", tostring(result))
         )
         return nil
     end

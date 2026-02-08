@@ -1,4 +1,4 @@
-# OG-RaidHelper
+# OG-RaidHelper v2.0
 
 **Author:** Gnuzmas  
 **Special Thanks:** Claude v4.5, Blood and Thunder Leadership, Pepopo  
@@ -6,7 +6,7 @@
 
 A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 
-<img width="1351" height="613" alt="image" src="https://github.com/user-attachments/assets/7ea5c4a7-d61a-4aee-ad98-abba03bf1f1c" />
+![Main UI](Images/EncounterMgmt.jpg)
 
 ---
 
@@ -28,19 +28,70 @@ I learned a ton about how to use AI to effectively code in the v1.x work, and I 
 
 ## Table of Contents
 
+- [Quick Start](#quick-start)
 - [Dependencies](#dependencies)
 - [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Main Window](#main-window)
-- [Roles Window](#roles-window)
+- [Main UI](#main-window)
+- [Roles UI](#roles-window)
 - [Raid Invites System](#raid-invites-system)
-- [SR+ Validation System](#sr-validation-system)
-- [Encounters System](#encounters-system)
+- [Encounters Planning / Setup](#encounters-system)
 - [Trade System](#trade-system)
-- [Share System](#share-system)
-- [Poll System](#poll-system)
 - [Slash Commands](#slash-commands)
 - [Announcement Tags](#announcement-tags)
+
+---
+## **Quick-Start for v2.0**
+
+OG-RaidHelper v2.0 introduces the Active Raid concept.  Instead of trying to syncronize raid data across all the possible raids the Raid Admin selects a single raid, which is copied and syncronized to other raid leadership and players.
+
+**Terms**
+ - **Raid Admin** The raid admin is the source of the truth - all transactions come from the raid admin or are routed through them.  The Raid Admin is not to be confused with **Raid Lead** (L) or **Raid Officer** (A), as it's not a game based permission.
+ - **Active Raid** The raid admin selects a raid to be 'active' which will copy their existing raid.  Edits made to the Active Raid do not persist back to it's source, so you can have a 'standard' setup and easily change it week to week as players shift and needs or tactics change.
+ - **Syncronization** happens automatically based on exchanged checksums.  Every 30 seconds (out of combat) the Raid Admin sends a checksum to validate existing data and clients will request data repairs as necessary.
+   1. **Delta Sync** happens any time a change is made to the Active Raid or Roles - if raid members have matching checksums these Delta Sync packets will update their UI in real time.  Typical transfer time is < 1 second.
+   2. **Structure Sync** happens when a new player joins a raid or if their data somehow out of date.  This includes Raids, Encounters and all their settings.  Typical transfer time ~15 seconds.
+   3. **Roles Sync** happens when a new player joins a raid or if their data somehow becomes out of date.  This includes the RolesUI buckets for Tanks, Healers, Melee and Ranged. Typical transfer time ~2 seconds
+   4. **Assignment Sync**  The assignment Sync is the smallest and most likely to change data during a raid.  This includes player assignments for all encounters in the raid.  Tpyical transfer time ~2 seconds.
+
+**Typical Raid Flow**
+ 1. Raid Admin imports a roster from the SR Sheet or Raid-Helper
+     * [Raid-Helper](https://raid-helper.dev/) events or comp tool both have JSON export options - both formats are supported.
+     * [RaidRes](https://raidres.top/) SR/SR+ supports an export to RollFor, once imported OG-RaidHelper can select this roster as it's source.
+ 2. Raid Admin selects a raid in the Encounter Planning window and sets the Player Source to *Roster*.
+     * Select an encounter, click *Auto Assign* and then drag/drop players to fine tune the assignments.
+     * Repeat for all encounters.
+     * Raid Admin can preview the Announcements while doing this to ensure that assignments and expectations are clear to raiders.
+     * Raid Admin can switch source back to Raid to access the full guild roster and add players who did not sign up.
+
+![Select Roster](Images/select-roster.jpg)
+
+ 3. Raid Admin right clicks the Encounter Select button and picks the desired raid from the menu, copying it to the Active Raid.
+
+![Select Active Fraid](Images/select-activeraid.jpg)
+
+ 4. Raid Admin opens the Invites interface and re-imports if necessary, then clicks "Start Invite Mode" to automatically invite rostered players and form the raid.
+     * If the roster was imported from Raid-Helpers Comp Tool you can click *Sort* to automatically move players to their configured group as they are invited.  This feature is VERY persistent so if you decide to deviate from the plan, turn it off and move people manually.
+     * Invite Mode will invite players every X seconds based on your configuration.
+     * Rostered players who whisper between invite waves will be auto-invited.
+     * Benched/Unrostered players who wisper will be told their status.
+     * Players in a different group will be announced to /guild
+ 5. As players join the raid their data will be updated automatically to match the Active Raid.
+ 6. Select the desired Encounter by clicking > or < or right clicking the encounter menu and selecting from the drop down.
+     * Click A to announce the encounters assignments.
+     * Click M to mark players or invoke the Cursive Auto-Marker on your current target.
+       - Marks Players if encounter/role is configured to mark players.
+       - Invokes Auto-Marker otherwise.
+  7. Repeat as necessary.
+
+This of course is a very high level overview of OG-RaidHelper.  Nearly every aspect of the Raid/Encounter can be configured to meet any need you can imagine - and if it can't please let me know by opening an issue here and if I can, I'll add support!
+
+There are many other features that need overview but this should be enough to get most people up and running.
+
+ * *Raid/Encounter Advanced Settings* allows you to enable Consume Tracking, Ready Threholds, Flasks, Etc.
+ * *Class Priority System* allows you to set specific class priorities for use during Auto-Assign.
+ * *Track Consumes* Utilizes RABuffs and extends the logging capabilities with a laser focus on what consumes matter the most based on class and role at the time of the pull.
+ * *Roster Management* is an upcoming ELO based ranking system that will work with your DPS Meters to rank players based on performance - this data will be able to be used in auto-assignments for raid comp building and encounter management.
+ * 
 
 ---
 

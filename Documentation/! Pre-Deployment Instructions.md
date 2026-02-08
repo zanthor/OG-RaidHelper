@@ -130,7 +130,11 @@ Utils.lua
 
 ### Required Changes
 
-**Remove** the `## Dependencies:` line and **add** explicit file references to the libraries at the **top** of the load order:
+**⚠️ CRITICAL: DO NOT REMOVE THE `## OptionalDeps:` LINE ⚠️**
+
+The OptionalDeps line allows the addon to work with BOTH embedded AND standalone library versions. This provides backward compatibility and flexibility.
+
+**Add** explicit file references to the libraries at the **top** of the load order, but **KEEP** the OptionalDeps line:
 
 ```toc
 ## Interface: 11200
@@ -140,6 +144,7 @@ Utils.lua
 ## Version: 1.0
 ## SavedVariables: OGRH_DB
 ## SavedVariablesPerCharacter: OGRH_CharDB
+## OptionalDeps: _OGAddonMsg, _OGST, _OGAALogger
 
 # Embedded Libraries (load first)
 Libs\OGAddonMsg\OGAddonMsg.lua
@@ -156,9 +161,10 @@ Utils.lua
 
 1. **Library files MUST be listed FIRST** - Before any addon code
 2. **Use backslashes** (`\`) for paths (WoW 1.12 convention)
-3. **Remove Dependencies line** - Libraries are now embedded
-4. **Verify exact filenames** - Case-sensitive on some systems
-5. **Load order matters** - If OGST depends on OGAddonMsg, list OGAddonMsg first
+3. **⚠️ KEEP OptionalDeps line - DO NOT REMOVE IT ⚠️** - Allows dual-loading (embedded + standalone)
+4. **Only remove Dependencies line** - If it exists and references libraries as hard dependencies
+5. **Verify exact filenames** - Case-sensitive on some systems
+6. **Load order matters** - If OGST depends on OGAddonMsg, list OGAddonMsg first
 
 ### TOC Update Process
 
@@ -170,16 +176,16 @@ Utils.lua
 
 **Step 4b: Identify library dependencies**
 
-Check if the TOC currently has:
-- `## Dependencies:` line mentioning `_OGAddonMsg` or `_OGST`
-- `## OptionalDeps:` line mentioning these libraries
+Check if the TOC currently has: - **REMOVE THIS IF FOUND**
+- `## OptionalDeps:` line mentioning these libraries - **⚠️ KEEP THIS - DO NOT REMOVE ⚠️**
 
 **Step 4c: Update the TOC**
 
 Use `replace_string_in_file` or `multi_replace_string_in_file` to:
-1. Remove the `## Dependencies:` or `## OptionalDeps:` line (if present)
-2. Add library file references at the top of the file list
-3. Preserve all other TOC metadata
+1. **⚠️ KEEP the `## OptionalDeps:` line - DO NOT TOUCH IT ⚠️**
+2. Remove the `## Dependencies:` line (ONLY if it exists and references libraries)
+3. Add library file references at the top of the file list
+4. Preserve all other TOC metadata
 
 **Example replacement:**
 
@@ -187,11 +193,13 @@ Use `replace_string_in_file` or `multi_replace_string_in_file` to:
 OLD:
 ## SavedVariablesPerCharacter: OGRH_CharDB
 ## Dependencies: _OGAddonMsg, _OGST
+## OptionalDeps: _OGAddonMsg, _OGST, _OGAALogger
 
 Core.lua
 
 NEW:
 ## SavedVariablesPerCharacter: OGRH_CharDB
+## OptionalDeps: _OGAddonMsg, _OGST, _OGAALogger
 
 # Embedded Libraries (load first)
 Libs\OGAddonMsg\OGAddonMsg.lua
@@ -199,6 +207,9 @@ Libs\OGST\OGST.lua
 
 # Core addon files
 Core.lua
+```
+
+**⚠️ CRITICAL NOTE: The OptionalDeps line allows the addon to prefer standalone library versions if available, while falling back to embedded copies. This is intentional and should NEVER be removed. ⚠️**e.lua
 ```
 
 ---
@@ -379,7 +390,8 @@ Before committing to Git, verify:
 ### File Structure
 - [ ] `Libs/OGAddonMsg/` directory exists
 - [ ] `Libs/OGAddonMsg/OGAddonMsg.lua` exists
-- [ ] `Libs/OGST/` directory exists  
+- [ ] `Libs/OGST/` directory exists  ONLY if it referenced _OGAddonMsg/_OGST as hard dependencies)
+- [ ] `## OptionalDeps:` line PRESENT and includes _OGAddonMsg, _OGST, _OGAALogger
 - [ ] `Libs/OGST/OGST.lua` exists
 - [ ] `Libs/OGST/img/` directory exists (if OGST uses textures)
 
