@@ -92,6 +92,17 @@ OGRH.MessageTypes.SYNC = {
     REPAIR_ROLES = "OGRH_SYNC_REPAIR_ROLES",              -- Broadcast RolesUI
     REPAIR_GLOBAL = "OGRH_SYNC_REPAIR_GLOBAL",            -- Broadcast global components
     
+    -- Phase 6: Surgical repair messages
+    REPAIR_START = "OGRH_SYNC_REPAIR_START",              -- Admin initiates repair session
+    REPAIR_PACKET_STRUCTURE = "OGRH_SYNC_REPAIR_PACKET_STRUCTURE",   -- Layer 1 packet
+    REPAIR_PACKET_ROLESUI = "OGRH_SYNC_REPAIR_PACKET_ROLESUI",       -- Layer 1b packet (global roles)
+    REPAIR_PACKET_ENCOUNTER = "OGRH_SYNC_REPAIR_PACKET_ENCOUNTER",   -- Layer 2 packet
+    REPAIR_PACKET_ROLE = "OGRH_SYNC_REPAIR_PACKET_ROLE",             -- Layer 3 packet
+    REPAIR_PACKET_ASSIGNMENTS = "OGRH_SYNC_REPAIR_PACKET_ASSIGNMENTS", -- Layer 4 packet
+    REPAIR_VALIDATION = "OGRH_SYNC_REPAIR_VALIDATION",    -- Client sends validation checksums
+    REPAIR_COMPLETE = "OGRH_SYNC_REPAIR_COMPLETE",        -- Admin confirms completion
+    REPAIR_CANCEL = "OGRH_SYNC_REPAIR_CANCEL",            -- Admin cancels repair
+    
     -- Read-only operations
     REQUEST_READONLY = "OGRH_SYNC_REQUEST_READONLY",
     READONLY_DATA = "OGRH_SYNC_READONLY_DATA",

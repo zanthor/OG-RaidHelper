@@ -623,6 +623,282 @@ end
 ]]
 
 --[[
+    ============================================================================
+    PHASE 1: HIERARCHICAL CHECKSUM FUNCTIONS (4 Layers)
+    ============================================================================
+    
+    Layer 1: Raid Structure (metadata only, no encounters content)
+    Layer 2: Encounters Structure (per-encounter metadata + roles structure)
+    Layer 3: Roles Structure (per-role configuration, no assignments)
+    Layer 4: Assignments (per-role assignment data only)
+]]
+
+--[[
+    Layer 1: Compute Raid Structure Checksum
+    
+    Includes:
+    - Raid metadata (name, displayName, enabled, autoRank, advancedSettings)
+    - Encounters metadata (name, displayName, announcements, advancedSettings)
+    
+    Excludes:
+    - Encounters array content (roles, assignments)
+    
+    @param raidName string - Name of the raid
+    @return string - Structure checksum
+]]
+function OGRH.SyncChecksum.ComputeRaidStructureChecksum(raidName)
+    local sv = OGRH.SVM and OGRH.SVM.GetActiveSchema() or OGRH_SV.v2
+    if not sv or not sv.encounterMgmt or not sv.encounterMgmt.raids then
+        OGRH.Msg("|cffff0000[RH-SyncChecksum DEBUG]|r ComputeRaidStructureChecksum: No encounterMgmt")
+        return "0"
+    end
+    
+    -- Active Raid is ALWAYS raids[1]
+    local raid = sv.encounterMgmt.raids[1]
+    
+    if not raid then
+        OGRH.Msg("|cffff0000[RH-SyncChecksum]|r No Active Raid (raids[1])")
+        return "0"
+    end
+    
+    -- Build structure-only copy
+    local raidCopy = {
+        name = raid.name,
+        displayName = raid.displayName,
+        enabled = raid.enabled,
+        autoRank = raid.autoRank,
+        advancedSettings = raid.advancedSettings,
+        encounterCount = raid.encounters and table.getn(raid.encounters) or 0
+    }
+    
+    local serialized = SimpleSerialize(raidCopy, 0)
+    local hash = OGRH.SyncChecksum.HashString(serialized)
+    OGRH.Msg(string.format("|cff00ccff[RH-SyncChecksum]|r Structure: Hash=%s for %s", hash, raid.displayName or raid.name))
+    return hash
+end
+
+--[[
+    Layer 2: Compute Encounters Checksums
+    
+    Returns array of per-encounter checksums.
+    
+    Includes:
+    - Encounter metadata (name, displayName, announcements, advancedSettings)
+    - Roles structure (name, priority, faction, isOptionalRole)
+    
+    Excludes:
+    - assignedPlayers, raidMarks, assignmentNumbers
+    
+    @param raidName string - Name of the raid
+    @return table - Array of encounter checksums {[1]="checksum", [2]="checksum", ...}
+]]
+function OGRH.SyncChecksum.ComputeEncountersChecksums(raidName)
+    local sv = OGRH.SVM and OGRH.SVM.GetActiveSchema() or OGRH_SV.v2
+    if not sv or not sv.encounterMgmt or not sv.encounterMgmt.raids then
+        return {}
+    end
+    
+    -- Find raid by name
+    local raid = nil
+    for i = 1, table.getn(sv.encounterMgmt.raids) do
+        if sv.encounterMgmt.raids[i].name == raidName then
+            raid = sv.encounterMgmt.raids[i]
+            break
+        end
+    end
+    
+    if not raid or not raid.encounters then
+        return {}
+    end
+    
+    local encountersChecksums = {}
+    
+    for idx = 1, table.getn(raid.encounters) do
+        local encounter = raid.encounters[idx]
+        local encCopy = {
+            name = encounter.name,
+            displayName = encounter.displayName,
+            announcements = encounter.announcements,
+            advancedSettings = encounter.advancedSettings,
+            roles = {}
+        }
+        
+        -- Include role structure (no assignedPlayers)
+        if encounter.roles then
+            for roleIdx = 1, table.getn(encounter.roles) do
+                local role = encounter.roles[roleIdx]
+                local roleCopy = {}
+                -- Copy all fields EXCEPT assignedPlayers
+                for k, v in pairs(role) do
+                    if k ~= "assignedPlayers" then
+                        roleCopy[k] = v
+                    end
+                end
+                encCopy.roles[roleIdx] = roleCopy
+            end
+        end
+        
+        local serialized = SimpleSerialize(encCopy, 0)
+        encountersChecksums[idx] = OGRH.SyncChecksum.HashString(serialized)
+    end
+    
+    return encountersChecksums
+end
+
+--[[
+    Layer 3: Compute Roles Checksums
+    
+    Returns 2D array of per-role checksums [encIdx][roleIdx].
+    
+    Includes:
+    - Role configuration (name, priority, faction, isOptionalRole)
+    - Slot count (number of assignment slots)
+    
+    Excludes:
+    - assignedPlayers array content
+    
+    @param raidName string - Name of the raid
+    @return table - 2D array of role checksums {[1]={[1]="checksum", [2]="checksum"}, ...}
+]]
+function OGRH.SyncChecksum.ComputeRolesChecksums(raidName)
+    local sv = OGRH.SVM and OGRH.SVM.GetActiveSchema() or OGRH_SV.v2
+    if not sv or not sv.encounterMgmt or not sv.encounterMgmt.raids then
+        return {}
+    end
+    
+    -- Find raid by name
+    local raid = nil
+    for i = 1, table.getn(sv.encounterMgmt.raids) do
+        if sv.encounterMgmt.raids[i].name == raidName then
+            raid = sv.encounterMgmt.raids[i]
+            break
+        end
+    end
+    
+    if not raid or not raid.encounters then
+        return {}
+    end
+    
+    local rolesChecksums = {}
+    
+    for encIdx = 1, table.getn(raid.encounters) do
+        local encounter = raid.encounters[encIdx]
+        rolesChecksums[encIdx] = {}
+        
+        if encounter.roles then
+            for roleIdx = 1, table.getn(encounter.roles) do
+                local role = encounter.roles[roleIdx]
+                local roleCopy = {
+                    name = role.name,
+                    priority = role.priority,
+                    faction = role.faction,
+                    isOptionalRole = role.isOptionalRole,
+                    slotCount = role.assignedPlayers and table.getn(role.assignedPlayers) or 0,
+                    -- EXCLUDE: assignedPlayers array content
+                }
+                
+                local serialized = SimpleSerialize(roleCopy, 0)
+                rolesChecksums[encIdx][roleIdx] = OGRH.SyncChecksum.HashString(serialized)
+            end
+        end
+    end
+    
+    return rolesChecksums
+end
+
+--[[
+    Layer 4: Compute Assignment Checksums (per-role)
+    
+    Returns 2D array of per-role assignment checksums [encIdx][roleIdx].
+    
+    Includes:
+    - assignedPlayers array
+    - raidMarks table
+    - assignmentNumbers table
+    
+    @param raidName string - Name of the raid
+    @return table - 2D array of assignment checksums {[1]={[1]="checksum", [2]="checksum"}, ...}
+]]
+function OGRH.SyncChecksum.ComputeApRoleChecksums(raidName)
+    local sv = OGRH.SVM and OGRH.SVM.GetActiveSchema() or OGRH_SV.v2
+    if not sv or not sv.encounterMgmt or not sv.encounterMgmt.raids then
+        return {}
+    end
+    
+    -- Find raid by name
+    local raid = nil
+    for i = 1, table.getn(sv.encounterMgmt.raids) do
+        if sv.encounterMgmt.raids[i].name == raidName then
+            raid = sv.encounterMgmt.raids[i]
+            break
+        end
+    end
+    
+    if not raid or not raid.encounters then
+        return {}
+    end
+    
+    local apRoleChecksums = {}
+    
+    for encIdx = 1, table.getn(raid.encounters) do
+        local encounter = raid.encounters[encIdx]
+        apRoleChecksums[encIdx] = {}
+        
+        if encounter.roles then
+            for roleIdx = 1, table.getn(encounter.roles) do
+                local role = encounter.roles[roleIdx]
+                local assignmentsCopy = {
+                    assignedPlayers = role.assignedPlayers or {},
+                    raidMarks = role.raidMarks or {},
+                    assignmentNumbers = role.assignmentNumbers or {}
+                }
+                
+                local serialized = SimpleSerialize(assignmentsCopy, 0)
+                apRoleChecksums[encIdx][roleIdx] = OGRH.SyncChecksum.HashString(serialized)
+            end
+        end
+    end
+    
+    return apRoleChecksums
+end
+
+--[[
+    Layer 4: Compute Assignment Checksums (per-encounter aggregate)
+    
+    Returns array of per-encounter aggregate assignment checksums.
+    Aggregates all apRoleChecksums for an encounter.
+    
+    @param raidName string - Name of the raid
+    @return table - Array of encounter assignment checksums {[1]="checksum", [2]="checksum", ...}
+]]
+function OGRH.SyncChecksum.ComputeApEncounterChecksums(raidName)
+    local apRoleChecksums = OGRH.SyncChecksum.ComputeApRoleChecksums(raidName)
+    local apEncounterChecksums = {}
+    
+    for encIdx, roleChecksums in pairs(apRoleChecksums) do
+        -- Aggregate all role checksums for this encounter
+        local aggregated = {}
+        for roleIdx, checksum in pairs(roleChecksums) do
+            table.insert(aggregated, checksum)
+        end
+        
+        -- Sort for consistency
+        table.sort(aggregated)
+        
+        local serialized = table.concat(aggregated, "|")
+        apEncounterChecksums[encIdx] = OGRH.SyncChecksum.HashString(serialized)
+    end
+    
+    return apEncounterChecksums
+end
+
+--[[
+    ============================================================================
+    LEGACY RAID CHECKSUMS (Maintained for backward compatibility)
+    ============================================================================
+]]
+
+--[[
     Compute checksum for a raid (by name from v2 structure)
     
     Strips assignments to create a structure-only checksum.
