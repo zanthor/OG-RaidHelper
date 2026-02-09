@@ -32,7 +32,7 @@ OGRH.SyncRepairUI.State = {
     -- Tooltip state
     tooltipData = {},  -- {playerName, version, syncStatus, classColor}
     
-    -- Timeout tracking (10s inactivity = auto-hide)
+    -- Timeout tracking (auto-hide after inactivity)
     timeouts = {
         adminTimer = nil,        -- Timer reference for admin panel
         clientTimer = nil,       -- Timer reference for client panel
@@ -40,7 +40,9 @@ OGRH.SyncRepairUI.State = {
         lastAdminActivity = 0,   -- Timestamp of last admin activity
         lastClientActivity = 0,  -- Timestamp of last client activity
         lastWaitingActivity = 0, -- Timestamp of last waiting activity
-        timeoutDuration = 10.0   -- 10 seconds timeout
+        adminTimeoutDuration = 30.0,    -- 30 seconds timeout (local, less likely to desync)
+        clientTimeoutDuration = 10.0,   -- 10 seconds timeout
+        waitingTimeoutDuration = 10.0   -- 10 seconds timeout
     }
 }
 
@@ -250,7 +252,7 @@ function OGRH.SyncRepairUI.ShowAdminPanel(sessionToken, clientList)
     panel.progressBar:SetValue(0)
     panel.progressBar:SetText("0%  (0/0 packets)")
     
-    -- Start timeout (10s inactivity = auto-close)
+    -- Start timeout (30s inactivity = auto-close)
     OGRH.SyncRepairUI.StartAdminTimeout()
     
     panel:Show()
@@ -720,13 +722,31 @@ end
     PHASE 4 - PANEL TIMEOUT SYSTEM
     ============================================================================
     
-    Auto-hide panels after 10s of inactivity to handle edge cases:
+    Auto-hide panels after inactivity to handle edge cases:
     - Admin disconnects during repair
     - Player leaves raid during repair
     - Network packets stop flowing
     
+    Timeout durations:
+    - Admin panel: 30s (local, less likely to desync)
+    - Client panel: 10s
+    - Waiting panel: 10s
+    
     Timeouts are reset every time a related packet is received.
+    
+    Queue-Aware Timeout:
+    - Before starting idle countdown, check network queue time estimate
+    - If queue time > 5s, defer timeout (network is still actively working)
+    - Only start idle countdown when queue is relatively empty (< 5s)
 ]]
+
+-- Get network queue time estimate from OGAddonMsg
+function OGRH.SyncRepairUI.GetQueueTimeEstimate()
+    if OGAddonMsg and OGAddonMsg.stats and OGAddonMsg.stats.queueTimeEstimate then
+        return OGAddonMsg.stats.queueTimeEstimate
+    end
+    return 0
+end
 
 -- Admin Panel Timeout Functions
 function OGRH.SyncRepairUI.StartAdminTimeout()
@@ -740,15 +760,23 @@ function OGRH.SyncRepairUI.StartAdminTimeout()
     OGRH.SyncRepairUI.State.timeouts.adminTimer = OGRH.ScheduleTimer(function()
         local panel = OGRH.SyncRepairUI.State.adminPanel
         if panel and panel:IsShown() then
-            -- Display timeout message on panel
-            if panel.status then
-                panel.status:SetText("|cffff9900Status: TIMEOUT - No activity for 10s|r")
+            -- Check queue time before starting idle countdown
+            local queueTime = OGRH.SyncRepairUI.GetQueueTimeEstimate()
+            if queueTime > 5 then
+                -- Queue is busy, defer timeout and reschedule
+                OGRH.SyncRepairUI.StartAdminTimeout()
+                return
             end
             
-            OGRH.Msg("|cffff9900[RH-SyncRepair]|r Admin panel timeout - closing in 10 seconds...")
+            -- Display timeout message on panel
+            if panel.status then
+                panel.status:SetText("|cffff9900Status: TIMEOUT - No activity for 30s|r")
+            end
+            
+            OGRH.Msg("|cffff9900[RH-SyncRepair]|r Admin panel timeout - closing in 15 seconds...")
             
             -- Initialize countdown state
-            panel.timeoutCountdown = 10
+            panel.timeoutCountdown = 15
             
             -- Countdown update function
             local function updateCountdown()
@@ -759,7 +787,7 @@ function OGRH.SyncRepairUI.StartAdminTimeout()
                 if panel.timeoutCountdown > 0 then
                     -- Update progress bar
                     if panel.progressBar then
-                        local pct = (panel.timeoutCountdown / 10) * 100
+                        local pct = (panel.timeoutCountdown / 15) * 100
                         panel.progressBar:SetValue(pct)
                         panel.progressBar:SetText(string.format("|cffff9900Closing in %d seconds...|r", panel.timeoutCountdown))
                     end
@@ -781,7 +809,7 @@ function OGRH.SyncRepairUI.StartAdminTimeout()
             -- Start countdown immediately
             updateCountdown()
         end
-    end, OGRH.SyncRepairUI.State.timeouts.timeoutDuration)
+    end, OGRH.SyncRepairUI.State.timeouts.adminTimeoutDuration)
 end
 
 function OGRH.SyncRepairUI.ResetAdminTimeout()
@@ -816,6 +844,14 @@ function OGRH.SyncRepairUI.StartClientTimeout()
     OGRH.SyncRepairUI.State.timeouts.clientTimer = OGRH.ScheduleTimer(function()
         local panel = OGRH.SyncRepairUI.State.clientPanel
         if panel and panel:IsShown() then
+            -- Check queue time before starting idle countdown
+            local queueTime = OGRH.SyncRepairUI.GetQueueTimeEstimate()
+            if queueTime > 5 then
+                -- Queue is busy, defer timeout and reschedule
+                OGRH.SyncRepairUI.StartClientTimeout()
+                return
+            end
+            
             -- Display timeout message on panel
             if panel.status then
                 panel.status:SetText("|cffff9900Status: TIMEOUT - No activity for 10s|r")
@@ -860,7 +896,7 @@ function OGRH.SyncRepairUI.StartClientTimeout()
             -- Start countdown immediately
             updateCountdown()
         end
-    end, OGRH.SyncRepairUI.State.timeouts.timeoutDuration)
+    end, OGRH.SyncRepairUI.State.timeouts.clientTimeoutDuration)
 end
 
 function OGRH.SyncRepairUI.ResetClientTimeout()
@@ -895,6 +931,14 @@ function OGRH.SyncRepairUI.StartWaitingTimeout()
     OGRH.SyncRepairUI.State.timeouts.waitingTimer = OGRH.ScheduleTimer(function()
         local panel = OGRH.SyncRepairUI.State.waitingPanel
         if panel and panel:IsShown() then
+            -- Check queue time before starting idle countdown
+            local queueTime = OGRH.SyncRepairUI.GetQueueTimeEstimate()
+            if queueTime > 5 then
+                -- Queue is busy, defer timeout and reschedule
+                OGRH.SyncRepairUI.StartWaitingTimeout()
+                return
+            end
+            
             -- Display timeout message on panel
             if panel.message then
                 panel.message:SetText("|cffff9900⚠ TIMEOUT - No activity for 10s|r")
@@ -937,7 +981,7 @@ function OGRH.SyncRepairUI.StartWaitingTimeout()
             -- Start countdown immediately
             updateCountdown()
         end
-    end, OGRH.SyncRepairUI.State.timeouts.timeoutDuration)
+    end, OGRH.SyncRepairUI.State.timeouts.waitingTimeoutDuration)
 end
 
 function OGRH.SyncRepairUI.ResetWaitingTimeout()

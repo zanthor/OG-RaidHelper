@@ -30,7 +30,7 @@ OGRH.SyncIntegrity.State = {
     
     -- Admin modification cooldown (suppress broadcasts while admin is actively editing)
     lastAdminModification = 0,  -- timestamp of last admin change
-    modificationCooldown = 2,  -- seconds to wait after last change before broadcasting
+    modificationCooldown = 10,  -- seconds to wait after last change before broadcasting
     
     -- Player join tracking
     lastRaidSize = 0,  -- Track raid size to detect joins
@@ -937,7 +937,7 @@ end
 function OGRH.SyncIntegrity.RecordAdminModification()
     OGRH.SyncIntegrity.State.lastAdminModification = GetTime()
     if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cffffaa00[RH-SyncIntegrity]|r Admin modification recorded, broadcasts will resume in 2s")
+        OGRH.Msg("|cffffaa00[RH-SyncIntegrity]|r Admin modification recorded, broadcasts will resume in 10s")
     end
 end
 
