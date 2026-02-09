@@ -389,6 +389,14 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
         structureChecksum = OGRH.SyncChecksum.ComputeRaidChecksum(syncMetadata.scope.raid)
     end
     
+    -- Check if sync mode is enabled (skip delta updates if sync disabled)
+    if OGRH.SyncMode and not OGRH.SyncMode.CanSendDeltaUpdate() then
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff888888[RH-SVM]|r Skipping delta broadcast (sync mode disabled)")
+        end
+        return
+    end
+    
     -- Prepare delta change data
     local changeData = {
         type = "REALTIME_UPDATE",

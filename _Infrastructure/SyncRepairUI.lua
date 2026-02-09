@@ -530,24 +530,84 @@ function OGRH.SyncRepairUI.CreateWaitingPanel()
     progressBar:SetText("ETA: Unknown")  -- ETA text on progress bar
     panel.progressBar = progressBar
     
+    -- Enable Sync button (shown only for admin in sync_disabled mode, replaces progress bar)
+    local enableSyncBtn = OGST.CreateButton(panel, {
+        text = "Enable Sync",
+        width = 120,
+        height = 20,
+        onClick = function()
+            if OGRH.SyncMode and OGRH.SyncMode.EnableSync then
+                OGRH.SyncMode.EnableSync()
+            end
+        end
+    })
+    enableSyncBtn:SetPoint("TOP", message, "BOTTOM", 0, -2)
+    enableSyncBtn:Hide()  -- Hidden by default
+    panel.enableSyncBtn = enableSyncBtn
+    
     OGRH.SyncRepairUI.State.waitingPanel = panel
     return panel
 end
 
 -- Show waiting panel
 function OGRH.SyncRepairUI.ShowWaitingPanel(estimatedSeconds)
+    OGRH.Msg(string.format("|cffaaaaaa[RH-SyncRepairUI]|r ShowWaitingPanel called with estimatedSeconds=%s", tostring(estimatedSeconds)))
+    
     local panel = OGRH.SyncRepairUI.CreateWaitingPanel()
     
-    if estimatedSeconds and estimatedSeconds > 0 then
-        panel.progressBar:SetText(string.format("ETA: %ds", estimatedSeconds))
+    -- Handle special sync_disabled modes
+    if estimatedSeconds == "sync_disabled" or estimatedSeconds == "sync_disabled_admin" then
+        local isAdmin = (estimatedSeconds == "sync_disabled_admin")
+        OGRH.Msg(string.format("|cffaaaaaa[RH-SyncRepairUI]|r Configuring panel for sync_disabled mode (isAdmin=%s)", tostring(isAdmin)))
+        
+        if panel.message then
+            panel.message:SetText("|cffff9900⏸ Admin Sync Disabled|r")
+        end
+        if panel.progressBar then
+            panel.progressBar:Hide()
+        end
+        if panel.enableSyncBtn then
+            if isAdmin then
+                panel.enableSyncBtn:Show()
+            else
+                panel.enableSyncBtn:Hide()
+            end
+        end
+    elseif estimatedSeconds and estimatedSeconds > 0 then
+        -- Normal repair case - reset to default message
+        if panel.message then
+            panel.message:SetText("⏳ Admin is syncing data")
+        end
+        if panel.progressBar then
+            panel.progressBar:Show()
+            panel.progressBar:SetText(string.format("ETA: %ds", estimatedSeconds))
+        end
+        if panel.enableSyncBtn then
+            panel.enableSyncBtn:Hide()
+        end
     else
-        panel.progressBar:SetText("ETA: Unknown")
+        -- Normal repair case with unknown ETA - reset to default message
+        if panel.message then
+            panel.message:SetText("⏳ Admin is syncing data")
+        end
+        if panel.progressBar then
+            panel.progressBar:Show()
+            panel.progressBar:SetText("ETA: Unknown")
+        end
+        if panel.enableSyncBtn then
+            panel.enableSyncBtn:Hide()
+        end
     end
     
-    -- Start timeout (10s inactivity = auto-close)
-    OGRH.SyncRepairUI.StartWaitingTimeout()
+    -- Start timeout (10s inactivity = auto-close) - but not for sync_disabled modes
+    if estimatedSeconds ~= "sync_disabled" and estimatedSeconds ~= "sync_disabled_admin" then
+        OGRH.SyncRepairUI.StartWaitingTimeout()
+    else
+        OGRH.Msg("|cffaaaaaa[RH-SyncRepairUI]|r Skipping timeout for sync_disabled mode")
+    end
     
     panel:Show()
+    OGRH.Msg("|cff00ff00[RH-SyncRepairUI]|r Waiting panel shown successfully")
 end
 
 -- Update waiting panel countdown

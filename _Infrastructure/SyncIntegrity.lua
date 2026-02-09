@@ -68,6 +68,21 @@ function OGRH.SyncIntegrity.BroadcastChecksums(forceImmediate)
         OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r BroadcastChecksums() called, force=" .. tostring(forceImmediate))
     end
     
+    -- Check if sync mode is enabled
+    if OGRH.SyncMode then
+        if OGRH.SyncMode.IsSyncEnabled then
+            local syncEnabled = OGRH.SyncMode.IsSyncEnabled()
+            if not syncEnabled then
+                OGRH.Msg("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (sync mode disabled)")
+                return
+            end
+        else
+            OGRH.Msg("|cffff0000[RH-SyncIntegrity ERROR]|r SyncMode.IsSyncEnabled function not found!")
+        end
+    else
+        OGRH.Msg("|cffff0000[RH-SyncIntegrity ERROR]|r SyncMode module not loaded!")
+    end
+    
     -- Phase 5: Suppress broadcasts during active repair sessions
     if OGRH.SyncIntegrity.State.repairModeActive then
         if OGRH.SyncIntegrity.State.debug then
@@ -346,6 +361,14 @@ end
 
 -- Client: Broadcast repair request (admin will buffer for 1 second)
 function OGRH.SyncIntegrity.QueueRepairRequest(adminName, mismatch)
+    -- Check if sync mode is enabled
+    if OGRH.SyncMode and not OGRH.SyncMode.CanRequestRepair() then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff888888[RH-SyncIntegrity]|r Skipping repair request (sync mode disabled)")
+        end
+        return
+    end
+    
     -- Broadcast repair request to raid (admin will buffer)
     if OGRH.MessageRouter and OGRH.MessageTypes then
         local requestData = {

@@ -110,6 +110,8 @@ OGRH.MessageTypes.SYNC = {
     -- Sync control
     CANCEL = "OGRH_SYNC_CANCEL",
     COMPLETE = "OGRH_SYNC_COMPLETE",
+    MODE_OFF = "OGRH_SYNC_MODE_OFF",                      -- Admin disables sync mode
+    MODE_ON = "OGRH_SYNC_MODE_ON",                        -- Admin re-enables sync mode
     
     -- Phase 6.3: Granular sync operations
     COMPONENT_REQUEST = "OGRH_SYNC_COMPONENT_REQUEST",

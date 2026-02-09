@@ -8,6 +8,13 @@ OGRH.RegisterModule({
   description = "Guild recruitment advertising and contact tracking"
 })
 
+-- In-memory recruitment state (never persisted)
+OGRH.RecruitmentState = {
+  isRecruiting = false,
+  lastAdTime = 0,
+  lastRotationIndex = 0
+}
+
 -- ========================================
 -- SAVED VARIABLES INITIALIZATION
 -- ========================================
@@ -24,15 +31,12 @@ function OGRH.EnsureRecruitmentSV()
       selectedMessageIndex = 1, -- Currently selected message (1-5)
       selectedChannel = "general", -- Radio button selection: general, trade, world, raid
       interval = 600, -- Default 10 minutes between ads
-      lastAdTime = 0,
       contacts = {}, -- Track people spoken to: {name, timestamp, messages = {}}
       whisperHistory = {}, -- [playerName] = {messages = {{text, timestamp, incoming}}, lastContact = timestamp}
       playerCache = {}, -- [playerName] = {class = "CLASS", level = number, guild = "name"}
       deletedContacts = {}, -- [playerName] = true for explicitly deleted contacts
       autoAd = false, -- Auto-advertise on interval
-      isRecruiting = false, -- Currently recruiting
-      rotateMessages = {false, false, false, false, false}, -- Which messages to include in rotation
-      lastRotationIndex = 0 -- Last message index sent in rotation
+      rotateMessages = {false, false, false, false, false} -- Which messages to include in rotation
     }, {syncLevel = "MANUAL", componentType = "settings"})
   end
   
@@ -65,9 +69,6 @@ function OGRH.EnsureRecruitmentSV()
   end
   if not OGRH.SVM.GetPath("recruitment.rotateMessages") then
     OGRH.SVM.SetPath("recruitment.rotateMessages", {false, false, false, false, false}, {syncLevel = "MANUAL", componentType = "settings"})
-  end
-  if not OGRH.SVM.GetPath("recruitment.lastRotationIndex") then
-    OGRH.SVM.SetPath("recruitment.lastRotationIndex", 0, {syncLevel = "MANUAL", componentType = "settings"})
   end
   if not OGRH.SVM.GetPath("recruitment.targetTime") then
     OGRH.SVM.SetPath("recruitment.targetTime", "", {syncLevel = "MANUAL", componentType = "settings"})
@@ -733,12 +734,12 @@ function OGRH.ShowRecruitmentAdvertiseView(frame)
   recruitBtn:SetWidth(140)
   recruitBtn:SetHeight(24)
   recruitBtn:SetPoint("BOTTOM", detailPanel, "BOTTOM", 0, 15)
-  recruitBtn:SetText((OGRH.SVM.GetPath("recruitment.isRecruiting")) and "Stop Recruiting" or "Start Recruiting")
+  recruitBtn:SetText(OGRH.RecruitmentState.isRecruiting and "Stop Recruiting" or "Start Recruiting")
   if OGRH.StyleButton then
     OGRH.StyleButton(recruitBtn)
   end
   recruitBtn:SetScript("OnClick", function()
-    if (OGRH.SVM.GetPath("recruitment.isRecruiting")) then
+    if OGRH.RecruitmentState.isRecruiting then
       OGRH.StopRecruiting()
     else
       OGRH.StartRecruiting()
@@ -882,7 +883,7 @@ function OGRH.SendRecruitmentAd()
     end
   end
   
-  OGRH.SVM.SetPath("recruitment.lastAdTime", GetTime(), {syncLevel = "MANUAL", componentType = "settings"})
+  OGRH.RecruitmentState.lastAdTime = GetTime()
 end
 
 -- ========================================
@@ -1003,12 +1004,12 @@ function OGRH.HideRecruitingPanel()
 end
 
 function OGRH.UpdateRecruitingPanel()
-  if not recruitingPanelFrame or not (OGRH.SVM.GetPath("recruitment.isRecruiting")) then
+  if not recruitingPanelFrame or not OGRH.RecruitmentState.isRecruiting then
     return
   end
   
   local interval = (OGRH.SVM.GetPath("recruitment.interval") or 600) or 600
-  local lastAdTime = (OGRH.SVM.GetPath("recruitment.lastAdTime") or 0) or 0
+  local lastAdTime = OGRH.RecruitmentState.lastAdTime
   local currentTime = GetTime()
   local timeSinceLastAd = currentTime - lastAdTime
   local timeUntilNext = math.max(0, interval - timeSinceLastAd)
@@ -1048,7 +1049,7 @@ function OGRH.StartRecruiting()
     return
   end
   
-  OGRH.SVM.SetPath("recruitment.isRecruiting", true, {syncLevel = "MANUAL", componentType = "settings"})
+  OGRH.RecruitmentState.isRecruiting = true
   
   -- Send first ad immediately
   OGRH.SendRecruitmentAd()
@@ -1066,7 +1067,7 @@ end
 function OGRH.StopRecruiting()
   OGRH.EnsureRecruitmentSV()
   
-  OGRH.SVM.SetPath("recruitment.isRecruiting", false, {syncLevel = "MANUAL", componentType = "settings"})
+  OGRH.RecruitmentState.isRecruiting = false
   
   -- Hide recruiting panel
   OGRH.HideRecruitingPanel()
@@ -1092,7 +1093,7 @@ function OGRH.UpdateRecruitmentButton()
   -- Find the button
   local btn = recruitmentFrame.detailPanel and recruitmentFrame.detailPanel.recruitBtn
   if btn then
-    btn:SetText((OGRH.SVM.GetPath("recruitment.isRecruiting")) and "Stop Recruiting" or "Start Recruiting")
+    btn:SetText(OGRH.RecruitmentState.isRecruiting and "Stop Recruiting" or "Start Recruiting")
   end
 end
 
@@ -1297,7 +1298,7 @@ function OGRH.TrackWhisper_DISABLED(sender, message, incoming)
   -- 1. Currently recruiting, OR
   -- 2. This contact already exists in history (has not been deleted)
   local contactExists = (OGRH.SVM.GetPath("recruitment.whisperHistory") or {})[sender] ~= nil
-  local isRecruiting = (OGRH.SVM.GetPath("recruitment.isRecruiting"))
+  local isRecruiting = OGRH.RecruitmentState.isRecruiting
   
   if not isRecruiting and not contactExists then
     -- Don't track this whisper
@@ -1367,10 +1368,7 @@ initFrame:RegisterEvent("WHO_LIST_UPDATE")
 initFrame:SetScript("OnEvent", function()
   if event == "ADDON_LOADED" and arg1 == "OG-RaidHelper" then
     OGRH.EnsureRecruitmentSV()
-    -- If we were recruiting when we reloaded, show the panel
-    if (OGRH.SVM.GetPath("recruitment.isRecruiting")) then
-      OGRH.ShowRecruitingPanel()
-    end
+    -- Recruiting state is always false on load (in-memory only)
   elseif event == "CHAT_MSG_WHISPER" then
     -- Incoming whisper
     local message = arg1
