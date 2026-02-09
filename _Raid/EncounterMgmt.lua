@@ -32,6 +32,14 @@ end
 -- Helper: Check if player can edit assignments (player assignments, marks, numbers)
 -- Active Raid allows R/L/Admin, non-Active raids allow anyone
 local function CanEditAssignments(frame)
+  -- Block if UI is locked during sync repair
+  if OGRH.SyncSession and OGRH.SyncSession.IsUILocked and OGRH.SyncSession.IsUILocked() then
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+      OGRH.Msg("|cffff6666[RH-EncounterMgmt][DEBUG]|r CanEditAssignments: UI is locked during sync repair, DENYING edit")
+    end
+    return false
+  end
+  
   -- Out of raid: anyone can edit
   if GetNumRaidMembers() == 0 then
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
@@ -3345,6 +3353,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
             local capturedSlotIndex = i
             assignBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             assignBtn:SetScript("OnClick", function()
+              -- Check permission for assignments
+              if not CanEditAssignments(frame) then
+                return
+              end
+              
               local button = arg1 or "LeftButton"
               local currentIndex = assignBtn.assignIndex
               

@@ -252,6 +252,11 @@ function OGRH.SyncRepairHandlers.SendPacketsWithPacing(packets, token, totalPack
             priority = "HIGH",
             channel = "RAID"
         })
+        
+        -- Reset admin timeout (activity detected - packet sent)
+        if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetAdminTimeout then
+            OGRH.SyncRepairUI.ResetAdminTimeout()
+        end
     end
     
     -- Update admin UI
@@ -374,6 +379,13 @@ function OGRH.SyncRepairHandlers.OnRepairStart(sender, data, channel)
         -- Client joined mid-sync or didn't request repair - mark as waiting
         OGRH.SyncRepairHandlers.waitingForRepair = true
         OGRH.SyncRepairHandlers.waitingToken = data.token
+        OGRH.SyncRepairHandlers.currentAdminName = sender
+        
+        -- Store admin name in session for disconnect detection
+        local session = OGRH.SyncSession.GetActiveSession()
+        if session then
+            session.adminName = sender
+        end
         
         if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ShowWaitingPanel then
             OGRH.SyncRepairUI.ShowWaitingPanel(nil)
@@ -386,16 +398,33 @@ function OGRH.SyncRepairHandlers.OnRepairStart(sender, data, channel)
     -- Clear request flag (will be set again if needed after next checksum)
     OGRH.SyncRepairHandlers.hasRequestedRepair = false
     
-    -- Store session token
+    -- Store session token and admin name
     OGRH.SyncRepairHandlers.currentToken = data.token
+    OGRH.SyncRepairHandlers.currentAdminName = sender
     OGRH.SyncRepairHandlers.expectedPackets = data.totalLayers or 0
     OGRH.SyncRepairHandlers.receivedPackets = 0
     
+    -- Store admin name in session for disconnect detection
+    local session = OGRH.SyncSession.GetActiveSession()
+    if session then
+        session.adminName = sender
+    end
+
+    -- CLIENT: Enter repair mode to lock UI/SVM during repair
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.EnterRepairMode then
+        OGRH.SyncIntegrity.EnterRepairMode()
+    end
+
     -- Show CLIENT panel (not waiting - waiting is for mid-repair joins only)
     if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ShowClientPanel then
         OGRH.SyncRepairUI.ShowClientPanel(data.token)
     end
     
+    -- Reset timeout (activity received)
+    if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetClientTimeout then
+        OGRH.SyncRepairUI.ResetClientTimeout()
+    end
+
     OGRH.Msg(string.format("|cff00ff00[RH-SyncRepair]|r Repair session started by %s", sender))
 end
 
@@ -423,8 +452,18 @@ function OGRH.SyncRepairHandlers.OnRepairPacket(sender, data, channel)
             end
             
             OGRH.Msg("|cffff9900[RH-SyncRepair]|r Joined during active repair, waiting for completion...")
+        else
+            -- Reset waiting timeout (packets still coming)
+            if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetWaitingTimeout then
+                OGRH.SyncRepairUI.ResetWaitingTimeout()
+            end
         end
         return  -- CRITICAL: Do not process packets for repairs we didn't request
+    end
+    
+    -- Reset client timeout (activity detected)
+    if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetClientTimeout then
+        OGRH.SyncRepairUI.ResetClientTimeout()
     end
     
     -- Build descriptive name for logging
@@ -490,6 +529,11 @@ function OGRH.SyncRepairHandlers.OnRepairValidation(sender, data, channel)
         return
     end
     
+    -- Reset client timeout (activity detected)
+    if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetClientTimeout then
+        OGRH.SyncRepairUI.ResetClientTimeout()
+    end
+    
     -- Compute validation checksums
     local activeRaid = OGRH.GetActiveRaid()
     if not activeRaid or not activeRaid.displayName then
@@ -551,6 +595,11 @@ function OGRH.SyncRepairHandlers.OnValidationResponse(sender, data, channel)
     
     -- DEBUG: Log validation result
     OGRH.Msg(string.format("|cff00ccff[RH-SyncRepair DEBUG]|r Validation from %s: status=%s", sender, tostring(data.status)))
+    
+    -- Reset admin timeout (activity detected)
+    if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetAdminTimeout then
+        OGRH.SyncRepairUI.ResetAdminTimeout()
+    end
     
     -- Record client validation
     if OGRH.SyncSession.RecordClientValidation then
@@ -615,6 +664,11 @@ function OGRH.SyncRepairHandlers.OnRepairComplete(sender, data, channel)
         end
     end
     
+    -- CLIENT: Exit repair mode to unlock UI/SVM
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.ExitRepairMode then
+        OGRH.SyncIntegrity.ExitRepairMode()
+    end
+    
     -- Hide client UI
     if OGRH.SyncRepairUI and OGRH.SyncRepairUI.HideClientPanel then
         OGRH.ScheduleTimer(function()
@@ -646,6 +700,11 @@ function OGRH.SyncRepairHandlers.OnRepairCancel(sender, data, channel)
     
     local reason = data.reason or "Unknown"
     OGRH.Msg(string.format("|cffff9900[RH-SyncRepair]|r Repair session cancelled: %s", reason))
+    
+    -- CLIENT: Exit repair mode to unlock UI/SVM
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.ExitRepairMode then
+        OGRH.SyncIntegrity.ExitRepairMode()
+    end
     
     -- Hide UI
     if OGRH.SyncRepairUI then

@@ -118,10 +118,8 @@ function OGRH.SyncSession.StartSession(encounterName, layerIds)
         isRepairMode = false
     }
     
-    -- Phase 5: Enter repair mode (suppress integrity broadcasts)
-    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.EnterRepairMode then
-        OGRH.SyncIntegrity.EnterRepairMode()
-    end
+    -- Phase 5: Enter repair mode (lock UI/SVM and suppress integrity broadcasts)
+    OGRH.SyncSession.EnterRepairMode()
     
     return token
 end
@@ -137,10 +135,8 @@ function OGRH.SyncSession.CompleteSession(token)
     
     OGRH.SyncSession.State.activeSession = nil
     
-    -- Phase 5: Exit repair mode (resume integrity broadcasts)
-    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.ExitRepairMode then
-        OGRH.SyncIntegrity.ExitRepairMode()
-    end
+    -- Phase 5: Exit repair mode (unlock UI/SVM and resume integrity broadcasts)
+    OGRH.SyncSession.ExitRepairMode()
     
     return true
 end
@@ -169,10 +165,8 @@ function OGRH.SyncSession.CancelSession(reason)
     
     OGRH.SyncSession.State.activeSession = nil
     
-    -- Phase 5: Exit repair mode on cancellation
-    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.ExitRepairMode then
-        OGRH.SyncIntegrity.ExitRepairMode()
-    end
+    -- Phase 5: Exit repair mode on cancellation (unlock UI/SVM and resume integrity broadcasts)
+    OGRH.SyncSession.ExitRepairMode()
     
     if reason then
         OGRH.Msg("|cffff9900[RH-SyncSession]|r Session cancelled: " .. reason)
@@ -436,6 +430,78 @@ function OGRH.SyncSession.OnRaidRosterUpdate()
     -- Raid formed or disbanded
     if (lastSize == 0 and currentSize > 0) or (lastSize > 0 and currentSize == 0) then
         OGRH.SyncSession.ResetVersionTracking()
+    end
+    
+    -- Check if player left raid (not in raid anymore)
+    if lastSize > 0 and currentSize == 0 then
+        -- Player left raid - cancel any active repair panels
+        if OGRH.SyncRepairUI then
+            local adminPanel = OGRH.SyncRepairUI.State.adminPanel
+            local clientPanel = OGRH.SyncRepairUI.State.clientPanel
+            local waitingPanel = OGRH.SyncRepairUI.State.waitingPanel
+            
+            if (adminPanel and adminPanel:IsShown()) or 
+               (clientPanel and clientPanel:IsShown()) or 
+               (waitingPanel and waitingPanel:IsShown()) then
+                
+                OGRH.Msg("|cffff9900[RH-SyncRepair]|r Left raid - closing repair panels")
+                
+                if OGRH.SyncRepairUI.HideAdminPanel then
+                    OGRH.SyncRepairUI.HideAdminPanel()
+                end
+                if OGRH.SyncRepairUI.HideClientPanel then
+                    OGRH.SyncRepairUI.HideClientPanel()
+                end
+                if OGRH.SyncRepairUI.HideWaitingPanel then
+                    OGRH.SyncRepairUI.HideWaitingPanel()
+                end
+                
+                -- Cancel session
+                if OGRH.SyncSession.CancelSession then
+                    OGRH.SyncSession.CancelSession("Player left raid")
+                end
+            end
+        end
+    end
+    
+    -- Check if admin disconnected (client-side check)
+    local session = OGRH.SyncSession.GetActiveSession()
+    if session and session.adminName and currentSize > 0 then
+        -- Check if admin is still in raid
+        local adminFound = false
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name == session.adminName then
+                adminFound = true
+                break
+            end
+        end
+        
+        if not adminFound then
+            -- Admin disconnected - cancel repair
+            OGRH.Msg("|cffff9900[RH-SyncRepair]|r Admin disconnected - closing repair panels")
+            
+            if OGRH.SyncRepairUI then
+                if OGRH.SyncRepairUI.HideClientPanel then
+                    OGRH.SyncRepairUI.HideClientPanel()
+                end
+                if OGRH.SyncRepairUI.HideWaitingPanel then
+                    OGRH.SyncRepairUI.HideWaitingPanel()
+                end
+            end
+            
+            -- Cancel session
+            if OGRH.SyncSession.CancelSession then
+                OGRH.SyncSession.CancelSession("Admin disconnected")
+            end
+            
+            -- Clear client state
+            if OGRH.SyncRepairHandlers then
+                OGRH.SyncRepairHandlers.currentToken = nil
+                OGRH.SyncRepairHandlers.waitingForRepair = false
+                OGRH.SyncRepairHandlers.waitingToken = nil
+            end
+        end
     end
     
     OGRH.SyncSession.State.lastRaidSize = currentSize

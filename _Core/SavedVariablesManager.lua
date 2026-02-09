@@ -210,6 +210,14 @@ end
 -- CORE: Deep Set with Path (e.g., "key.subkey.nested")
 -- ============================================
 function OGRH.SVM.SetPath(path, value, syncMetadata)
+    -- Check if SVM is locked during repair
+    if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        if OGRH.Msg then 
+            OGRH.Msg("|cffff9900[RH-SVM]|r Cannot modify data - sync repair in progress")
+        end
+        return false
+    end
+    
     local sv = OGRH.SVM.GetActiveSchema()
     if not sv then
         if OGRH.Msg then OGRH.Msg("|cffff0000[RH-SVM]|r ERROR: GetActiveSchema returned nil") end

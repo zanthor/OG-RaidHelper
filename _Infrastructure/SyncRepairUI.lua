@@ -31,6 +31,17 @@ OGRH.SyncRepairUI.State = {
     
     -- Tooltip state
     tooltipData = {},  -- {playerName, version, syncStatus, classColor}
+    
+    -- Timeout tracking (10s inactivity = auto-hide)
+    timeouts = {
+        adminTimer = nil,        -- Timer reference for admin panel
+        clientTimer = nil,       -- Timer reference for client panel
+        waitingTimer = nil,      -- Timer reference for waiting panel
+        lastAdminActivity = 0,   -- Timestamp of last admin activity
+        lastClientActivity = 0,  -- Timestamp of last client activity
+        lastWaitingActivity = 0, -- Timestamp of last waiting activity
+        timeoutDuration = 10.0   -- 10 seconds timeout
+    }
 }
 
 --[[
@@ -239,6 +250,9 @@ function OGRH.SyncRepairUI.ShowAdminPanel(sessionToken, clientList)
     panel.progressBar:SetValue(0)
     panel.progressBar:SetText("0%  (0/0 packets)")
     
+    -- Start timeout (10s inactivity = auto-close)
+    OGRH.SyncRepairUI.StartAdminTimeout()
+    
     panel:Show()
 end
 
@@ -287,6 +301,8 @@ end
 function OGRH.SyncRepairUI.HideAdminPanel()
     local panel = OGRH.SyncRepairUI.State.adminPanel
     if panel then
+        -- Cancel timeout
+        OGRH.SyncRepairUI.CancelAdminTimeout()
         panel:Hide()
     end
 end
@@ -396,7 +412,10 @@ function OGRH.SyncRepairUI.ShowClientPanel(sessionToken, totalPackets)
     panel.progressBar:SetValue(0)
     panel.progressBar:SetText("0%  (0/" .. (totalPackets or 0) .. " packets)")
     panel.eta:SetText("ETA: Calculating...")
-    panel.componentsList:SetText("|cffaaaaaa⏳ Raid Structure|r\n|cffaaaaaa⏳ Encounters|r\n|cffaaaaaa⏳ Global Roles|r")
+    panel.componentsList:SetText("|cffaaaaaa⏳ Raid Structure|r\n|cffaaaaaa⏳ Encounters|r\n|cffaaaaaa⏳ Roles|r")
+    
+    -- Start timeout (10s inactivity = auto-close)
+    OGRH.SyncRepairUI.StartClientTimeout()
     
     panel:Show()
 end
@@ -441,6 +460,8 @@ end
 function OGRH.SyncRepairUI.HideClientPanel()
     local panel = OGRH.SyncRepairUI.State.clientPanel
     if panel then
+        -- Cancel timeout
+        OGRH.SyncRepairUI.CancelClientTimeout()
         panel:Hide()
     end
 end
@@ -523,6 +544,9 @@ function OGRH.SyncRepairUI.ShowWaitingPanel(estimatedSeconds)
         panel.progressBar:SetText("ETA: Unknown")
     end
     
+    -- Start timeout (10s inactivity = auto-close)
+    OGRH.SyncRepairUI.StartWaitingTimeout()
+    
     panel:Show()
 end
 
@@ -544,6 +568,8 @@ end
 function OGRH.SyncRepairUI.HideWaitingPanel()
     local panel = OGRH.SyncRepairUI.State.waitingPanel
     if panel then
+        -- Cancel timeout
+        OGRH.SyncRepairUI.CancelWaitingTimeout()
         panel:Hide()
     end
 end
@@ -626,6 +652,251 @@ function OGRH.SyncRepairUI.UnregisterPanels()
     end
     if waitingPanel then
         OGRH.UnregisterAuxiliaryPanel(waitingPanel)
+    end
+end
+
+--[[
+    ============================================================================
+    PHASE 4 - PANEL TIMEOUT SYSTEM
+    ============================================================================
+    
+    Auto-hide panels after 10s of inactivity to handle edge cases:
+    - Admin disconnects during repair
+    - Player leaves raid during repair
+    - Network packets stop flowing
+    
+    Timeouts are reset every time a related packet is received.
+]]
+
+-- Admin Panel Timeout Functions
+function OGRH.SyncRepairUI.StartAdminTimeout()
+    -- Cancel any existing timer
+    OGRH.SyncRepairUI.CancelAdminTimeout()
+    
+    -- Record activity
+    OGRH.SyncRepairUI.State.timeouts.lastAdminActivity = GetTime()
+    
+    -- Start new timeout timer
+    OGRH.SyncRepairUI.State.timeouts.adminTimer = OGRH.ScheduleTimer(function()
+        local panel = OGRH.SyncRepairUI.State.adminPanel
+        if panel and panel:IsShown() then
+            -- Display timeout message on panel
+            if panel.status then
+                panel.status:SetText("|cffff9900Status: TIMEOUT - No activity for 10s|r")
+            end
+            
+            OGRH.Msg("|cffff9900[RH-SyncRepair]|r Admin panel timeout - closing in 10 seconds...")
+            
+            -- Initialize countdown state
+            panel.timeoutCountdown = 10
+            
+            -- Countdown update function
+            local function updateCountdown()
+                if not panel or not panel:IsShown() or not panel.timeoutCountdown then
+                    return
+                end
+                
+                if panel.timeoutCountdown > 0 then
+                    -- Update progress bar
+                    if panel.progressBar then
+                        local pct = (panel.timeoutCountdown / 10) * 100
+                        panel.progressBar:SetValue(pct)
+                        panel.progressBar:SetText(string.format("|cffff9900Closing in %d seconds...|r", panel.timeoutCountdown))
+                    end
+                    
+                    -- Decrement and schedule next update
+                    panel.timeoutCountdown = panel.timeoutCountdown - 1
+                    OGRH.ScheduleTimer(updateCountdown, 1.0)
+                else
+                    -- Countdown finished - close panel
+                    panel.timeoutCountdown = nil
+                    OGRH.SyncRepairUI.HideAdminPanel()
+                    
+                    if OGRH.SyncSession and OGRH.SyncSession.CancelSession then
+                        OGRH.SyncSession.CancelSession("Admin panel timeout (no activity)")
+                    end
+                end
+            end
+            
+            -- Start countdown immediately
+            updateCountdown()
+        end
+    end, OGRH.SyncRepairUI.State.timeouts.timeoutDuration)
+end
+
+function OGRH.SyncRepairUI.ResetAdminTimeout()
+    local panel = OGRH.SyncRepairUI.State.adminPanel
+    if not panel or not panel:IsShown() then
+        return
+    end
+    
+    -- Record activity
+    OGRH.SyncRepairUI.State.timeouts.lastAdminActivity = GetTime()
+    
+    -- Restart timeout timer
+    OGRH.SyncRepairUI.StartAdminTimeout()
+end
+
+function OGRH.SyncRepairUI.CancelAdminTimeout()
+    if OGRH.SyncRepairUI.State.timeouts.adminTimer then
+        OGRH.CancelTimer(OGRH.SyncRepairUI.State.timeouts.adminTimer)
+        OGRH.SyncRepairUI.State.timeouts.adminTimer = nil
+    end
+end
+
+-- Client Panel Timeout Functions
+function OGRH.SyncRepairUI.StartClientTimeout()
+    -- Cancel any existing timer
+    OGRH.SyncRepairUI.CancelClientTimeout()
+    
+    -- Record activity
+    OGRH.SyncRepairUI.State.timeouts.lastClientActivity = GetTime()
+    
+    -- Start new timeout timer
+    OGRH.SyncRepairUI.State.timeouts.clientTimer = OGRH.ScheduleTimer(function()
+        local panel = OGRH.SyncRepairUI.State.clientPanel
+        if panel and panel:IsShown() then
+            -- Display timeout message on panel
+            if panel.status then
+                panel.status:SetText("|cffff9900Status: TIMEOUT - No activity for 10s|r")
+            end
+            if panel.eta then
+                panel.eta:SetText("|cffff9900Connection lost or admin disconnected|r")
+            end
+            
+            OGRH.Msg("|cffff9900[RH-SyncRepair]|r Client panel timeout - closing in 10 seconds...")
+            
+            -- Initialize countdown state
+            panel.timeoutCountdown = 10
+            
+            -- Countdown update function
+            local function updateCountdown()
+                if not panel or not panel:IsShown() or not panel.timeoutCountdown then
+                    return
+                end
+                
+                if panel.timeoutCountdown > 0 then
+                    -- Update progress bar
+                    if panel.progressBar then
+                        local pct = (panel.timeoutCountdown / 10) * 100
+                        panel.progressBar:SetValue(pct)
+                        panel.progressBar:SetText(string.format("|cffff9900Closing in %d seconds...|r", panel.timeoutCountdown))
+                    end
+                    
+                    -- Decrement and schedule next update
+                    panel.timeoutCountdown = panel.timeoutCountdown - 1
+                    OGRH.ScheduleTimer(updateCountdown, 1.0)
+                else
+                    -- Countdown finished - close panel
+                    panel.timeoutCountdown = nil
+                    OGRH.SyncRepairUI.HideClientPanel()
+                    
+                    if OGRH.SyncRepairHandlers then
+                        OGRH.SyncRepairHandlers.currentToken = nil
+                    end
+                end
+            end
+            
+            -- Start countdown immediately
+            updateCountdown()
+        end
+    end, OGRH.SyncRepairUI.State.timeouts.timeoutDuration)
+end
+
+function OGRH.SyncRepairUI.ResetClientTimeout()
+    local panel = OGRH.SyncRepairUI.State.clientPanel
+    if not panel or not panel:IsShown() then
+        return
+    end
+    
+    -- Record activity
+    OGRH.SyncRepairUI.State.timeouts.lastClientActivity = GetTime()
+    
+    -- Restart timeout timer
+    OGRH.SyncRepairUI.StartClientTimeout()
+end
+
+function OGRH.SyncRepairUI.CancelClientTimeout()
+    if OGRH.SyncRepairUI.State.timeouts.clientTimer then
+        OGRH.CancelTimer(OGRH.SyncRepairUI.State.timeouts.clientTimer)
+        OGRH.SyncRepairUI.State.timeouts.clientTimer = nil
+    end
+end
+
+-- Waiting Panel Timeout Functions
+function OGRH.SyncRepairUI.StartWaitingTimeout()
+    -- Cancel any existing timer
+    OGRH.SyncRepairUI.CancelWaitingTimeout()
+    
+    -- Record activity
+    OGRH.SyncRepairUI.State.timeouts.lastWaitingActivity = GetTime()
+    
+    -- Start new timeout timer
+    OGRH.SyncRepairUI.State.timeouts.waitingTimer = OGRH.ScheduleTimer(function()
+        local panel = OGRH.SyncRepairUI.State.waitingPanel
+        if panel and panel:IsShown() then
+            -- Display timeout message on panel
+            if panel.message then
+                panel.message:SetText("|cffff9900⚠ TIMEOUT - No activity for 10s|r")
+            end
+            
+            OGRH.Msg("|cffff9900[RH-SyncRepair]|r Waiting panel timeout - closing in 10 seconds...")
+            
+            -- Initialize countdown state
+            panel.timeoutCountdown = 10
+            
+            -- Countdown update function
+            local function updateCountdown()
+                if not panel or not panel:IsShown() or not panel.timeoutCountdown then
+                    return
+                end
+                
+                if panel.timeoutCountdown > 0 then
+                    -- Update progress bar
+                    if panel.progressBar then
+                        local pct = (panel.timeoutCountdown / 10) * 100
+                        panel.progressBar:SetValue(pct)
+                        panel.progressBar:SetText(string.format("|cffff9900Closing in %d seconds...|r", panel.timeoutCountdown))
+                    end
+                    
+                    -- Decrement and schedule next update
+                    panel.timeoutCountdown = panel.timeoutCountdown - 1
+                    OGRH.ScheduleTimer(updateCountdown, 1.0)
+                else
+                    -- Countdown finished - close panel
+                    panel.timeoutCountdown = nil
+                    OGRH.SyncRepairUI.HideWaitingPanel()
+                    
+                    if OGRH.SyncRepairHandlers then
+                        OGRH.SyncRepairHandlers.waitingForRepair = false
+                        OGRH.SyncRepairHandlers.waitingToken = nil
+                    end
+                end
+            end
+            
+            -- Start countdown immediately
+            updateCountdown()
+        end
+    end, OGRH.SyncRepairUI.State.timeouts.timeoutDuration)
+end
+
+function OGRH.SyncRepairUI.ResetWaitingTimeout()
+    local panel = OGRH.SyncRepairUI.State.waitingPanel
+    if not panel or not panel:IsShown() then
+        return
+    end
+    
+    -- Record activity
+    OGRH.SyncRepairUI.State.timeouts.lastWaitingActivity = GetTime()
+    
+    -- Restart timeout timer
+    OGRH.SyncRepairUI.StartWaitingTimeout()
+end
+
+function OGRH.SyncRepairUI.CancelWaitingTimeout()
+    if OGRH.SyncRepairUI.State.timeouts.waitingTimer then
+        OGRH.CancelTimer(OGRH.SyncRepairUI.State.timeouts.waitingTimer)
+        OGRH.SyncRepairUI.State.timeouts.waitingTimer = nil
     end
 end
 

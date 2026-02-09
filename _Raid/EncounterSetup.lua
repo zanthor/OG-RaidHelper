@@ -11,6 +11,11 @@ if not OGRH then OGRH = {} end
 
 -- Check if user can edit the Active Raid structure
 local function CanEditActiveRaid()
+  -- Check if UI is locked during repair
+  if OGRH.SyncSession and OGRH.SyncSession.IsUILocked and OGRH.SyncSession.IsUILocked() then
+    return false
+  end
+  
   -- Active Raid structure can only be modified by Raid Admin
   if OGRH.CanModifyStructure and OGRH.CanModifyStructure(UnitName("player")) then
     return true
@@ -20,6 +25,12 @@ end
 
 -- Function to show Encounter Setup Window
 function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
+  -- Check if UI is locked during repair
+  if OGRH.SyncSession and OGRH.SyncSession.IsUILocked and OGRH.SyncSession.IsUILocked() then
+    OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot edit structure - sync repair in progress")
+    return
+  end
+  
   -- Check if encounter data exists, if not show Share window
   OGRH.EnsureSV()
   local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
@@ -616,6 +627,12 @@ function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
     
     -- Helper: Write encounter roles via SVM (v2: write specific path, not entire raids array)
     function OGRH.WriteEncounterRoles(raidName, encounterName, roles, syncLevel)
+      -- Check if SVM is locked during repair
+      if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot modify roles - sync repair in progress")
+        return false
+      end
+      
       -- Find raid and encounter indices
       local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
       if not raids then return end
@@ -1032,6 +1049,11 @@ StaticPopupDialogs["OGRH_ADD_RAID"] = {
   OnAccept = function()
     local raidName = getglobal(this:GetParent():GetName().."EditBox"):GetText()
     if raidName and raidName ~= "" then
+      -- Check if SVM is locked during repair
+      if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot add raid - sync repair in progress")
+        return
+      end
       OGRH.EnsureSV()
       -- Check if raid already exists
       local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
@@ -1102,6 +1124,11 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"] = {
   OnAccept = function()
     local raidName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_RAID"].text_arg1
     if raidName then
+      -- Check if SVM is locked during repair
+      if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot delete raid - sync repair in progress")
+        return
+      end
       -- Remove raid from list
       local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
       for i = 1, table.getn(raids) do
@@ -1147,6 +1174,11 @@ StaticPopupDialogs["OGRH_ADD_ENCOUNTER"] = {
     local encounterName = getglobal(this:GetParent():GetName().."EditBox"):GetText()
     local raidName = StaticPopupDialogs["OGRH_ADD_ENCOUNTER"].text_arg1
     if encounterName and encounterName ~= "" and raidName then
+      -- Check if SVM is locked during repair
+      if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot add encounter - sync repair in progress")
+        return
+      end
       OGRH.EnsureSV()
       
       -- Find the raid in new structure
@@ -1239,6 +1271,11 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
     local encounterName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1
     local raidName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg2
     if encounterName and raidName then
+      -- Check if SVM is locked during repair
+      if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot delete encounter - sync repair in progress")
+        return
+      end
       -- Find the raid in new structure
       local raidObj = nil
       local raids = OGRH.SVM.GetPath("encounterMgmt.raids") or {}
@@ -1296,6 +1333,11 @@ StaticPopupDialogs["OGRH_RENAME_RAID"] = {
     local oldName = StaticPopupDialogs["OGRH_RENAME_RAID"].text_arg1
     
     if newName and newName ~= "" and oldName and newName ~= oldName then
+      -- Check if SVM is locked during repair
+      if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot rename raid - sync repair in progress")
+        return
+      end
       OGRH.EnsureSV()
       
       -- Check if new name already exists
@@ -1448,6 +1490,11 @@ StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"] = {
     local raidName = StaticPopupDialogs["OGRH_RENAME_ENCOUNTER"].text_arg2
     
     if newName and newName ~= "" and oldName and raidName and newName ~= oldName then
+      -- Check if SVM is locked during repair
+      if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot rename encounter - sync repair in progress")
+        return
+      end
       OGRH.EnsureSV()
       
       -- Find the raid in new structure
@@ -2577,6 +2624,12 @@ function OGRH.ShowEditRoleDialog(raidName, encounterName, roleData, columnRoles,
   
   -- Save button handler
   frame.saveBtn:SetScript("OnClick", function()
+    -- Check if SVM is locked during repair
+    if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+      OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot save role - sync repair in progress")
+      return
+    end
+    
     -- Validate consume check limit
     local roleType = frame.selectedRoleType or "raider"
     local isConsumeCheck = (roleType == "consume")
