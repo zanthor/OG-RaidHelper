@@ -210,6 +210,14 @@ end
 -- CORE: Deep Set with Path (e.g., "key.subkey.nested")
 -- ============================================
 function OGRH.SVM.SetPath(path, value, syncMetadata)
+    -- Check if SVM is locked during repair
+    if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
+        if OGRH.Msg then 
+            OGRH.Msg("|cffff9900[RH-SVM]|r Cannot modify data - sync repair in progress")
+        end
+        return false
+    end
+    
     local sv = OGRH.SVM.GetActiveSchema()
     if not sv then
         if OGRH.Msg then OGRH.Msg("|cffff0000[RH-SVM]|r ERROR: GetActiveSchema returned nil") end
@@ -379,6 +387,14 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
     local structureChecksum = nil
     if OGRH.SyncChecksum and OGRH.SyncChecksum.ComputeRaidChecksum and syncMetadata.scope and syncMetadata.scope.raid then
         structureChecksum = OGRH.SyncChecksum.ComputeRaidChecksum(syncMetadata.scope.raid)
+    end
+    
+    -- Check if sync mode is enabled (skip delta updates if sync disabled)
+    if OGRH.SyncMode and not OGRH.SyncMode.CanSendDeltaUpdate() then
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff888888[RH-SVM]|r Skipping delta broadcast (sync mode disabled)")
+        end
+        return
     end
     
     -- Prepare delta change data

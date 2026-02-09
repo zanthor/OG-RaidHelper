@@ -1497,6 +1497,18 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Test system not loaded. Available: test svm, test phase1")
     end
+  -- Manual checksum broadcast for testing
+  elseif sub == "checkpoll" or sub == "checksumpoll" then
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.BroadcastChecksums then
+      if OGRH.CanModifyStructure(UnitName("player")) then
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcasting checksums...")
+        OGRH.SyncIntegrity.BroadcastChecksums(true)
+      else
+        OGRH.Msg("|cffff0000[RH-SyncIntegrity]|r Only admin can broadcast checksums")
+      end
+    else
+      OGRH.Msg("|cffff0000[RH-SyncIntegrity]|r SyncIntegrity not loaded")
+    end
   -- Pending Segments Debug Command
   elseif sub == "segments" or sub == "pendingsegments" or sub == "ps" then
     if OGRH.PendingSegments and OGRH.PendingSegments.PrintSegmentList then
@@ -1547,6 +1559,327 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
         OGRH.Msg("Set segment " .. index .. " (" .. segment.name .. ") to expire 3 days ago")
       end
     end
+  -- Checksum testing commands (Phase 1 Sync Optimization)
+  elseif sub == "checksum" or sub == "checksums" then
+    if not OGRH.SyncChecksum then
+      OGRH.Msg("SyncChecksum module not loaded.")
+    elseif not OGRH.GetActiveRaid then
+      OGRH.Msg("GetActiveRaid function not loaded.")
+    else
+      local activeRaid = OGRH.GetActiveRaid()
+      if not activeRaid or not activeRaid.name then
+        OGRH.Msg("|cffff0000Active Raid not found.|r")
+      else
+        local raidName = activeRaid.name
+        OGRH.Msg("|cff00ff00Testing hierarchical checksums for Active Raid:|r " .. (activeRaid.displayName or raidName))
+        
+        -- Layer 1: Structure
+        local l1 = OGRH.SyncChecksum.ComputeRaidStructureChecksum(raidName)
+        OGRH.Msg("  |cffffcc00Layer 1 (Structure):|r " .. l1)
+        
+        -- Layer 2: Encounters
+        local l2 = OGRH.SyncChecksum.ComputeEncountersChecksums(raidName)
+        OGRH.Msg("  |cffffcc00Layer 2 (Encounters):|r " .. table.getn(l2) .. " encounters")
+        for i = 1, table.getn(l2) do
+          OGRH.Msg("    [" .. i .. "]: " .. l2[i])
+        end
+        
+        -- Layer 3: Roles
+        local l3 = OGRH.SyncChecksum.ComputeRolesChecksums(raidName)
+        OGRH.Msg("  |cffffcc00Layer 3 (Roles):|r " .. table.getn(l3) .. " encounters")
+        for encIdx = 1, table.getn(l3) do
+          if l3[encIdx] then
+            OGRH.Msg("    Enc[" .. encIdx .. "]: " .. table.getn(l3[encIdx]) .. " roles")
+          end
+        end
+        
+        -- Layer 4: Assignments (per-role)
+        local l4 = OGRH.SyncChecksum.ComputeApRoleChecksums(raidName)
+        OGRH.Msg("  |cffffcc00Layer 4 (Assignments per-role):|r " .. table.getn(l4) .. " encounters")
+        for encIdx = 1, table.getn(l4) do
+          if l4[encIdx] then
+            OGRH.Msg("    Enc[" .. encIdx .. "]: " .. table.getn(l4[encIdx]) .. " roles")
+          end
+        end
+        
+        -- Layer 4: Assignments (per-encounter aggregate)
+        local l4enc = OGRH.SyncChecksum.ComputeApEncounterChecksums(raidName)
+        OGRH.Msg("  |cffffcc00Layer 4 (Assignments per-encounter):|r " .. table.getn(l4enc) .. " encounters")
+        for i = 1, table.getn(l4enc) do
+          OGRH.Msg("    [" .. i .. "]: " .. l4enc[i])
+        end
+      end
+    end
+  -- Repair testing commands (Phase 3 Sync Optimization)
+  elseif sub == "repair" then
+    if not OGRH.SyncRepair or not OGRH.SyncChecksum then
+      OGRH.Msg("SyncRepair or SyncChecksum module not loaded.")
+    else
+      local activeRaid = OGRH.GetActiveRaid()
+      if not activeRaid then
+        OGRH.Msg("|cffff0000No active raid found.|r")
+        return
+      end
+      
+      local raidName = activeRaid.name
+      OGRH.Msg("|cff00ff00Repair System Test:|r " .. raidName)
+      
+      -- Test adaptive pacing
+      local queueDepth = OGRH.SyncRepair.GetQueueDepth()
+      OGRH.Msg("  |cffffcc00Queue Depth:|r " .. queueDepth .. " messages")
+      
+      OGRH.SyncRepair.UpdateAdaptiveDelay()
+      local currentDelay = OGRH.SyncRepair.State.currentDelay
+      OGRH.Msg("  |cffffcc00Adaptive Delay:|r " .. string.format("%.3fs", currentDelay))
+      
+      -- Test validation checksums (compute for first 2 encounters)
+      if activeRaid.encounters and table.getn(activeRaid.encounters) > 0 then
+        local layerIds = {
+          structure = true,
+          encounters = {1, 2},
+          roles = {},
+          assignments = {}
+        }
+        
+        -- Add first 2 roles from first encounter
+        if activeRaid.encounters[1] and activeRaid.encounters[1].roles then
+          layerIds.roles[1] = {1, 2}
+          layerIds.assignments[1] = {1, 2}
+        end
+        
+        OGRH.Msg("  |cffffcc00Computing validation checksums...|r")
+        local checksums = OGRH.SyncRepair.ComputeValidationChecksums(raidName, layerIds)
+        
+        if checksums.structure then
+          OGRH.Msg("    Structure: " .. checksums.structure)
+        end
+        if checksums.encounters then
+          for encIdx, hash in pairs(checksums.encounters) do
+            OGRH.Msg("    Encounter[" .. encIdx .. "]: " .. hash)
+          end
+        end
+        if checksums.roles then
+          for encIdx, roles in pairs(checksums.roles) do
+            for roleIdx, hash in pairs(roles) do
+              OGRH.Msg("    Role[" .. encIdx .. "][" .. roleIdx .. "]: " .. hash)
+            end
+          end
+        end
+        
+        -- Test validation (compare with itself - should pass)
+        local success, mismatches = OGRH.SyncRepair.ValidateRepair(raidName, checksums, checksums)
+        OGRH.Msg("  |cffffcc00Self-Validation:|r " .. (success and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
+        if not success then
+          OGRH.Msg("    Mismatches: " .. table.getn(mismatches))
+        end
+        
+        -- Test priority ordering
+        local failedLayers = {
+          encounters = {1, 3, 2},
+          roles = {[2] = {1}},
+          assignments = {[1] = {1, 2}}
+        }
+        local priority = OGRH.SyncRepair.DetermineRepairPriority(raidName, 2, failedLayers)
+        OGRH.Msg("  |cffffcc00Repair Priority (selected: 2):|r")
+        for i = 1, table.getn(priority) do
+          OGRH.Msg("    [" .. i .. "] Encounter " .. priority[i])
+        end
+      else
+        OGRH.Msg("  |cffff0000No encounters found in active raid.|r")
+      end
+      
+      -- Test packet building
+      OGRH.Msg("  |cffffcc00Testing Packet Builders:|r")
+      local structPkt = OGRH.SyncRepair.BuildStructurePacket(raidName)
+      if structPkt then
+        OGRH.Msg("    Structure packet: type=" .. structPkt.type .. ", layer=" .. structPkt.layer)
+      end
+      
+      if activeRaid.encounters and table.getn(activeRaid.encounters) > 0 then
+        local encPkts = OGRH.SyncRepair.BuildEncountersPackets(raidName, {1})
+        OGRH.Msg("    Encounters packets: " .. table.getn(encPkts) .. " packet(s)")
+        
+        if activeRaid.encounters[1] and activeRaid.encounters[1].roles and table.getn(activeRaid.encounters[1].roles) > 0 then
+          local rolePkts = OGRH.SyncRepair.BuildRolesPackets(raidName, 1, {1})
+          OGRH.Msg("    Roles packets: " .. table.getn(rolePkts) .. " packet(s)")
+          
+          local apPkts = OGRH.SyncRepair.BuildAssignmentsPackets(raidName, 1, {1})
+          OGRH.Msg("    Assignments packets: " .. table.getn(apPkts) .. " packet(s)")
+        end
+      end
+    end
+  
+  -- Phase 6: Initiate repair session (test)
+  elseif sub == "repairsession" or sub == "repsess" then
+    if not OGRH.SyncRepairHandlers then
+      OGRH.Msg("SyncRepairHandlers module not loaded.")
+    else
+      local activeRaid = OGRH.GetActiveRaid()
+      if not activeRaid or not activeRaid.name then
+        OGRH.Msg("No active raid found.")
+      else
+        local raidName = activeRaid.name  -- Use internal name, not displayName
+        -- Simulate failed layers (structure + first encounter + first 2 roles)
+        local failedLayers = {
+          structure = true,
+          encounters = {1},
+          roles = {[1] = {1, 2}},
+          assignments = {[1] = {1, 2}}
+        }
+        
+        local success = OGRH.SyncRepairHandlers.InitiateRepair(raidName, failedLayers, 1)
+        if success then
+          OGRH.Msg("|cff00ff00Test repair session initiated|r")
+        else
+          OGRH.Msg("|cffff0000Failed to initiate repair session|r")
+        end
+      end
+    end
+  
+  -- Repair UI testing commands (Phase 4 Sync Optimization)
+  elseif string.find(sub, "^repairui") then
+    if not OGRH.SyncRepairUI then
+      OGRH.Msg("SyncRepairUI module not loaded.")
+    else
+      -- Parse subcommand
+      local _, _, subCmd = string.find(fullMsg, "^%s*repairui%s+(%w+)")
+      
+      if subCmd == "admin" then
+        -- Test admin panel
+        local testClients = {
+          {name = "PlayerOne", components = "Structure, Enc1"},
+          {name = "PlayerTwo", components = "Enc2, Roles"},
+          {name = "PlayerThree", components = "All Encounters"},
+          {name = "PlayerFour", components = "Assignments"},
+          {name = "PlayerFive", components = "Structure"},
+          {name = "PlayerSix", components = "Enc1, Enc2"},
+          {name = "PlayerSeven", components = "Roles"},
+          {name = "PlayerEight", components = "All Layers"},
+          {name = "PlayerNine", components = "Enc3, Assignments"},
+          {name = "PlayerTen", components = "Structure, Roles"}
+        }
+        OGRH.SyncRepairUI.ShowAdminPanel("TEST_TOKEN", testClients)
+        OGRH.Msg("Showing admin repair panel (test)")
+        
+        -- Simulate progress updates
+        OGRH.ScheduleTimer(function()
+          OGRH.SyncRepairUI.UpdateAdminProgress(5, 20, "Sending Roles", {PlayerOne = true})
+        end, 2)
+        
+        OGRH.ScheduleTimer(function()
+          OGRH.SyncRepairUI.UpdateAdminProgress(15, 20, "Sending Assignments", {PlayerOne = true, PlayerTwo = true})
+        end, 4)
+        
+      elseif subCmd == "client" then
+        -- Test client panel
+        OGRH.SyncRepairUI.ShowClientPanel("TEST_TOKEN", 20)
+        OGRH.Msg("Showing client repair panel (test)")
+        
+        -- Simulate progress updates
+        OGRH.ScheduleTimer(function()
+          OGRH.SyncRepairUI.UpdateClientProgress(5, 20, "Applying Roles")
+          OGRH.SyncRepairUI.UpdateClientCountdown(12)
+        end, 2)
+        
+        OGRH.ScheduleTimer(function()
+          OGRH.SyncRepairUI.UpdateClientProgress(15, 20, "Applying Assignments")
+          OGRH.SyncRepairUI.UpdateClientCountdown(5)
+        end, 4)
+        
+      elseif subCmd == "waiting" then
+        -- Test waiting panel
+        OGRH.SyncRepairUI.ShowWaitingPanel(30)
+        OGRH.Msg("Showing waiting panel (test)")
+        
+      elseif subCmd == "hide" then
+        -- Hide all panels
+        OGRH.SyncRepairUI.HideAdminPanel()
+        OGRH.SyncRepairUI.HideClientPanel()
+        OGRH.SyncRepairUI.HideWaitingPanel()
+        OGRH.Msg("All repair UI panels hidden")
+        
+      else
+        OGRH.Msg("/ogrh repairui <admin|client|waiting|hide>")
+        OGRH.Msg("  admin - Show admin repair panel (test)")
+        OGRH.Msg("  client - Show client repair panel (test)")
+        OGRH.Msg("  waiting - Show waiting panel (test)")
+        OGRH.Msg("  hide - Hide all repair panels")
+      end
+    end
+  -- Session testing commands (Phase 2 Sync Optimization)
+  elseif sub == "session" or sub == "sess" then
+    if not OGRH.SyncSession then
+      OGRH.Msg("SyncSession module not loaded.")
+    else
+      local session = OGRH.SyncSession.GetActiveSession()
+      
+      OGRH.Msg("|cff00ff00Session State:|r")
+      
+      if session then
+        OGRH.Msg("  |cffffcc00Active Session:|r")
+        OGRH.Msg("    Token: " .. session.token)
+        OGRH.Msg("    Start Time: " .. string.format("%.2f", session.startTime))
+        OGRH.Msg("    Encounter: " .. (session.encounterName or "N/A"))
+        OGRH.Msg("    Layers: " .. table.getn(session.layerIds))
+        
+        local validations = OGRH.SyncSession.GetClientValidations()
+        local validCount = 0
+        for _ in pairs(validations) do validCount = validCount + 1 end
+        OGRH.Msg("    Client Validations: " .. validCount)
+        
+        for playerName, validation in pairs(validations) do
+          OGRH.Msg(string.format("      %s: %s", playerName, validation.status))
+        end
+      else
+        OGRH.Msg("  |cffaaaaaa No active session|r")
+      end
+      
+      OGRH.Msg("  |cffffcc00Repair Mode:|r " .. (OGRH.SyncSession.IsInRepairMode() and "ACTIVE" or "Inactive"))
+      OGRH.Msg("  |cffffcc00UI Locked:|r " .. (OGRH.SyncSession.IsUILocked() and "Yes" or "No"))
+      OGRH.Msg("  |cffffcc00SVM Locked:|r " .. (OGRH.SyncSession.IsSVMLocked() and "Yes" or "No"))
+      
+      local queue = OGRH.SyncSession.State.pendingChangesQueue
+      OGRH.Msg("  |cffffcc00Queued Changes:|r " .. table.getn(queue))
+      
+      local highestVer = OGRH.SyncSession.State.highestVersion
+      if highestVer then
+        OGRH.Msg("  |cffffcc00Highest Version:|r " .. highestVer.str .. " (" .. highestVer.playerName .. ")")
+      else
+        OGRH.Msg("  |cffffcc00Highest Version:|r Unknown")
+      end
+      
+      -- Phase 5: Show repair mode status
+      local repairMode = OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.repairModeActive or false
+      local buffered = OGRH.SyncIntegrity and table.getn(OGRH.SyncIntegrity.State.bufferedRequests or {}) or 0
+      OGRH.Msg(string.format("  |cffffcc00Integrity Repair Mode:|r %s (buffered: %d)", 
+        repairMode and "ACTIVE" or "Inactive", buffered))
+    end
+  
+  -- Phase 5: Repair mode testing
+  elseif string.find(sub, "^repairmode") then
+    if not OGRH.SyncIntegrity then
+      OGRH.Msg("SyncIntegrity module not loaded.")
+    else
+      local _, _, subCmd = string.find(fullMsg, "^%s*repairmode%s+(%w+)")
+      
+      if subCmd == "enter" then
+        OGRH.SyncIntegrity.EnterRepairMode()
+        OGRH.Msg("Entered repair mode (broadcasts suppressed)")
+      elseif subCmd == "exit" then
+        OGRH.SyncIntegrity.ExitRepairMode()
+        OGRH.Msg("Exited repair mode (broadcasts resumed)")
+      elseif subCmd == "status" then
+        local active = OGRH.SyncIntegrity.State.repairModeActive
+        local buffered = table.getn(OGRH.SyncIntegrity.State.bufferedRequests or {})
+        OGRH.Msg(string.format("Repair mode: %s, Buffered requests: %d", 
+          active and "ACTIVE" or "INACTIVE", buffered))
+      else
+        OGRH.Msg("/ogrh repairmode <enter|exit|status>")
+        OGRH.Msg("  enter  - Enter repair mode (suppress broadcasts)")
+        OGRH.Msg("  exit   - Exit repair mode (resume broadcasts)")
+        OGRH.Msg("  status - Show current repair mode status")
+      end
+    end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
     OGRH.Msg("Commands:")
@@ -1567,6 +1900,19 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     OGRH.Msg("  handlers - Show message handlers")
     OGRH.Msg("  takeadmin - Request admin role")
     OGRH.Msg("  sa - Set session admin (temporary)")
+    OGRH.Msg("Sync Optimization Commands (Phase 1):")
+    OGRH.Msg("  checksum - Test hierarchical checksums for active raid")
+    OGRH.Msg("  checkpoll - Manually broadcast checksums to clients (admin only)")
+    OGRH.Msg("Sync Optimization Commands (Phase 2):")
+    OGRH.Msg("  session - Show current session state and repair mode status")
+    OGRH.Msg("Sync Optimization Commands (Phase 3):")
+    OGRH.Msg("  repair - Test repair packet system (builders, validation, pacing)")
+    OGRH.Msg("Sync Optimization Commands (Phase 4):")
+    OGRH.Msg("  repairui <panel> - Test repair UI panels (admin|client|waiting|hide)")
+    OGRH.Msg("Sync Optimization Commands (Phase 5):")
+    OGRH.Msg("  repairmode <cmd> - Test repair mode (enter|exit|status)")
+    OGRH.Msg("Sync Optimization Commands (Phase 6):")
+    OGRH.Msg("  repairsession - Initiate test repair session (admin only)")
     OGRH.Msg("Test Commands:")
     OGRH.Msg("  test svm - Run SavedVariablesManager tests")
     OGRH.Msg("  test phase1 - Run Phase 1 Core Infrastructure tests")
