@@ -303,10 +303,10 @@ function OGRH.SyncRepairHandlers.RequestValidation(token)
         OGRH.SyncRepairUI.UpdateAdminProgress(0, 0, "Validating repairs...", {})
     end
     
-    -- Set timeout for validation (10 seconds)
+    -- Set timeout for validation (20 seconds to allow for checksum computation and network latency)
     OGRH.ScheduleTimer(function()
         OGRH.SyncRepairHandlers.CheckValidationComplete(token)
-    end, 10.0)
+    end, 20.0)
 end
 
 -- Admin: Check if all clients have validated
@@ -432,6 +432,11 @@ end
 function OGRH.SyncRepairHandlers.OnRepairPacket(sender, data, channel)
     if not data or not data.token or not data.type then
         OGRH.Msg("|cffff0000[RH-SyncRepair]|r Invalid repair packet received")
+        return
+    end
+    
+    -- CRITICAL: Admin should not process their own repair packets
+    if sender == UnitName("player") then
         return
     end
     
@@ -569,14 +574,14 @@ function OGRH.SyncRepairHandlers.OnRepairValidation(sender, data, channel)
     
     local checksums = OGRH.SyncRepair.ComputeValidationChecksums(raidName, layerIds)
     
-    -- Send validation response to admin
-    OGRH.MessageRouter.Send(OGRH.MessageTypes.SYNC.REPAIR_VALIDATION .. "@" .. sender, {
+    -- Send validation response to admin (broadcast to RAID since WHISPER doesn't work in Turtle WoW)
+    OGRH.MessageRouter.Send(OGRH.MessageTypes.SYNC.REPAIR_VALIDATION, {
         token = data.token,
         checksums = checksums,
         status = "complete"
     }, {
         priority = "HIGH",
-        channel = "WHISPER"
+        channel = "RAID"
     })
     
     OGRH.Msg("|cff00ff00[RH-SyncRepair]|r Validation checksums sent to admin")
@@ -593,8 +598,8 @@ function OGRH.SyncRepairHandlers.OnValidationResponse(sender, data, channel)
         return
     end
     
-    -- DEBUG: Log validation result
-    OGRH.Msg(string.format("|cff00ccff[RH-SyncRepair DEBUG]|r Validation from %s: status=%s", sender, tostring(data.status)))
+    -- Log validation response received
+    OGRH.Msg(string.format("|cff00ff00[RH-SyncRepair]|r Validation received from %s: %s", sender, tostring(data.status)))
     
     -- Reset admin timeout (activity detected)
     if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetAdminTimeout then

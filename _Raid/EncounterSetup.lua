@@ -15,6 +15,11 @@ local function CanEditActiveRaid()
   if OGRH.SyncSession and OGRH.SyncSession.IsUILocked and OGRH.SyncSession.IsUILocked() then
     return false
   end
+
+  -- Allow offline editing when not in a raid
+  if (UnitInRaid and not UnitInRaid("player")) or (GetNumRaidMembers and GetNumRaidMembers() == 0) then
+    return true
+  end
   
   -- Active Raid structure can only be modified by Raid Admin
   if OGRH.CanModifyStructure and OGRH.CanModifyStructure(UnitName("player")) then
