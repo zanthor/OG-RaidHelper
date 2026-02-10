@@ -32,6 +32,14 @@ end
 -- Helper: Check if player can edit assignments (player assignments, marks, numbers)
 -- Active Raid allows R/L/Admin, non-Active raids allow anyone
 local function CanEditAssignments(frame)
+  -- Block if UI is locked during sync repair
+  if OGRH.SyncSession and OGRH.SyncSession.IsUILocked and OGRH.SyncSession.IsUILocked() then
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+      OGRH.Msg("|cffff6666[RH-EncounterMgmt][DEBUG]|r CanEditAssignments: UI is locked during sync repair, DENYING edit")
+    end
+    return false
+  end
+  
   -- Out of raid: anyone can edit
   if GetNumRaidMembers() == 0 then
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
@@ -904,8 +912,109 @@ function OGRH.ShowEncounterPlanning(encounterName)
     OGRH.StyleButton(editStructureBtn)
     frame.editStructureBtn = editStructureBtn
     
-    -- Anchor Export Raid button to the left of Edit Structure button
-    exportRaidBtn:SetPoint("RIGHT", editStructureBtn, "LEFT", -5, 0)
+    -- Sync Mode button (between Export Raid and Edit Structure)
+    local syncModeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    syncModeBtn:SetWidth(90)
+    syncModeBtn:SetHeight(24)
+    syncModeBtn:SetPoint("RIGHT", editStructureBtn, "LEFT", -5, 0)
+    OGRH.StyleButton(syncModeBtn)
+    frame.syncModeBtn = syncModeBtn
+    
+    -- Update sync button appearance
+    local function UpdateSyncButton()
+      local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player"))
+      
+      if not OGRH.SyncMode or not OGRH.SyncMode.IsSyncEnabled then 
+        syncModeBtn:SetText("|cff00ff00Sync: On|r")
+        return 
+      end
+      
+      local enabled
+      if isAdmin then
+        -- Admin sees actual state
+        enabled = OGRH.SyncMode.IsSyncEnabled()
+      else
+        -- Non-admin: if waiting panel is shown, sync is off; otherwise assume on
+        enabled = not (OGRH.SyncMode.State and OGRH.SyncMode.State.isClientWaiting)
+      end
+      
+      if enabled then
+        syncModeBtn:SetText("|cff00ff00Sync: On|r")
+      else
+        syncModeBtn:SetText("|cffff0000Sync: Off|r")
+      end
+    end
+    
+    syncModeBtn:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(this, "ANCHOR_TOP")
+      local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player"))
+      local enabled = OGRH.SyncMode and OGRH.SyncMode.IsSyncEnabled() or true
+      
+      if enabled then
+        GameTooltip:SetText("Sync Mode: Enabled", 0, 1, 0)
+        if isAdmin then
+          GameTooltip:AddLine("Click to disable automatic sync and checksum validation.", 0.8, 0.8, 0.8, 1)
+        else
+          GameTooltip:AddLine("Only the raid admin can toggle sync mode.", 0.6, 0.6, 0.6, 1)
+        end
+      else
+        GameTooltip:SetText("Sync Mode: Disabled", 1, 0, 0)
+        if isAdmin then
+          GameTooltip:AddLine("Click to re-enable automatic sync. This will trigger a checksum validation.", 0.8, 0.8, 0.8, 1)
+        else
+          GameTooltip:AddLine("Waiting for admin to re-enable sync mode.", 0.6, 0.6, 0.6, 1)
+        end
+      end
+      GameTooltip:Show()
+    end)
+    syncModeBtn:SetScript("OnLeave", function()
+      GameTooltip:Hide()
+    end)
+    
+    syncModeBtn:SetScript("OnClick", function()
+      -- Only allow raid admin to toggle
+      if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin(UnitName("player")) then
+        OGRH.Msg("|cffff0000[RH-Sync]|r Only the raid admin can toggle sync mode")
+        return
+      end
+      
+      if not OGRH.SyncMode or not OGRH.SyncMode.State then 
+        OGRH.Msg("|cffff0000[RH-Sync]|r Sync mode module not loaded")
+        return 
+      end
+      
+      -- Toggle in-memory state
+      OGRH.SyncMode.State.enabled = not OGRH.SyncMode.State.enabled
+      local enabled = OGRH.SyncMode.State.enabled
+      
+      OGRH.Msg(string.format("|cffaaaaaa[RH-Sync]|r Sync mode toggled to: %s", tostring(enabled)))
+      
+      if enabled then
+        OGRH.Msg("|cff00ff00[RH-Sync]|r Sync mode enabled - triggering checksum validation...")
+        -- Stop sync-off broadcast first
+        if OGRH.SyncMode.StopSyncOffBroadcast then
+          OGRH.SyncMode.StopSyncOffBroadcast()
+        end
+        -- Trigger checksum validation (force immediate)
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.BroadcastChecksums then
+          OGRH.SyncIntegrity.BroadcastChecksums(true)
+        end
+      else
+        OGRH.Msg("|cffff9900[RH-Sync]|r Sync mode disabled - clients will show waiting panel")
+        -- Start sync-off broadcast
+        if OGRH.SyncMode.StartSyncOffBroadcast then
+          OGRH.SyncMode.StartSyncOffBroadcast()
+        end
+      end
+      
+      UpdateSyncButton()
+    end)
+    
+    UpdateSyncButton()
+    frame.UpdateSyncButton = UpdateSyncButton
+    
+    -- Anchor Export Raid button to the left of Sync Mode button
+    exportRaidBtn:SetPoint("RIGHT", syncModeBtn, "LEFT", -5, 0)
     
     editStructureBtn:SetScript("OnEnter", function()
       GameTooltip:SetOwner(this, "ANCHOR_TOP")
@@ -3355,6 +3464,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
             local capturedSlotIndex = i
             assignBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             assignBtn:SetScript("OnClick", function()
+              -- Check permission for assignments
+              if not CanEditAssignments(frame) then
+                return
+              end
+              
               local button = arg1 or "LeftButton"
               local currentIndex = assignBtn.assignIndex
               

@@ -66,6 +66,11 @@ _Infrastructure\SyncRouter.lua
 _Infrastructure\DataManagement.lua
 _Infrastructure\SyncIntegrity.lua
 _Infrastructure\SyncGranular.lua
+_Infrastructure\SyncSession.lua
+_Infrastructure\SyncMode.lua
+_Infrastructure\SyncRepair.lua
+_Infrastructure\SyncRepairUI.lua
+_Infrastructure\SyncRepairHandlers.lua
 
 ## ===================================================================
 ## Phase 3: Configuration - Consumables

@@ -2715,6 +2715,71 @@ function OGST.CreateStaticText(parent, config)
 end
 
 -- ============================================
+-- PROGRESS BAR CONTROL
+-- ============================================
+
+-- Create a progress bar using WoW's StatusBar frame
+-- @param parent: Parent frame
+-- @param config: Configuration table
+--   - width: Progress bar width (required)
+--   - height: Progress bar height (default: 20)
+--   - barColor: Fill bar RGB table {r, g, b} (default: green {0.2, 0.8, 0.2})
+--   - showText: Show text overlay (default: true)
+--   - font: Font template for text (default: "GameFontNormalSmall")
+--   - textColor: Text RGBA table {r, g, b, a} (default: white)
+--   - min: Minimum value (default: 0)
+--   - max: Maximum value (default: 100)
+--   - value: Initial value (default: 0)
+-- @return statusBar
+function OGST.CreateProgressBar(parent, config)
+  if not parent or not config or not config.width then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000OGST:|r CreateProgressBar requires parent and config.width")
+    return nil
+  end
+  
+  local width = config.width
+  local height = config.height or 20
+  local barColor = config.barColor or {r = 0.2, g = 0.8, b = 0.2}
+  local showText = config.showText ~= false  -- default true
+  local font = config.font or "GameFontNormalSmall"
+  local textColor = config.textColor or {r = 1, g = 1, b = 1, a = 1}
+  local minValue = config.min or 0
+  local maxValue = config.max or 100
+  local currentValue = config.value or minValue
+  
+  -- Create StatusBar frame
+  local statusBar = CreateFrame("StatusBar", nil, parent)
+  statusBar:SetWidth(width)
+  statusBar:SetHeight(height)
+  statusBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  statusBar:SetStatusBarColor(barColor.r, barColor.g, barColor.b, 1)
+  statusBar:SetMinMaxValues(minValue, maxValue)
+  statusBar:SetValue(currentValue)
+  
+  -- Text overlay (optional)
+  if showText then
+    local text = statusBar:CreateFontString(nil, "OVERLAY", font)
+    text:SetPoint("CENTER", statusBar, "CENTER", 0, 0)
+    text:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
+    statusBar.text = text
+  end
+  
+  -- Override SetText to work with text property
+  function statusBar:SetText(str)
+    if statusBar.text then
+      statusBar.text:SetText(str)
+    end
+  end
+  
+  -- Override SetBarColor
+  function statusBar:SetBarColor(r, g, b)
+    statusBar:SetStatusBarColor(r, g, b, 1)
+  end
+  
+  return statusBar
+end
+
+-- ============================================
 -- TEXTURE & PANEL UTILITIES
 -- ============================================
 

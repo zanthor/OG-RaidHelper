@@ -30,7 +30,7 @@ OGRH.SyncIntegrity.State = {
     
     -- Admin modification cooldown (suppress broadcasts while admin is actively editing)
     lastAdminModification = 0,  -- timestamp of last admin change
-    modificationCooldown = 2,  -- seconds to wait after last change before broadcasting
+    modificationCooldown = 10,  -- seconds to wait after last change before broadcasting
     
     -- Player join tracking
     lastRaidSize = 0,  -- Track raid size to detect joins
@@ -38,10 +38,17 @@ OGRH.SyncIntegrity.State = {
     -- Encounter broadcast
     lastEncounterBroadcast = 0,  -- timestamp of last encounter broadcast
     encounterBroadcastInterval = 15,  -- seconds
+    
+    -- Repair cooldown (prevent repair loops)
+    repairCooldownUntil = nil,  -- timestamp when cooldown expires
     encounterBroadcastTimer = nil,
     
     -- Debug mode (toggle with /ogrh debug sync)
     debug = false,  -- Hide verbose sync messages by default
+    
+    -- Phase 5: Repair mode suppression
+    repairModeActive = false,  -- Suppress broadcasts during active repairs
+    bufferedRequests = {},  -- Buffer repair requests during active repairs
 }
 
 --[[
@@ -56,9 +63,32 @@ OGRH.SyncIntegrity.State = {
 ]]
 
 -- Admin: Broadcast Active Raid checksums to raid
-function OGRH.SyncIntegrity.BroadcastChecksums()
+function OGRH.SyncIntegrity.BroadcastChecksums(forceImmediate)
     if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r BroadcastChecksums() called")
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r BroadcastChecksums() called, force=" .. tostring(forceImmediate))
+    end
+    
+    -- Check if sync mode is enabled
+    if OGRH.SyncMode then
+        if OGRH.SyncMode.IsSyncEnabled then
+            local syncEnabled = OGRH.SyncMode.IsSyncEnabled()
+            if not syncEnabled then
+                OGRH.Msg("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (sync mode disabled)")
+                return
+            end
+        else
+            OGRH.Msg("|cffff0000[RH-SyncIntegrity ERROR]|r SyncMode.IsSyncEnabled function not found!")
+        end
+    else
+        OGRH.Msg("|cffff0000[RH-SyncIntegrity ERROR]|r SyncMode module not loaded!")
+    end
+    
+    -- Phase 5: Suppress broadcasts during active repair sessions
+    if OGRH.SyncIntegrity.State.repairModeActive then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (repair mode active)")
+        end
+        return
     end
     
     if GetNumRaidMembers() == 0 then
@@ -84,15 +114,17 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
         return
     end
     
-    -- Skip broadcast if admin made changes recently (data still in flux)
-    local timeSinceLastMod = GetTime() - OGRH.SyncIntegrity.State.lastAdminModification
-    if timeSinceLastMod < OGRH.SyncIntegrity.State.modificationCooldown then
-        local remaining = OGRH.SyncIntegrity.State.modificationCooldown - timeSinceLastMod
-        if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (data modified %.0fs ago, cooldown %.0fs)", 
-                timeSinceLastMod, remaining))
+    -- Skip broadcast if admin made changes recently (unless forced)
+    if not forceImmediate then
+        local timeSinceLastMod = GetTime() - OGRH.SyncIntegrity.State.lastAdminModification
+        if timeSinceLastMod < OGRH.SyncIntegrity.State.modificationCooldown then
+            local remaining = OGRH.SyncIntegrity.State.modificationCooldown - timeSinceLastMod
+            if OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping broadcast (data modified %.0fs ago, cooldown %.0fs)", 
+                    timeSinceLastMod, remaining))
+            end
+            return
         end
-        return
     end
     
     -- Broadcast Active Raid checksums only (index 1)
@@ -117,15 +149,26 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
     end
     
     local lightweightChecksums = {
-        -- Active Raid structure checksum (all encounters, roles, but no assignments)
-        activeRaidStructure = OGRH.SyncChecksum.ComputeRaidChecksum(activeRaid.name),
+        -- Raid identification
+        activeRaidName = activeRaid.name,  -- CRITICAL: Client needs to know which raid to validate
         
-        -- Active encounter assignments checksum (current encounter only)
+        -- Layer 1: Raid structure checksum (metadata only, no encounters content)
+        structureChecksum = OGRH.SyncChecksum.ComputeRaidStructureChecksum(activeRaid.name),
+        
+        -- Layer 2: Per-encounter structure checksums (array)
+        encountersChecksums = OGRH.SyncChecksum.ComputeEncountersChecksums(activeRaid.name),
+        
+        -- Layer 3: Per-role structure checksums (2D array [enc][role])
+        rolesChecksums = OGRH.SyncChecksum.ComputeRolesChecksums(activeRaid.name),
+        
+        -- Layer 4: Per-role assignment checksums (2D array [enc][role])
+        apRoleChecksums = OGRH.SyncChecksum.ComputeApRoleChecksums(activeRaid.name),
+        
+        -- Layer 5: Global roles (TANKS, HEALERS, MELEE, RANGED)
+        rolesUIChecksum = OGRH.SyncChecksum.CalculateRolesUIChecksum(),
+        
+        -- Active encounter context (for UI display)
         activeEncounterIdx = currentEncounterIdx,
-        activeAssignments = currentEncounterIdx and OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(currentEncounterIdx) or nil,
-        
-        -- Global roles (TANKS, HEALERS, MELEE, RANGED)
-        rolesUI = OGRH.SyncChecksum.CalculateRolesUIChecksum(),
         
         -- Metadata
         timestamp = GetTime(),
@@ -141,9 +184,7 @@ function OGRH.SyncIntegrity.BroadcastChecksums()
                 priority = "LOW",  -- Background traffic
                 onSuccess = function()
                     OGRH.SyncIntegrity.State.lastChecksumBroadcast = GetTime()
-                    if OGRH.SyncIntegrity.State.debug then
-                        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcast Active Raid checksums")
-                    end
+                    OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcast Active Raid checksums")
                 end
             }
         )
@@ -152,104 +193,182 @@ end
 
 -- Client: Handle checksum broadcast from admin
 function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
+    -- CRITICAL: Skip validation if client is currently in an active repair session
+    -- Validating during repair causes false mismatches (packets still being applied)
+    if OGRH.SyncRepairHandlers and OGRH.SyncRepairHandlers.currentToken then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Skipping validation: repair session active (token=" .. tostring(OGRH.SyncRepairHandlers.currentToken) .. ")")
+        end
+        return
+    end
+    
     -- Verify sender is the addon's raid admin
     local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
     
-    OGRH.Msg("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r OnChecksumBroadcast called: sender=" .. (sender or "nil") .. ", currentAdmin=" .. (currentAdmin or "nil"))
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r OnChecksumBroadcast called: sender=" .. (sender or "nil") .. ", currentAdmin=" .. (currentAdmin or "nil"))
+    end
     
     if not currentAdmin or sender ~= currentAdmin then
-        OGRH.Msg("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Ignoring: sender is not admin")
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Ignoring: sender is not admin")
+        end
         return  -- Ignore checksums from non-admins
     end
     
     -- Don't validate against ourselves (admin receives their own broadcast)
     if sender == UnitName("player") then
-        OGRH.Msg("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Ignoring: sender is self")
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cffaaaaaa[RH-SyncIntegrity DEBUG]|r Ignoring: sender is self")
+        end
         return
     end
     
     OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r Received checksum broadcast from admin " .. sender)
     
-    -- Validate Active Raid checksums
-    if not (checksums.activeRaidStructure and checksums.rolesUI) then
+    -- Validate hierarchical checksums
+    if not (checksums.structureChecksum and checksums.encountersChecksums and checksums.rolesChecksums and checksums.apRoleChecksums and checksums.rolesUIChecksum) then
         OGRH.Msg("|cffff0000[RH-SyncIntegrity]|r ERROR: Invalid checksum format received")
         return
     end
     
-    if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Received Active Raid checksum broadcast, validating...")
-    end
-    
     local mismatches = {}
     
-    -- Validate Active Raid structure
+    -- Hierarchical validation: Track mismatches per encounter
     local activeRaid = OGRH.GetActiveRaid()
     if activeRaid then
-        local localStructure = OGRH.SyncChecksum.ComputeRaidChecksum(activeRaid.name)
+        local localStructure = OGRH.SyncChecksum.ComputeRaidStructureChecksum(activeRaid.name)
         if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity][DEBUG]|r Structure checksums: local=%s, admin=%s", localStructure, checksums.activeRaidStructure))
+            OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity][DEBUG]|r Structure checksums: local=%s, admin=%s", localStructure, checksums.structureChecksum))
         end
-        if localStructure ~= checksums.activeRaidStructure then
+        
+        -- Layer 1: Validate Raid structure
+        if localStructure ~= checksums.structureChecksum then
             table.insert(mismatches, {
-                type = "ACTIVE_RAID_STRUCTURE",
+                type = "STRUCTURE",
                 component = "structure"
             })
             if OGRH.SyncIntegrity.State.debug then
-                OGRH.Msg("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected - Requesting repair: Active Raid structure")
+                OGRH.Msg("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected: Raid structure")
             end
+        end
+        
+        -- Hierarchical encounter validation: Track highest-level mismatch per encounter
+        local encounterMismatches = {}  -- [encIdx] = {level, data}
+        
+        -- Layer 2: Check encounter structure (highest priority)
+        local localEncounters = OGRH.SyncChecksum.ComputeEncountersChecksums(activeRaid.name)
+        for encIdx, adminChecksum in pairs(checksums.encountersChecksums) do
+            local localChecksum = localEncounters[encIdx]
+            if localChecksum ~= adminChecksum then
+                encounterMismatches[encIdx] = {
+                    level = 2,  -- Encounter structure
+                    type = "ENCOUNTER_STRUCTURE",
+                    component = "encounter",
+                    encounterIdx = encIdx
+                }
+                if OGRH.SyncIntegrity.State.debug then
+                    OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected: Encounter #%d structure", encIdx))
+                end
+            end
+        end
+        
+        -- Layer 3: Check roles (only if encounter structure matched)
+        local localRoles = OGRH.SyncChecksum.ComputeRolesChecksums(activeRaid.name)
+        for encIdx, roleChecksums in pairs(checksums.rolesChecksums) do
+            if not encounterMismatches[encIdx] then  -- Only check if encounter structure matched
+                for roleIdx, adminChecksum in pairs(roleChecksums) do
+                    local localChecksum = localRoles[encIdx] and localRoles[encIdx][roleIdx]
+                    if localChecksum ~= adminChecksum then
+                        -- Role mismatch detected, but encounter repair fixes this too
+                        if not encounterMismatches[encIdx] or encounterMismatches[encIdx].level > 3 then
+                            encounterMismatches[encIdx] = {
+                                level = 3,  -- Role structure (but will trigger encounter repair)
+                                type = "ENCOUNTER_STRUCTURE",
+                                component = "encounter",
+                                encounterIdx = encIdx
+                            }
+                            if OGRH.SyncIntegrity.State.debug then
+                                OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected: Encounter #%d, Role #%d - requesting encounter repair", encIdx, roleIdx))
+                            end
+                        end
+                        break  -- One role mismatch means whole encounter needs repair
+                    end
+                end
+            end
+        end
+        
+        -- Layer 4: Check assignments (only if encounter and roles matched)
+        local localAssignments = OGRH.SyncChecksum.ComputeApRoleChecksums(activeRaid.name)
+        for encIdx, roleAssignments in pairs(checksums.apRoleChecksums) do
+            if not encounterMismatches[encIdx] then  -- Only check if encounter and roles matched
+                for roleIdx, adminChecksum in pairs(roleAssignments) do
+                    local localChecksum = localAssignments[encIdx] and localAssignments[encIdx][roleIdx]
+                    if localChecksum ~= adminChecksum then
+                        -- Assignment mismatch detected, but encounter repair fixes this too
+                        if not encounterMismatches[encIdx] then
+                            encounterMismatches[encIdx] = {
+                                level = 4,  -- Assignments (but will trigger encounter repair)
+                                type = "ENCOUNTER_STRUCTURE",
+                                component = "encounter",
+                                encounterIdx = encIdx
+                            }
+                            if OGRH.SyncIntegrity.State.debug then
+                                OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected: Encounter #%d, Role #%d assignments - requesting encounter repair", encIdx, roleIdx))
+                            end
+                        end
+                        break  -- One assignment mismatch means whole encounter needs repair
+                    end
+                end
+            end
+        end
+        
+        -- Add encounter mismatches to main list
+        for encIdx, mismatch in pairs(encounterMismatches) do
+            table.insert(mismatches, mismatch)
         end
     end
     
-    -- Validate Active Encounter assignments (if admin has a selected encounter)
-    if checksums.activeEncounterIdx and checksums.activeAssignments then
-        local localAssignments = OGRH.SyncChecksum.ComputeActiveAssignmentsChecksum(checksums.activeEncounterIdx)
-        if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity][DEBUG]|r Assignment checksums: local=%s, admin=%s", localAssignments, checksums.activeAssignments))
-        end
-        if localAssignments ~= checksums.activeAssignments then
-            table.insert(mismatches, {
-                type = "ACTIVE_ASSIGNMENTS",
-                component = "assignments",
-                encounterIdx = checksums.activeEncounterIdx
-            })
-            if OGRH.SyncIntegrity.State.debug then
-                OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected - Requesting repair: Active Encounter assignments (encounter #%d)", checksums.activeEncounterIdx))
-            end
-        end
-    end
-    
-    -- Validate RolesUI (global roles)
+    -- Layer 5: Validate RolesUI (global roles)
     local localRolesUI = OGRH.SyncChecksum.CalculateRolesUIChecksum()
     if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity][DEBUG]|r RolesUI checksums: local=%s, admin=%s", localRolesUI, checksums.rolesUI))
+        OGRH.Msg(string.format("|cffaaaaaa[RH-SyncIntegrity][DEBUG]|r RolesUI checksums: local=%s, admin=%s", localRolesUI, checksums.rolesUIChecksum))
     end
-    if localRolesUI ~= checksums.rolesUI then
+    if localRolesUI ~= checksums.rolesUIChecksum then
         table.insert(mismatches, {
             type = "ROLES_UI",
-            component = "roles"
+            component = "rolesui"
         })
         if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected - Requesting repair: RolesUI (global role assignments)")
+            OGRH.Msg("|cffff8800[RH-SyncIntegrity][DEBUG]|r Mismatch detected: RolesUI (global role assignments)")
         end
     end
     
-    -- If mismatches found, queue repair requests (1-second buffer)
+    -- If mismatches found, queue repair requests
     if table.getn(mismatches) > 0 then
-        if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg(string.format("|cffff8800[RH-SyncIntegrity][DEBUG]|r %d checksum mismatch(es) detected, requesting repairs from admin", table.getn(mismatches)))
-        end
+        OGRH.Msg(string.format("|cffff9900[RH-SyncIntegrity]|r %d checksum mismatch(es) detected - requesting repairs from admin", table.getn(mismatches)))
+        
+        -- Mark that THIS client has requested repairs (will accept next repair session)
+        OGRH.SyncRepairHandlers.hasRequestedRepair = true
+        
         for i = 1, table.getn(mismatches) do
             OGRH.SyncIntegrity.QueueRepairRequest(sender, mismatches[i])
         end
     else
-        if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg("|cff00ff00[RH-SyncIntegrity][DEBUG]|r All checksums validated successfully")
-        end
+        OGRH.Msg("|cff00ff00[RH-SyncIntegrity]|r All checksums validated successfully - data in sync")
     end
 end
 
 -- Client: Broadcast repair request (admin will buffer for 1 second)
 function OGRH.SyncIntegrity.QueueRepairRequest(adminName, mismatch)
+    -- Check if sync mode is enabled
+    if OGRH.SyncMode and not OGRH.SyncMode.CanRequestRepair() then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff888888[RH-SyncIntegrity]|r Skipping repair request (sync mode disabled)")
+        end
+        return
+    end
+    
     -- Broadcast repair request to raid (admin will buffer)
     if OGRH.MessageRouter and OGRH.MessageTypes then
         local requestData = {
@@ -266,9 +385,12 @@ function OGRH.SyncIntegrity.QueueRepairRequest(adminName, mismatch)
             }
         )
         
-        if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg(string.format("|cffff9900[RH-SyncIntegrity]|r Requested repair: %s", mismatch.type))
+        -- Always log repair requests
+        local componentDesc = mismatch.component
+        if mismatch.encounterIdx then
+            componentDesc = string.format("%s (Enc %d)", mismatch.component, mismatch.encounterIdx)
         end
+        OGRH.Msg(string.format("|cffff9900[RH-SyncIntegrity]|r Requesting repair: %s", componentDesc))
     end
 end
 
@@ -292,6 +414,15 @@ function OGRH.SyncIntegrity.OnRepairRequest(sender, data)
     
     -- Only admin can send repairs
     if not OGRH.CanModifyStructure(UnitName("player")) then
+        return
+    end
+    
+    -- Phase 5: Buffer requests during active repair
+    if OGRH.SyncIntegrity.State.repairModeActive then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cffff00ff[RH-SyncIntegrity ADMIN]|r Buffering repair request from %s (repair mode active)", sender))
+        end
+        OGRH.SyncIntegrity.BufferRepairRequest(sender, data.component, nil)
         return
     end
     
@@ -329,37 +460,163 @@ function OGRH.SyncIntegrity.OnRepairRequest(sender, data)
     end, buffer.timeout)
 end
 
--- Admin: Flush repair buffer and broadcast repairs (once per component)
+-- Admin: Flush repair buffer and initiate surgical repair session (Phase 6)
 function OGRH.SyncIntegrity.FlushRepairBuffer()
     local buffer = OGRH.SyncIntegrity.RepairBuffer
     
-    local count = 0
-    for _ in pairs(buffer.requests) do count = count + 1 end
-    if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r Flushing " .. tostring(count) .. " repair request(s), broadcasting repairs")
+    -- Check cooldown (prevent repair loops)
+    local now = GetTime()
+    if OGRH.SyncIntegrity.State.repairCooldownUntil and now < OGRH.SyncIntegrity.State.repairCooldownUntil then
+        local remaining = math.ceil(OGRH.SyncIntegrity.State.repairCooldownUntil - now)
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cffff9900[RH-SyncIntegrity]|r Repair on cooldown (%ds remaining), buffering requests", remaining))
+        end
+        -- Reschedule for after cooldown
+        if buffer.timer then
+            OGRH.CancelTimer(buffer.timer)
+        end
+        buffer.timer = OGRH.ScheduleTimer(function()
+            OGRH.SyncIntegrity.FlushRepairBuffer()
+        end, remaining + 1.0)
+        return
     end
     
-    -- Broadcast repair for each unique component (once per component)
+    local count = 0
+    for _ in pairs(buffer.requests) do count = count + 1 end
+    
+    if count == 0 then
+        return  -- Nothing to repair
+    end
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r Flushing " .. tostring(count) .. " repair request(s), initiating surgical repair session")
+    end
+    
+    -- Phase 6: Build failedLayers from buffered requests
+    local failedLayers = {
+        structure = false,
+        rolesui = false,
+        encounters = {},
+        roles = {},
+        assignments = {}
+    }
+    
+    local encounterSet = {}
+    
+    -- Log what we're processing (use count variable, not table.getn for dictionary)
+    OGRH.Msg(string.format("|cffff00ff[RH-SyncIntegrity ADMIN]|r Processing %d repair request(s) from buffer", count))
+    
     for key, request in pairs(buffer.requests) do
-        if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Processing repair for component: " .. tostring(request.component))
-        end
+        OGRH.Msg(string.format("|cffff00ff[RH-SyncIntegrity ADMIN]|r  Request: component=%s, encounterIdx=%s", tostring(request.component), tostring(request.encounterIdx)))
         
         if request.component == "structure" then
-            OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
+            failedLayers.structure = true
+            OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r    → Set structure=true")
+        elseif request.component == "encounter" and request.encounterIdx then
+            encounterSet[request.encounterIdx] = true
+            OGRH.Msg(string.format("|cffff00ff[RH-SyncIntegrity ADMIN]|r    → Added encounter %d", request.encounterIdx))
+        elseif request.component == "role" and request.encounterIdx then
+            encounterSet[request.encounterIdx] = true
         elseif request.component == "assignments" and request.encounterIdx then
-            OGRH.SyncIntegrity.BroadcastAssignmentsRepair(request.encounterIdx)
-        elseif request.component == "roles" then
-            OGRH.SyncIntegrity.BroadcastRolesRepair()
-        else
-            OGRH.Msg("|cffff0000[RH-SyncIntegrity DEBUG]|r Unknown component: " .. tostring(request.component))
+            encounterSet[request.encounterIdx] = true
+        elseif request.component == "rolesui" then
+            -- Global roles is its own layer
+            failedLayers.rolesui = true
+            OGRH.Msg("|cffff00ff[RH-SyncIntegrity ADMIN]|r    → Set rolesui=true")
         end
+    end
+    
+    -- Convert encounter set to array
+    for encIdx, _ in pairs(encounterSet) do
+        table.insert(failedLayers.encounters, encIdx)
+    end
+    
+    -- NOTE: We do NOT auto-queue assignments when repairing encounters
+    -- Encounter repairs include role structure (name, column, slots, raidMarks, assignmentNumbers)
+    -- Assignments repairs ONLY contain assignedPlayers (player names)
+    -- If assignedPlayers checksums fail, clients will request ASSIGNMENTS repairs separately
+    
+    -- Build client list from requesters BEFORE clearing buffer
+    local clientMap = {}  -- Deduplicate client names
+    for key, request in pairs(buffer.requests) do
+        if request.requesters then
+            for i = 1, table.getn(request.requesters) do
+                local clientName = request.requesters[i]
+                if not clientMap[clientName] then
+                    clientMap[clientName] = {
+                        name = clientName,
+                        components = {},
+                        priority = 999  -- Lower number = higher priority
+                    }
+                end
+                
+                -- Track component and determine priority
+                table.insert(clientMap[clientName].components, request.component)
+                
+                -- Priority: structure (1) > encounter (2) > role (3) > assignments (4)
+                local componentPriority = 999
+                if request.component == "structure" then
+                    componentPriority = 1
+                elseif request.component == "encounter" then
+                    componentPriority = 2
+                elseif request.component == "role" then
+                    componentPriority = 3
+                elseif request.component == "assignments" then
+                    componentPriority = 4
+                end
+                
+                -- Track highest priority (lowest number)
+                if componentPriority < clientMap[clientName].priority then
+                    clientMap[clientName].priority = componentPriority
+                    clientMap[clientName].displayComponent = request.component
+                end
+            end
+        end
+    end
+    
+    -- Convert map to array
+    local clientList = {}
+    for _, client in pairs(clientMap) do
+        -- Use only the highest priority component for display
+        client.components = client.displayComponent or "Unknown"
+        table.insert(clientList, client)
     end
     
     -- Clear buffer
     buffer.requests = {}
     buffer.timer = nil
+    
+    -- Initiate surgical repair session
+    if OGRH.SyncRepairHandlers and OGRH.SyncRepairHandlers.InitiateRepair then
+        local activeRaid = OGRH.GetActiveRaid()
+        if activeRaid and activeRaid.name then
+            OGRH.SyncRepairHandlers.InitiateRepair(activeRaid.name, failedLayers, 1, clientList)
+        end
+    else
+        OGRH.Msg("|cffff0000[RH-SyncIntegrity]|r ERROR: SyncRepairHandlers not loaded")
+    end
 end
+
+--[[
+    ============================================================================
+    LEGACY BROADCAST REPAIR SYSTEM (Phase 1-3) - COMMENTED OUT
+    ============================================================================
+    
+    These functions are replaced by Phase 6 Surgical Repair System.
+    Kept commented out for troubleshooting if needed.
+    
+    New flow uses:
+    - SyncRepairHandlers.InitiateRepair() (admin)
+    - SyncRepairHandlers.OnRepairPacket() (client)
+    
+    Legacy flow used:
+    - BroadcastActiveRaidRepair() → OnActiveRaidRepair()
+    - BroadcastAssignmentsRepair() → OnAssignmentsRepair()
+    - BroadcastRolesRepair() → OnRolesRepair()
+    
+    ============================================================================
+    ADMIN-SIDE BROADCAST FUNCTIONS
+    ============================================================================
 
 -- Admin: Broadcast Active Raid structure for repair
 function OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
@@ -379,8 +636,6 @@ function OGRH.SyncIntegrity.BroadcastActiveRaidRepair()
         OGRH.Msg("|cffaaffaa[RH-SyncIntegrity DEBUG]|r Active raid exists, preparing copy")
     end
     
-    -- Deep copy Active Raid with ALL data (structure + assignments)
-    -- Structure repair includes everything: roles, columns, metadata, assignedPlayers, raidMarks, assignmentNumbers
     local raidCopy = OGRH.DeepCopy(activeRaid)
     
     if OGRH.SyncIntegrity.State.debug then
@@ -408,7 +663,6 @@ function OGRH.SyncIntegrity.BroadcastAssignmentsRepair(encounterIdx)
         return
     end
     
-    -- Extract ALL encounter assignments
     local allAssignments = {}
     local singleEncounterSize = 0
     local totalSize = 0
@@ -426,7 +680,6 @@ function OGRH.SyncIntegrity.BroadcastAssignmentsRepair(encounterIdx)
                     assignmentNumbers = role.assignmentNumbers or {}
                 }
                 
-                -- Track size for debug
                 local encSize = table.getn(role.assignedPlayers or {}) + table.getn(role.raidMarks or {}) + table.getn(role.assignmentNumbers or {})
                 totalSize = totalSize + encSize
                 if encIdx == (encounterIdx or 1) then
@@ -475,6 +728,10 @@ function OGRH.SyncIntegrity.BroadcastRolesRepair()
         OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcast RolesUI repair")
     end
 end
+
+-- ============================================================================
+-- CLIENT-SIDE REPAIR HANDLERS
+-- ============================================================================
 
 -- Client: Receive and apply Active Raid structure repair
 function OGRH.SyncIntegrity.OnActiveRaidRepair(sender, data)
@@ -600,6 +857,7 @@ function OGRH.SyncIntegrity.OnRolesRepair(sender, data)
         OGRH_EncounterFrame.RefreshRoleContainers()
     end
 end
+]]
 
 -- Start integrity checks timer (30-second polling)
 function OGRH.SyncIntegrity.StartIntegrityChecks()
@@ -679,7 +937,7 @@ end
 function OGRH.SyncIntegrity.RecordAdminModification()
     OGRH.SyncIntegrity.State.lastAdminModification = GetTime()
     if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cffffaa00[RH-SyncIntegrity]|r Admin modification recorded, broadcasts will resume in 2s")
+        OGRH.Msg("|cffffaa00[RH-SyncIntegrity]|r Admin modification recorded, broadcasts will resume in 10s")
     end
 end
 
@@ -748,7 +1006,7 @@ function OGRH.SyncIntegrity.OnAdminQuery(sender, data)
         {priority = "HIGH"}
     )
     
-    -- Then send checksums immediately (after short delay to ensure admin response is processed first)
+    -- Auto-broadcast checksums when admin status changes
     OGRH.ScheduleTimer(function()
         OGRH.SyncIntegrity.BroadcastChecksums()
     end, 0.1)
@@ -873,6 +1131,75 @@ function OGRH.SyncIntegrity.CheckAdminStatus()
         OGRH.SyncIntegrity.State.enabled = false
     end
 end
+
+--[[
+    ============================================================================
+    PHASE 5: REPAIR MODE CONTROL
+    ============================================================================
+]]
+
+-- Enter repair mode (suppress broadcasts, buffer requests)
+function OGRH.SyncIntegrity.EnterRepairMode()
+    OGRH.SyncIntegrity.State.repairModeActive = true
+    OGRH.SyncIntegrity.State.bufferedRequests = {}
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Entered repair mode (broadcasts suppressed)")
+    end
+end
+
+-- Exit repair mode (resume broadcasts, process buffered requests)
+function OGRH.SyncIntegrity.ExitRepairMode()
+    OGRH.SyncIntegrity.State.repairModeActive = false
+    
+    -- Process buffered requests
+    local buffered = OGRH.SyncIntegrity.State.bufferedRequests
+    if buffered and table.getn(buffered) > 0 then
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff00ccff[RH-SyncIntegrity]|r Processing %d buffered repair requests", table.getn(buffered)))
+        end
+        
+        -- TODO: Process buffered requests (Phase 6)
+        -- For now, just clear them
+    end
+    
+    OGRH.SyncIntegrity.State.bufferedRequests = {}
+    
+    -- Set cooldown to prevent immediate re-repairs
+    OGRH.SyncIntegrity.State.repairCooldownUntil = GetTime() + 15.0  -- 15 second cooldown
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Exited repair mode (broadcasts resumed, 15s cooldown active)")
+    end
+    
+    -- Auto-broadcast checksums after repair to validate everyone (including mid-sync joins)
+    if OGRH.SyncIntegrity.State.enabled then
+        OGRH.ScheduleTimer(function()
+            OGRH.SyncIntegrity.BroadcastChecksums()
+        end, 10.0)  -- 10 second delay to allow clients to save and settle
+    end
+end
+
+-- Buffer a repair request during active repair
+function OGRH.SyncIntegrity.BufferRepairRequest(playerName, component, checksum)
+    if not OGRH.SyncIntegrity.State.repairModeActive then
+        return false  -- Not in repair mode, don't buffer
+    end
+    
+    table.insert(OGRH.SyncIntegrity.State.bufferedRequests, {
+        playerName = playerName,
+        component = component,
+        checksum = checksum,
+        timestamp = GetTime()
+    })
+    
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Buffered repair request from %s (%s)", playerName, component))
+    end
+    
+    return true  -- Request buffered
+end
+
 
 -- Auto-initialize on load
 local initFrame = CreateFrame("Frame")

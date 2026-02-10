@@ -277,6 +277,10 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Auto-activating v2 schema...")
     OGRH.SyncGranular.Initialize()
   end
   
+  if OGRH.SyncRepairHandlers and OGRH.SyncRepairHandlers.Initialize then
+    OGRH.SyncRepairHandlers.Initialize()
+  end
+  
   elseif event == "PLAYER_ENTERING_WORLD" then
     -- Clean up v1 keys if we're in v2 mode (after all modules have loaded)
     -- Clean up deprecated v2 fields only (keep v1 data for rollback)
@@ -585,14 +589,17 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
     OGRH.MainUI.RefreshDisplay()
   end
   
-  -- Trigger checksum broadcast after change (SyncIntegrity will respect cooldown)
-  if OGRH.SyncIntegrity and OGRH.SyncIntegrity.RecordAdminModification then
-    OGRH.SyncIntegrity.RecordAdminModification()
-  end
-  if OGRH.SyncIntegrity and OGRH.SyncIntegrity.BroadcastChecksums then
-    OGRH.ScheduleTimer(function()
-      OGRH.SyncIntegrity.BroadcastChecksums()
-    end, 2)  -- Broadcast 2 seconds after change
+  -- Phase 6: Broadcast checksums to trigger mismatch detection on clients
+  -- Clients will detect discrepancies and request repairs, then admin initiates repair session
+  if OGRH.CanModifyStructure and OGRH.CanModifyStructure(UnitName("player")) then
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.BroadcastChecksums then
+      OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Broadcasting checksums to clients...")
+      
+      OGRH.ScheduleTimer(function()
+        -- Force immediate broadcast (bypass cooldown for active raid changes)
+        OGRH.SyncIntegrity.BroadcastChecksums(true)
+      end, 1)  -- Broadcast 1 second after change
+    end
   end
   
   return true

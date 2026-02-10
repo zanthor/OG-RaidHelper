@@ -208,10 +208,9 @@ for idx, encounter in ipairs(raid.encounters) do
     for roleIdx, role in ipairs(encounter.roles) do
         encCopy.roles[roleIdx] = {
             name = role.name,
-            priority = role.priority,
-            faction = role.faction,
-            isOptionalRole = role.isOptionalRole,
-            -- EXCLUDE: assignedPlayers, raidMarks, assignmentNumbers
+-- DELETTED SHIT THE AI FUCKING HALLUCNATED
+            -- Include the entire fucking role except the assignments
+            -- EXCLUDE: assignedPlayers
         }
     end
     
@@ -1604,6 +1603,128 @@ OGRH.MessageRouter.RegisterHandler("OGRH_SYNC_REPAIR_STRUCTURE",
 
 ## Edge Cases and Error Handling
 
+### Panel Timeout System (10-Second Inactivity)
+
+**Scenario:** Repair panels remain visible when communication stops
+
+**Root Causes:**
+- Admin disconnects mid-repair without sending REPAIR_CANCEL
+- Player leaves raid during repair
+- Network issues cause packet flow to stop
+- Session hangs without completion
+
+**Solution:** Automatic timeout with activity tracking
+
+**Behavior:**
+1. **Timeout starts** when any repair panel is shown (Admin, Client, or Waiting)
+2. **Timeout resets** every time a related packet is received:
+   - Admin panel: resets on packet send, validation response
+   - Client panel: resets on packet receive, validation request
+   - Waiting panel: resets on any repair activity
+3. **Auto-close** after 10 seconds of inactivity:
+   - Hides the panel
+   - Cancels the session
+   - Clears local state
+   - Shows message: "Panel timeout - auto-closing"
+
+**Implementation:**
+```lua
+-- SyncRepairUI.lua - State tracking
+OGRH.SyncRepairUI.State = {
+    timeouts = {
+        adminTimer = nil,        -- Timer reference
+        clientTimer = nil,
+        waitingTimer = nil,
+        lastAdminActivity = 0,   -- Timestamp
+        lastClientActivity = 0,
+        lastWaitingActivity = 0,
+        timeoutDuration = 10.0   -- 10 seconds
+    }
+}
+
+-- Start timeout when showing panel
+function OGRH.SyncRepairUI.StartClientTimeout()
+    OGRH.SyncRepairUI.CancelClientTimeout()
+    OGRH.SyncRepairUI.State.timeouts.lastClientActivity = GetTime()
+    
+    OGRH.SyncRepairUI.State.timeouts.clientTimer = OGRH.ScheduleTimer(function()
+        OGRH.Msg("|cffff9900[RH-SyncRepair]|r Client panel timeout - auto-closing")
+        OGRH.SyncRepairUI.HideClientPanel()
+        
+        if OGRH.SyncRepairHandlers then
+            OGRH.SyncRepairHandlers.currentToken = nil
+        end
+    end, 10.0)
+end
+
+-- Reset timeout on packet activity
+function OGRH.SyncRepairUI.ResetClientTimeout()
+    local panel = OGRH.SyncRepairUI.State.clientPanel
+    if not panel or not panel:IsShown() then
+        return
+    end
+    
+    OGRH.SyncRepairUI.State.timeouts.lastClientActivity = GetTime()
+    OGRH.SyncRepairUI.StartClientTimeout()  -- Restart timer
+end
+
+-- Cancel timeout when hiding panel
+function OGRH.SyncRepairUI.CancelClientTimeout()
+    if OGRH.SyncRepairUI.State.timeouts.clientTimer then
+        OGRH.CancelTimer(OGRH.SyncRepairUI.State.timeouts.clientTimer)
+        OGRH.SyncRepairUI.State.timeouts.clientTimer = nil
+    end
+end
+```
+
+**Timeout Reset Points:**
+- **Admin Panel:**
+  - Repair session starts
+  - Each packet sent to raid
+  - Validation response received from client
+- **Client Panel:**
+  - Repair session starts
+  - Each repair packet received
+  - Validation request received
+- **Waiting Panel:**
+  - Waiting state entered
+  - Repair packets observed (even if not for this client)
+
+**Benefits:**
+- Automatic cleanup on network failure
+- No infinite "stuck" panels
+- Graceful degradation
+- User sees clear timeout message
+
+---
+
+### Player Leaves Raid During Repair
+
+**Scenario:** Player closes repair panel and leaves raid
+
+**Behavior:**
+1. RAID_ROSTER_UPDATE fires with GetNumRaidMembers() = 0
+2. All repair panels immediately closed
+3. Session cancelled with reason: "Player left raid"
+4. State cleared
+
+**Implementation:**
+```lua
+-- SyncSession.lua - OnRaidRosterUpdate()
+if lastSize > 0 and currentSize == 0 then
+    -- Player left raid
+    if OGRH.SyncRepairUI then
+        OGRH.SyncRepairUI.HideAdminPanel()
+        OGRH.SyncRepairUI.HideClientPanel()
+        OGRH.SyncRepairUI.HideWaitingPanel()
+    end
+    
+    OGRH.SyncSession.CancelSession("Player left raid")
+end
+```
+
+---
+
 ### Admin Disconnects During Repair
 
 **Scenario:** Admin starts repair session, then disconnects
@@ -1612,21 +1733,50 @@ OGRH.MessageRouter.RegisterHandler("OGRH_SYNC_REPAIR_STRUCTURE",
 1. Clients detect admin offline (RAID_ROSTER_UPDATE)
 2. Clients cancel local session state
 3. Clients close repair panel with message: "Admin disconnected - repair canceled"
-4. New admin (if elected) starts fresh checksums after 10s grace period
+4. Panel timeout (10s) serves as backup if RAID_ROSTER_UPDATE doesn't fire
+5. New admin (if elected) starts fresh checksums after 10s grace period
 
 **Implementation:**
 ```lua
--- Client-side
-function OnRaidRosterUpdate()
-    local session = OGRH.SyncSession.State.currentSession
+-- Client-side (SyncSession.lua)
+function OGRH.SyncSession.OnRaidRosterUpdate()
+    local session = OGRH.SyncSession.GetActiveSession()
     if session and session.adminName then
-        if not UnitInRaid(session.adminName) then
+        -- Check if admin still in raid
+        local adminFound = false
+        for i = 1, GetNumRaidMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name == session.adminName then
+                adminFound = true
+                break
+            end
+        end
+        
+        if not adminFound then
+            OGRH.Msg("|cffff9900[RH-SyncRepair]|r Admin disconnected - closing repair panels")
+            
+            -- Hide all client panels
+            if OGRH.SyncRepairUI then
+                OGRH.SyncRepairUI.HideClientPanel()
+                OGRH.SyncRepairUI.HideWaitingPanel()
+            end
+            
+            -- Cancel session
             OGRH.SyncSession.CancelSession("Admin disconnected")
-            OGRH.SyncRepairUI.ShowMessage("Repair canceled - Admin offline")
+            
+            -- Clear state
+            if OGRH.SyncRepairHandlers then
+                OGRH.SyncRepairHandlers.currentToken = nil
+                OGRH.SyncRepairHandlers.waitingForRepair = false
+            end
         end
     end
 end
 ```
+
+**Dual Protection:**
+- **Primary:** RAID_ROSTER_UPDATE detection (immediate)
+- **Backup:** 10-second timeout (if event doesn't fire)
 
 ---
 

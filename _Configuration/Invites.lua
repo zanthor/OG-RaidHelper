@@ -24,7 +24,16 @@ OGRH.Invites = OGRH.Invites or {
   updateInterval = 2, -- Update every 2 seconds
   lastRollForHash = nil, -- For detecting RollFor data changes
   roleSyncQueue = {}, -- Queue for retrying failed role syncs
-  cachedCurrentSource = nil -- Cached source to avoid SVM reads every frame
+  cachedCurrentSource = nil, -- Cached source to avoid SVM reads every frame
+  
+  -- In-memory invite mode state (never persisted)
+  InviteModeState = {
+    enabled = false,
+    lastInviteTime = 0,
+    totalPlayers = 0,
+    invitedCount = 0,
+    syncModeWasEnabled = false
+  }
 }
 
 -- Data source constants
@@ -98,14 +107,9 @@ function OGRH.Invites.EnsureSV()
   if not OGRH.SVM.GetPath("invites.raidhelperGroupsData") then
     OGRH.SVM.SetPath("invites.raidhelperGroupsData", nil, {syncLevel = "MANUAL", componentType = "settings"})
   end
-  if not OGRH.SVM.GetPath("invites.inviteMode") then
-    OGRH.SVM.SetPath("invites.inviteMode", {
-      enabled = false,
-      interval = 60,
-      lastInviteTime = 0,
-      totalPlayers = 0,
-      invitedCount = 0
-    }, {syncLevel = "MANUAL", componentType = "settings"})
+  -- Invite interval setting (persisted)
+  if not OGRH.SVM.GetPath("invites.inviteInterval") then
+    OGRH.SVM.SetPath("invites.inviteInterval", 60, {syncLevel = "MANUAL", componentType = "settings"})
   end
   if not OGRH.SVM.GetPath("invites.invitePanelPosition") then
     OGRH.SVM.SetPath("invites.invitePanelPosition", {
@@ -1242,8 +1246,8 @@ function OGRH.Invites.ShowWindow()
   inviteModeBtn:SetWidth(130)
   inviteModeBtn:SetHeight(28)
   inviteModeBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, 15)
-  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {enabled = false}
-  inviteModeBtn:SetText(inviteMode.enabled and "Stop Invite Mode" or "Start Invite Mode")
+  local state = OGRH.Invites.InviteModeState
+  inviteModeBtn:SetText(state.enabled and "Stop Invite Mode" or "Start Invite Mode")
   if OGRH.StyleButton then
     OGRH.StyleButton(inviteModeBtn)
   end
@@ -1253,8 +1257,8 @@ function OGRH.Invites.ShowWindow()
   frame.inviteModeBtn = inviteModeBtn
   
   local function UpdateInviteModeButton()
-    local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {enabled = false}
-    inviteModeBtn:SetText(inviteMode.enabled and "Stop Invite Mode" or "Start Invite Mode")
+    local state = OGRH.Invites.InviteModeState
+    inviteModeBtn:SetText(state.enabled and "Stop Invite Mode" or "Start Invite Mode")
   end
   
   -- Interval input with label using OGST
@@ -1272,9 +1276,7 @@ function OGRH.Invites.ShowWindow()
       local value = tonumber(text) or 10
       if value < 10 then value = 10 end
       if value > 999 then value = 999 end
-      local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
-      inviteMode.interval = value
-      OGRH.SVM.SetPath("invites.inviteMode", inviteMode, {syncLevel = "MANUAL", componentType = "settings"})
+      OGRH.SVM.SetPath("invites.inviteInterval", value, {syncLevel = "MANUAL", componentType = "settings"})
       if intervalInput and intervalInput.SetText then
         intervalInput:SetText(tostring(value))
       end
@@ -1282,8 +1284,8 @@ function OGRH.Invites.ShowWindow()
   })
   OGST.AnchorElement(intervalContainer, inviteModeBtn, {position = "right", align = "center"})
   if intervalInput and intervalInput.SetText then
-    local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {interval = 60}
-    intervalInput:SetText(tostring(inviteMode.interval))
+    local interval = OGRH.SVM.GetPath("invites.inviteInterval") or 60
+    intervalInput:SetText(tostring(interval))
   end
   frame.intervalInput = intervalInput
   
@@ -2308,19 +2310,19 @@ end
 -- ============================================================================
 
 function OGRH.Invites.ToggleInviteMode()
-  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
-  inviteMode.enabled = not inviteMode.enabled
+  local state = OGRH.Invites.InviteModeState
+  state.enabled = not state.enabled
   
-  if inviteMode.enabled then
-    inviteMode.lastInviteTime = 0  -- Force immediate first invite
-    inviteMode.invitedCount = 0
-    inviteMode.totalPlayers = 0
+  if state.enabled then
+    state.lastInviteTime = 0  -- Force immediate first invite
+    state.invitedCount = 0
+    state.totalPlayers = 0
     
     -- Count total players (excluding benched/absent)
     local players = OGRH.Invites.GetRosterPlayers()
     for _, player in ipairs(players) do
       if not player.bench and not player.absent then
-        inviteMode.totalPlayers = inviteMode.totalPlayers + 1
+        state.totalPlayers = state.totalPlayers + 1
       end
     end
     
@@ -2336,30 +2338,68 @@ function OGRH.Invites.ToggleInviteMode()
     -- Announce to guild chat
     SendChatMessage("Starting invites for " .. raidName .. ". Whisper me if you're signed up and need an invite!", "GUILD")
     
+    -- Disable sync mode when starting invite mode
+    if OGRH.SyncMode and OGRH.SyncMode.State then
+      state.syncModeWasEnabled = OGRH.SyncMode.State.enabled  -- Remember state
+      if OGRH.SyncMode.State.enabled then
+        OGRH.SyncMode.State.enabled = false
+        OGRH.Msg("|cffff9900[RH-Sync]|r Sync mode disabled during invite mode")
+        
+        -- Start sync-off broadcast
+        if OGRH.SyncMode.StartSyncOffBroadcast then
+          OGRH.SyncMode.StartSyncOffBroadcast()
+        end
+        
+        -- Update sync button if EncounterMgmt is open
+        if OGRH_EncounterFrame and OGRH_EncounterFrame.UpdateSyncButton then
+          OGRH_EncounterFrame.UpdateSyncButton()
+        end
+      end
+    end
+    
     -- Show auxiliary panel
     OGRH.Invites.ShowInviteModePanel()
     
     -- Do first batch invite immediately (skip guild announcement on first cycle)
     OGRH.Invites.DoInviteCycle(true)
   else
+    -- Re-enable sync mode if it was enabled before invite mode started
+    if OGRH.SyncMode and OGRH.SyncMode.State and state.syncModeWasEnabled then
+      if not OGRH.SyncMode.State.enabled then
+        OGRH.SyncMode.State.enabled = true
+        OGRH.Msg("|cff00ff00[RH-Sync]|r Sync mode re-enabled - triggering checksum validation...")
+        
+        -- Stop sync-off broadcast first
+        if OGRH.SyncMode.StopSyncOffBroadcast then
+          OGRH.SyncMode.StopSyncOffBroadcast()
+        end
+        -- Trigger checksum validation (force immediate)
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.BroadcastChecksums then
+          OGRH.SyncIntegrity.BroadcastChecksums(true)
+        end
+        
+        -- Update sync button if EncounterMgmt is open
+        if OGRH_EncounterFrame and OGRH_EncounterFrame.UpdateSyncButton then
+          OGRH_EncounterFrame.UpdateSyncButton()
+        end
+      end
+    end
+    
     -- Hide auxiliary panel
     if OGRH_InviteModePanel then
       OGRH_InviteModePanel:Hide()
     end
   end
   
-  -- Save updated invite mode state
-  OGRH.SVM.SetPath("invites.inviteMode", inviteMode, {syncLevel = "MANUAL", componentType = "settings"})
-  
   -- Update button text
   if OGRH_InvitesFrame and OGRH_InvitesFrame.inviteModeBtn then
-    local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {enabled = false}
-    OGRH_InvitesFrame.inviteModeBtn:SetText(inviteMode.enabled and "Stop Invite Mode" or "Start Invite Mode")
+    OGRH_InvitesFrame.inviteModeBtn:SetText(state.enabled and "Stop Invite Mode" or "Start Invite Mode")
   end
 end
 
 function OGRH.Invites.DoInviteCycle(skipAnnouncement)
-  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
+  local state = OGRH.Invites.InviteModeState
+  local interval = OGRH.SVM.GetPath("invites.inviteInterval") or 60
   local players = OGRH.Invites.GetRosterPlayers()
   local invitedThisCycle = 0
   
@@ -2430,7 +2470,7 @@ function OGRH.Invites.DoInviteCycle(skipAnnouncement)
     end, 1, false)
   end
   
-  inviteMode.lastInviteTime = GetTime()
+  state.lastInviteTime = GetTime()
   
   -- Update panel if visible
   if OGRH_InviteModePanel and OGRH_InviteModePanel:IsVisible() then
@@ -2512,19 +2552,20 @@ function OGRH.Invites.ShowInviteModePanel()
     
     -- Update script
     panel:SetScript("OnUpdate", function()
-      local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
-      if not inviteMode or not inviteMode.enabled then
+      local state = OGRH.Invites.InviteModeState
+      if not state.enabled then
         panel:Hide()
         return
       end
       
+      local interval = OGRH.SVM.GetPath("invites.inviteInterval") or 60
       local now = GetTime()
-      local elapsed = now - inviteMode.lastInviteTime
+      local elapsed = now - state.lastInviteTime
       
       -- Use 10-second interval until raid is formed, then use configured interval
       local currentInterval
       if GetNumRaidMembers() > 0 then
-        currentInterval = inviteMode.interval
+        currentInterval = interval
       else
         currentInterval = 10 -- Fast invites until raid forms
       end
@@ -2538,11 +2579,11 @@ function OGRH.Invites.ShowInviteModePanel()
       end
       
       -- Recalculate after potential DoInviteCycle call
-      elapsed = now - inviteMode.lastInviteTime
+      elapsed = now - state.lastInviteTime
       
       -- Recalculate current interval in case raid status changed
       if GetNumRaidMembers() > 0 then
-        currentInterval = inviteMode.interval
+        currentInterval = interval
       else
         currentInterval = 10
       end
@@ -2601,7 +2642,7 @@ function OGRH.Invites.UpdateInviteModePanel()
   local panel = OGRH_InviteModePanel
   if not panel or not panel:IsVisible() then return end
   
-  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode") or {}
+  local state = OGRH.Invites.InviteModeState
   
   -- Count how many roster players are now in raid
   local inRaidCount = 0
@@ -2617,18 +2658,18 @@ function OGRH.Invites.UpdateInviteModePanel()
     end
   end
   
-  inviteMode.invitedCount = inRaidCount
+  state.invitedCount = inRaidCount
   
   -- Update progress bar
-  if inviteMode.totalPlayers > 0 then
-    panel.progressBar:SetMinMaxValues(0, inviteMode.totalPlayers)
-    panel.progressBar:SetValue(inviteMode.invitedCount)
+  if state.totalPlayers > 0 then
+    panel.progressBar:SetMinMaxValues(0, state.totalPlayers)
+    panel.progressBar:SetValue(state.invitedCount)
   end
   
-  panel.progressText:SetText(string.format("%d / %d", inviteMode.invitedCount, inviteMode.totalPlayers))
+  panel.progressText:SetText(string.format("%d / %d", state.invitedCount, state.totalPlayers))
   
   -- Auto-stop only when everyone is actually in the raid
-  if notInRaidCount == 0 and inviteMode.totalPlayers > 0 then
+  if notInRaidCount == 0 and state.totalPlayers > 0 then
     OGRH.Invites.ToggleInviteMode()
   end
 end
@@ -2663,8 +2704,8 @@ inviteEventFrame:SetScript("OnEvent", function()
     end
   elseif event == "RAID_ROSTER_UPDATE" then
     -- Detect new members and sync their roles during invite mode
-    local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
-    if inviteMode and inviteMode.enabled then
+    local state = OGRH.Invites.InviteModeState
+    if state.enabled then
       -- Track who was in raid before
       if not OGRH.Invites.previousRaidMembers then
         OGRH.Invites.previousRaidMembers = {}
@@ -2708,8 +2749,8 @@ end)
 
 -- Sync player role to RolesUI when they join raid during invite mode
 function OGRH.Invites.SyncPlayerRole(playerName)
-  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
-  if not inviteMode or not inviteMode.enabled then
+  local state = OGRH.Invites.InviteModeState
+  if not state.enabled then
     return -- Only sync during invite mode
   end
   
@@ -2732,8 +2773,8 @@ function OGRH.Invites.HandleWhisperAutoResponse(sender, message)
   end
   
   -- Only respond when invite mode is active
-  local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
-  if not inviteMode or not inviteMode.enabled then
+  local state = OGRH.Invites.InviteModeState
+  if not state.enabled then
     return
   end
   
@@ -3026,9 +3067,4 @@ end
 -- Initialize
 OGRH.Invites.EnsureSV()
 
--- Clean up invite mode on reload
-local inviteMode = OGRH.SVM.GetPath("invites.inviteMode")
-if inviteMode then
-  inviteMode.enabled = false
-  OGRH.SVM.SetPath("invites.inviteMode", inviteMode, {syncLevel = "MANUAL", componentType = "settings"})
-end
+-- In-memory state is already initialized to disabled, no cleanup needed on reload
