@@ -3866,6 +3866,1864 @@ Set `OGRH_CHECKSUM_DEBUG = true` to log all wrapper calls (useful for tracking m
 
 ---
 
+## SyncMode Module (_Infrastructure/SyncMode.lua)
+
+The SyncMode module provides admin-controlled sync enable/disable functionality. This allows raid admins to temporarily pause all automatic synchronization processes during bulk editing or troubleshooting operations.
+
+### Overview
+
+**Purpose:**
+- Allow admins to disable sync temporarily for bulk edits
+- Prevent broadcast storms during large-scale changes
+- Provide UI feedback for clients when sync is disabled
+- Non-persistent state (always defaults to enabled on reload)
+
+**State Management:**
+- Sync mode state is **in-memory only** (not persisted to SavedVariables)
+- Always defaults to **enabled** on addon load/reload
+- Admin broadcasts sync-off messages every 5 seconds while disabled
+- Clients display waiting panel when sync is disabled
+
+### Public Functions
+
+#### `OGRH.SyncMode.EnableSync()`
+**Type:** Public  
+**Authorization:** Admin only (enforced via UI)  
+**Returns:** `nil`
+
+Enables sync mode and broadcasts sync-on message to all clients.
+
+**Behavior:**
+- Sets in-memory state to `enabled = true`
+- Stops repeating sync-off broadcasts
+- Sends single `SYNC.MODE_ON` message to raid
+- Updates admin's UI button state
+- Hides waiting panel on admin's client
+
+**Example:**
+```lua
+-- Called when admin clicks "Enable Sync" button
+OGRH.SyncMode.EnableSync()
+```
+
+**Implementation Notes:**
+- Updates button via `OGRH_EncounterFrame.UpdateSyncButton()` if available
+- Delayed button update (0.1s) ensures state propagation
+
+---
+
+#### `OGRH.SyncMode.DisableSync()`
+**Type:** Public  
+**Authorization:** Admin only (enforced via UI)  
+**Returns:** `nil`
+
+Disables sync mode and begins broadcasting sync-off messages.
+
+**Behavior:**
+- Sets in-memory state to `enabled = false`
+- Starts repeating `SYNC.MODE_OFF` broadcasts (5-second interval)
+- Shows waiting panel on admin's client
+- Updates admin's UI button state
+
+**Example:**
+```lua
+-- Called when admin clicks "Disable Sync" button
+OGRH.SyncMode.DisableSync()
+```
+
+**Broadcast Behavior:**
+- Initial broadcast sent immediately
+- Repeating broadcasts every 5 seconds until re-enabled
+- Ensures new joiners receive sync-off status
+
+---
+
+#### `OGRH.SyncMode.IsSyncEnabled()`
+**Type:** Public  
+**Returns:** `boolean` - True if sync is enabled
+
+Checks current sync mode state.
+
+**Example:**
+```lua
+if OGRH.SyncMode.IsSyncEnabled() then
+    -- Proceed with sync operation
+else
+    -- Skip sync operation
+end
+```
+
+**Usage in Core Modules:**
+- Called by `SyncIntegrity` before broadcasting checksums
+- Called by `SavedVariablesManager` before delta updates
+- Called by `SyncGranular` before repair requests
+
+---
+
+#### `OGRH.SyncMode.CanBroadcastChecksum()`
+**Type:** Public  
+**Returns:** `boolean` - True if checksum broadcasts are allowed
+
+Determines if checksum broadcasts should be sent.
+
+**Behavior:**
+- Admin can **always** broadcast (to send sync-off notifications)
+- Clients can only broadcast if sync is enabled
+
+**Example:**
+```lua
+if OGRH.SyncMode.CanBroadcastChecksum() then
+    OGRH.SyncIntegrity.BroadcastChecksums()
+end
+```
+
+---
+
+#### `OGRH.SyncMode.CanSendDeltaUpdate()`
+**Type:** Public  
+**Returns:** `boolean` - True if delta updates are allowed
+
+Checks if data change broadcasts should be sent.
+
+**Example:**
+```lua
+if OGRH.SyncMode.CanSendDeltaUpdate() then
+    OGRH.SVM.SyncRealtime(path, value)
+end
+```
+
+---
+
+#### `OGRH.SyncMode.CanRequestRepair()`
+**Type:** Public  
+**Returns:** `boolean` - True if repair requests are allowed
+
+Checks if clients can request data repairs.
+
+**Example:**
+```lua
+if OGRH.SyncMode.CanRequestRepair() then
+    OGRH.SyncGranular.RequestEncounterSync("MC", "Rag")
+end
+```
+
+---
+
+### Private Functions
+
+#### `OGRH.SyncMode.StartSyncOffBroadcast()`
+**Type:** Private  
+**Returns:** `nil`
+
+Begins repeating sync-off broadcasts. Called internally by `DisableSync()`.
+
+**Behavior:**
+- Sends initial sync-off message immediately
+- Schedules repeating broadcasts every 5 seconds
+- Shows waiting panel on admin's client
+
+---
+
+#### `OGRH.SyncMode.StopSyncOffBroadcast()`
+**Type:** Private  
+**Returns:** `nil`
+
+Stops repeating sync-off broadcasts. Called internally by `EnableSync()`.
+
+**Behavior:**
+- Cancels broadcast timer
+- Sends single sync-on message
+- Hides waiting panel on admin's client
+
+---
+
+#### `OGRH.SyncMode.BroadcastSyncOff()`
+**Type:** Private  
+**Returns:** `nil`
+
+Broadcasts a single sync-off message to raid.
+
+**Message Format:**
+```lua
+{
+    type = OGRH.MessageTypes.SYNC.MODE_OFF,
+    data = {
+        timestamp = GetTime()
+    },
+    priority = "HIGH",
+    channel = "RAID"
+}
+```
+
+---
+
+#### `OGRH.SyncMode.BroadcastSyncOn()`
+**Type:** Private  
+**Returns:** `nil`
+
+Broadcasts a single sync-on message to raid.
+
+**Message Format:**
+```lua
+{
+    type = OGRH.MessageTypes.SYNC.MODE_ON,
+    data = {
+        timestamp = GetTime()
+    },
+    priority = "HIGH",
+    channel = "RAID"
+}
+```
+
+---
+
+### Message Handlers
+
+#### `OGRH.SyncMode.OnSyncModeOff(sender, data, channel)`
+**Type:** Private (Message Handler)  
+**Returns:** `nil`
+
+Handles incoming `SYNC.MODE_OFF` messages from admin.
+
+**Parameters:**
+- `sender` (string) - Player name who sent message
+- `data` (table) - Message payload `{timestamp}`
+- `channel` (string) - Message channel ("RAID")
+
+**Behavior:**
+- Verifies sender is raid admin (ignores non-admin)
+- Shows waiting panel with "sync disabled" message
+- Starts 10-second timeout timer (auto-hide if no more broadcasts)
+- Updates `lastSyncOffReceived` timestamp
+
+**Client Timeout:**
+- If no sync-off message for 10+ seconds → Assumes admin re-enabled
+- Auto-hides waiting panel
+- Prevents stuck UI if admin disconnects with sync disabled
+
+---
+
+#### `OGRH.SyncMode.OnSyncModeOn(sender, data, channel)`
+**Type:** Private (Message Handler)  
+**Returns:** `nil`
+
+Handles incoming `SYNC.MODE_ON` messages from admin.
+
+**Parameters:**
+- `sender` (string) - Player name who sent message
+- `data` (table) - Message payload `{timestamp}`
+- `channel` (string) - Message channel ("RAID")
+
+**Behavior:**
+- Verifies sender is raid admin (ignores non-admin)
+- Hides waiting panel
+- Cancels timeout timer
+- Displays "Sync mode re-enabled" message
+
+---
+
+### Public Properties
+
+#### `OGRH.SyncMode.State`
+**Type:** Table  
+**Access:** Public Read (Private Write)
+
+Module state tracking.
+
+**Fields:**
+- `enabled` (boolean) - In-memory sync state (default: true, not persisted)
+- `broadcastTimer` (timer) - Scheduled timer for repeating broadcasts
+- `broadcastInterval` (number) - Broadcast interval in seconds (default: 5.0)
+- `isClientWaiting` (boolean) - Client waiting panel state
+- `clientTimeoutTimer` (timer) - Auto-hide timer for clients
+- `lastSyncOffReceived` (timestamp) - Last sync-off message timestamp
+
+---
+
+### Integration Points
+
+**SyncIntegrity Integration:**
+```lua
+-- Admin checksum broadcasts check sync mode
+function OGRH.SyncIntegrity.BroadcastChecksums()
+    if not OGRH.SyncMode.CanBroadcastChecksum() then
+        return  -- Skip if sync disabled (non-admin)
+    end
+    -- ... broadcast checksums
+end
+```
+
+**SavedVariablesManager Integration:**
+```lua
+-- Delta updates check sync mode
+function OGRH.SVM.SyncRealtime(path, value)
+    if not OGRH.SyncMode.CanSendDeltaUpdate() then
+        return  -- Skip sync if disabled
+    end
+    -- ... send delta update
+end
+```
+
+**SyncGranular Integration:**
+```lua
+-- Repair requests check sync mode
+function OGRH.SyncGranular.RequestComponentSync(...)
+    if not OGRH.SyncMode.CanRequestRepair() then
+        OGRH.Msg("Sync is currently disabled by admin")
+        return
+    end
+    -- ... request repair
+end
+```
+
+---
+
+### UI Integration
+
+**Sync Button (EncounterMgmt UI):**
+- Admin sees "Disable Sync" button when enabled
+- Admin sees "Enable Sync" button (red) when disabled
+- Button calls `OGRH.SyncMode.EnableSync()` or `DisableSync()`
+- Button state updates via `OGRH_EncounterFrame.UpdateSyncButton()`
+
+**Waiting Panel (SyncRepairUI):**
+- Shown to all clients when sync disabled
+- Message: "Sync disabled by raid admin"
+- Auto-hides when sync re-enabled or after 10s timeout
+
+---
+
+### Design Rationale
+
+**Why Non-Persistent?**
+- Prevents accidental permanent sync disable
+- Forces intentional re-disable after each reload
+- Ensures sync is not accidentally left disabled across sessions
+- Admin must actively maintain disabled state
+
+**Why 5-Second Broadcasts?**
+- Ensures new joiners receive sync-off status quickly
+- Low enough frequency to avoid spam
+- High enough frequency for responsive experience
+
+**Why 10-Second Client Timeout?**
+- Handles disconnected admin gracefully
+- Prevents stuck UI if admin leaves raid
+- Conservative timeout ensures false positives are rare
+
+---
+
+## SyncSession Module (_Infrastructure/SyncSession.lua)
+
+The SyncSession module provides session-based repair coordination to prevent broadcast storms and provide UI feedback during structure synchronization operations. It implements session lifecycle management, client validation tracking, and repair mode locking.
+
+### Overview
+
+**Purpose:**
+- Coordinate multi-client repair operations
+- Prevent overlapping or conflicting repairs
+- Lock UI/SVM during repairs to prevent conflicts
+- Track client validation progress
+- Handle join-during-repair edge cases
+- Manage post-repair change queues
+
+**Session Lifecycle:**
+```
+1. Admin detects validation failures
+2. Admin starts session → Generates token
+3. Admin enters repair mode → Locks UI/SVM
+4. Admin broadcasts repairs with session token
+5. Clients apply repairs and validate
+6. Clients send validation confirmations
+7. Admin waits for all confirmations (1s timeout)
+8. Admin completes session → Exits repair mode
+```
+
+### Public Functions
+
+#### `OGRH.SyncSession.GenerateToken()`
+**Type:** Public  
+**Returns:** `string` - Unique session token
+
+Generates a unique session token for repair coordination.
+
+**Format:** `"timestamp_random"`  
+Example: `"1234567890.12_456789"`
+
+**Example:**
+```lua
+local token = OGRH.SyncSession.GenerateToken()
+-- Returns: "1234567890.12_456789"
+```
+
+---
+
+#### `OGRH.SyncSession.ValidateToken(token)`
+**Type:** Public  
+**Returns:** `boolean, number` - (isValid, age)
+
+Validates a session token and returns its age.
+
+**Parameters:**
+- `token` (string) - Session token to validate
+
+**Behavior:**
+- Extracts timestamp from token format
+- Validates token is well-formed
+- Checks token age < 60 seconds (expired after 60s)
+- Returns validity and age in seconds
+
+**Example:**
+```lua
+local isValid, age = OGRH.SyncSession.ValidateToken(token)
+if not isValid then
+    OGRH.Msg("Session expired or invalid")
+    return
+end
+```
+
+---
+
+#### `OGRH.SyncSession.StartSession(encounterName, layerIds)`
+**Type:** Public  
+**Returns:** `string | nil, string` - (token, error)
+
+Starts a new repair session.
+
+**Parameters:**
+- `encounterName` (string) - Encounter being repaired
+- `layerIds` (table, optional) - Array of layer IDs being repaired
+
+**Behavior:**
+- Fails if session already active
+- Generates unique session token
+- Creates session state object
+- Enters repair mode (locks UI/SVM)
+- Returns token for use in repair broadcasts
+
+**Example:**
+```lua
+local token, err = OGRH.SyncSession.StartSession("Ragnaros", {1, 2, 3})
+if not token then
+    OGRH.Msg("Failed to start session: " .. err)
+    return
+end
+```
+
+**Session State Object:**
+```lua
+{
+    token = "1234567890.12_456789",
+    startTime = 1234567890.12,
+    encounterName = "Ragnaros",
+    layerIds = {1, 2, 3},
+    clientValidations = {},
+    isRepairMode = true
+}
+```
+
+---
+
+#### `OGRH.SyncSession.CompleteSession(token)`
+**Type:** Public  
+**Returns:** `boolean` - True if session completed successfully
+
+Completes an active repair session.
+
+**Parameters:**
+- `token` (string) - Session token to complete
+
+**Behavior:**
+- Validates token matches active session
+- Clears active session state
+- Exits repair mode (unlocks UI/SVM)
+- Resumes periodic checksum broadcasts
+
+**Example:**
+```lua
+if OGRH.SyncSession.CompleteSession(token) then
+    OGRH.Msg("Session completed successfully")
+end
+```
+
+---
+
+#### `OGRH.SyncSession.CancelSession(reason)`
+**Type:** Public  
+**Returns:** `boolean` - True if session cancelled successfully
+
+Cancels an active repair session.
+
+**Parameters:**
+- `reason` (string, optional) - Reason for cancellation
+
+**Behavior:**
+- Broadcasts `SYNC.REPAIR_CANCEL` to all clients
+- Clears active session state
+- Exits repair mode (unlocks UI/SVM)
+- Displays cancellation message
+
+**Example:**
+```lua
+OGRH.SyncSession.CancelSession("User requested cancellation")
+```
+
+**Use Cases:**
+- Admin manually cancels repair
+- Raid disbands during repair
+- Network error prevents completion
+
+---
+
+#### `OGRH.SyncSession.TimeoutSession(token)`
+**Type:** Public  
+**Returns:** `boolean` - True if session timed out successfully
+
+Times out an active repair session.
+
+**Parameters:**
+- `token` (string) - Session token to timeout
+
+**Behavior:**
+- Validates token matches active session
+- Clears active session state
+- Exits repair mode
+- Displays timeout message
+
+**Example:**
+```lua
+-- Timeout after 30 seconds
+OGRH.ScheduleTimer(function()
+    if OGRH.SyncSession.IsSessionActive() then
+        OGRH.SyncSession.TimeoutSession(token)
+    end
+end, 30)
+```
+
+---
+
+#### `OGRH.SyncSession.IsSessionActive()`
+**Type:** Public  
+**Returns:** `boolean` - True if session is active
+
+Checks if a repair session is currently active.
+
+**Example:**
+```lua
+if OGRH.SyncSession.IsSessionActive() then
+    OGRH.Msg("Repair in progress, please wait")
+    return
+end
+```
+
+---
+
+#### `OGRH.SyncSession.GetActiveSession()`
+**Type:** Public  
+**Returns:** `table | nil` - Active session object or nil
+
+Returns the currently active session state.
+
+**Example:**
+```lua
+local session = OGRH.SyncSession.GetActiveSession()
+if session then
+    OGRH.Msg("Repairing: " .. session.encounterName)
+end
+```
+
+---
+
+#### `OGRH.SyncSession.EnterRepairMode()`
+**Type:** Public  
+**Returns:** `nil`
+
+Enters repair mode (locks UI/SVM and suppresses checksums).
+
+**Behavior:**
+- Sets `repairModeActive = true`
+- Pauses periodic checksum broadcasts
+- Locks UI controls (prevents edits)
+- Locks SVM writes (queues changes for post-repair)
+- Shows repair UI panel
+
+**Integration:**
+- Called by `StartSession()`
+- Affects `SyncIntegrity.BroadcastChecksums()` (skips if repair mode)
+- Affects UI modules (disable edit controls)
+
+---
+
+#### `OGRH.SyncSession.ExitRepairMode()`
+**Type:** Public  
+**Returns:** `nil`
+
+Exits repair mode (unlocks UI/SVM and resumes checksums).
+
+**Behavior:**
+- Sets `repairModeActive = false`
+- Resumes periodic checksum broadcasts
+- Unlocks UI controls
+- Unlocks SVM writes
+- Processes queued post-repair changes
+- Hides repair UI panel
+
+**Integration:**
+- Called by `CompleteSession()`, `CancelSession()`, `TimeoutSession()`
+- Resumes normal sync operations
+
+---
+
+#### `OGRH.SyncSession.IsRepairModeActive()`
+**Type:** Public  
+**Returns:** `boolean` - True if repair mode is active
+
+Checks if system is currently in repair mode.
+
+**Example:**
+```lua
+if OGRH.SyncSession.IsRepairModeActive() then
+    -- Queue change for post-repair processing
+    OGRH.SyncSession.QueueChange("assignment", data)
+else
+    -- Apply change immediately
+    OGRH.SVM.SetPath(path, value)
+end
+```
+
+---
+
+#### `OGRH.SyncSession.QueueChange(changeType, data)`
+**Type:** Public  
+**Returns:** `nil`
+
+Queues a data change for post-repair processing.
+
+**Parameters:**
+- `changeType` (string) - Type of change ("assignment", "settings", etc.)
+- `data` (table) - Change data with `{path, value, timestamp}`
+
+**Behavior:**
+- Adds change to `pendingChangesQueue`
+- Changes are processed when repair mode exits
+- Prevents conflicts during active repairs
+
+---
+
+#### `OGRH.SyncSession.ProcessPendingChanges()`
+**Type:** Public  
+**Returns:** `nil`
+
+Processes all queued changes after repair completes.
+
+**Behavior:**
+- Called automatically by `ExitRepairMode()`
+- Processes changes in timestamp order
+- Applies queued writes to SVM
+- Clears pending changes queue
+
+---
+
+### Public Properties
+
+#### `OGRH.SyncSession.State`
+**Type:** Table  
+**Access:** Public Read (Private Write)
+
+Module state tracking.
+
+**Fields:**
+- `activeSession` (table | nil) - Current session state or nil
+  - `token` (string) - Session token
+  - `startTime` (number) - Session start timestamp
+  - `encounterName` (string) - Encounter being repaired
+  - `layerIds` (table) - Array of layer IDs
+  - `clientValidations` (table) - Client validation responses
+  - `isRepairMode` (boolean) - Repair mode flag
+- `repairModeActive` (boolean) - Global repair mode flag
+- `pendingChangesQueue` (table) - Array of queued changes
+- `highestVersion` (string | nil) - Highest addon version seen
+- `versionWarningShown` (boolean) - Version warning shown this session
+- `lastRaidSize` (number) - Last known raid size (for reset detection)
+- `pendingJoinValidations` (table) - Players who joined during repair
+- `lockState` (table) - UI/SVM lock state
+  - `uiLocked` (boolean) - UI edit controls locked
+  - `svmLocked` (boolean) - SVM writes locked
+
+---
+
+### Design Rationale
+
+**Why Session Tokens?**
+- Uniquely identify repair operations
+- Prevent cross-contamination between repairs
+- Allow clients to validate they're applying correct repair
+- Enable timeout/cancellation of specific sessions
+
+**Why Repair Mode?**
+- Prevents data conflicts during repairs
+- Ensures repairs are atomic operations
+- Provides clear UI feedback to users
+- Suppresses checksum broadcasts that would trigger new repairs
+
+**Why Lock UI/SVM?**
+- Prevents admin from editing while repairing
+- Avoids race conditions between edits and repairs
+- Queues changes for post-repair application
+- Ensures repair completes cleanly
+
+**Why 60-Second Token Expiry?**
+- Repairs should complete quickly (under 30s typical)
+- 60s provides safety margin for large raids
+- Expired tokens indicate stuck/orphaned sessions
+- Forces cleanup of old session state
+
+---
+
+## SyncRepair Module (_Infrastructure/SyncRepair.lua)
+
+The SyncRepair module implements hierarchical repair packet construction and application for the 4-layer checksum system. It handles adaptive pacing, repair prioritization, and targeted repairs based on validation failures.
+
+### Overview
+
+**Purpose:**
+- Construct repair packets for 4 checksum layers
+- Apply repairs on client side
+- Implement adaptive pacing (prevent queue saturation)
+- Prioritize current encounter for repairs
+- Handle chunked data transmission
+
+**Checksum Hierarchy:**
+```
+Layer 1: Structure (Raid Metadata + RolesUI)
+   ├── Raid metadata (name, displayName, settings)
+   └── Global role assignments (TANKS/HEALERS/MELEE/RANGED)
+
+Layer 2: Encounters (Per-Encounter Metadata + Roles)
+   └── Encounter metadata + role definitions (no assignments)
+
+Layer 3: Role Structure (Per-Role Definitions)
+   └── Role names, colors, columns, slot counts
+
+Layer 4: Assignments (Per-Role Slot Assignments)
+   └── assignedPlayers, raidMarks, assignmentNumbers
+```
+
+### Public Functions
+
+#### `OGRH.SyncRepair.BuildStructurePacket()`
+**Type:** Public  
+**Returns:** `table | nil` - Packet ready for serialization
+
+Builds Layer 1 structure packet for Active Raid.
+
+**Packet Format:**
+```lua
+{
+    type = "STRUCTURE",
+    layer = 1,
+    data = {
+        name = "Molten Core",
+        displayName = "MC",
+        enabled = true,
+        autoRank = false,
+        advancedSettings = {...},
+        encounterCount = 10
+    },
+    timestamp = GetTime()
+}
+```
+
+**Behavior:**
+- Extracts Active Raid metadata (raids[1])
+- Excludes encounters array content
+- Includes encounter count for validation
+- Compact packet (~500 bytes typical)
+
+**Example:**
+```lua
+local packet = OGRH.SyncRepair.BuildStructurePacket()
+if packet then
+    -- Serialize and send
+end
+```
+
+---
+
+#### `OGRH.SyncRepair.BuildRolesUIPacket()`
+**Type:** Public  
+**Returns:** `table | nil` - Packet ready for serialization
+
+Builds Layer 1b RolesUI packet for global role assignments.
+
+**Packet Format:**
+```lua
+{
+    type = "ROLESUI",
+    layer = "1b",
+    data = {
+        roles = {
+            TANKS = {players...},
+            HEALERS = {players...},
+            MELEE = {players...},
+            RANGED = {players...}
+        }
+    },
+    timestamp = GetTime()
+}
+```
+
+**Behavior:**
+- Extracts global role buckets from `OGRH_SV.v2.roles`
+- Used for RolesUI synchronization
+- Independent of raid structure
+
+---
+
+#### `OGRH.SyncRepair.BuildEncountersPackets(encounterIndices)`
+**Type:** Public  
+**Returns:** `table` - Array of encounter packets
+
+Builds Layer 2 encounter packets for specified encounters.
+
+**Parameters:**
+- `encounterIndices` (table, optional) - Array of encounter indices to repair. If nil, repairs all encounters.
+
+**Packet Format:**
+```lua
+{
+    type = "ENCOUNTER",
+    layer = 2,
+    data = {
+        index = 5,
+        name = "Ragnaros",
+        displayName = "Rag",
+        announcements = {...},
+        advancedSettings = {...},
+        roles = {
+            -- Role definitions with assignedPlayers included
+            {name = "MT", color = {r, g, b}, ...}
+        }
+    },
+    timestamp = GetTime()
+}
+```
+
+**Behavior:**
+- Extracts encounters from Active Raid (raids[1])
+- Includes encounter metadata
+- Includes **complete role structures with assignments**
+- Returns array of packets (one per encounter)
+
+**Prioritization:**
+- Current encounter repaired first
+- Other encounters follow
+
+**Example:**
+```lua
+-- Repair specific encounters
+local packets = OGRH.SyncRepair.BuildEncountersPackets({1, 3, 5})
+
+-- Repair all encounters
+local packets = OGRH.SyncRepair.BuildEncountersPackets()
+```
+
+---
+
+#### `OGRH.SyncRepair.BuildRolePacket(encounterIdx, roleIdx)`
+**Type:** Public  
+**Returns:** `table | nil` - Role packet
+
+Builds Layer 3 role structure packet for a specific role.
+
+**Parameters:**
+- `encounterIdx` (number) - Encounter index in Active Raid
+- `roleIdx` (number) - Role index in encounter
+
+**Packet Format:**
+```lua
+{
+    type = "ROLE",
+    layer = 3,
+    data = {
+        encounterIdx = 5,
+        roleIdx = 2,
+        role = {
+            name = "Main Tank",
+            color = {r, g, b},
+            column = 1,
+            slotsData = {...},
+            assignedPlayers = {...}  -- May or may not include assignments
+        }
+    },
+    timestamp = GetTime()
+}
+```
+
+---
+
+#### `OGRH.SyncRepair.BuildAssignmentPacket(encounterIdx, roleIdx)`
+**Type:** Public  
+**Returns:** `table | nil` - Assignment packet
+
+Builds Layer 4 assignment-only packet for a specific role.
+
+**Parameters:**
+- `encounterIdx` (number) - Encounter index
+- `roleIdx` (number) - Role index
+
+**Packet Format:**
+```lua
+{
+    type = "ASSIGNMENT",
+    layer = 4,
+    data = {
+        encounterIdx = 5,
+        roleIdx = 2,
+        assignedPlayers = {...},
+        raidMarks = {...},
+        assignmentNumbers = {...}
+    },
+    timestamp = GetTime()
+}
+```
+
+**Behavior:**
+- Minimal payload (assignments only)
+- No structure data included
+- Fastest repair layer
+
+---
+
+#### `OGRH.SyncRepair.ApplyPacket(packet, sessionToken)`
+**Type:** Public  
+**Returns:** `boolean` - True if applied successfully
+
+Applies a repair packet on the client side.
+
+**Parameters:**
+- `packet` (table) - Deserialized repair packet
+- `sessionToken` (string) - Session token for validation
+
+**Behavior:**
+- Validates session token
+- Routes to appropriate apply function based on packet type
+- Updates local SavedVariables
+- Validates checksums after application
+- Returns success/failure
+
+**Packet Routing:**
+- `type = "STRUCTURE"` → `ApplyStructurePacket()`
+- `type = "ROLESUI"` → `ApplyRolesUIPacket()`
+- `type = "ENCOUNTER"` → `ApplyEncounterPacket()`
+- `type = "ROLE"` → `ApplyRolePacket()`
+- `type = "ASSIGNMENT"` → `ApplyAssignmentPacket()`
+
+**Example:**
+```lua
+local success = OGRH.SyncRepair.ApplyPacket(packet, sessionToken)
+if success then
+    OGRH.Msg("Repair applied successfully")
+end
+```
+
+---
+
+#### `OGRH.SyncRepair.SendRepairPackets(packets, sessionToken, targetPlayer)`
+**Type:** Public  
+**Returns:** `nil`
+
+Sends repair packets with adaptive pacing.
+
+**Parameters:**
+- `packets` (table) - Array of packets to send
+- `sessionToken` (string) - Session token for coordination
+- `targetPlayer` (string, optional) - Specific player to send to (nil = broadcast)
+
+**Behavior:**
+- Serializes packets using `OGRH.SyncChecksum.Serialize()`
+- Sends via `OGAddonMsg` with adaptive delays
+- Monitors queue saturation
+- Adjusts delay based on network conditions
+
+**Adaptive Pacing:**
+- Base delay: 0.1s between packets
+- Increases to 1.0s if queue saturated
+- Decreases back to 0.1s when queue clears
+- Prevents broadcast storms
+
+**Example:**
+```lua
+local packets = OGRH.SyncRepair.BuildEncountersPackets()
+OGRH.SyncRepair.SendRepairPackets(packets, sessionToken)
+```
+
+---
+
+### Private Functions
+
+#### `OGRH.SyncRepair.ApplyStructurePacket(packet)`
+**Type:** Private  
+**Returns:** `boolean` - Success status
+
+Applies Layer 1 structure packet.
+
+**Behavior:**
+- Updates `OGRH_SV.v2.encounterMgmt.raids[1]` metadata
+- Preserves encounters array
+- Validates structure checksum after application
+
+---
+
+#### `OGRH.SyncRepair.ApplyRolesUIPacket(packet)`
+**Type:** Private  
+**Returns:** `boolean` - Success status
+
+Applies Layer 1b RolesUI packet.
+
+**Behavior:**
+- Updates `OGRH_SV.v2.roles` global buckets
+- Validates RolesUI checksum after application
+
+---
+
+#### `OGRH.SyncRepair.ApplyEncounterPacket(packet)`
+**Type:** Private  
+**Returns:** `boolean` - Success status
+
+Applies Layer 2 encounter packet.
+
+**Behavior:**
+- Updates encounter in `raids[1].encounters[idx]`
+- Applies encounter metadata
+- Applies all role definitions and assignments
+- Validates encounter checksum after application
+
+---
+
+#### `OGRH.SyncRepair.ApplyRolePacket(packet)`
+**Type:** Private  
+**Returns:** `boolean` - Success status
+
+Applies Layer 3 role structure packet.
+
+**Behavior:**
+- Updates specific role in encounter
+- Applies role metadata and structure
+- May include assignments depending on packet
+- Validates role checksum after application
+
+---
+
+#### `OGRH.SyncRepair.ApplyAssignmentPacket(packet)`
+**Type:** Private  
+**Returns:** `boolean` - Success status
+
+Applies Layer 4 assignment-only packet.
+
+**Behavior:**
+- Updates assignments for specific role
+- Does not modify role structure
+- Validates assignment checksum after application
+
+---
+
+### Public Properties
+
+#### `OGRH.SyncRepair.State`
+**Type:** Table  
+**Access:** Public Read (Private Write)
+
+Module state tracking.
+
+**Fields:**
+- `lastPacketTime` (number) - Timestamp of last packet sent
+- `currentDelay` (number) - Current adaptive delay (0.1s - 1.0s)
+- `packetsInFlight` (number) - Packets sent but not applied
+- `totalPacketsExpected` (number) - Total packets for current repair
+
+---
+
+### Adaptive Pacing Algorithm
+
+**Goal:** Prevent queue saturation while maintaining repair speed
+
+**Algorithm:**
+```lua
+1. Check OGAddonMsg queue depth before sending
+2. If queue > 75% capacity:
+   - Increase delay: currentDelay = min(currentDelay * 1.5, 1.0)
+3. If queue < 25% capacity:
+   - Decrease delay: currentDelay = max(currentDelay * 0.7, 0.1)
+4. Wait for currentDelay seconds before next packet
+```
+
+**Typical Behavior:**
+- Low traffic: 0.1s delay (fast repairs)
+- Moderate traffic: 0.3-0.5s delay (balanced)
+- High traffic: 1.0s delay (conservative)
+
+---
+
+### Repair Priority Ordering
+
+**Current Encounter First:**
+When repairing multiple encounters, current encounter is always repaired first for immediate user feedback.
+
+**Example:**
+```lua
+-- User viewing Encounter 5
+-- Repairs needed: 2, 5, 7
+
+-- Send order: 5 (current), 2, 7
+packets = {
+    BuildEncounterPacket(5),  -- Current first
+    BuildEncounterPacket(2),
+    BuildEncounterPacket(7)
+}
+```
+
+---
+
+### Design Rationale
+
+**Why Hierarchical Repairs?**
+- Minimizes data transfer for small changes
+- Allows targeted repairs (only broken components)
+- Scales better than full-raid repairs
+- Progressive validation at each layer
+
+**Why Adaptive Pacing?**
+- Prevents queue saturation with large raids
+- Self-regulates based on network conditions
+- No hardcoded delays that may be too fast/slow
+- Improves reliability at scale
+
+**Why Priority Ordering?**
+- User sees immediate results for current encounter
+- Other repairs complete in background
+- Better perceived performance
+- Maintains UI responsiveness
+
+---
+
+## SyncRepairHandlers Module (_Infrastructure/SyncRepairHandlers.lua)
+
+The SyncRepairHandlers module implements message handlers for the network-based repair system. It coordinates repair operations between admin and clients through the MessageRouter system.
+
+### Overview
+
+**Purpose:**
+- Handle repair session initiation messages
+- Process repair packets from admin
+- Collect client validation responses
+- Coordinate repair completion
+- Handle repair cancellation
+
+**Message Flow:**
+```
+1. Admin → REPAIR_START → All Clients
+   └─> Clients show waiting panel
+   
+2. Admin → REPAIR_PACKET_* → All Clients
+   └─> Clients apply packets and validate
+   
+3. Clients → REPAIR_VALIDATION → Admin
+   └─> Admin tracks progress
+   
+4. Admin → REPAIR_COMPLETE → All Clients
+   └─> Clients dismiss panels
+   
+5. (Optional) Admin → REPAIR_CANCEL → All Clients
+   └─> Clients abort and dismiss panels
+```
+
+### Public Functions (Admin Side)
+
+#### `OGRH.SyncRepairHandlers.InitiateRepair(raidName, failedLayers, selectedEncounterIndex, clientList)`
+**Type:** Public  
+**Authorization:** Admin only  
+**Returns:** `boolean` - True if repair initiated successfully
+
+Initiates a repair session and broadcasts start notification to clients.
+
+**Parameters:**
+- `raidName` (string) - Name of raid being repaired
+- `failedLayers` (table) - Map of failed checksum layers:
+  - `structure` (boolean) - Layer 1 structure failed
+  - `encounters` (table) - Array of encounter indices needing repair
+  - `roles` (table) - Map of `[encIdx] = {roleIdx, ...}` needing repair
+  - `assignments` (table) - Map of `[encIdx] = {roleIdx, ...}` needing repair
+  - `rolesui` (boolean) - Global roles failed
+- `selectedEncounterIndex` (number) - Current encounter (prioritized first)
+- `clientList` (table, optional) - Array of player names requesting repair
+
+**Behavior:**
+1. Starts repair session via `SyncSession.StartSession()`
+2. Determines repair priority order (current encounter first)
+3. Shows admin repair panel with client list
+4. Broadcasts `SYNC.REPAIR_START` message to all clients
+5. Schedules packet transmission (500ms delay)
+
+**Example:**
+```lua
+local failedLayers = {
+    structure = true,
+    encounters = {1, 3, 5},
+    rolesui = false
+}
+
+local success = OGRH.SyncRepairHandlers.InitiateRepair(
+    "Molten Core",
+    failedLayers,
+    5,  -- Current encounter
+    {"PlayerA", "PlayerB", "PlayerC"}  -- Clients requesting repair
+)
+```
+
+**REPAIR_START Message Format:**
+```lua
+{
+    token = "1234567890.12_456789",
+    raidName = "Molten Core",
+    priority = {5, 1, 3},  -- Encounter order (current first)
+    totalLayers = 8        -- Total repair packets to expect
+}
+```
+
+---
+
+#### `OGRH.SyncRepairHandlers.SendRepairPackets(token, raidName, failedLayers, priority)`
+**Type:** Public  
+**Returns:** `nil`
+
+Sends repair packets to clients with adaptive pacing.
+
+**Parameters:**
+- `token` (string) - Session token
+- `raidName` (string) - Raid name
+- `failedLayers` (table) - Failed layers map
+- `priority` (table) - Encounter repair order
+
+**Behavior:**
+1. Builds repair packets based on failed layers
+2. Orders packets by priority (current encounter first)
+3. Sends packets with adaptive delays (0.5-2.0s typical)
+4. Monitors OGAddonMsg queue saturation
+5. Adjusts pacing dynamically
+
+**Packet Types Sent:**
+- `SYNC.REPAIR_PACKET_STRUCTURE` - Layer 1 structure
+- `SYNC.REPAIR_PACKET_ROLESUI` - Layer 1b global roles
+- `SYNC.REPAIR_PACKET_ENCOUNTER` - Layer 2 encounters
+- `SYNC.REPAIR_PACKET_ROLE` - Layer 3 roles
+- `SYNC.REPAIR_PACKET_ASSIGNMENT` - Layer 4 assignments
+
+---
+
+#### `OGRH.SyncRepairHandlers.CompleteRepair(token)`
+**Type:** Public  
+**Returns:** `nil`
+
+Completes repair session and notifies clients.
+
+**Parameters:**
+- `token` (string) - Session token
+
+**Behavior:**
+1. Waits for client validations (1s timeout)
+2. Broadcasts `SYNC.REPAIR_COMPLETE` to all clients
+3. Completes session via `SyncSession.CompleteSession()`
+4. Hides admin repair panel
+5. Resumes normal sync operations
+
+**REPAIR_COMPLETE Message Format:**
+```lua
+{
+    token = "1234567890.12_456789",
+    timestamp = GetTime()
+}
+```
+
+---
+
+#### `OGRH.SyncRepairHandlers.CancelRepair(token, reason)`
+**Type:** Public  
+**Returns:** `nil`
+
+Cancels active repair session.
+
+**Parameters:**
+- `token` (string) - Session token
+- `reason` (string, optional) - Cancellation reason
+
+**Behavior:**
+1. Broadcasts `SYNC.REPAIR_CANCEL` to all clients
+2. Cancels session via `SyncSession.CancelSession()`
+3. Hides admin repair panel
+4. Displays cancellation message
+
+**Example:**
+```lua
+OGRH.SyncRepairHandlers.CancelRepair(token, "User requested cancellation")
+```
+
+---
+
+### Public Functions (Client Side)
+
+#### `OGRH.SyncRepairHandlers.OnRepairStart(sender, data, channel)`
+**Type:** Public (Message Handler)  
+**Returns:** `nil`
+
+Handles `SYNC.REPAIR_START` message from admin.
+
+**Parameters:**
+- `sender` (string) - Admin player name
+- `data` (table) - Repair start data `{token, raidName, priority, totalLayers}`
+- `channel` (string) - Message channel ("RAID")
+
+**Behavior:**
+1. Verifies sender is raid admin
+2. Shows client waiting panel
+3. Initializes progress tracking
+4. Prepares to receive repair packets
+
+---
+
+#### `OGRH.SyncRepairHandlers.OnRepairPacket(sender, data, channel)`
+**Type:** Public (Message Handler)  
+**Returns:** `nil`
+
+Handles repair packet messages from admin.
+
+**Parameters:**
+- `sender` (string) - Admin player name
+- `data` (table) - Repair packet data
+- `channel` (string) - Message channel ("RAID")
+
+**Behavior:**
+1. Validates session token
+2. Deserializes packet payload
+3. Applies packet via `SyncRepair.ApplyPacket()`
+4. Updates progress bar
+5. Sends validation checksum to admin
+
+**Packet Types Handled:**
+- `SYNC.REPAIR_PACKET_STRUCTURE`
+- `SYNC.REPAIR_PACKET_ROLESUI`
+- `SYNC.REPAIR_PACKET_ENCOUNTER`
+- `SYNC.REPAIR_PACKET_ROLE`
+- `SYNC.REPAIR_PACKET_ASSIGNMENT`
+
+---
+
+#### `OGRH.SyncRepairHandlers.OnRepairValidation(sender, data, channel)`
+**Type:** Public (Message Handler)  
+**Returns:** `nil`
+
+Handles validation messages from clients (admin side).
+
+**Parameters:**
+- `sender` (string) - Client player name
+- `data` (table) - Validation data `{token, checksums, status}`
+- `channel` (string) - Message channel ("RAID")
+
+**Behavior:**
+1. Validates session token
+2. Records client validation status
+3. Updates admin panel progress
+4. Marks client as complete if all layers validated
+
+**Validation Data Format:**
+```lua
+{
+    token = "1234567890.12_456789",
+    checksums = {
+        structure = "abc123",
+        encounters = {"def456", "ghi789"},
+        rolesui = "jkl012"
+    },
+    status = "complete"  -- or "partial", "failed"
+}
+```
+
+---
+
+#### `OGRH.SyncRepairHandlers.OnRepairComplete(sender, data, channel)`
+**Type:** Public (Message Handler)  
+**Returns:** `nil`
+
+Handles `SYNC.REPAIR_COMPLETE` message from admin.
+
+**Parameters:**
+- `sender` (string) - Admin player name
+- `data` (table) - Completion data `{token, timestamp}`
+- `channel` (string) - Message channel ("RAID")
+
+**Behavior:**
+1. Validates session token
+2. Hides client waiting panel
+3. Displays completion message
+4. Resumes normal operations
+
+---
+
+#### `OGRH.SyncRepairHandlers.OnRepairCancel(sender, data, channel)`
+**Type:** Public (Message Handler)  
+**Returns:** `nil`
+
+Handles `SYNC.REPAIR_CANCEL` message from admin.
+
+**Parameters:**
+- `sender` (string) - Admin player name
+- `data` (table) - Cancellation data `{token, reason}`
+- `channel` (string) - Message channel ("RAID")
+
+**Behavior:**
+1. Validates session token
+2. Hides client waiting panel
+3. Displays cancellation message
+4. Aborts packet application
+
+---
+
+### Message Registration
+
+All message handlers are automatically registered during module initialization:
+
+```lua
+OGRH.MessageRouter.RegisterHandler(
+    OGRH.MessageTypes.SYNC.REPAIR_START,
+    OGRH.SyncRepairHandlers.OnRepairStart
+)
+
+OGRH.MessageRouter.RegisterHandler(
+    OGRH.MessageTypes.SYNC.REPAIR_PACKET_STRUCTURE,
+    OGRH.SyncRepairHandlers.OnRepairPacket
+)
+
+-- ... additional packet type handlers
+
+OGRH.MessageRouter.RegisterHandler(
+    OGRH.MessageTypes.SYNC.REPAIR_VALIDATION,
+    OGRH.SyncRepairHandlers.OnRepairValidation
+)
+
+OGRH.MessageRouter.RegisterHandler(
+    OGRH.MessageTypes.SYNC.REPAIR_COMPLETE,
+    OGRH.SyncRepairHandlers.OnRepairComplete
+)
+
+OGRH.MessageRouter.RegisterHandler(
+    OGRH.MessageTypes.SYNC.REPAIR_CANCEL,
+    OGRH.SyncRepairHandlers.OnRepairCancel
+)
+```
+
+---
+
+### Design Rationale
+
+**Why Separate Start Message?**
+- Allows clients to show UI before packets arrive
+- Provides total packet count for progress tracking
+- Coordinates timing across all clients
+
+**Why Validation Responses?**
+- Admin knows when all clients are synchronized
+- Detects failing clients early
+- Enables targeted re-repair if needed
+
+**Why Cancellation Support?**
+- Handles disconnected admin gracefully
+- Allows manual abort for troubleshooting
+- Prevents stuck clients waiting forever
+
+---
+
+## SyncRepairUI Module (_Infrastructure/SyncRepairUI.lua)
+
+The SyncRepairUI module provides visual feedback panels for repair operations. It displays progress, client status, and waiting states during synchronization.
+
+### Overview
+
+**Purpose:**
+- Show admin repair panel (progress, client tracking)
+- Show client waiting panel (progress bar, countdown)
+- Provide waiting panel for join-during-repair
+- Display sync status in tooltips
+- Auto-hide panels after timeout
+
+**Panel Types:**
+1. **Admin Panel:** Shows repair progress and client list
+2. **Client Panel:** Shows progress bar and estimated completion
+3. **Waiting Panel:** Generic "please wait" panel for various states
+
+### Public Functions
+
+#### `OGRH.SyncRepairUI.ShowAdminPanel(token, clientList)`
+**Type:** Public  
+**Returns:** `nil`
+
+Shows the admin repair progress panel.
+
+**Parameters:**
+- `token` (string) - Repair session token
+- `clientList` (table) - Array of player names being repaired
+
+**Behavior:**
+- Creates panel if not exists
+- Positions below main UI window
+- Shows status text: "Repairing: [RaidName]"
+- Displays progress bar (0% initially)
+- Lists clients with status icons:
+  - ⏳ Waiting (yellow)
+  - ✓ Complete (green)
+  - ✗ Failed (red)
+- Registers as auxiliary panel (priority 20)
+
+**Panel Layout:**
+```
+┌─────────────────────────────┐
+│ Status: Repairing: MC       │
+│ [========>         ] 45%    │
+│ Repairing Clients:          │
+│ ┌─────────────────────────┐ │
+│ │ ⏳ PlayerA              │ │
+│ │ ✓ PlayerB              │ │
+│ │ ⏳ PlayerC              │ │
+│ └─────────────────────────┘ │
+└─────────────────────────────┘
+```
+
+**Auto-Hide:**
+- 30-second timeout if no activity
+- Dismissed when repair completes
+- Hidden if session cancelled
+
+---
+
+#### `OGRH.SyncRepairUI.HideAdminPanel()`
+**Type:** Public  
+**Returns:** `nil`
+
+Hides the admin repair panel.
+
+**Behavior:**
+- Hides panel frame
+- Unregisters from auxiliary panel system
+- Cancels timeout timer
+- Clears client list
+
+---
+
+#### `OGRH.SyncRepairUI.UpdateAdminProgress(token, current, total, clientStatus)`
+**Type:** Public  
+**Returns:** `nil`
+
+Updates admin panel progress display.
+
+**Parameters:**
+- `token` (string) - Session token (validates panel is for correct session)
+- `current` (number) - Packets completed
+- `total` (number) - Total packets
+- `clientStatus` (table, optional) - Map of `[playerName] = status` ("waiting", "complete", "failed")
+
+**Behavior:**
+- Updates progress bar: `current / total * 100%`
+- Updates progress text: "45% (9/20 packets)"
+- Updates client status icons
+- Resizes panel if client list changed
+- Resets timeout timer
+
+**Example:**
+```lua
+OGRH.SyncRepairUI.UpdateAdminProgress(
+    token,
+    9,
+    20,
+    {
+        PlayerA = "waiting",
+        PlayerB = "complete",
+        PlayerC = "waiting"
+    }
+)
+```
+
+---
+
+#### `OGRH.SyncRepairUI.ShowClientPanel(token, totalLayers)`
+**Type:** Public  
+**Returns:** `nil`
+
+Shows the client repair progress panel.
+
+**Parameters:**
+- `token` (string) - Repair session token
+- `totalLayers` (number) - Total repair packets to expect
+
+**Behavior:**
+- Creates panel if not exists
+- Positions below main UI window
+- Shows status text: "Receiving repairs..."
+- Displays progress bar (0% initially)
+- Registers as auxiliary panel (priority 20)
+
+**Panel Layout:**
+```
+┌─────────────────────────────┐
+│ Receiving repairs...        │
+│ [========>         ] 45%    │
+│ (9/20 packets)              │
+└─────────────────────────────┘
+```
+
+**Auto-Hide:**
+- 10-second timeout if no packets
+- Dismissed when repair completes
+- Hidden if session cancelled
+
+---
+
+#### `OGRH.SyncRepairUI.HideClientPanel()`
+**Type:** Public  
+**Returns:** `nil`
+
+Hides the client repair panel.
+
+**Behavior:**
+- Hides panel frame
+- Unregisters from auxiliary panel system
+- Cancels timeout timer
+
+---
+
+#### `OGRH.SyncRepairUI.UpdateClientProgress(token, current, total)`
+**Type:** Public  
+**Returns:** `nil`
+
+Updates client panel progress display.
+
+**Parameters:**
+- `token` (string) - Session token
+- `current` (number) - Packets received
+- `total` (number) - Total packets expected
+
+**Behavior:**
+- Updates progress bar: `current / total * 100%`
+- Updates progress text: "(9/20 packets)"
+- Resets timeout timer
+
+**Example:**
+```lua
+OGRH.SyncRepairUI.UpdateClientProgress(token, 9, 20)
+```
+
+---
+
+#### `OGRH.SyncRepairUI.ShowWaitingPanel(mode)`
+**Type:** Public  
+**Returns:** `nil`
+
+Shows a generic waiting panel for various sync states.
+
+**Parameters:**
+- `mode` (string) - Waiting mode:
+  - `"sync_disabled"` - Sync disabled by admin (client view)
+  - `"sync_disabled_admin"` - Sync disabled (admin view)
+  - `"join_during_repair"` - Joined raid during active repair
+  - `"network_delay"` - Network delay, please wait
+
+**Behavior:**
+- Creates panel if not exists
+- Positions below main UI window
+- Shows appropriate message based on mode
+- No progress bar (indefinite wait)
+- Registers as auxiliary panel (priority 20)
+
+**Panel Messages:**
+- `sync_disabled`: "Sync disabled by raid admin - Please wait..."
+- `sync_disabled_admin`: "Sync mode disabled - Click 'Enable Sync' to resume"
+- `join_during_repair`: "Raid repair in progress - Please wait..."
+- `network_delay`: "Network delay - Please wait..."
+
+**Auto-Hide:**
+- 10-second timeout for most modes
+- Manual dismiss when sync re-enabled
+- Dismissed when repair completes
+
+---
+
+#### `OGRH.SyncRepairUI.HideWaitingPanel()`
+**Type:** Public  
+**Returns:** `nil`
+
+Hides the waiting panel.
+
+**Behavior:**
+- Hides panel frame
+- Unregisters from auxiliary panel system
+- Cancels timeout timer
+
+---
+
+#### `OGRH.SyncRepairUI.UpdateTooltipData(playerName, data)`
+**Type:** Public  
+**Returns:** `nil`
+
+Updates tooltip data for a player (used in admin button tooltip).
+
+**Parameters:**
+- `playerName` (string) - Player name
+- `data` (table) - Tooltip data:
+  - `version` (string) - Addon version
+  - `syncStatus` (string) - "synced", "outdated", "desynced"
+  - `classColor` (table) - Class color `{r, g, b}`
+
+**Behavior:**
+- Stores data for tooltip generation
+- Used by admin button OnEnter handler
+- Shows sync status for all raid members
+
+**Example Tooltip:**
+```
+Sync Status (25 players)
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ PlayerA (v2.0.76) [Synced]
+⚠ PlayerB (v2.0.75) [Outdated]
+✗ PlayerC (v2.0.76) [Desynced]
+...
+```
+
+---
+
+### Private Functions
+
+#### `OGRH.SyncRepairUI.CreateAdminPanel()`
+**Type:** Private  
+**Returns:** `Frame` - Newly created admin panel
+
+Creates the admin repair panel frame and controls.
+
+---
+
+#### `OGRH.SyncRepairUI.CreateClientPanel()`
+**Type:** Private  
+**Returns:** `Frame` - Newly created client panel
+
+Creates the client repair panel frame and controls.
+
+---
+
+#### `OGRH.SyncRepairUI.CreateWaitingPanel()`
+**Type:** Private  
+**Returns:** `Frame` - Newly created waiting panel
+
+Creates the generic waiting panel frame and controls.
+
+---
+
+#### `OGRH.SyncRepairUI.StartTimeout(panelType, duration)`
+**Type:** Private  
+**Returns:** `nil`
+
+Starts auto-hide timeout for a panel.
+
+**Parameters:**
+- `panelType` (string) - "admin", "client", or "waiting"
+- `duration` (number) - Timeout duration in seconds
+
+**Behavior:**
+- Cancels existing timer if present
+- Schedules new timer
+- Auto-hides panel when timeout expires
+- Resets on panel updates (activity refresh)
+
+---
+
+#### `OGRH.SyncRepairUI.CancelTimeout(panelType)`
+**Type:** Private  
+**Returns:** `nil`
+
+Cancels auto-hide timeout for a panel.
+
+**Parameters:**
+- `panelType` (string) - "admin", "client", or "waiting"
+
+---
+
+### Public Properties
+
+#### `OGRH.SyncRepairUI.State`
+**Type:** Table  
+**Access:** Public Read (Private Write)
+
+Module state tracking.
+
+**Fields:**
+- `adminPanel` (Frame | nil) - Admin panel frame reference
+- `clientPanel` (Frame | nil) - Client panel frame reference
+- `waitingPanel` (Frame | nil) - Waiting panel frame reference
+- `tooltipData` (table) - Player tooltip data map
+- `timeouts` (table) - Timeout tracking:
+  - `adminTimer` (timer) - Admin panel timeout timer
+  - `clientTimer` (timer) - Client panel timeout timer
+  - `waitingTimer` (timer) - Waiting panel timeout timer
+  - `lastAdminActivity` (timestamp) - Last admin panel update
+  - `lastClientActivity` (timestamp) - Last client panel update
+  - `lastWaitingActivity` (timestamp) - Last waiting panel update
+  - `adminTimeoutDuration` (number) - 30 seconds
+  - `clientTimeoutDuration` (number) - 10 seconds
+  - `waitingTimeoutDuration` (number) - 10 seconds
+
+---
+
+### Auxiliary Panel Integration
+
+All repair panels register with the auxiliary panel system (priority 20):
+
+**Positioning:**
+- Anchored below main UI window
+- Dynamically resized based on content
+- Repositioned if multiple auxiliary panels present
+- Auto-hidden when main UI hidden
+
+**Priority:**
+- Priority 20 (high, below critical alerts)
+- Visible over most other panels
+- Does not block main UI interaction
+
+---
+
+### Design Rationale
+
+**Why Separate Admin/Client Panels?**
+- Admin needs client tracking visibility
+- Clients only need progress feedback
+- Different information density requirements
+- Different timeout durations (admin local, client remote)
+
+**Why Auto-Hide Timeout?**
+- Prevents stuck UI if network fails
+- Handles disconnected admin/clients
+- Conservative durations prevent false positives
+- Activity refresh extends timeout
+
+**Why Waiting Panel?**
+- Generic reusable component
+- Handles multiple waiting states
+- Consistent UX across scenarios
+- Minimal screen real estate
+
+**Why Tooltip Integration?**
+- Admin needs sync status visibility
+- No dedicated window required
+- Shows data on-demand
+- Minimal UI clutter
+
+---
+
 ## Permissions Module (_Infrastructure/Permissions.lua)
 
 The Permissions module provides a three-tier permission system for controlling access to raid management functions.
@@ -4126,4 +5984,5 @@ This document will be expanded to include:
 
 ---
 
-*Last Updated: February 3, 2026*
+*Last Updated: February 9, 2026*
+
