@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 2.0.89
+## Version: 2.0.90
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 ## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV, OGAAL_SV
 ## OptionalDeps: _OGAddonMsg, _OGST, _OGAALogger 
@@ -84,6 +84,7 @@ _Configuration\ConsumesTracking.lua
 ## Phase 4: Raid - Encounters & Roles
 ## ===================================================================
 _Raid\EncounterMgmt.lua
+_Raid\copypasta.lua
 _Raid\EncounterSetup.lua
 _Raid\RolesUI.lua
 _Raid\ClassPriority.lua
