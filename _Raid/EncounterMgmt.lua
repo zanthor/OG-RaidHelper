@@ -1067,6 +1067,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
         -- Store reference for potential updates
         raidBtn.settingsBtn = settingsBtn
         
+        -- Copy button (left of settings button)
+        local copyBtn = OGRH.CopyPasta.CreateRaidCopyButton(raidBtn, i, raidName)
+        copyBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -3, 0)
+        raidBtn.copyBtn = copyBtn
+        
         -- Click to select raid
         raidBtn:SetScript("OnClick", function()
           -- Clear encounter selection when switching raids
@@ -1233,6 +1238,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
         
         -- Store reference for potential updates
         encounterBtn.settingsBtn = settingsBtn
+        
+        -- Copy button (left of settings button)
+        local copyBtn = OGRH.CopyPasta.CreateEncounterCopyButton(encounterBtn, frame.selectedRaidIdx, i, frame.selectedRaid, encounterName)
+        copyBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -3, 0)
+        encounterBtn.copyBtn = copyBtn
         
         -- Click to select encounter
         encounterBtn:SetScript("OnClick", function()

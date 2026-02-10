@@ -79,6 +79,7 @@ _Configuration\ConsumesTracking.lua
 ## Phase 4: Raid - Encounters & Roles
 ## ===================================================================
 _Raid\EncounterMgmt.lua
+_Raid\copypasta.lua
 _Raid\EncounterSetup.lua
 _Raid\RolesUI.lua
 _Raid\ClassPriority.lua
