@@ -1,6 +1,16 @@
 --[[
     OGAddonMsg - Queue
-    Priority queue management, throttling, and latency monitoring
+    Priority queue management, CTL integration, and latency monitoring
+    
+    Throttling is delegated to ChatThrottleLib (CTL), which is the standard
+    for WoW addon bandwidth management. Our queue handles OGAddonMsg-level
+    priority ordering, then hands messages to CTL for safe delivery.
+    
+    CTL priorities mapped from OGAddonMsg priorities:
+        CRITICAL -> "ALERT"
+        HIGH     -> "NORMAL" 
+        NORMAL   -> "NORMAL"
+        LOW      -> "BULK"
 ]]
 
 -- Initialize queue with priority levels
@@ -17,10 +27,13 @@ OGAddonMsg.latencyMonitor = {
     lastWarning = 0
 }
 
--- Throttling state
-local lastSendTime = 0
-local burstCount = 0
-local burstResetTime = 0
+-- Map OGAddonMsg priorities to CTL priorities
+local CTL_PRIORITY_MAP = {
+    CRITICAL = "ALERT",
+    HIGH = "NORMAL",
+    NORMAL = "NORMAL",
+    LOW = "BULK"
+}
 
 --[[
     Queue Management
@@ -46,78 +59,82 @@ local function Dequeue()
     -- Check priorities in order
     for _, priority in ipairs({"CRITICAL", "HIGH", "NORMAL", "LOW"}) do
         if table.getn(OGAddonMsg.queue[priority]) > 0 then
-            return table.remove(OGAddonMsg.queue[priority], 1)
+            return table.remove(OGAddonMsg.queue[priority], 1), priority
         end
     end
-    return nil
+    return nil, nil
 end
 
 --[[
-    Throttling Engine
+    Queue Processing - delegates to ChatThrottleLib for actual sending
 ]]
 function OGAddonMsg.ProcessQueue(elapsed)
-    local now = GetTime()
-    local config = OGAddonMsg_Config
-    
-    -- Reset burst counter every second
-    if now - burstResetTime >= 1.0 then
-        burstCount = 0
-        burstResetTime = now
-    end
-    
-    -- Check burst limit
-    if burstCount >= config.burstLimit then
-        return
-    end
-    
-    -- Check rate limit
-    local minInterval = 1.0 / config.maxRate
-    if now - lastSendTime < minInterval then
-        return
-    end
-    
-    -- Dequeue and send
-    local item = Dequeue()
+    -- Dequeue and hand to CTL
+    local item, priority = Dequeue()
     if not item then
         return
     end
     
-    -- Send via WoW API
-    -- SendAddonMessage(prefix, message, channel, target)
-    local success = pcall(SendAddonMessage, "OGAM", item.msg, item.channel, item.target)
+    -- Resolve CTL priority
+    local ctlPrio = CTL_PRIORITY_MAP[priority] or "NORMAL"
     
-    if success then
-        if OGAddonMsg_Config.debug then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: TX -> %s (%d bytes)", 
-                    item.channel or "AUTO", string.len(item.msg)),
-                0.5, 1, 0.5
-            )
+    -- Build a unique queue name for CTL round-robin (per channel+target)
+    local queueName = "OGAM:" .. (item.channel or "AUTO") .. ":" .. (item.target or "")
+    
+    -- Use ChatThrottleLib if available, otherwise fall back to direct send
+    if ChatThrottleLib and ChatThrottleLib.SendAddonMessage then
+        -- CTL callback fires when the message actually leaves the wire
+        local function ctlCallback()
+            if OGAddonMsg_Config.debug then
+                DEFAULT_CHAT_FRAME:AddMessage(
+                    string.format("OGAddonMsg: TX -> %s (%d bytes) [CTL:%s]", 
+                        item.channel or "AUTO", string.len(item.msg), ctlPrio),
+                    0.5, 1, 0.5
+                )
+            end
+            
+            -- Update stats
+            OGAddonMsg.stats.messagesSent = OGAddonMsg.stats.messagesSent + 1
+            OGAddonMsg.stats.bytesSent = OGAddonMsg.stats.bytesSent + string.len(item.msg)
+            OGAddonMsg.stats.chunksSent = OGAddonMsg.stats.chunksSent + 1
+            
+            -- Callback
+            if item.callbacks and item.callbacks.onSuccess then
+                item.callbacks.onSuccess()
+            end
         end
         
-        -- Update throttling state
-        lastSendTime = now
-        burstCount = burstCount + 1
-        
-        -- Update stats
-        OGAddonMsg.stats.messagesSent = OGAddonMsg.stats.messagesSent + 1
-        OGAddonMsg.stats.bytesSent = OGAddonMsg.stats.bytesSent + string.len(item.msg)
-        OGAddonMsg.stats.chunksSent = OGAddonMsg.stats.chunksSent + 1
-        
-        -- Callback
-        if item.callbacks and item.callbacks.onSuccess then
-            item.callbacks.onSuccess()
-        end
+        ChatThrottleLib:SendAddonMessage(ctlPrio, "OGAM", item.msg, item.channel, item.target, queueName, ctlCallback)
     else
-        -- Send failed
-        OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
+        -- Fallback: direct send (no throttle protection)
+        local success = pcall(SendAddonMessage, "OGAM", item.msg, item.channel, item.target)
         
-        if OGAddonMsg_Config.debug then
-            DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Send failed", 1, 0, 0)
-        end
-        
-        if item.callbacks and item.callbacks.onFailure then
-            item.callbacks.onFailure("Send failed")
+        if success then
+            if OGAddonMsg_Config.debug then
+                DEFAULT_CHAT_FRAME:AddMessage(
+                    string.format("OGAddonMsg: TX -> %s (%d bytes) [NO CTL]", 
+                        item.channel or "AUTO", string.len(item.msg)),
+                    0.5, 1, 0.5
+                )
+            end
+            
+            OGAddonMsg.stats.messagesSent = OGAddonMsg.stats.messagesSent + 1
+            OGAddonMsg.stats.bytesSent = OGAddonMsg.stats.bytesSent + string.len(item.msg)
+            OGAddonMsg.stats.chunksSent = OGAddonMsg.stats.chunksSent + 1
+            
+            if item.callbacks and item.callbacks.onSuccess then
+                item.callbacks.onSuccess()
+            end
+        else
+            OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
+            
+            if OGAddonMsg_Config.debug then
+                DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Send failed (no CTL)", 1, 0, 0)
+            end
+            
+            if item.callbacks and item.callbacks.onFailure then
+                item.callbacks.onFailure("Send failed")
+            end
         end
     end
     
@@ -145,10 +162,10 @@ function OGAddonMsg.UpdateQueueStats()
         OGAddonMsg.stats.queueDepthMax = totalItems
     end
     
-    -- Estimate queue time
-    local avgBytes = 150
-    local config = OGAddonMsg_Config
-    OGAddonMsg.stats.queueTimeEstimate = totalBytes / (config.maxRate * avgBytes)
+    -- Estimate queue time based on CTL's bandwidth (~800 CPS with 40 byte overhead)
+    local ctlCPS = 800
+    local ctlOverhead = 40
+    OGAddonMsg.stats.queueTimeEstimate = (totalBytes + (totalItems * ctlOverhead)) / ctlCPS
 end
 
 --[[

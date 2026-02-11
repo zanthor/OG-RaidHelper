@@ -5,8 +5,8 @@
 
 -- Default configuration
 local DEFAULT_CONFIG = {
-    version = "1.0.0",
-    warnQueue = 5,          -- Warn when queue exceeds this many seconds
+    version = "1.2.0",
+    warnQueue = 10,          -- Warn when queue exceeds this many seconds
     warnPeriod = 30,        -- Sustained duration before periodic warnings
     warnInterval = 10,      -- Interval between periodic warnings
     retainTime = 60,        -- How long to retain sent messages for retry

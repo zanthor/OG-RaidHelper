@@ -22,7 +22,7 @@ local function CreateStatsPanel()
     -- Main frame
     local frame = CreateFrame("Frame", "OGAddonMsg_StatsPanel", UIParent)
     frame:SetWidth(280)
-    frame:SetHeight(200)
+    frame:SetHeight(290)
     frame:SetMovable(1)
     frame:EnableMouse(1)
     frame:SetClampedToScreen(1)
@@ -104,7 +104,12 @@ local function CreateStatsPanel()
         "Reassembled:",
         "Queue:",
         "Retries:",
-        "Failures:"
+        "Failures:",
+        "",
+        "CTL Version:",
+        "CTL Status:",
+        "CTL Bandwidth:",
+        "CTL Bypass:"
     }
     
     frame.labels = {}
@@ -202,6 +207,60 @@ function OGAddonMsg.UpdateStatsPanel()
         statsPanel.values[7]:SetTextColor(1, 0, 0)    -- Red
     else
         statsPanel.values[7]:SetTextColor(0.5, 1, 0.5)  -- Green
+    end
+    
+    -- Spacer row (8) - leave blank
+    statsPanel.values[8]:SetText("")
+    statsPanel.labels[8]:SetText("")
+    
+    -- CTL stats
+    if ChatThrottleLib then
+        statsPanel.values[9]:SetText(string.format("v%d", ChatThrottleLib.version or 0))
+        statsPanel.values[9]:SetTextColor(0.5, 1, 0.5)
+        
+        if ChatThrottleLib.bQueueing then
+            statsPanel.values[10]:SetText("THROTTLED")
+            statsPanel.values[10]:SetTextColor(1, 0.5, 0)
+        elseif ChatThrottleLib.bChoking then
+            statsPanel.values[10]:SetText("CHOKING")
+            statsPanel.values[10]:SetTextColor(1, 0, 0)
+        else
+            statsPanel.values[10]:SetText("OK")
+            statsPanel.values[10]:SetTextColor(0.5, 1, 0.5)
+        end
+        
+        local avail = ChatThrottleLib.avail or 0
+        local burst = ChatThrottleLib.BURST or 4000
+        local maxCPS = ChatThrottleLib.MAX_CPS or 800
+        local pct = 0
+        if burst > 0 then pct = (avail / burst) * 100 end
+        statsPanel.values[11]:SetText(string.format("%d / %d (%.0f%%)", avail, burst, pct))
+        if pct < 25 then
+            statsPanel.values[11]:SetTextColor(1, 0.5, 0)
+        else
+            statsPanel.values[11]:SetTextColor(1, 1, 1)
+        end
+        
+        local function FormatBytes(bytes)
+            if bytes >= 1048576 then
+                return string.format("%.1fM", bytes / 1048576)
+            elseif bytes >= 1024 then
+                return string.format("%.1fK", bytes / 1024)
+            else
+                return tostring(bytes)
+            end
+        end
+        statsPanel.values[12]:SetText(FormatBytes(ChatThrottleLib.nBypass or 0))
+        statsPanel.values[12]:SetTextColor(1, 1, 1)
+    else
+        statsPanel.values[9]:SetText("Not loaded")
+        statsPanel.values[9]:SetTextColor(1, 0, 0)
+        statsPanel.values[10]:SetText("N/A")
+        statsPanel.values[10]:SetTextColor(0.5, 0.5, 0.5)
+        statsPanel.values[11]:SetText("N/A")
+        statsPanel.values[11]:SetTextColor(0.5, 0.5, 0.5)
+        statsPanel.values[12]:SetText("N/A")
+        statsPanel.values[12]:SetTextColor(0.5, 0.5, 0.5)
     end
 end
 
