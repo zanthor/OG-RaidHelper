@@ -3,7 +3,13 @@ OGRH = OGRH or {}
 OGRH.ADDON = "OG-RaidHelper"
 OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
-OGRH.VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
+
+-- Code version: updated by bump.ps1, takes effect on /reload
+OGRH.CODE_VERSION = "2.0.93"
+-- TOC version: only updates on full client restart
+OGRH.TOC_VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
+-- Active version used for all version checks (code version = live reloadable)
+OGRH.VERSION = OGRH.CODE_VERSION
 
 -- Initialize Migration namespace (loaded later from SavedVariablesManager)
 OGRH.Migration = OGRH.Migration or {}

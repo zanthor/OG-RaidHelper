@@ -1580,6 +1580,7 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             -- Send response with version and checksum
             local response = {
                 version = OGRH.VERSION,
+                tocVersion = OGRH.TOC_VERSION,
                 checksum = checksum
             }
             OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.POLL_RESPONSE, response)
@@ -1590,7 +1591,8 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         if OGRH.HandleAddonPollResponse then
             local version = data.version or "Unknown"
             local checksum = data.checksum or "0"
-            OGRH.HandleAddonPollResponse(sender, version, checksum)
+            local tocVersion = data.tocVersion or version
+            OGRH.HandleAddonPollResponse(sender, version, checksum, tocVersion)
         end
     end)
 
