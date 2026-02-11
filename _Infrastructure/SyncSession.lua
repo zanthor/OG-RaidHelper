@@ -115,6 +115,7 @@ function OGRH.SyncSession.StartSession(encounterName, layerIds)
         encounterName = encounterName,
         layerIds = layerIds or {},
         clientValidations = {},
+        repairParticipants = {},  -- Clients who requested repair (set by admin)
         isRepairMode = false
     }
     
@@ -231,23 +232,54 @@ function OGRH.SyncSession.GetClientValidations()
     return OGRH.SyncSession.State.activeSession.clientValidations
 end
 
+-- Set which clients are participating in this repair (admin calls this)
+function OGRH.SyncSession.SetRepairParticipants(clientList)
+    if not OGRH.SyncSession.State.activeSession then
+        return
+    end
+    
+    local participants = {}
+    if clientList then
+        for i = 1, table.getn(clientList) do
+            local name = clientList[i].name or clientList[i]
+            if name then
+                participants[name] = true
+            end
+        end
+    end
+    
+    OGRH.SyncSession.State.activeSession.repairParticipants = participants
+end
+
 function OGRH.SyncSession.AreAllClientsValidated()
     if not OGRH.SyncSession.State.activeSession then
         return false
     end
     
-    -- Get list of addon users in raid
-    local addonUsers = OGRH.RaidLead and OGRH.RaidLead.pollResponses or {}
-    if table.getn(addonUsers) == 0 then
-        return true  -- No clients to validate
+    -- Use actual repair participants (clients who requested this repair)
+    local participants = OGRH.SyncSession.State.activeSession.repairParticipants or {}
+    
+    -- Count participants
+    local participantCount = 0
+    for _ in pairs(participants) do
+        participantCount = participantCount + 1
     end
     
-    local validations = OGRH.SyncSession.State.activeSession.clientValidations
+    -- SAFETY: If no participants tracked, require at least 1 validation response
+    if participantCount == 0 then
+        local validations = OGRH.SyncSession.State.activeSession.clientValidations
+        local validationCount = 0
+        for _ in pairs(validations) do
+            validationCount = validationCount + 1
+        end
+        return validationCount > 0
+    end
     
-    for i = 1, table.getn(addonUsers) do
-        local playerName = addonUsers[i].name
+    -- Check that every participant has sent a validation
+    local validations = OGRH.SyncSession.State.activeSession.clientValidations
+    for playerName, _ in pairs(participants) do
         if not validations[playerName] then
-            return false  -- Missing validation from this client
+            return false  -- Missing validation from this participant
         end
     end
     
