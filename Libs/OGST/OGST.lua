@@ -5,105 +5,28 @@
 -- This library provides standardized UI components and helper functions
 -- that can be used across multiple addons for consistent styling and behavior.
 
--- Version checking and load management
--- This allows OGST to be loaded either as a standalone addon (_OGST)
--- or embedded within other addons. The newest version takes priority.
+-- Version check for multi-copy loading (same pattern as OGAddonMsg)
+local LIB_VERSION = 1.1
+local IS_STANDALONE = false
 
-local OGST_NEW_VERSION = "1.1.0"
-local OGST_LOAD_SOURCE = nil  -- Will be set to "standalone" or addon name
-
--- Determine where we're being loaded from
-do
-  local loadedFrom = debugstack()
-  -- Check if loaded from standalone _OGST addon
-  if string.find(loadedFrom, "Interface\\AddOns\\_OGST\\") then
-    OGST_LOAD_SOURCE = "standalone"
-  elseif string.find(loadedFrom, "Interface\\AddOns\\") then
-    -- Extract addon name from path (works for any addon)
-    local _, _, addonName = string.find(loadedFrom, "Interface\\AddOns\\([^\\]+)\\")
-    OGST_LOAD_SOURCE = addonName or "unknown"
-  else
-    OGST_LOAD_SOURCE = "unknown"
-  end
+-- Standalone: only abort if there's already a standalone with higher version
+if OGST and OGST.__standalone and OGST.__version and OGST.__version > LIB_VERSION then
+    return
 end
 
--- Compare semantic versions (format: "major.minor.patch")
--- Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal
-local function CompareVersions(v1, v2)
-  local function parseVersion(v)
-    local major, minor, patch = string.match(v, "(%d+)%.(%d+)%.(%d+)")
-    return {
-      tonumber(major) or 0,
-      tonumber(minor) or 0,
-      tonumber(patch) or 0
-    }
-  end
-  
-  local v1Parts = parseVersion(v1)
-  local v2Parts = parseVersion(v2)
-  
-  for i = 1, 3 do
-    if v1Parts[i] > v2Parts[i] then
-      return 1
-    elseif v1Parts[i] < v2Parts[i] then
-      return -1
-    end
-  end
-  
-  return 0
+-- Embedded: abort if there's already any copy with equal or higher version
+if not IS_STANDALONE and OGST and OGST.__version and OGST.__version >= LIB_VERSION then
+    return
 end
 
--- Create global namespace with version checking
+-- Initialize namespace
 if not OGST then
-  OGST = {}
-  OGST.version = OGST_NEW_VERSION
-  OGST.loadSource = OGST_LOAD_SOURCE
-  if OGST.Msg then
-    OGST.Msg("|cff00ff00OGST:|r Initialized v" .. OGST_NEW_VERSION .. " from " .. OGST_LOAD_SOURCE)
-  else
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00OGST:|r Initialized v" .. OGST_NEW_VERSION .. " from " .. OGST_LOAD_SOURCE)
-  end
-elseif OGST.version then
-  -- OGST already exists - preserve it and check version
-  local comparison = CompareVersions(OGST_NEW_VERSION, OGST.version)
-  
-  if comparison > 0 then
-    -- New version is newer - we'll initialize below
-    if OGST.Msg then
-      OGST.Msg("|cffffff00OGST:|r Upgrading from v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
-    else
-      DEFAULT_CHAT_FRAME:AddMessage("|cffffff00OGST:|r Upgrading from v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
-    end
-    OGST.version = OGST_NEW_VERSION
-    OGST.previousLoadSource = OGST.loadSource
-    OGST.loadSource = OGST_LOAD_SOURCE
-  elseif comparison == 0 then
-    -- Same version - skip initialization
-    if OGST.Msg then
-      OGST.Msg("|cff888888OGST:|r v" .. OGST.version .. " already loaded from " .. (OGST.loadSource or "unknown") .. ", skipping duplicate load from " .. OGST_LOAD_SOURCE)
-    else
-      DEFAULT_CHAT_FRAME:AddMessage("|cff888888OGST:|r v" .. OGST.version .. " already loaded from " .. (OGST.loadSource or "unknown") .. ", skipping duplicate load from " .. OGST_LOAD_SOURCE)
-    end
-    return  -- Exit early, don't reinitialize
-  else
-    -- Old version - skip initialization
-    if OGST.Msg then
-      OGST.Msg("|cffff8800OGST:|r v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") is newer than v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. "), keeping existing version")
-    else
-      DEFAULT_CHAT_FRAME:AddMessage("|cffff8800OGST:|r v" .. OGST.version .. " (" .. (OGST.loadSource or "unknown") .. ") is newer than v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. "), keeping existing version")
-    end
-    return  -- Exit early, don't reinitialize
-  end
-else
-  -- OGST exists but has no version (legacy)
-  if OGST.Msg then
-    OGST.Msg("|cffffff00OGST:|r Upgrading legacy version to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
-  else
-    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00OGST:|r Upgrading legacy version to v" .. OGST_NEW_VERSION .. " (" .. OGST_LOAD_SOURCE .. ")")
-  end
-  OGST.version = OGST_NEW_VERSION
-  OGST.loadSource = OGST_LOAD_SOURCE
+    OGST = {}
 end
+OGST.__version = LIB_VERSION
+OGST.__standalone = IS_STANDALONE
+OGST.version = "1.1.0"
+OGST.loadSource = IS_STANDALONE and "standalone" or "embedded"
 
 OGST.DESIGN_MODE = OGST.DESIGN_MODE or false
 

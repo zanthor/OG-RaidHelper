@@ -190,9 +190,10 @@ function OGAddonMsg.UpdateStatsPanel()
     local queueText = string.format("%d msgs (%.1fs)",
         stats.queueDepth, stats.queueTimeEstimate)
     statsPanel.values[5]:SetText(queueText)
-    if stats.queueTimeEstimate > 5 then
+    local warnThreshold = OGAddonMsg.GetConfig("warnQueue") or 10
+    if stats.queueTimeEstimate > warnThreshold then
         statsPanel.values[5]:SetTextColor(1, 0.5, 0)  -- Orange warning
-    elseif stats.queueTimeEstimate > 2 then
+    elseif stats.queueTimeEstimate > (warnThreshold / 2) then
         statsPanel.values[5]:SetTextColor(1, 1, 0)    -- Yellow caution
     else
         statsPanel.values[5]:SetTextColor(1, 1, 1)    -- White normal
