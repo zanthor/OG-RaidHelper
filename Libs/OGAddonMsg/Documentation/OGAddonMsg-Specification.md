@@ -103,14 +103,14 @@
   1. RAID (if in raid)
   2. PARTY (if in party)
   3. GUILD (if in guild and target is guildmate)
-  4. WHISPER (for direct messages)
+  4. ~~WHISPER (for direct messages)~~ **Not supported on Turtle WoW**
   5. Explicit channel override
 - **Channel types supported:**
   - `"ADDON"` - Hidden addon channel (primary)
   - `"RAID"` - Raid chat
   - `"PARTY"` - Party chat
   - `"GUILD"` - Guild chat
-  - `"WHISPER"` - Direct whisper
+  - `"WHISPER"` - Direct whisper *(TWoW: redirects to RAID/PARTY/GUILD)*
 
 ### 9. Callback Registration
 - **Register handlers by prefix:**
@@ -600,7 +600,7 @@ Send a message through the addon communication system.
 
 **Parameters:**
 - `channel` (string): "RAID", "PARTY", "GUILD", "WHISPER", or nil for auto-detect
-- `target` (string): Player name for WHISPER, nil otherwise
+- `target` (string): Player name for WHISPER, nil otherwise *(TWoW: ignored, broadcasts instead)*
 - `prefix` (string): Message prefix (identifies your addon)
 - `data` (string): Message payload
 - `options` (table, optional):
@@ -608,6 +608,8 @@ Send a message through the addon communication system.
   - `onSuccess` (function): Called when message fully sent
   - `onFailure` (function(reason)): Called on send failure
   - `onProgress` (function(sent, total)): Called for chunked messages
+
+> **Turtle WoW Limitation:** WHISPER channel is not supported for addon messages. Requests to send via WHISPER will be automatically redirected to RAID > PARTY > GUILD with a debug warning.
 
 **Returns:**
 - `msgId` (string): Unique message ID for tracking
@@ -952,6 +954,7 @@ SendAddonMessage(prefix, message, channel, target)
 -- message: String payload (max ~255 bytes)
 -- channel: "RAID", "PARTY", "GUILD", "BATTLEGROUND", or "WHISPER"
 -- target: Player name (only for WHISPER)
+-- NOTE: On Turtle WoW, WHISPER is not supported - use RAID/PARTY/GUILD only
 
 -- Example
 SendAddonMessage("OGAM", "1S4a2fTEST\tHello", "RAID")

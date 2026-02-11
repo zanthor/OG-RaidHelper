@@ -2,7 +2,7 @@
 
 **Unified addon network interface for WoW 1.12 (Turtle WoW)**
 
-Version 1.0.0
+Version 1.2.0
 
 ---
 
@@ -22,11 +22,19 @@ OGAddonMsg provides reliable, asynchronous addon communication with:
 - ✅ Asynchronous operation with callbacks
 - ✅ Self-healing: auto-retry after zone/reload
 - ✅ Priority queue (CRITICAL/HIGH/NORMAL/LOW)
-- ✅ Bandwidth throttling to prevent disconnects
+- ✅ ChatThrottleLib integration for bandwidth management
 - ✅ Network latency warnings
 - ✅ Statistics and diagnostics
 - ✅ Debug mode for troubleshooting
 - ✅ Embeddable: newest version auto-loads
+
+## Turtle WoW Limitations
+
+**No WHISPER Support for Addon Messages:**
+- Turtle WoW only supports addon messages on RAID, PARTY, and GUILD channels
+- `SendTo(playerName, ...)` automatically redirects to RAID > PARTY > GUILD
+- Messages are broadcast to all members, not sent directly to one player
+- Applications must handle filtering on the receiving side if needed
 
 ## Quick Start
 
@@ -75,7 +83,7 @@ See [Documentation/OGAddonMsg-Specification.md](Documentation/OGAddonMsg-Specifi
 **Sending:**
 - `OGAddonMsg.Send(channel, target, prefix, data, options)` - Send message
 - `OGAddonMsg.Broadcast(prefix, data, options)` - Broadcast to all channels
-- `OGAddonMsg.SendTo(playerName, prefix, data, options)` - Direct message
+- `OGAddonMsg.SendTo(playerName, prefix, data, options)` - Broadcast (TWoW: no direct messaging)
 
 **Receiving:**
 - `OGAddonMsg.RegisterHandler(prefix, callback)` - Register message handler

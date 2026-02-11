@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 2.0.90
+## Version: 2.0.92
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 ## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV, OGAAL_SV
 ## OptionalDeps: _OGAddonMsg, _OGST, _OGAALogger 
@@ -31,6 +31,7 @@ Libs\OGST\OGST_Sample.lua
 Libs\json.lua
 
 ## OGAddonMsg - Embedded Communication Library
+Libs\OGAddonMsg\libs\ChatThrottleLib.lua
 Libs\OGAddonMsg\MessageRouter.lua
 Libs\OGAddonMsg\Core.lua
 Libs\OGAddonMsg\Config.lua

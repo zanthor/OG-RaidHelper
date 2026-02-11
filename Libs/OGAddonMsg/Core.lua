@@ -3,17 +3,19 @@
     Namespace initialization, version checking, and event handling
 ]]
 
--- Version check for multi-copy loading (newest version wins)
-local LIB_VERSION = 1.1
+-- Version check for multi-copy loading
+local LIB_VERSION = 1.2
+local IS_STANDALONE = false  -- Embedded version
 
-if OGAddonMsg and OGAddonMsg.__version and OGAddonMsg.__version >= LIB_VERSION then
-    -- Newer or equal version already loaded, abort
+-- Embedded: abort if there's already ANY standalone version loaded
+if OGAddonMsg and OGAddonMsg.__standalone then
     return
 end
 
 -- Initialize namespace
 OGAddonMsg = OGAddonMsg or {}
 OGAddonMsg.__version = LIB_VERSION
+OGAddonMsg.__standalone = IS_STANDALONE
 
 -- Internal state
 OGAddonMsg.loaded = false

@@ -88,6 +88,34 @@ function OGAddonMsg.Send(channel, target, prefix, data, options)
         end
     end
     
+    -- TURTLE WOW: Addon messages don't support WHISPER channel
+    -- Redirect to RAID/PARTY/GUILD and warn in debug mode
+    if channel == "WHISPER" then
+        local originalChannel = channel
+        local originalTarget = target
+        channel = DetectBestChannel()
+        target = nil  -- Clear target since we're broadcasting
+        
+        if not channel then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                "OGAddonMsg: Cannot send - WHISPER unsupported and no RAID/PARTY/GUILD available",
+                1, 0, 0
+            )
+            if options.onFailure then
+                options.onFailure("WHISPER unsupported, no alternative channel available")
+            end
+            return nil
+        end
+        
+        if OGAddonMsg_Config.debug then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                string.format("OGAddonMsg: WHISPER to %s redirected to %s (TWoW limitation)",
+                    originalTarget or "?", channel),
+                1, 1, 0
+            )
+        end
+    end
+    
     -- Chunk the message (wireData is always string at this point)
     local msgId, chunks, isMultiChunk = OGAddonMsg.ChunkMessage(prefix, wireData)
     
@@ -147,8 +175,19 @@ function OGAddonMsg.Broadcast(prefix, data, options)
 end
 
 function OGAddonMsg.SendTo(playerName, prefix, data, options)
-    -- Send direct message to a specific player via WHISPER
+    -- Send direct message to a specific player
+    -- NOTE: Turtle WoW doesn't support WHISPER for addon messages.
+    -- This will redirect to RAID > PARTY > GUILD and broadcast to all players.
     -- Returns: msgId
+    
+    -- Warn user if not in debug mode
+    if not OGAddonMsg_Config.debug then
+        DEFAULT_CHAT_FRAME:AddMessage(
+            string.format("OGAddonMsg: SendTo(%s) will broadcast to RAID/PARTY/GUILD (TWoW doesn't support direct player targeting)",
+                playerName),
+            1, 1, 0
+        )
+    end
     
     return OGAddonMsg.Send("WHISPER", playerName, prefix, data, options)
 end
