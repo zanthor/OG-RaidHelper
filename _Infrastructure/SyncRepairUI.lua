@@ -41,8 +41,8 @@ OGRH.SyncRepairUI.State = {
         lastClientActivity = 0,  -- Timestamp of last client activity
         lastWaitingActivity = 0, -- Timestamp of last waiting activity
         adminTimeoutDuration = 30.0,    -- 30 seconds timeout (local, less likely to desync)
-        clientTimeoutDuration = 10.0,   -- 10 seconds timeout
-        waitingTimeoutDuration = 10.0   -- 10 seconds timeout
+        clientTimeoutDuration = 30.0,   -- 30 seconds timeout (CTL adds latency to repair packets)
+        waitingTimeoutDuration = 45.0   -- 45 seconds timeout (must wait for full repair + validation cycle)
     }
 }
 
@@ -762,8 +762,14 @@ function OGRH.SyncRepairUI.StartAdminTimeout()
         if panel and panel:IsShown() then
             -- Check queue time before starting idle countdown
             local queueTime = OGRH.SyncRepairUI.GetQueueTimeEstimate()
-            if queueTime > 5 then
-                -- Queue is busy, defer timeout and reschedule
+            if queueTime > 2 then
+                -- Queue is busy (CTL still processing), defer timeout and reschedule
+                OGRH.SyncRepairUI.StartAdminTimeout()
+                return
+            end
+            
+            -- Also check if CTL is actively throttling
+            if ChatThrottleLib and ChatThrottleLib.bQueueing then
                 OGRH.SyncRepairUI.StartAdminTimeout()
                 return
             end
@@ -846,15 +852,21 @@ function OGRH.SyncRepairUI.StartClientTimeout()
         if panel and panel:IsShown() then
             -- Check queue time before starting idle countdown
             local queueTime = OGRH.SyncRepairUI.GetQueueTimeEstimate()
-            if queueTime > 5 then
-                -- Queue is busy, defer timeout and reschedule
+            if queueTime > 2 then
+                -- Queue is busy (CTL still processing), defer timeout and reschedule
+                OGRH.SyncRepairUI.StartClientTimeout()
+                return
+            end
+            
+            -- Also check if CTL is actively throttling
+            if ChatThrottleLib and ChatThrottleLib.bQueueing then
                 OGRH.SyncRepairUI.StartClientTimeout()
                 return
             end
             
             -- Display timeout message on panel
             if panel.status then
-                panel.status:SetText("|cffff9900Status: TIMEOUT - No activity for 10s|r")
+                panel.status:SetText("|cffff9900Status: TIMEOUT - No activity for 30s|r")
             end
             if panel.eta then
                 panel.eta:SetText("|cffff9900Connection lost or admin disconnected|r")
@@ -933,15 +945,21 @@ function OGRH.SyncRepairUI.StartWaitingTimeout()
         if panel and panel:IsShown() then
             -- Check queue time before starting idle countdown
             local queueTime = OGRH.SyncRepairUI.GetQueueTimeEstimate()
-            if queueTime > 5 then
-                -- Queue is busy, defer timeout and reschedule
+            if queueTime > 2 then
+                -- Queue is busy (CTL still processing), defer timeout and reschedule
+                OGRH.SyncRepairUI.StartWaitingTimeout()
+                return
+            end
+            
+            -- Also check if CTL is actively throttling
+            if ChatThrottleLib and ChatThrottleLib.bQueueing then
                 OGRH.SyncRepairUI.StartWaitingTimeout()
                 return
             end
             
             -- Display timeout message on panel
             if panel.message then
-                panel.message:SetText("|cffff9900⚠ TIMEOUT - No activity for 10s|r")
+                panel.message:SetText("|cffff9900⚠ TIMEOUT - No activity for 45s|r")
             end
             
             OGRH.Msg("|cffff9900[RH-SyncRepair]|r Waiting panel timeout - closing in 10 seconds...")

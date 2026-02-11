@@ -14,6 +14,10 @@
 if not OGRH then OGRH = {} end
 if not OGRH.SyncRepairHandlers then OGRH.SyncRepairHandlers = {} end
 
+-- Retry configuration
+local MAX_RETRY_ATTEMPTS = 2   -- Max re-sends per repair session
+local RETRY_DELAY = 2.0        -- Seconds before starting retry send
+
 --[[
     ============================================================================
     ADMIN-SIDE HANDLERS (Send packets, collect validations)
@@ -45,6 +49,12 @@ function OGRH.SyncRepairHandlers.InitiateRepair(raidName, failedLayers, selected
     if not token then
         OGRH.Msg("|cffff0000[RH-SyncRepair]|r Failed to start session (session already active?)")
         return false
+    end
+    
+    -- Track which clients are participating in this repair
+    local clients = clientList or {}
+    if OGRH.SyncSession.SetRepairParticipants then
+        OGRH.SyncSession.SetRepairParticipants(clients)
     end
     
     -- Build priority order
@@ -204,10 +214,8 @@ function OGRH.SyncRepairHandlers.SendPacketsWithPacing(packets, token, totalPack
     end
     
     if table.getn(packets) == 0 then
-        -- No more packets, request validation from clients
-        OGRH.ScheduleTimer(function()
-            OGRH.SyncRepairHandlers.RequestValidation(token)
-        end, 1.0)
+        -- All packets queued to CTL - wait for CTL to finish delivering before requesting validation
+        OGRH.SyncRepairHandlers.WaitForCTLDrain(token, 0)
         return
     end
     
@@ -279,6 +287,55 @@ function OGRH.SyncRepairHandlers.SendPacketsWithPacing(packets, token, totalPack
     end, delay)
 end
 
+-- Admin: Wait for ChatThrottleLib to finish delivering all queued messages
+-- before requesting validation from clients
+function OGRH.SyncRepairHandlers.WaitForCTLDrain(token, elapsed)
+    local session = OGRH.SyncSession.GetActiveSession()
+    if not session or session.token ~= token then
+        return
+    end
+    
+    local CTL = ChatThrottleLib
+    local MAX_DRAIN_WAIT = 120  -- Safety cap: don't wait more than 2 minutes
+    local POLL_INTERVAL = 1.0   -- Check every second
+    
+    if elapsed >= MAX_DRAIN_WAIT then
+        OGRH.Msg("|cffff9900[RH-SyncRepair]|r CTL drain wait exceeded 120s, requesting validation anyway")
+        OGRH.SyncRepairHandlers.RequestValidation(token)
+        return
+    end
+    
+    -- Check if CTL still has messages queued
+    local isQueueing = CTL and CTL.bQueueing
+    
+    if isQueueing then
+        -- CTL still sending - update UI and check again
+        if OGRH.SyncRepairUI and OGRH.SyncRepairUI.UpdateAdminProgress then
+            OGRH.SyncRepairUI.UpdateAdminProgress(0, 0, 
+                string.format("Waiting for delivery (%ds)", elapsed), {})
+        end
+        
+        -- Reset admin timeout (we're still working)
+        if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetAdminTimeout then
+            OGRH.SyncRepairUI.ResetAdminTimeout()
+        end
+        
+        OGRH.ScheduleTimer(function()
+            OGRH.SyncRepairHandlers.WaitForCTLDrain(token, elapsed + POLL_INTERVAL)
+        end, POLL_INTERVAL)
+    else
+        -- CTL queue is empty - all messages delivered
+        if elapsed > 2 then
+            OGRH.Msg(string.format("|cff00ccff[RH-SyncRepair]|r CTL queue drained after %.1fs", elapsed))
+        end
+        
+        -- Small additional delay to ensure last message is processed by clients
+        OGRH.ScheduleTimer(function()
+            OGRH.SyncRepairHandlers.RequestValidation(token)
+        end, 1.5)
+    end
+end
+
 -- Admin: Request validation from all clients
 function OGRH.SyncRepairHandlers.RequestValidation(token)
     -- Verify session still active
@@ -303,10 +360,16 @@ function OGRH.SyncRepairHandlers.RequestValidation(token)
         OGRH.SyncRepairUI.UpdateAdminProgress(0, 0, "Validating repairs...", {})
     end
     
-    -- Set timeout for validation (20 seconds to allow for checksum computation and network latency)
+    -- Set timeout for validation (safety fallback - should be long enough 
+    -- for clients to compute checksums and respond through CTL)
+    session.validationTimerToken = token  -- Track which timer is active
     OGRH.ScheduleTimer(function()
-        OGRH.SyncRepairHandlers.CheckValidationComplete(token)
-    end, 20.0)
+        -- Only fire if this is still the active validation timer
+        local s = OGRH.SyncSession.GetActiveSession()
+        if s and s.token == token and s.validationTimerToken == token then
+            OGRH.SyncRepairHandlers.CheckValidationComplete(token)
+        end
+    end, 45.0)  -- 45s safety timeout (CTL drain already waited)
 end
 
 -- Admin: Check if all clients have validated
@@ -319,13 +382,46 @@ function OGRH.SyncRepairHandlers.CheckValidationComplete(token)
     -- Check if all clients validated
     local allValidated = OGRH.SyncSession.AreAllClientsValidated()
     
-    if allValidated then
-        OGRH.SyncRepairHandlers.CompleteRepair(token)
-    else
-        -- Some clients didn't respond, complete anyway
-        OGRH.Msg("|cffff9900[RH-SyncRepair]|r Some clients didn't validate, completing anyway")
-        OGRH.SyncRepairHandlers.CompleteRepair(token)
+    if not allValidated then
+        OGRH.Msg("|cffff9900[RH-SyncRepair]|r Some clients didn't respond to validation, completing anyway")
     end
+    
+    -- Compare admin checksums with client checksums to find mismatches
+    local failedEncounters = OGRH.SyncRepairHandlers.CompareValidationChecksums(token)
+    
+    if failedEncounters and table.getn(failedEncounters) > 0 then
+        -- Track retry attempts
+        local retryCount = session.retryCount or 0
+        
+        if retryCount < MAX_RETRY_ATTEMPTS then
+            session.retryCount = retryCount + 1
+            OGRH.Msg(string.format("|cffff9900[RH-SyncRepair]|r %d encounter(s) failed validation - retry %d/%d",
+                table.getn(failedEncounters), session.retryCount, MAX_RETRY_ATTEMPTS))
+            
+            -- Log which encounters need retry
+            for i = 1, table.getn(failedEncounters) do
+                OGRH.Msg(string.format("|cffff9900[RH-SyncRepair]|r   Retrying encounter #%d", failedEncounters[i]))
+            end
+            
+            -- Clear client validations so we can collect fresh ones
+            if session.clientValidations then
+                session.clientValidations = {}
+            end
+            
+            -- Re-send only the failed encounters
+            OGRH.ScheduleTimer(function()
+                OGRH.SyncRepairHandlers.RetryFailedEncounters(token, failedEncounters)
+            end, RETRY_DELAY)
+            return
+        else
+            OGRH.Msg(string.format("|cffff9900[RH-SyncRepair]|r %d encounter(s) still mismatched after %d retries - completing anyway",
+                table.getn(failedEncounters), MAX_RETRY_ATTEMPTS))
+        end
+    else
+        OGRH.Msg("|cff00ff00[RH-SyncRepair]|r All validations passed")
+    end
+    
+    OGRH.SyncRepairHandlers.CompleteRepair(token)
 end
 
 -- Admin: Complete repair session
@@ -425,6 +521,9 @@ function OGRH.SyncRepairHandlers.OnRepairStart(sender, data, channel)
         OGRH.SyncRepairUI.ResetClientTimeout()
     end
 
+    -- Track start time for ETA calculation
+    OGRH.SyncRepairHandlers.repairStartTime = GetTime()
+    
     OGRH.Msg(string.format("|cff00ff00[RH-SyncRepair]|r Repair session started by %s", sender))
 end
 
@@ -506,14 +605,25 @@ function OGRH.SyncRepairHandlers.OnRepairPacket(sender, data, channel)
     if success then
         OGRH.SyncRepairHandlers.receivedPackets = OGRH.SyncRepairHandlers.receivedPackets + 1
         
+        local received = OGRH.SyncRepairHandlers.receivedPackets
+        local total = OGRH.SyncRepairHandlers.expectedPackets
+        
         -- Update client UI
         if OGRH.SyncRepairUI and OGRH.SyncRepairUI.UpdateClientProgress then
             local phaseText = "Applying " .. data.type
-            OGRH.SyncRepairUI.UpdateClientProgress(
-                OGRH.SyncRepairHandlers.receivedPackets,
-                OGRH.SyncRepairHandlers.expectedPackets,
-                phaseText
-            )
+            OGRH.SyncRepairUI.UpdateClientProgress(received, total, phaseText)
+        end
+        
+        -- Calculate and update ETA
+        if OGRH.SyncRepairUI and OGRH.SyncRepairUI.UpdateClientCountdown then
+            local startTime = OGRH.SyncRepairHandlers.repairStartTime
+            if startTime and received > 1 and total > 0 then
+                local elapsed = GetTime() - startTime
+                local rate = received / elapsed  -- packets per second
+                local remaining = total - received
+                local etaSeconds = remaining / rate
+                OGRH.SyncRepairUI.UpdateClientCountdown(math.ceil(etaSeconds))
+            end
         end
     end
 end
@@ -606,9 +716,21 @@ function OGRH.SyncRepairHandlers.OnValidationResponse(sender, data, channel)
         OGRH.SyncRepairUI.ResetAdminTimeout()
     end
     
-    -- Record client validation
+    -- Record client validation (including checksums for comparison)
     if OGRH.SyncSession.RecordClientValidation then
         OGRH.SyncSession.RecordClientValidation(sender, data.status or "unknown", data.checksums)
+    end
+    
+    -- Check if ALL participants have now responded - complete early if so
+    if OGRH.SyncSession.AreAllClientsValidated() then
+        OGRH.Msg("|cff00ff00[RH-SyncRepair]|r All clients responded, checking validation...")
+        -- Cancel the safety timer by clearing token
+        local session = OGRH.SyncSession.GetActiveSession()
+        if session then
+            session.validationTimerToken = nil
+        end
+        -- Check immediately
+        OGRH.SyncRepairHandlers.CheckValidationComplete(data.token)
     end
     
     -- Update admin UI with validated client
@@ -616,6 +738,120 @@ function OGRH.SyncRepairHandlers.OnValidationResponse(sender, data, channel)
     if OGRH.SyncRepairUI and OGRH.SyncRepairUI.UpdateAdminProgress then
         OGRH.SyncRepairUI.UpdateAdminProgress(0, 0, "Validating repairs...", validations)
     end
+end
+
+-- Admin: Compare all client validation checksums against admin's own
+-- Returns array of encounter indices that have mismatches, or nil if all good
+function OGRH.SyncRepairHandlers.CompareValidationChecksums(token)
+    local session = OGRH.SyncSession.GetActiveSession()
+    if not session or session.token ~= token then
+        return nil
+    end
+    
+    -- Compute admin's current checksums
+    local activeRaid = OGRH.GetActiveRaid()
+    if not activeRaid or not activeRaid.displayName then
+        return nil
+    end
+    
+    local raidName = activeRaid.displayName
+    local layerIds = {
+        structure = true,
+        encounters = {},
+        roles = {},
+        assignments = {}
+    }
+    
+    if activeRaid.encounters then
+        for i = 1, table.getn(activeRaid.encounters) do
+            table.insert(layerIds.encounters, i)
+            layerIds.roles[i] = {}
+            layerIds.assignments[i] = {}
+            if activeRaid.encounters[i].roles then
+                for j = 1, table.getn(activeRaid.encounters[i].roles) do
+                    table.insert(layerIds.roles[i], j)
+                    table.insert(layerIds.assignments[i], j)
+                end
+            end
+        end
+    end
+    
+    local adminChecksums = OGRH.SyncRepair.ComputeValidationChecksums(raidName, layerIds)
+    
+    -- Compare against each client's validation
+    local validations = OGRH.SyncSession.GetClientValidations()
+    local failedEncounters = {}  -- Set of encounter indices that failed
+    local failedSet = {}  -- Prevent duplicates
+    
+    for playerName, validation in pairs(validations) do
+        if validation.checksums then
+            local success, mismatches = OGRH.SyncRepair.ValidateRepair(raidName, adminChecksums, validation.checksums)
+            
+            if not success then
+                for i = 1, table.getn(mismatches) do
+                    local m = mismatches[i]
+                    local encIdx = m.encounterIndex
+                    if encIdx and not failedSet[encIdx] then
+                        failedSet[encIdx] = true
+                        table.insert(failedEncounters, encIdx)
+                    end
+                    
+                    OGRH.Msg(string.format("|cffff9900[RH-SyncRepair]|r Validation mismatch from %s: layer %d, type=%s, enc=%s",
+                        playerName, m.layer or 0, m.type or "?", tostring(encIdx or "global")))
+                end
+            end
+        end
+    end
+    
+    -- Sort encounter indices
+    table.sort(failedEncounters)
+    
+    if table.getn(failedEncounters) == 0 then
+        return nil  -- All good
+    end
+    
+    return failedEncounters
+end
+
+-- Admin: Re-send only the specific encounters that failed validation
+function OGRH.SyncRepairHandlers.RetryFailedEncounters(token, failedEncounters)
+    local session = OGRH.SyncSession.GetActiveSession()
+    if not session or session.token ~= token then
+        OGRH.Msg("|cffff9900[RH-SyncRepair]|r Session no longer active, aborting retry")
+        return
+    end
+    
+    -- Build packets for only the failed encounters
+    local packets = {}
+    
+    for i = 1, table.getn(failedEncounters) do
+        local encIdx = failedEncounters[i]
+        local pkts = OGRH.SyncRepair.BuildEncountersPackets({encIdx})
+        for j = 1, table.getn(pkts) do
+            pkts[j].token = token
+            table.insert(packets, pkts[j])
+            
+            local encName = (pkts[j].data and pkts[j].data.displayName) or (pkts[j].data and pkts[j].data.name) or "Unknown"
+            OGRH.Msg(string.format("|cff00ccff[RH-SyncRepair]|r Retry: ENCOUNTER #%d (%s)", encIdx, encName))
+        end
+    end
+    
+    local totalPackets = table.getn(packets)
+    OGRH.Msg(string.format("|cff00ccff[RH-SyncRepair]|r Retrying %d encounter packet(s)", totalPackets))
+    
+    -- Update admin UI
+    if OGRH.SyncRepairUI and OGRH.SyncRepairUI.UpdateAdminProgress then
+        OGRH.SyncRepairUI.UpdateAdminProgress(0, totalPackets, 
+            string.format("Retrying %d encounter(s)...", totalPackets), {})
+    end
+    
+    -- Reset admin timeout
+    if OGRH.SyncRepairUI and OGRH.SyncRepairUI.ResetAdminTimeout then
+        OGRH.SyncRepairUI.ResetAdminTimeout()
+    end
+    
+    -- Send retry packets with pacing, then request validation again
+    OGRH.SyncRepairHandlers.SendPacketsWithPacing(packets, token, totalPackets)
 end
 
 -- Client: Handle REPAIR_COMPLETE message
@@ -635,6 +871,9 @@ function OGRH.SyncRepairHandlers.OnRepairComplete(sender, data, channel)
     if wasWaiting then
         OGRH.SyncRepairHandlers.waitingForRepair = false
         OGRH.SyncRepairHandlers.waitingToken = nil
+        
+        -- Record completion timestamp for client-side cooldown
+        OGRH.SyncRepairHandlers.repairCompletedAt = GetTime()
         
         OGRH.Msg("|cff00ff00[RH-SyncRepair]|r Repair completed, skipping next checksum validation...")
         
@@ -660,6 +899,9 @@ function OGRH.SyncRepairHandlers.OnRepairComplete(sender, data, channel)
     end
     
     OGRH.Msg("|cff00ff00[RH-SyncRepair]|r Repair session completed successfully")
+    
+    -- Record completion timestamp for client-side cooldown
+    OGRH.SyncRepairHandlers.repairCompletedAt = GetTime()
     
     -- CRITICAL: Save repaired data to disk BEFORE next validation
     if OGRH.SVM and OGRH.SVM.Save then

@@ -202,6 +202,24 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
         return
     end
     
+    -- Skip validation if we just completed a repair (data still settling)
+    if OGRH.SyncRepairHandlers and OGRH.SyncRepairHandlers.skipNextChecksumValidation then
+        OGRH.SyncRepairHandlers.skipNextChecksumValidation = false  -- Consume the flag
+        OGRH.Msg("|cff888888[RH-SyncIntegrity]|r Skipping post-repair validation (data settling)")
+        return
+    end
+    
+    -- Client-side post-repair cooldown: don't re-validate too soon after a repair
+    if OGRH.SyncRepairHandlers and OGRH.SyncRepairHandlers.repairCompletedAt then
+        local elapsed = GetTime() - OGRH.SyncRepairHandlers.repairCompletedAt
+        if elapsed < 30 then
+            if OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping validation: post-repair cooldown (%.0fs remaining)", 30 - elapsed))
+            end
+            return
+        end
+    end
+    
     -- Verify sender is the addon's raid admin
     local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
     
@@ -1166,17 +1184,17 @@ function OGRH.SyncIntegrity.ExitRepairMode()
     OGRH.SyncIntegrity.State.bufferedRequests = {}
     
     -- Set cooldown to prevent immediate re-repairs
-    OGRH.SyncIntegrity.State.repairCooldownUntil = GetTime() + 15.0  -- 15 second cooldown
+    OGRH.SyncIntegrity.State.repairCooldownUntil = GetTime() + 30.0  -- 30 second cooldown
     
     if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Exited repair mode (broadcasts resumed, 15s cooldown active)")
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Exited repair mode (broadcasts resumed, 30s cooldown active)")
     end
     
     -- Auto-broadcast checksums after repair to validate everyone (including mid-sync joins)
     if OGRH.SyncIntegrity.State.enabled then
         OGRH.ScheduleTimer(function()
             OGRH.SyncIntegrity.BroadcastChecksums()
-        end, 10.0)  -- 10 second delay to allow clients to save and settle
+        end, 20.0)  -- 20 second delay to allow CTL to drain and clients to save
     end
 end
 
