@@ -30,6 +30,16 @@ function OGAddonMsg.InitializeConfig()
         end
     end
     
+    -- Config migrations: update stale values from older versions
+    local savedVer = OGAddonMsg_Config.version or "0"
+    if savedVer < DEFAULT_CONFIG.version then
+        -- v1.2.0: warnQueue default changed from 5 to 10
+        if OGAddonMsg_Config.warnQueue == 5 then
+            OGAddonMsg_Config.warnQueue = DEFAULT_CONFIG.warnQueue
+        end
+        OGAddonMsg_Config.version = DEFAULT_CONFIG.version
+    end
+    
     -- Initialize statistics (preserve existing stats object to maintain references)
     if not OGAddonMsg.stats then
         OGAddonMsg.stats = {}
