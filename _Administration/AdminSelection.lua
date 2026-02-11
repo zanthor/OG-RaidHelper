@@ -147,6 +147,7 @@ function OGRH.PollAddonUsers()
     name = selfName,
     rank = selfRank,
     version = OGRH.VERSION or "Unknown",
+    tocVersion = OGRH.TOC_VERSION or OGRH.VERSION or "Unknown",
     checksum = checksum
   })
   
@@ -160,9 +161,10 @@ function OGRH.PollAddonUsers()
 end
 
 -- Handle poll response
-function OGRH.HandleAddonPollResponse(sender, version, checksum)
+function OGRH.HandleAddonPollResponse(sender, version, checksum, tocVersion)
   version = version or "Unknown"
   checksum = checksum or "0"
+  tocVersion = tocVersion or version
   
   -- Route to raid admin selection poll if active
   if OGRH.RaidLead.pollInProgress then
@@ -194,6 +196,7 @@ function OGRH.HandleAddonPollResponse(sender, version, checksum)
         name = sender,
         rank = senderRank,
         version = version,
+        tocVersion = tocVersion,
         checksum = checksum
       })
       
@@ -318,7 +321,7 @@ function OGRH.ShowRaidAdminSelectionUI()
   
   local checksumHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   checksumHeader:SetPoint("TOPLEFT", frame, "TOPLEFT", 235, -38)
-  checksumHeader:SetText("Checksum")
+  checksumHeader:SetText("TOC")
   checksumHeader:SetTextColor(1, 0.82, 0)
   
   -- Player list panel (matching raids panel style)
@@ -470,6 +473,7 @@ function OGRH.ShowRaidAdminSelectionUI()
         local checksumText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         checksumText:SetPoint("LEFT", 225, 0)
         checksumText:SetJustifyH("LEFT")
+        checksumText:SetWidth(80)
         btn.checksumText = checksumText
         
         frame.playerButtons[buttonIndex] = btn
@@ -548,21 +552,22 @@ function OGRH.ShowRaidAdminSelectionUI()
         btn.versionText:SetText("|cff00ff00" .. displayVersion .. "|r")
       end
       
-      -- Display checksum (color red if different from local) - only for RaidHelper users
+      -- Display TOC version (color red if different from code version = needs restart)
       if btn.checksumText then
-        local localChecksum = "0"
-        if OGRH.Sync and OGRH.Sync.GetCurrentChecksum then
-          localChecksum = OGRH.Sync.GetCurrentChecksum()
-        end
+        local localTocVersion = OGRH.TOC_VERSION or OGRH.VERSION or "Unknown"
         
-        local displayChecksum = response.checksum or "0"
-        if displayChecksum ~= localChecksum then
-          btn.checksumText:SetText("|cffff0000" .. displayChecksum .. "|r")
+        local displayTocVersion = response.tocVersion or response.version or "Unknown"
+        local displayCodeVersion = response.version or "Unknown"
+        
+        -- Red if TOC doesn't match their code version (needs restart)
+        -- Green if TOC matches code version (fully updated)
+        if displayTocVersion ~= displayCodeVersion then
+          btn.checksumText:SetText("|cffff0000" .. displayTocVersion .. "|r")
         else
-          btn.checksumText:SetText("|cff00ff00" .. displayChecksum .. "|r")
+          btn.checksumText:SetText("|cff00ff00" .. displayTocVersion .. "|r")
         end
         
-        -- Click handler (only for Button types with checksum - RaidHelper users)
+        -- Click handler (only for Button types - RaidHelper users)
         btn:SetScript("OnClick", function()
           OGRH.SetRaidAdmin(response.name)
           frame:Hide()

@@ -5,10 +5,10 @@
 
 -- Version check for multi-copy loading
 local LIB_VERSION = 1.2
-local IS_STANDALONE = false  -- Embedded version
+local IS_STANDALONE = false
 
--- Embedded: abort if there's already ANY standalone version loaded
-if OGAddonMsg and OGAddonMsg.__standalone then
+-- Standalone: only abort if there's already a standalone with higher version
+if OGAddonMsg and OGAddonMsg.__standalone and OGAddonMsg.__version > LIB_VERSION then
     return
 end
 
