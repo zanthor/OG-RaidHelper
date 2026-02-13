@@ -353,27 +353,80 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     end)
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.QUERY, function(sender, data, channel)
-        -- Only respond to admin query if you're actually authorized to be admin
-        if OGRH.GetRaidAdmin and OGRH.IsRaidAdmin then
-            local currentAdmin = OGRH.GetRaidAdmin()
-            local playerName = UnitName("player")
-            
-            -- Only respond if you ARE the current admin AND you're still authorized (L/A)
-            if currentAdmin == playerName and OGRH.IsRaidAdmin(playerName) then
-                OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.ADMIN.RESPONSE, {
-                    currentAdmin = currentAdmin,
-                    timestamp = GetTime(),
-                    version = OGRH.VERSION
-                }, {priority = "HIGH"})
+        -- Part 1: Delegate checksum requests to SyncIntegrity (admin only)
+        -- This prevents SyncIntegrity from needing to register a duplicate handler
+        if type(data) == "table" and data.requestType == "checksums" then
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.OnAdminQuery then
+                OGRH.SyncIntegrity.OnAdminQuery(sender, data)
             end
+            -- NOTE: Fall through to also send discovery response
+            -- so the querier knows we're running OGRH
         end
+        
+        -- Part 2: Discovery roll-call - ALL OGRH clients respond
+        -- Add random delay (0-2s) to stagger responses from 40-man raids
+        local delay = math.random() * 2
+        OGRH.ScheduleTimer(function()
+            if GetNumRaidMembers() == 0 then return end
+            
+            local playerName = UnitName("player")
+            local rank = 0
+            for i = 1, GetNumRaidMembers() do
+                local name, r = GetRaidRosterInfo(i)
+                if name == playerName then
+                    rank = r
+                    break
+                end
+            end
+            
+            local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+            
+            -- Broadcast response so ALL clients can build the same picture
+            -- (needed for deterministic alphabetical tie-breaking)
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.RESPONSE, {
+                purpose = "discovery",
+                playerName = playerName,
+                rank = rank,
+                isCurrentAdmin = (currentAdmin ~= nil and currentAdmin == playerName),
+                version = OGRH.VERSION
+            }, {priority = "NORMAL"})
+        end, delay)
     end)
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.RESPONSE, function(sender, data, channel)
-        -- Receive admin info from query response
-        if data and data.currentAdmin then
-            OGRH.SetRaidAdmin(data.currentAdmin)
-            OGRH.Msg(string.format("|cff00ccff[RH]|r Raid admin is %s", data.currentAdmin))
+        if not data then return end
+        
+        -- Handle discovery roll-call responses
+        if data.purpose == "discovery" then
+            -- Feed into AdminDiscovery if active
+            if OGRH.AdminDiscovery and OGRH.AdminDiscovery.active then
+                OGRH.AdminDiscovery.AddResponse(
+                    data.playerName or sender,
+                    data.rank or 0,
+                    data.isCurrentAdmin or false
+                )
+            end
+            
+            -- If sender claims to be current admin, accept immediately
+            -- This short-circuits discovery for the common case (joining existing raid)
+            if data.isCurrentAdmin then
+                local adminName = data.playerName or sender
+                OGRH.SetRaidAdmin(adminName, true)  -- suppress broadcast (we received it)
+                -- Cancel discovery since we found admin
+                if OGRH.AdminDiscovery then
+                    OGRH.AdminDiscovery.Cancel()
+                end
+            end
+            return
+        end
+        
+        -- Legacy admin claim response (from SyncIntegrity or direct admin response)
+        if data.currentAdmin then
+            OGRH.SetRaidAdmin(data.currentAdmin, true)
+            -- Cancel discovery since admin confirmed
+            if OGRH.AdminDiscovery and OGRH.AdminDiscovery.active then
+                OGRH.AdminDiscovery.Cancel()
+            end
         end
     end)
     
