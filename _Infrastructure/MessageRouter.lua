@@ -12,7 +12,8 @@ OGRH.MessageRouter.State = {
     handlers = {},              -- Registered message handlers
     messageQueue = {},          -- Outgoing message queue
     receivedMessages = {},      -- Recently received messages (for deduplication)
-    isInitialized = false       -- Initialization flag
+    isInitialized = false,      -- Initialization flag
+    syncVersionWarned = {}      -- [senderName] = true  (one warning per sender per session)
 }
 
 --[[
@@ -107,8 +108,12 @@ function OGRH.MessageRouter.Send(messageType, data, options)
         return nil
     end
     
+    -- Inject SyncVersion into the OGAddonMsg prefix
+    -- "OGRH_ADMIN_QUERY" → "OGRH00_ADMIN_QUERY"  (version inserted after "OGRH")
+    local versionedType = "OGRH" .. OGRH.SYNC_VERSION .. string.sub(messageType, 5)
+    
     -- Send via OGAddonMsg
-    local msgId = OGAddonMsg.Send(channel, target, messageType, data, {
+    local msgId = OGAddonMsg.Send(channel, target, versionedType, data, {
         priority = priority,
         onSuccess = options.onSuccess,
         onFailure = options.onFailure,
@@ -253,15 +258,40 @@ function OGRH.MessageRouter.InitializeOGAddonMsg()
     
     -- Register a wildcard handler for all messages
     OGAddonMsg.RegisterWildcard(function(sender, prefix, data, channel)
-        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r Wildcard received: sender=%s, prefix=%s, channel=%s", 
-                tostring(sender), tostring(prefix), tostring(channel)))
+        -- Only process OGRH messages (prefix starts with "OGRH")
+        if string.sub(prefix, 1, 4) ~= "OGRH" then
+            return
         end
         
-        -- Only process OGRH messages
-        if string.sub(prefix, 1, 5) == "OGRH_" then
-            OGRH.MessageRouter.OnMessageReceived(sender, prefix, data, channel)
+        -- Extract SyncVersion (2 hex chars after "OGRH", before the underscore)
+        -- Versioned format: "OGRH00_ADMIN_QUERY"  (positions 5-6 = version)
+        -- Legacy format:    "OGRH_ADMIN_QUERY"    (position 5 = underscore)
+        local incomingVersion = string.sub(prefix, 5, 6)
+        
+        if incomingVersion ~= OGRH.SYNC_VERSION then
+            -- Version mismatch — warn once per sender, then silently drop
+            if not OGRH.MessageRouter.State.syncVersionWarned[sender] then
+                OGRH.MessageRouter.State.syncVersionWarned[sender] = true
+                OGRH.Msg(string.format(
+                    "|cffff6600[RH-MessageRouter]|r Ignoring traffic from %s (SyncVersion '%s' ~= ours '%s')",
+                    sender, tostring(incomingVersion), OGRH.SYNC_VERSION))
+            end
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cffff6600[RH-MessageRouter][DEBUG]|r REJECTED sender=%s, prefix=%s (v '%s' ~= '%s')",
+                    tostring(sender), tostring(prefix), tostring(incomingVersion), OGRH.SYNC_VERSION))
+            end
+            return
         end
+        
+        -- Strip version from prefix: "OGRH00_ADMIN_QUERY" → "OGRH_ADMIN_QUERY"
+        local cleanPrefix = "OGRH" .. string.sub(prefix, 7)
+        
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r ACCEPTED sender=%s, msg=%s, channel=%s",
+                tostring(sender), tostring(cleanPrefix), tostring(channel)))
+        end
+        
+        OGRH.MessageRouter.OnMessageReceived(sender, cleanPrefix, data, channel)
     end)
     
     OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Registered wildcard handler with OGAddonMsg")

@@ -336,9 +336,9 @@ function OGRH.AssignAdminRole(targetPlayer)
         return false
     end
     
-    -- Broadcast admin assignment via OGAddonMsg
-    if OGAddonMsg and OGAddonMsg.Send then
-        OGAddonMsg.Send(nil, nil, OGRH.MessageTypes.ADMIN.ASSIGN, {
+    -- Broadcast admin assignment via MessageRouter (applies SyncVersion)
+    if OGRH.MessageRouter and OGRH.MessageRouter.Broadcast then
+        OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.ASSIGN, {
             newAdmin = targetPlayer,
             assignedBy = playerName,
             timestamp = GetTime(),
@@ -391,9 +391,9 @@ function OGRH.HandlePermissionDenied(playerName, operation)
         OGRH.Msg(string.format("|cffff0000[Permissions]|r Your level: %s", OGRH.GetPermissionLevel(playerName)))
     end
     
-    -- Broadcast permission denial (optional, for audit purposes)
-    if OGAddonMsg and OGAddonMsg.Send then
-        OGAddonMsg.Send(nil, nil, OGRH.MessageTypes.ADMIN.PERMISSION_DENIED, {
+    -- Broadcast permission denial via MessageRouter (applies SyncVersion)
+    if OGRH.MessageRouter and OGRH.MessageRouter.Broadcast then
+        OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.PERMISSION_DENIED, {
             player = playerName,
             operation = operation,
             timestamp = GetTime(),
