@@ -36,12 +36,12 @@ function OGAddonMsg.Send(channel, target, prefix, data, options)
     -- Returns: msgId
     
     if not OGAddonMsg.initialized then
-        DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Not initialized", 1, 0, 0)
+        OGAddonMsg.Msg("OGAddonMsg: Not initialized")
         return nil
     end
     
     if not prefix or not data then
-        DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Missing prefix or data", 1, 0, 0)
+        OGAddonMsg.Msg("OGAddonMsg: Missing prefix or data")
         return nil
     end
     
@@ -56,17 +56,15 @@ function OGAddonMsg.Send(channel, target, prefix, data, options)
     if dataType == "table" then
         serializedData = OGAddonMsg.Serialize(data)
         if not serializedData or type(serializedData) ~= "string" then
-            DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Failed to serialize table", 1, 0, 0)
+            OGAddonMsg.Msg("OGAddonMsg: Failed to serialize table")
             if options.onFailure then
                 options.onFailure("Serialization failed")
             end
             return nil
         end
     elseif dataType ~= "string" then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: data must be table or string, got %s", dataType),
-            1, 0, 0
-        )
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: data must be table or string, got %s", dataType))
         if options.onFailure then
             options.onFailure("Invalid data type")
         end
@@ -97,10 +95,8 @@ function OGAddonMsg.Send(channel, target, prefix, data, options)
         target = nil  -- Clear target since we're broadcasting
         
         if not channel then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                "OGAddonMsg: Cannot send - WHISPER unsupported and no RAID/PARTY/GUILD available",
-                1, 0, 0
-            )
+            OGAddonMsg.Msg(
+                "OGAddonMsg: Cannot send - WHISPER unsupported and no RAID/PARTY/GUILD available")
             if options.onFailure then
                 options.onFailure("WHISPER unsupported, no alternative channel available")
             end
@@ -108,11 +104,9 @@ function OGAddonMsg.Send(channel, target, prefix, data, options)
         end
         
         if OGAddonMsg_Config.debug then
-            DEFAULT_CHAT_FRAME:AddMessage(
+            OGAddonMsg.Msg(
                 string.format("OGAddonMsg: WHISPER to %s redirected to %s (TWoW limitation)",
-                    originalTarget or "?", channel),
-                1, 1, 0
-            )
+                    originalTarget or "?", channel))
         end
     end
     
@@ -120,11 +114,9 @@ function OGAddonMsg.Send(channel, target, prefix, data, options)
     local msgId, chunks, isMultiChunk = OGAddonMsg.ChunkMessage(prefix, wireData)
     
     if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(
+        OGAddonMsg.Msg(
             string.format("OGAddonMsg: Sending %s to %s (%d chunks)", 
-                prefix, channel, table.getn(chunks)),
-            0.5, 1, 0.5
-        )
+                prefix, channel, table.getn(chunks)))
     end
     
     -- Enqueue all chunks
@@ -182,11 +174,9 @@ function OGAddonMsg.SendTo(playerName, prefix, data, options)
     
     -- Warn user if not in debug mode
     if not OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(
+        OGAddonMsg.Msg(
             string.format("OGAddonMsg: SendTo(%s) will broadcast to RAID/PARTY/GUILD (TWoW doesn't support direct player targeting)",
-                playerName),
-            1, 1, 0
-        )
+                playerName))
     end
     
     return OGAddonMsg.Send("WHISPER", playerName, prefix, data, options)

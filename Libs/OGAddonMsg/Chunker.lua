@@ -124,8 +124,8 @@ function OGAddonMsg.ProcessIncomingMessage(addonPrefix, message, channel, sender
     -- Handle single-chunk and multi-chunk messages
     
     if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("OGAddonMsg: RX from %s via %s: %s", 
-            sender, channel, string.sub(message, 1, 50)), 0.7, 0.7, 1)
+        OGAddonMsg.Msg(string.format("OGAddonMsg: RX from %s via %s: %s", 
+            sender, channel, string.sub(message, 1, 50)))
     end
     
     -- Update stats
@@ -137,7 +137,7 @@ function OGAddonMsg.ProcessIncomingMessage(addonPrefix, message, channel, sender
     
     if not version or version ~= "1" then
         if OGAddonMsg_Config.debug then
-            DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Unknown message version", 1, 0, 0)
+            OGAddonMsg.Msg("OGAddonMsg: Unknown message version")
         end
         return
     end
@@ -188,19 +188,13 @@ function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, 
         local computedChunkHash = ComputeHash(data)
         if computedChunkHash ~= chunkHash then
             -- Detailed debug output
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("[HASH FAIL] Chunk %d/%d msgId=%s", chunkNum, totalChunks, msgId),
-                1, 0, 0
-            )
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("  Expected: %s, Got: %s", chunkHash, computedChunkHash),
-                1, 0.5, 0
-            )
-            DEFAULT_CHAT_FRAME:AddMessage(
+            OGAddonMsg.Msg(
+                string.format("[HASH FAIL] Chunk %d/%d msgId=%s", chunkNum, totalChunks, msgId))
+            OGAddonMsg.Msg(
+                string.format("  Expected: %s, Got: %s", chunkHash, computedChunkHash))
+            OGAddonMsg.Msg(
                 string.format("  Data length: %d, First 20 bytes: %s", 
-                    string.len(data), string.sub(data, 1, 20)),
-                1, 0.5, 0
-            )
+                    string.len(data), string.sub(data, 1, 20)))
             OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
             -- Don't return - accept the chunk anyway and let full message hash catch corruption
         end
@@ -213,10 +207,8 @@ function OGAddonMsg.OnChunkReceived(sender, msgId, chunkNum, totalChunks, hash, 
         entry.lastReceived = GetTime()
         
         if OGAddonMsg_Config.debug then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Chunk %d/%d for %s", chunkNum, totalChunks, msgId),
-                0.5, 0.5, 1
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Chunk %d/%d for %s", chunkNum, totalChunks, msgId))
         end
     end
     
@@ -230,11 +222,9 @@ function OGAddonMsg.CompleteMessage(msgId, entry)
     -- Verify all chunks present before concatenation
     for i = 1, entry.totalChunks do
         if not entry.chunks[i] then
-            DEFAULT_CHAT_FRAME:AddMessage(
+            OGAddonMsg.Msg(
                 string.format("OGAddonMsg: Incomplete message %s, missing chunk %d/%d",
-                    msgId, i, entry.totalChunks),
-                1, 0.5, 0
-            )
+                    msgId, i, entry.totalChunks))
             return
         end
     end
@@ -250,11 +240,9 @@ function OGAddonMsg.CompleteMessage(msgId, entry)
     if computedHash ~= entry.hash then
         -- With per-chunk hashing, this should only happen if chunk order is wrong
         -- Don't auto-retry large messages - log and clean up instead
-        DEFAULT_CHAT_FRAME:AddMessage(
+        OGAddonMsg.Msg(
             string.format("OGAddonMsg: Hash failure for %s (expected %s, got %s) - per-chunk verification should have caught this",
-                msgId, entry.hash, computedHash),
-            1, 0, 0
-        )
+                msgId, entry.hash, computedHash))
         OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
         OGAddonMsg.reassembly[msgId] = nil
         return
@@ -263,7 +251,7 @@ function OGAddonMsg.CompleteMessage(msgId, entry)
     -- Check for duplicate (full message)
     if OGAddonMsg.IsDuplicate(msgId, entry.sender, entry.prefix, fullData) then
         if OGAddonMsg_Config.debug then
-            DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Duplicate reassembled message", 1, 1, 0)
+            OGAddonMsg.Msg("OGAddonMsg: Duplicate reassembled message")
         end
         OGAddonMsg.stats.ignored = OGAddonMsg.stats.ignored + 1
         OGAddonMsg.reassembly[msgId] = nil
@@ -274,11 +262,9 @@ function OGAddonMsg.CompleteMessage(msgId, entry)
     OGAddonMsg.stats.messagesReassembled = OGAddonMsg.stats.messagesReassembled + 1
     
     if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(
+        OGAddonMsg.Msg(
             string.format("OGAddonMsg: Reassembled %s (%d chunks, %d bytes)", 
-                msgId, entry.totalChunks, string.len(fullData)),
-            0.5, 1, 0.5
-        )
+                msgId, entry.totalChunks, string.len(fullData)))
     end
     
     -- Dispatch to handlers
@@ -299,18 +285,14 @@ function OGAddonMsg.CleanupReassemblyBuffer()
         if lastActivity and (now - lastActivity) > timeout then
             -- Timed out
             if OGAddonMsg_Config.debug then
-                DEFAULT_CHAT_FRAME:AddMessage(
+                OGAddonMsg.Msg(
                     string.format("OGAddonMsg: Message %s timed out (%d/%d chunks)", 
-                        msgId, entry.receivedCount, entry.totalChunks),
-                    1, 0.5, 0
-                )
+                        msgId, entry.receivedCount, entry.totalChunks))
             end
             OGAddonMsg.reassembly[msgId] = nil
             OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Timeout failure (total: %d)", OGAddonMsg.stats.failures),
-                1, 0.5, 0
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Timeout failure (total: %d)", OGAddonMsg.stats.failures))
         end
     end
 end

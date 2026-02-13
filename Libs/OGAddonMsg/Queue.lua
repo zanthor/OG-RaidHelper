@@ -86,11 +86,9 @@ function OGAddonMsg.ProcessQueue(elapsed)
         -- CTL callback fires when the message actually leaves the wire
         local function ctlCallback()
             if OGAddonMsg_Config.debug then
-                DEFAULT_CHAT_FRAME:AddMessage(
+                OGAddonMsg.Msg(
                     string.format("OGAddonMsg: TX -> %s (%d bytes) [CTL:%s]", 
-                        item.channel or "AUTO", string.len(item.msg), ctlPrio),
-                    0.5, 1, 0.5
-                )
+                        item.channel or "AUTO", string.len(item.msg), ctlPrio))
             end
             
             -- Update stats
@@ -111,11 +109,9 @@ function OGAddonMsg.ProcessQueue(elapsed)
         
         if success then
             if OGAddonMsg_Config.debug then
-                DEFAULT_CHAT_FRAME:AddMessage(
+                OGAddonMsg.Msg(
                     string.format("OGAddonMsg: TX -> %s (%d bytes) [NO CTL]", 
-                        item.channel or "AUTO", string.len(item.msg)),
-                    0.5, 1, 0.5
-                )
+                        item.channel or "AUTO", string.len(item.msg)))
             end
             
             OGAddonMsg.stats.messagesSent = OGAddonMsg.stats.messagesSent + 1
@@ -129,7 +125,7 @@ function OGAddonMsg.ProcessQueue(elapsed)
             OGAddonMsg.stats.failures = OGAddonMsg.stats.failures + 1
             
             if OGAddonMsg_Config.debug then
-                DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Send failed (no CTL)", 1, 0, 0)
+                OGAddonMsg.Msg("OGAddonMsg: Send failed (no CTL)")
             end
             
             if item.callbacks and item.callbacks.onFailure then
@@ -180,20 +176,16 @@ function OGAddonMsg.CheckLatencyWarnings()
         if not OGAddonMsg.latencyMonitor.queueExceededAt then
             -- First warning
             OGAddonMsg.latencyMonitor.queueExceededAt = now
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Network queue at %.1fs", queueTime),
-                1, 1, 0
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Network queue at %.1fs", queueTime))
         else
             -- Check for sustained high queue
             local duration = now - OGAddonMsg.latencyMonitor.queueExceededAt
             if duration > config.warnPeriod then
                 if now - OGAddonMsg.latencyMonitor.lastWarning > config.warnInterval then
-                    DEFAULT_CHAT_FRAME:AddMessage(
+                    OGAddonMsg.Msg(
                         string.format("OGAddonMsg: Network queue at %.1fs for %.0fs",
-                            queueTime, duration),
-                        1, 0.5, 0
-                    )
+                            queueTime, duration))
                     OGAddonMsg.latencyMonitor.lastWarning = now
                 end
             end

@@ -28,10 +28,8 @@ function OGAddonMsg.RegisterHandler(prefix, callback)
     OGAddonMsg.handlers.byPrefix[prefix][handlerId] = callback
     
     if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Registered handler %d for prefix '%s'", handlerId, prefix),
-            0.5, 1, 0.5
-        )
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Registered handler %d for prefix '%s'", handlerId, prefix))
     end
     
     return handlerId
@@ -44,10 +42,8 @@ function OGAddonMsg.UnregisterHandler(handlerId)
             handlers[handlerId] = nil
             
             if OGAddonMsg_Config.debug then
-                DEFAULT_CHAT_FRAME:AddMessage(
-                    string.format("OGAddonMsg: Unregistered handler %d", handlerId),
-                    0.5, 1, 0.5
-                )
+                OGAddonMsg.Msg(
+                    string.format("OGAddonMsg: Unregistered handler %d", handlerId))
             end
             return true
         end
@@ -73,10 +69,8 @@ function OGAddonMsg.RegisterWildcard(callback)
     OGAddonMsg.handlers.wildcard[handlerId] = callback
     
     if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Registered wildcard handler %d", handlerId),
-            0.5, 1, 0.5
-        )
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Registered wildcard handler %d", handlerId))
     end
     
     return handlerId
@@ -100,11 +94,9 @@ function OGAddonMsg.DispatchToHandlers(sender, prefix, data, channel)
         actualData = OGAddonMsg.Deserialize(serializedData)
         
         if not actualData then
-            DEFAULT_CHAT_FRAME:AddMessage(
+            OGAddonMsg.Msg(
                 string.format("OGAddonMsg: Failed to deserialize table from %s (prefix: %s)", 
-                    sender, prefix),
-                1, 0, 0
-            )
+                    sender, prefix))
             return
         end
     elseif typeFlag == "S:" then
@@ -122,10 +114,8 @@ function OGAddonMsg.DispatchToHandlers(sender, prefix, data, channel)
             -- Protected call to prevent handler errors from breaking system
             local success, err = pcall(callback, sender, actualData, channel)
             if not success then
-                DEFAULT_CHAT_FRAME:AddMessage(
-                    string.format("OGAddonMsg: Handler %d error: %s", handlerId, tostring(err)),
-                    1, 0, 0
-                )
+                OGAddonMsg.Msg(
+                    string.format("OGAddonMsg: Handler %d error: %s", handlerId, tostring(err)))
             end
         end
     end
@@ -134,10 +124,8 @@ function OGAddonMsg.DispatchToHandlers(sender, prefix, data, channel)
     for handlerId, callback in pairs(OGAddonMsg.handlers.wildcard) do
         local success, err = pcall(callback, sender, prefix, actualData, channel)
         if not success then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Wildcard handler %d error: %s", handlerId, tostring(err)),
-                1, 0, 0
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Wildcard handler %d error: %s", handlerId, tostring(err)))
         end
     end
 end
