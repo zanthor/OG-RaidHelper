@@ -8,6 +8,11 @@ OGRH.MessageTypes = {}
 -- Message type prefix for all OG-RaidHelper messages
 OGRH.MESSAGE_PREFIX = "OGRH"
 
+-- Sync protocol version (hex 00-FF, 256 versions)
+-- Bump this whenever the sync wire format or message semantics change.
+-- Clients with a different SYNC_VERSION will silently ignore each other's traffic.
+OGRH.SYNC_VERSION = "00"
+
 --[[
     Message Category Enums
     Format: {CATEGORY}_{ACTION}_{SUBJECT}

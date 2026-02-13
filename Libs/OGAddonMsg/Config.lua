@@ -70,7 +70,7 @@ function OGAddonMsg.InitializeConfig()
     end
     
     if OGAddonMsg_Config.debug then
-        DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Config initialized", 0.5, 0.5, 1)
+        OGAddonMsg.Msg("OGAddonMsg: Config initialized")
     end
 end
 
@@ -114,5 +114,5 @@ function OGAddonMsg.ResetStats()
     OGAddonMsg.stats.ignored = 0
     OGAddonMsg.stats.queueDepthMax = 0
     
-    DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Statistics reset", 0.5, 1, 0.5)
+    OGAddonMsg.Msg("OGAddonMsg: Statistics reset")
 end

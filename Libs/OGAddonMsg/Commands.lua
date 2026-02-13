@@ -35,96 +35,82 @@ SlashCmdList["OGADDONMSG"] = function(msg)
     elseif cmd == "debug" then
         if args == "on" or args == "1" then
             OGAddonMsg.SetConfig("debug", true)
-            DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Debug mode ON", 0.5, 1, 0.5)
+            OGAddonMsg.Msg("OGAddonMsg: Debug mode ON")
         elseif args == "off" or args == "0" then
             OGAddonMsg.SetConfig("debug", false)
-            DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Debug mode OFF", 0.5, 1, 0.5)
+            OGAddonMsg.Msg("OGAddonMsg: Debug mode OFF")
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg debug on|off", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg debug on|off")
         end
         
     elseif cmd == "warnqueue" then
         local value = tonumber(args)
         if value and value > 0 then
             OGAddonMsg.SetConfig("warnQueue", value)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Queue warning threshold set to %.1fs", value),
-                0.5, 1, 0.5
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Queue warning threshold set to %.1fs", value))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg warnqueue <seconds>", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg warnqueue <seconds>")
         end
         
     elseif cmd == "warnperiod" then
         local value = tonumber(args)
         if value and value > 0 then
             OGAddonMsg.SetConfig("warnPeriod", value)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Sustained warning period set to %.1fs", value),
-                0.5, 1, 0.5
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Sustained warning period set to %.1fs", value))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg warnperiod <seconds>", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg warnperiod <seconds>")
         end
         
     elseif cmd == "warninterval" then
         local value = tonumber(args)
         if value and value > 0 then
             OGAddonMsg.SetConfig("warnInterval", value)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Periodic warning interval set to %.1fs", value),
-                0.5, 1, 0.5
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Periodic warning interval set to %.1fs", value))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg warninterval <seconds>", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg warninterval <seconds>")
         end
         
     elseif cmd == "retaintime" then
         local value = tonumber(args)
         if value and value > 0 then
             OGAddonMsg.SetConfig("retainTime", value)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Retry retain time set to %.1fs", value),
-                0.5, 1, 0.5
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Retry retain time set to %.1fs", value))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg retaintime <seconds>", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg retaintime <seconds>")
         end
         
     elseif cmd == "timeout" then
         local value = tonumber(args)
         if value and value > 0 then
             OGAddonMsg.SetConfig("timeout", value)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Reassembly timeout set to %.1fs", value),
-                0.5, 1, 0.5
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Reassembly timeout set to %.1fs", value))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg timeout <seconds>", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg timeout <seconds>")
         end
         
     elseif cmd == "maxrate" then
         local value = tonumber(args)
         if value and value > 0 and value <= 20 then
             OGAddonMsg.SetConfig("maxRate", value)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Max rate set to %.1f msgs/sec", value),
-                0.5, 1, 0.5
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Max rate set to %.1f msgs/sec", value))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg maxrate <msgs/sec> (1-20)", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg maxrate <msgs/sec> (1-20)")
         end
         
     elseif cmd == "burstlimit" then
         local value = tonumber(args)
         if value and value > 0 then
             OGAddonMsg.SetConfig("burstLimit", value)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("OGAddonMsg: Burst limit set to %d messages", value),
-                0.5, 1, 0.5
-            )
+            OGAddonMsg.Msg(
+                string.format("OGAddonMsg: Burst limit set to %d messages", value))
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg burstlimit <count>", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg burstlimit <count>")
         end
         
     elseif cmd == "ratetest" then
@@ -134,89 +120,89 @@ SlashCmdList["OGADDONMSG"] = function(msg)
         if rateNum and rateNum > 0 then
             OGAddonMsg.RateTest(rateNum, sizeNum)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("Usage: /ogmsg ratetest <rate> [size]", 1, 1, 0)
-            DEFAULT_CHAT_FRAME:AddMessage("  rate  = messages per second to attempt", 1, 1, 0)
-            DEFAULT_CHAT_FRAME:AddMessage("  size  = message size in bytes (0-254, default=0/minimum)", 1, 1, 0)
-            DEFAULT_CHAT_FRAME:AddMessage("Example: /ogmsg ratetest 10 254  (max size, 10/sec)", 1, 1, 0)
+            OGAddonMsg.Msg("Usage: /ogmsg ratetest <rate> [size]")
+            OGAddonMsg.Msg("  rate  = messages per second to attempt")
+            OGAddonMsg.Msg("  size  = message size in bytes (0-254, default=0/minimum)")
+            OGAddonMsg.Msg("Example: /ogmsg ratetest 10 254  (max size, 10/sec)")
         end
         
     else
-        DEFAULT_CHAT_FRAME:AddMessage("Unknown command: " .. cmd, 1, 0, 0)
-        DEFAULT_CHAT_FRAME:AddMessage("Type /ogmsg help for commands", 1, 1, 0)
+        OGAddonMsg.Msg("Unknown command: " .. cmd)
+        OGAddonMsg.Msg("Type /ogmsg help for commands")
     end
 end
 
 function OGAddonMsg.ShowHelp()
-    DEFAULT_CHAT_FRAME:AddMessage("=== OGAddonMsg Commands ===", 0.5, 1, 0.5)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg status - Show queue status and config", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg stats - Toggle stats panel", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg stats show|hide - Show/hide stats panel", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg stats reset - Reset statistics", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg debug on|off - Toggle debug mode", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(" ", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("Configuration:", 0.5, 1, 0.5)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg warnqueue <sec> - Queue warning threshold", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg warnperiod <sec> - Sustained warning duration", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg warninterval <sec> - Periodic warning interval", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg retaintime <sec> - Retry buffer retention", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg timeout <sec> - Reassembly timeout", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg maxrate <msgs/sec> - Throttling rate", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg burstlimit <count> - Burst limit", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(" ", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("Testing:", 0.5, 1, 0.5)
-    DEFAULT_CHAT_FRAME:AddMessage("/ogmsg ratetest <rate> [size] - Rate test (size 0-254 bytes)", 1, 1, 1)
+    OGAddonMsg.Msg("=== OGAddonMsg Commands ===")
+    OGAddonMsg.Msg("/ogmsg status - Show queue status and config")
+    OGAddonMsg.Msg("/ogmsg stats - Toggle stats panel")
+    OGAddonMsg.Msg("/ogmsg stats show|hide - Show/hide stats panel")
+    OGAddonMsg.Msg("/ogmsg stats reset - Reset statistics")
+    OGAddonMsg.Msg("/ogmsg debug on|off - Toggle debug mode")
+    OGAddonMsg.Msg(" ")
+    OGAddonMsg.Msg("Configuration:")
+    OGAddonMsg.Msg("/ogmsg warnqueue <sec> - Queue warning threshold")
+    OGAddonMsg.Msg("/ogmsg warnperiod <sec> - Sustained warning duration")
+    OGAddonMsg.Msg("/ogmsg warninterval <sec> - Periodic warning interval")
+    OGAddonMsg.Msg("/ogmsg retaintime <sec> - Retry buffer retention")
+    OGAddonMsg.Msg("/ogmsg timeout <sec> - Reassembly timeout")
+    OGAddonMsg.Msg("/ogmsg maxrate <msgs/sec> - Throttling rate")
+    OGAddonMsg.Msg("/ogmsg burstlimit <count> - Burst limit")
+    OGAddonMsg.Msg(" ")
+    OGAddonMsg.Msg("Testing:")
+    OGAddonMsg.Msg("/ogmsg ratetest <rate> [size] - Rate test (size 0-254 bytes)")
 end
 
 function OGAddonMsg.ShowStatus()
     local config = OGAddonMsg_Config
     local stats = OGAddonMsg.stats
     
-    DEFAULT_CHAT_FRAME:AddMessage("=== OGAddonMsg Status ===", 0.5, 1, 0.5)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Version: %s (standalone: %s)",
-        OGAddonMsg.GetVersion(), OGAddonMsg.__standalone and "yes" or "no"), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Queue Depth: %d messages (%.1fs estimated)",
-        stats.queueDepth, stats.queueTimeEstimate), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Debug Mode: %s", config.debug and "ON" or "OFF"), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(" ", 1, 1, 1)
+    OGAddonMsg.Msg("=== OGAddonMsg Status ===")
+    OGAddonMsg.Msg(string.format("Version: %s (standalone: %s)",
+        OGAddonMsg.GetVersion(), OGAddonMsg.__standalone and "yes" or "no"))
+    OGAddonMsg.Msg(string.format("Queue Depth: %d messages (%.1fs estimated)",
+        stats.queueDepth, stats.queueTimeEstimate))
+    OGAddonMsg.Msg(string.format("Debug Mode: %s", config.debug and "ON" or "OFF"))
+    OGAddonMsg.Msg(" ")
     
     -- ChatThrottleLib status
     if ChatThrottleLib then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("ChatThrottleLib: v%d (active)", ChatThrottleLib.version or 0), 0.5, 1, 0.5)
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("  CPS: %d | Burst: %d | Overhead: %d",
-            ChatThrottleLib.MAX_CPS or 0, ChatThrottleLib.BURST or 0, ChatThrottleLib.MSG_OVERHEAD or 0), 1, 1, 1)
+        OGAddonMsg.Msg(string.format("ChatThrottleLib: v%d (active)", ChatThrottleLib.version or 0))
+        OGAddonMsg.Msg(string.format("  CPS: %d | Burst: %d | Overhead: %d",
+            ChatThrottleLib.MAX_CPS or 0, ChatThrottleLib.BURST or 0, ChatThrottleLib.MSG_OVERHEAD or 0))
         if ChatThrottleLib.bQueueing then
-            DEFAULT_CHAT_FRAME:AddMessage("  CTL Status: QUEUEING (throttled)", 1, 0.5, 0)
+            OGAddonMsg.Msg("  CTL Status: QUEUEING (throttled)")
         else
-            DEFAULT_CHAT_FRAME:AddMessage("  CTL Status: IDLE (bandwidth available)", 0.5, 1, 0.5)
+            OGAddonMsg.Msg("  CTL Status: IDLE (bandwidth available)")
         end
     else
-        DEFAULT_CHAT_FRAME:AddMessage("ChatThrottleLib: NOT LOADED (no throttle protection!)", 1, 0, 0)
+        OGAddonMsg.Msg("ChatThrottleLib: NOT LOADED (no throttle protection!)")
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(" ", 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage("Configuration:", 0.5, 1, 0.5)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("  Queue Warning: %.1fs", config.warnQueue), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("  Retain Time: %.1fs", config.retainTime), 1, 1, 1)
+    OGAddonMsg.Msg(" ")
+    OGAddonMsg.Msg("Configuration:")
+    OGAddonMsg.Msg(string.format("  Queue Warning: %.1fs", config.warnQueue))
+    OGAddonMsg.Msg(string.format("  Retain Time: %.1fs", config.retainTime))
 end
 
 function OGAddonMsg.ShowStats()
     local stats = OGAddonMsg.stats
     
-    DEFAULT_CHAT_FRAME:AddMessage("=== OGAddonMsg Statistics ===", 0.5, 1, 0.5)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Messages: %d sent, %d received",
-        stats.messagesSent, stats.messagesReceived), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Bytes: %d sent, %d received",
-        stats.bytesSent, stats.bytesReceived), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Chunks: %d sent, %d received",
-        stats.chunksSent, stats.chunksReceived), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Reassembled: %d multi-chunk messages",
-        stats.messagesReassembled), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Retries: %d requested, %d sent",
-        stats.retriesRequested, stats.retriesSent), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Failures: %d", stats.failures), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Ignored: %d", stats.ignored), 1, 1, 1)
-    DEFAULT_CHAT_FRAME:AddMessage(string.format("Queue: %d current, %d max",
-        stats.queueDepth, stats.queueDepthMax), 1, 1, 1)
+    OGAddonMsg.Msg("=== OGAddonMsg Statistics ===")
+    OGAddonMsg.Msg(string.format("Messages: %d sent, %d received",
+        stats.messagesSent, stats.messagesReceived))
+    OGAddonMsg.Msg(string.format("Bytes: %d sent, %d received",
+        stats.bytesSent, stats.bytesReceived))
+    OGAddonMsg.Msg(string.format("Chunks: %d sent, %d received",
+        stats.chunksSent, stats.chunksReceived))
+    OGAddonMsg.Msg(string.format("Reassembled: %d multi-chunk messages",
+        stats.messagesReassembled))
+    OGAddonMsg.Msg(string.format("Retries: %d requested, %d sent",
+        stats.retriesRequested, stats.retriesSent))
+    OGAddonMsg.Msg(string.format("Failures: %d", stats.failures))
+    OGAddonMsg.Msg(string.format("Ignored: %d", stats.ignored))
+    OGAddonMsg.Msg(string.format("Queue: %d current, %d max",
+        stats.queueDepth, stats.queueDepthMax))
 end
 
 --[[
@@ -236,13 +222,13 @@ function OGAddonMsg.RateTest(rate, size)
     if rateTestFrame then
         rateTestFrame:Hide()
         rateTestFrame = nil
-        DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Previous rate test cancelled", 1, 1, 0)
+        OGAddonMsg.Msg("OGAddonMsg: Previous rate test cancelled")
     end
     
     -- Detect channel
     local channel = OGAddonMsg.DetectBestChannel()
     if not channel then
-        DEFAULT_CHAT_FRAME:AddMessage("OGAddonMsg: Not in a raid, party, or guild. Cannot run rate test.", 1, 0, 0)
+        OGAddonMsg.Msg("OGAddonMsg: Not in a raid, party, or guild. Cannot run rate test.")
         return
     end
     
@@ -272,10 +258,8 @@ function OGAddonMsg.RateTest(rate, size)
     -- Actual target: at least headerLen, up to requested size
     local targetSize = size
     if targetSize > 0 and targetSize < minSize then
-        DEFAULT_CHAT_FRAME:AddMessage(
-            string.format("OGAddonMsg: Minimum message size is %d bytes (header overhead). Using %d.", minSize, minSize),
-            1, 1, 0
-        )
+        OGAddonMsg.Msg(
+            string.format("OGAddonMsg: Minimum message size is %d bytes (header overhead). Using %d.", minSize, minSize))
         targetSize = minSize
     end
     
@@ -317,31 +301,21 @@ function OGAddonMsg.RateTest(rate, size)
             -- Report results
             local queuedRate = rateTestData.queuedCount / elapsed
             local deliveredRate = rateTestData.deliveredCount / elapsed
-            DEFAULT_CHAT_FRAME:AddMessage("=== OGAddonMsg Rate Test Complete ===", 0.5, 1, 0.5)
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("  Channel: %s | Size: %d bytes", rateTestData.channel, rateTestData.targetSize),
-                1, 1, 1
-            )
-            DEFAULT_CHAT_FRAME:AddMessage(
+            OGAddonMsg.Msg("=== OGAddonMsg Rate Test Complete ===")
+            OGAddonMsg.Msg(
+                string.format("  Channel: %s | Size: %d bytes", rateTestData.channel, rateTestData.targetSize))
+            OGAddonMsg.Msg(
                 string.format("  Queued: %d messages in %.2fs (%.1f msg/sec)",
-                    rateTestData.queuedCount, elapsed, queuedRate),
-                1, 1, 1
-            )
-            DEFAULT_CHAT_FRAME:AddMessage(
+                    rateTestData.queuedCount, elapsed, queuedRate))
+            OGAddonMsg.Msg(
                 string.format("  Delivered: %d messages in %.2fs (%.1f msg/sec)",
-                    rateTestData.deliveredCount, elapsed, deliveredRate),
-                1, 1, 1
-            )
-            DEFAULT_CHAT_FRAME:AddMessage(
-                string.format("  Method: %s", useCTL and "ChatThrottleLib" or "Direct SendAddonMessage"),
-                1, 1, 1
-            )
+                    rateTestData.deliveredCount, elapsed, deliveredRate))
+            OGAddonMsg.Msg(
+                string.format("  Method: %s", useCTL and "ChatThrottleLib" or "Direct SendAddonMessage"))
             if rateTestData.queuedCount > rateTestData.deliveredCount then
                 local remaining = rateTestData.queuedCount - rateTestData.deliveredCount
-                DEFAULT_CHAT_FRAME:AddMessage(
-                    string.format("  Note: %d messages still in CTL queue (will deliver after test)", remaining),
-                    1, 1, 0
-                )
+                OGAddonMsg.Msg(
+                    string.format("  Note: %d messages still in CTL queue (will deliver after test)", remaining))
             end
             
             -- Cleanup
@@ -395,11 +369,9 @@ function OGAddonMsg.RateTest(rate, size)
         actualSize = string.len(sampleMsg)
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(
+    OGAddonMsg.Msg(
         string.format("OGAddonMsg: Rate test - %d msgs/sec, %d bytes/msg on %s for 5s (%s)",
-            rate, actualSize, channel, useCTL and "via CTL" or "direct"),
-        0.5, 1, 0.5
-    )
+            rate, actualSize, channel, useCTL and "via CTL" or "direct"))
 end
 
 --[[
@@ -422,15 +394,11 @@ local function RateTestReport(sender)
         bps = data.totalBytes / duration
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(
-        string.format("OGAddonMsg RateTest Summary from %s:", sender),
-        0.5, 1, 0.5
-    )
-    DEFAULT_CHAT_FRAME:AddMessage(
+    OGAddonMsg.Msg(
+        string.format("OGAddonMsg RateTest Summary from %s:", sender))
+    OGAddonMsg.Msg(
         string.format("  %d msgs in %.1fs | %.1f msg/sec | %d bytes/msg | %.0f bytes/sec",
-            data.count, duration, rate, data.lastMsgSize, bps),
-        0.5, 1, 0.5
-    )
+            data.count, duration, rate, data.lastMsgSize, bps))
     
     rateTestReceivers[sender] = nil
 end
@@ -473,11 +441,9 @@ local function OnRateTestMessage(prefix, message, channel, sender)
         rate = data.count / elapsed
     end
     
-    DEFAULT_CHAT_FRAME:AddMessage(
+    OGAddonMsg.Msg(
         string.format("OGAddonMsg RateTest: #%s from %s [%s] %dB (%.1f msg/sec)",
-            rtCount, rtSender, channel, msgSize, rate),
-        0.6, 0.8, 1
-    )
+            rtCount, rtSender, channel, msgSize, rate))
     
     -- Reset the inactivity timer - report summary 3s after last message
     local reportSender = rtSender

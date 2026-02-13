@@ -878,7 +878,14 @@ end
 ]]
 
 -- Start integrity checks timer (30-second polling)
+-- Called when local player becomes admin. Includes 5-second delay before first broadcast
+-- to allow admin announcement to propagate to all raid members.
 function OGRH.SyncIntegrity.StartIntegrityChecks()
+    -- Guard against double-start
+    if OGRH.SyncIntegrity.State.enabled then
+        return
+    end
+    
     if not OGRH.ScheduleTimer then
         OGRH.Msg("|cffff0000[RH-SyncIntegrity]|r CRITICAL: ScheduleTimer not available!")
         return
@@ -886,22 +893,61 @@ function OGRH.SyncIntegrity.StartIntegrityChecks()
     
     OGRH.SyncIntegrity.State.enabled = true
     
-    -- Start repeating timer (30 seconds) for checksums
-    OGRH.SyncIntegrity.State.timer = OGRH.ScheduleTimer(function()
-        if OGRH.CanModifyStructure(UnitName("player")) then
-            OGRH.SyncIntegrity.BroadcastChecksums()
-        end
-    end, 30, true)  -- 30 seconds, repeating
-    
-    -- Start repeating timer (15 seconds) for encounter selection
-    OGRH.SyncIntegrity.State.encounterBroadcastTimer = OGRH.ScheduleTimer(function()
-        OGRH.SyncIntegrity.BroadcastCurrentEncounter()
-    end, 15, true)  -- 15 seconds, repeating
-    
     if OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Active Raid checksum polling started (broadcasts every 30s)")
-        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Encounter broadcast started (every 15s)")
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Admin confirmed, delaying first broadcast by 5 seconds")
     end
+    
+    -- Delay first broadcasts by 5 seconds (let admin announcement propagate)
+    OGRH.ScheduleTimer(function()
+        -- Verify still admin and in raid
+        if not OGRH.SyncIntegrity.State.enabled then return end
+        if not OGRH.CanModifyStructure or not OGRH.CanModifyStructure(UnitName("player")) then return end
+        if GetNumRaidMembers() == 0 then return end
+        
+        -- First broadcast (force immediate)
+        OGRH.SyncIntegrity.BroadcastChecksums(true)
+        
+        -- Start repeating timer (30 seconds) for checksums
+        OGRH.SyncIntegrity.State.timer = OGRH.ScheduleTimer(function()
+            if OGRH.CanModifyStructure(UnitName("player")) then
+                OGRH.SyncIntegrity.BroadcastChecksums()
+            end
+        end, 30, true)  -- 30 seconds, repeating
+        
+        -- Start repeating timer (15 seconds) for encounter selection
+        OGRH.SyncIntegrity.State.encounterBroadcastTimer = OGRH.ScheduleTimer(function()
+            OGRH.SyncIntegrity.BroadcastCurrentEncounter()
+        end, 15, true)  -- 15 seconds, repeating
+        
+        if OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Active Raid checksum polling started (broadcasts every 30s)")
+            OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Encounter broadcast started (every 15s)")
+        end
+    end, 5.0)
+end
+
+-- Stop integrity checks (called when player loses admin or leaves raid)
+function OGRH.SyncIntegrity.StopIntegrityChecks()
+    if OGRH.SyncIntegrity.State.timer then
+        OGRH.CancelTimer(OGRH.SyncIntegrity.State.timer)
+        OGRH.SyncIntegrity.State.timer = nil
+    end
+    if OGRH.SyncIntegrity.State.encounterBroadcastTimer then
+        OGRH.CancelTimer(OGRH.SyncIntegrity.State.encounterBroadcastTimer)
+        OGRH.SyncIntegrity.State.encounterBroadcastTimer = nil
+    end
+    OGRH.SyncIntegrity.State.enabled = false
+    if OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Integrity checks stopped")
+    end
+end
+
+-- Global aliases (referenced by Permissions.lua SetRaidAdmin)
+OGRH.StartIntegrityChecks = function()
+    OGRH.SyncIntegrity.StartIntegrityChecks()
+end
+OGRH.StopIntegrityChecks = function()
+    OGRH.SyncIntegrity.StopIntegrityChecks()
 end
 
 -- Broadcast current encounter selection to raid
@@ -1030,27 +1076,9 @@ function OGRH.SyncIntegrity.OnAdminQuery(sender, data)
     end, 0.1)
 end
 
--- Detect player joins and request checksums
-local function OnRaidRosterUpdate()
-    local currentRaidSize = GetNumRaidMembers()
-    local previousRaidSize = OGRH.SyncIntegrity.State.lastRaidSize
-    
-    -- Player joined (size increased)
-    if currentRaidSize > previousRaidSize and currentRaidSize > 0 then
-        if OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg(string.format("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Raid size changed: %d -> %d", previousRaidSize, currentRaidSize))
-        end
-        
-        -- If we just joined (went from 0 to >0), request checksums
-        if previousRaidSize == 0 then
-            OGRH.ScheduleTimer(function()
-                OGRH.SyncIntegrity.RequestChecksums()
-            end, 1.0)  -- Wait 1 second for raid to stabilize
-        end
-    end
-    
-    OGRH.SyncIntegrity.State.lastRaidSize = currentRaidSize
-end
+-- NOTE: OnRaidRosterUpdate has been removed.
+-- Raid roster changes are now handled by the consolidated handler in AdminSelection.lua.
+-- Checksum requests are triggered by AdminDiscovery after admin resolution.
 
 -- Initialize (register message handlers)
 function OGRH.SyncIntegrity.Initialize()
@@ -1097,23 +1125,10 @@ function OGRH.SyncIntegrity.Initialize()
         end
     )
     
-    -- Register handler for admin queries
-    OGRH.MessageRouter.RegisterHandler(
-        OGRH.MessageTypes.ADMIN.QUERY,
-        function(sender, data, channel)
-            OGRH.SyncIntegrity.OnAdminQuery(sender, data)
-        end
-    )
+    -- NOTE: ADMIN.QUERY handler is now unified in MessageRouter.Initialize()
+    -- It handles both discovery roll-call (all clients) and checksum requests (delegates here).
+    -- No separate registration needed.
     
-    -- Register RAID_ROSTER_UPDATE event
-    local eventFrame = CreateFrame("Frame")
-    eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
-    eventFrame:SetScript("OnEvent", function()
-        if event == "RAID_ROSTER_UPDATE" then
-            OnRaidRosterUpdate()
-        end
-    end)
-
     OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Active Raid checksum system loaded")
     
     -- Check periodically if we become admin and start broadcasting
@@ -1138,15 +1153,7 @@ function OGRH.SyncIntegrity.CheckAdminStatus()
         if OGRH.SyncIntegrity.State.debug then
             OGRH.Msg("|cff00ccff[RH-SyncIntegrity][DEBUG]|r Stopping checksum broadcasting (no longer admin or left raid)")
         end
-        if OGRH.SyncIntegrity.State.timer then
-            OGRH.CancelTimer(OGRH.SyncIntegrity.State.timer)
-            OGRH.SyncIntegrity.State.timer = nil
-        end
-        if OGRH.SyncIntegrity.State.encounterBroadcastTimer then
-            OGRH.CancelTimer(OGRH.SyncIntegrity.State.encounterBroadcastTimer)
-            OGRH.SyncIntegrity.State.encounterBroadcastTimer = nil
-        end
-        OGRH.SyncIntegrity.State.enabled = false
+        OGRH.SyncIntegrity.StopIntegrityChecks()
     end
 end
 

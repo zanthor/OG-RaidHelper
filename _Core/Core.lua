@@ -5,7 +5,7 @@ OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 
 -- Code version: updated by bump.ps1, takes effect on /reload
-OGRH.CODE_VERSION = "2.0.95"
+OGRH.CODE_VERSION = "2.0.99"
 -- TOC version: only updates on full client restart
 OGRH.TOC_VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 -- Active version used for all version checks (code version = live reloadable)
@@ -173,9 +173,8 @@ OGRH.Msg("|cff00ff00[RH-Migration]|r Purging keys: " .. table.concat(purgedKeys,
 end
 local _svf = CreateFrame("Frame")
 _svf:RegisterEvent("VARIABLES_LOADED")
-_svf:RegisterEvent("PLAYER_ENTERING_WORLD")
-_svf:RegisterEvent("RAID_ROSTER_UPDATE")
-local hasPolledOnce = false
+-- NOTE: PLAYER_ENTERING_WORLD and RAID_ROSTER_UPDATE removed.
+-- Admin discovery is handled by InitRaidLead() in AdminSelection.lua.
 
 _svf:SetScript("OnEvent", function() 
   if event == "VARIABLES_LOADED" then 
@@ -287,41 +286,17 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Auto-activating v2 schema...")
     OGRH.SyncRepairHandlers.Initialize()
   end
   
-  elseif event == "PLAYER_ENTERING_WORLD" then
-    -- Clean up v1 keys if we're in v2 mode (after all modules have loaded)
-    -- Clean up deprecated v2 fields only (keep v1 data for rollback)
-    if OGRH_SV.schemaVersion == "v2" and OGRH_SV.v2 then
-      local deprecatedCount = 0
-      if OGRH_SV.v2.order then OGRH_SV.v2.order = nil deprecatedCount = deprecatedCount + 1 end
-      if OGRH_SV.v2.Permissions then OGRH_SV.v2.Permissions = nil deprecatedCount = deprecatedCount + 1 end
-      if OGRH_SV.v2.Versioning then OGRH_SV.v2.Versioning = nil deprecatedCount = deprecatedCount + 1 end
-      if deprecatedCount > 0 then
-        OGRH.Msg("|cffffaa00[RH-Cleanup]|r Removed " .. deprecatedCount .. " deprecated v2 fields")
-      end
+  -- Clean up deprecated v2 fields (keep v1 data for rollback)
+  if OGRH_SV.schemaVersion == "v2" and OGRH_SV.v2 then
+    local deprecatedCount = 0
+    if OGRH_SV.v2.order then OGRH_SV.v2.order = nil deprecatedCount = deprecatedCount + 1 end
+    if OGRH_SV.v2.Permissions then OGRH_SV.v2.Permissions = nil deprecatedCount = deprecatedCount + 1 end
+    if OGRH_SV.v2.Versioning then OGRH_SV.v2.Versioning = nil deprecatedCount = deprecatedCount + 1 end
+    if deprecatedCount > 0 then
+      OGRH.Msg("|cffffaa00[RH-Cleanup]|r Removed " .. deprecatedCount .. " deprecated v2 fields")
     end
-    
-    -- Start integrity checks if we're the current admin (after login/reload)
-    if OGRH.GetRaidAdmin and OGRH.StartIntegrityChecks then
-      local currentAdmin = OGRH.GetRaidAdmin()
-      if currentAdmin == UnitName("player") then
-        OGRH.StartIntegrityChecks()
-      end
-    end
-    
-    -- Poll for admin when entering world (login, reload, zone)
-    if UnitInRaid("player") and OGRH.PollForRaidAdmin then
-      OGRH.PollForRaidAdmin()
-      hasPolledOnce = true
-    end
-    
-  elseif event == "RAID_ROSTER_UPDATE" then
-    -- Poll for admin when joining a raid (only once per raid session)
-    if UnitInRaid("player") and not hasPolledOnce and OGRH.PollForRaidAdmin then
-      OGRH.PollForRaidAdmin()
-      hasPolledOnce = true
-    elseif not UnitInRaid("player") then
-      hasPolledOnce = false  -- Reset flag when leaving raid
-    end
+  end
+  
   end
 end)
 OGRH.EnsureSV()

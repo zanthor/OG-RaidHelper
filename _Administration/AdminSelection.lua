@@ -15,6 +15,212 @@ OGRH.RaidLead = {
   pollInProgress = false       -- Whether a poll is active
 }
 
+--[[
+    Admin Discovery System
+    
+    Three-tier admin discovery with 5-second delays.
+    Handles raid forming, joining, and late joining uniformly.
+    
+    Flow:
+      1. Wait 5 seconds (passive listen for STATE.CHANGE_LEAD from existing admin)
+      2. Broadcast ADMIN.QUERY (all OGRH clients respond with roll-call)
+      3. Wait 5 seconds to collect responses
+      4. Resolve with 3-tier logic:
+         Tier 1: lastAdmin (persisted) is among responders → restore as admin
+         Tier 2: Raid Leader with OGRH → assign as admin
+         Tier 3: Assistants with OGRH → alphabetically first
+         Tier 4: Any OGRH user → alphabetically first (temp, no lastAdmin update)
+]]
+OGRH.AdminDiscovery = {
+    active = false,              -- Whether discovery is in progress
+    responses = {},              -- Collected ADMIN.RESPONSE roll-call entries
+    queryTimer = nil,            -- Timer ID for initial 5-second passive listen
+    resolveTimer = nil,          -- Timer ID for post-query 5-second collection
+    lastAdminRank = nil          -- Tracked rank of current admin (for demotion detection)
+}
+
+-- Start admin discovery process
+function OGRH.AdminDiscovery.Start()
+    -- Guard: if already running, don't restart
+    if OGRH.AdminDiscovery.active then
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff888888[RH-AdminDiscovery][DEBUG]|r Discovery already in progress, skipping")
+        end
+        return
+    end
+    
+    -- Cancel any stale timers (defensive)
+    OGRH.AdminDiscovery.Cancel()
+    
+    OGRH.AdminDiscovery.active = true
+    OGRH.AdminDiscovery.responses = {}
+    
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Starting admin discovery (5s passive listen)")
+    end
+    
+    -- Phase 1: Wait 5 seconds passively
+    -- During this time, an existing admin may broadcast STATE.CHANGE_LEAD
+    -- which SetRaidAdmin will handle, setting currentAdmin before we query.
+    OGRH.AdminDiscovery.queryTimer = OGRH.ScheduleTimer(function()
+        -- Abandoned? (left raid during wait)
+        if GetNumRaidMembers() == 0 then
+            OGRH.AdminDiscovery.Cancel()
+            return
+        end
+        
+        -- If admin was set during passive listen (received STATE.CHANGE_LEAD), done
+        if OGRH.GetRaidAdmin and OGRH.GetRaidAdmin() then
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State and OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Admin found during passive listen: " .. tostring(OGRH.GetRaidAdmin()))
+            end
+            OGRH.AdminDiscovery.active = false
+            return
+        end
+        
+        -- Phase 2: Broadcast ADMIN.QUERY (all OGRH clients respond)
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Broadcasting ADMIN.QUERY for roll call")
+        end
+        
+        -- Add self to responses (we won't receive our own broadcast)
+        local selfName = UnitName("player")
+        local selfRank = 0
+        for i = 1, GetNumRaidMembers() do
+            local name, rank = GetRaidRosterInfo(i)
+            if name == selfName then
+                selfRank = rank
+                break
+            end
+        end
+        OGRH.AdminDiscovery.AddResponse(selfName, selfRank, false)
+        
+        -- Broadcast query - all OGRH clients will respond via ADMIN.RESPONSE
+        if OGRH.MessageRouter and OGRH.MessageTypes then
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.QUERY, "", {priority = "HIGH"})
+        end
+        
+        -- Phase 3: Wait 5 more seconds for responses, then resolve
+        OGRH.AdminDiscovery.resolveTimer = OGRH.ScheduleTimer(function()
+            OGRH.AdminDiscovery.Resolve()
+        end, 5.0)
+    end, 5.0)
+end
+
+-- Cancel an in-progress discovery (e.g., on raid leave)
+function OGRH.AdminDiscovery.Cancel()
+    OGRH.AdminDiscovery.active = false
+    OGRH.AdminDiscovery.responses = {}
+    if OGRH.AdminDiscovery.queryTimer then
+        OGRH.CancelTimer(OGRH.AdminDiscovery.queryTimer)
+        OGRH.AdminDiscovery.queryTimer = nil
+    end
+    if OGRH.AdminDiscovery.resolveTimer then
+        OGRH.CancelTimer(OGRH.AdminDiscovery.resolveTimer)
+        OGRH.AdminDiscovery.resolveTimer = nil
+    end
+end
+
+-- Add a roll-call response (called from ADMIN.RESPONSE handler)
+function OGRH.AdminDiscovery.AddResponse(playerName, rank, isCurrentAdmin)
+    if not OGRH.AdminDiscovery.active then return end
+    
+    -- Deduplicate
+    for i = 1, table.getn(OGRH.AdminDiscovery.responses) do
+        if OGRH.AdminDiscovery.responses[i].name == playerName then
+            return
+        end
+    end
+    table.insert(OGRH.AdminDiscovery.responses, {
+        name = playerName,
+        rank = rank,
+        isCurrentAdmin = isCurrentAdmin
+    })
+    
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Response: %s (rank=%d, isAdmin=%s)", 
+            playerName, rank, tostring(isCurrentAdmin)))
+    end
+end
+
+-- Resolve admin from collected responses using 3-tier logic
+function OGRH.AdminDiscovery.Resolve()
+    OGRH.AdminDiscovery.active = false
+    
+    -- If admin was set during collection period (e.g., someone claimed admin), done
+    if OGRH.GetRaidAdmin and OGRH.GetRaidAdmin() then
+        return
+    end
+    
+    -- Left raid?
+    if GetNumRaidMembers() == 0 then
+        return
+    end
+    
+    local responses = OGRH.AdminDiscovery.responses
+    if table.getn(responses) == 0 then
+        return
+    end
+    
+    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State and OGRH.SyncIntegrity.State.debug then
+        OGRH.Msg(string.format("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Resolving with %d responses", table.getn(responses)))
+    end
+    
+    -- Defensive: check if any response claimed to be admin
+    for i = 1, table.getn(responses) do
+        if responses[i].isCurrentAdmin then
+            OGRH.SetRaidAdmin(responses[i].name, false)
+            return
+        end
+    end
+    
+    -- Tier 1: Check if lastAdmin (persisted) is among responders
+    local lastAdmin = OGRH.GetLastAdmin and OGRH.GetLastAdmin()
+    if lastAdmin then
+        for i = 1, table.getn(responses) do
+            if responses[i].name == lastAdmin then
+                OGRH.SetRaidAdmin(lastAdmin, false)
+                OGRH.Msg("|cff00ccff[RH]|r Last admin " .. lastAdmin .. " is in raid, restoring as admin")
+                return
+            end
+        end
+    end
+    
+    -- Tier 2: Leader with OGRH
+    for i = 1, table.getn(responses) do
+        if responses[i].rank == 2 then
+            OGRH.SetRaidAdmin(responses[i].name, false)
+            OGRH.Msg("|cff00ccff[RH]|r Assigned raid leader " .. responses[i].name .. " as admin")
+            return
+        end
+    end
+    
+    -- Tier 3: Assistants with OGRH (alphabetically first)
+    local assistants = {}
+    for i = 1, table.getn(responses) do
+        if responses[i].rank == 1 then
+            table.insert(assistants, responses[i].name)
+        end
+    end
+    if table.getn(assistants) > 0 then
+        table.sort(assistants)
+        OGRH.SetRaidAdmin(assistants[1], false)
+        OGRH.Msg("|cff00ccff[RH]|r Assigned assistant " .. assistants[1] .. " as admin")
+        return
+    end
+    
+    -- Tier 4: No L/A with OGRH. Alphabetically first = temp admin (no lastAdmin update)
+    local allNames = {}
+    for i = 1, table.getn(responses) do
+        table.insert(allNames, responses[i].name)
+    end
+    table.sort(allNames)
+    
+    -- All clients independently agree on the same winner (deterministic)
+    OGRH.SetRaidAdmin(allNames[1], false, true)  -- skipLastAdminUpdate = true
+    OGRH.Msg("|cff00ccff[RH]|r Temporarily assigned " .. allNames[1] .. " as admin (no L/A with OGRH)")
+end
+
 -- Check if local player can edit (is raid admin, or not in raid)
 function OGRH.CanEdit()
   -- If not in a raid, allow editing
@@ -747,29 +953,26 @@ function OGRH.RequestSyncFromLead()
   OGRH.RequestSyncFromAdmin()
 end
 
--- Query raid for current admin
+-- Query raid for current admin (now delegates to AdminDiscovery)
 function OGRH.QueryRaidAdmin()
   if GetNumRaidMembers() == 0 then
     return
   end
   
-  -- Use MessageRouter for proper admin query
-  if OGRH.MessageRouter and OGRH.MessageTypes then
-    OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.QUERY, "", {
-      priority = "HIGH"
-    })
+  -- Delegate to AdminDiscovery system for proper 3-tier resolution
+  if OGRH.AdminDiscovery and OGRH.AdminDiscovery.Start then
+    OGRH.AdminDiscovery.Start()
   end
 end
 
--- Initialize raid admin from Permissions system
+-- Initialize raid admin system with consolidated RAID_ROSTER_UPDATE handler
 function OGRH.InitRaidLead()
-  -- No SavedVariables persistence - Permissions.State.currentAdmin is runtime only
-  -- Admin is determined by:
-  -- 1. Session admin (set via /ogrh sa)
-  -- 2. Raid polling on join
-  -- 3. Manual selection via admin UI
+  -- Admin is determined by AdminDiscovery:
+  --   1. lastAdmin (persisted) if in raid with OGRH
+  --   2. Raid Leader with OGRH
+  --   3. Alphabetically first OGRH user (temp, no lastAdmin update)
   
-  -- Set up event handler for raid roster changes
+  -- Set up consolidated event handler for raid roster changes
   if not OGRH.RaidLeadEventFrame then
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("RAID_ROSTER_UPDATE")
@@ -780,21 +983,58 @@ function OGRH.InitRaidLead()
       
       -- If we just left the raid (went from > 0 to 0)
       if frame.lastRaidSize > 0 and currentSize == 0 then
-        -- Clear raid admin using Permissions state
+        -- Cancel any in-progress discovery
+        if OGRH.AdminDiscovery then
+          OGRH.AdminDiscovery.Cancel()
+        end
+        
+        -- Clear runtime admin (lastAdmin stays in SV for reconnection)
         if OGRH.Permissions and OGRH.Permissions.State then
           OGRH.Permissions.State.currentAdmin = nil
+        end
+        if OGRH.RaidLead then
+          OGRH.RaidLead.currentLead = nil
         end
         if OGRH.UpdateRaidAdminUI then
           OGRH.UpdateRaidAdminUI()
         end
+        
       -- If we just joined a raid (went from 0 to > 0)
       elseif frame.lastRaidSize == 0 and currentSize > 0 then
-        -- Query for current raid admin after a short delay
-        OGRH.ScheduleFunc(function()
-          if GetNumRaidMembers() > 0 then
-            OGRH.QueryRaidAdmin()
+        -- Start admin discovery (5s passive listen, then query)
+        if OGRH.AdminDiscovery and OGRH.AdminDiscovery.Start then
+          OGRH.AdminDiscovery.Start()
+        end
+        
+      -- Already in raid - check for admin demotion
+      elseif currentSize > 0 then
+        local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+        if currentAdmin and OGRH.AdminDiscovery then
+          for i = 1, currentSize do
+            local name, rank = GetRaidRosterInfo(i)
+            if name == currentAdmin then
+              local lastRank = OGRH.AdminDiscovery.lastAdminRank
+              -- Detect demotion: admin had L/A (rank >= 1) and now has rank 0
+              if lastRank and lastRank >= 1 and rank == 0 then
+                OGRH.Msg("|cff00ccff[RH]|r Admin " .. currentAdmin .. " was demoted, starting re-discovery")
+                -- Clear admin and re-discover
+                if OGRH.Permissions and OGRH.Permissions.State then
+                  OGRH.Permissions.State.currentAdmin = nil
+                end
+                if OGRH.RaidLead then
+                  OGRH.RaidLead.currentLead = nil
+                end
+                if OGRH.UpdateRaidAdminUI then
+                  OGRH.UpdateRaidAdminUI()
+                end
+                OGRH.AdminDiscovery.Start()
+              end
+              -- Always update tracked rank
+              OGRH.AdminDiscovery.lastAdminRank = rank
+              break
+            end
           end
-        end, 1)
+        end
       end
       
       frame.lastRaidSize = currentSize
@@ -803,12 +1043,10 @@ function OGRH.InitRaidLead()
     OGRH.RaidLeadEventFrame = frame
   end
   
-  -- If already in raid, query for current admin
+  -- If already in raid on load (e.g., /reload), start discovery
   if GetNumRaidMembers() > 0 then
-    OGRH.ScheduleFunc(function()
-      if GetNumRaidMembers() > 0 then
-        OGRH.QueryRaidAdmin()
-      end
-    end, 1)
+    if OGRH.AdminDiscovery and OGRH.AdminDiscovery.Start then
+      OGRH.AdminDiscovery.Start()
+    end
   end
 end

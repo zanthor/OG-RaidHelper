@@ -12,7 +12,8 @@ OGRH.MessageRouter.State = {
     handlers = {},              -- Registered message handlers
     messageQueue = {},          -- Outgoing message queue
     receivedMessages = {},      -- Recently received messages (for deduplication)
-    isInitialized = false       -- Initialization flag
+    isInitialized = false,      -- Initialization flag
+    syncVersionWarned = {}      -- [senderName] = true  (one warning per sender per session)
 }
 
 --[[
@@ -107,8 +108,12 @@ function OGRH.MessageRouter.Send(messageType, data, options)
         return nil
     end
     
+    -- Inject SyncVersion into the OGAddonMsg prefix
+    -- "OGRH_ADMIN_QUERY" → "OGRH00_ADMIN_QUERY"  (version inserted after "OGRH")
+    local versionedType = "OGRH" .. OGRH.SYNC_VERSION .. string.sub(messageType, 5)
+    
     -- Send via OGAddonMsg
-    local msgId = OGAddonMsg.Send(channel, target, messageType, data, {
+    local msgId = OGAddonMsg.Send(channel, target, versionedType, data, {
         priority = priority,
         onSuccess = options.onSuccess,
         onFailure = options.onFailure,
@@ -253,15 +258,40 @@ function OGRH.MessageRouter.InitializeOGAddonMsg()
     
     -- Register a wildcard handler for all messages
     OGAddonMsg.RegisterWildcard(function(sender, prefix, data, channel)
-        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
-            OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r Wildcard received: sender=%s, prefix=%s, channel=%s", 
-                tostring(sender), tostring(prefix), tostring(channel)))
+        -- Only process OGRH messages (prefix starts with "OGRH")
+        if string.sub(prefix, 1, 4) ~= "OGRH" then
+            return
         end
         
-        -- Only process OGRH messages
-        if string.sub(prefix, 1, 5) == "OGRH_" then
-            OGRH.MessageRouter.OnMessageReceived(sender, prefix, data, channel)
+        -- Extract SyncVersion (2 hex chars after "OGRH", before the underscore)
+        -- Versioned format: "OGRH00_ADMIN_QUERY"  (positions 5-6 = version)
+        -- Legacy format:    "OGRH_ADMIN_QUERY"    (position 5 = underscore)
+        local incomingVersion = string.sub(prefix, 5, 6)
+        
+        if incomingVersion ~= OGRH.SYNC_VERSION then
+            -- Version mismatch — warn once per sender, then silently drop
+            if not OGRH.MessageRouter.State.syncVersionWarned[sender] then
+                OGRH.MessageRouter.State.syncVersionWarned[sender] = true
+                OGRH.Msg(string.format(
+                    "|cffff6600[RH-MessageRouter]|r Ignoring traffic from %s (SyncVersion '%s' ~= ours '%s')",
+                    sender, tostring(incomingVersion), OGRH.SYNC_VERSION))
+            end
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cffff6600[RH-MessageRouter][DEBUG]|r REJECTED sender=%s, prefix=%s (v '%s' ~= '%s')",
+                    tostring(sender), tostring(prefix), tostring(incomingVersion), OGRH.SYNC_VERSION))
+            end
+            return
         end
+        
+        -- Strip version from prefix: "OGRH00_ADMIN_QUERY" → "OGRH_ADMIN_QUERY"
+        local cleanPrefix = "OGRH" .. string.sub(prefix, 7)
+        
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
+            OGRH.Msg(string.format("|cff00ccff[RH-MessageRouter][DEBUG]|r ACCEPTED sender=%s, msg=%s, channel=%s",
+                tostring(sender), tostring(cleanPrefix), tostring(channel)))
+        end
+        
+        OGRH.MessageRouter.OnMessageReceived(sender, cleanPrefix, data, channel)
     end)
     
     OGRH.Msg("|cff00ccff[RH-MessageRouter]|r Registered wildcard handler with OGAddonMsg")
@@ -353,27 +383,80 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     end)
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.QUERY, function(sender, data, channel)
-        -- Only respond to admin query if you're actually authorized to be admin
-        if OGRH.GetRaidAdmin and OGRH.IsRaidAdmin then
-            local currentAdmin = OGRH.GetRaidAdmin()
-            local playerName = UnitName("player")
-            
-            -- Only respond if you ARE the current admin AND you're still authorized (L/A)
-            if currentAdmin == playerName and OGRH.IsRaidAdmin(playerName) then
-                OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.ADMIN.RESPONSE, {
-                    currentAdmin = currentAdmin,
-                    timestamp = GetTime(),
-                    version = OGRH.VERSION
-                }, {priority = "HIGH"})
+        -- Part 1: Delegate checksum requests to SyncIntegrity (admin only)
+        -- This prevents SyncIntegrity from needing to register a duplicate handler
+        if type(data) == "table" and data.requestType == "checksums" then
+            if OGRH.SyncIntegrity and OGRH.SyncIntegrity.OnAdminQuery then
+                OGRH.SyncIntegrity.OnAdminQuery(sender, data)
             end
+            -- NOTE: Fall through to also send discovery response
+            -- so the querier knows we're running OGRH
         end
+        
+        -- Part 2: Discovery roll-call - ALL OGRH clients respond
+        -- Add random delay (0-2s) to stagger responses from 40-man raids
+        local delay = math.random() * 2
+        OGRH.ScheduleTimer(function()
+            if GetNumRaidMembers() == 0 then return end
+            
+            local playerName = UnitName("player")
+            local rank = 0
+            for i = 1, GetNumRaidMembers() do
+                local name, r = GetRaidRosterInfo(i)
+                if name == playerName then
+                    rank = r
+                    break
+                end
+            end
+            
+            local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+            
+            -- Broadcast response so ALL clients can build the same picture
+            -- (needed for deterministic alphabetical tie-breaking)
+            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.RESPONSE, {
+                purpose = "discovery",
+                playerName = playerName,
+                rank = rank,
+                isCurrentAdmin = (currentAdmin ~= nil and currentAdmin == playerName),
+                version = OGRH.VERSION
+            }, {priority = "NORMAL"})
+        end, delay)
     end)
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.RESPONSE, function(sender, data, channel)
-        -- Receive admin info from query response
-        if data and data.currentAdmin then
-            OGRH.SetRaidAdmin(data.currentAdmin)
-            OGRH.Msg(string.format("|cff00ccff[RH]|r Raid admin is %s", data.currentAdmin))
+        if not data then return end
+        
+        -- Handle discovery roll-call responses
+        if data.purpose == "discovery" then
+            -- Feed into AdminDiscovery if active
+            if OGRH.AdminDiscovery and OGRH.AdminDiscovery.active then
+                OGRH.AdminDiscovery.AddResponse(
+                    data.playerName or sender,
+                    data.rank or 0,
+                    data.isCurrentAdmin or false
+                )
+            end
+            
+            -- If sender claims to be current admin, accept immediately
+            -- This short-circuits discovery for the common case (joining existing raid)
+            if data.isCurrentAdmin then
+                local adminName = data.playerName or sender
+                OGRH.SetRaidAdmin(adminName, true)  -- suppress broadcast (we received it)
+                -- Cancel discovery since we found admin
+                if OGRH.AdminDiscovery then
+                    OGRH.AdminDiscovery.Cancel()
+                end
+            end
+            return
+        end
+        
+        -- Legacy admin claim response (from SyncIntegrity or direct admin response)
+        if data.currentAdmin then
+            OGRH.SetRaidAdmin(data.currentAdmin, true)
+            -- Cancel discovery since admin confirmed
+            if OGRH.AdminDiscovery and OGRH.AdminDiscovery.active then
+                OGRH.AdminDiscovery.Cancel()
+            end
         end
     end)
     

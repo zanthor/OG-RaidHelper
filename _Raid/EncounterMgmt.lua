@@ -451,6 +451,9 @@ function OGRH.AutoAssignPlayers(frame, playerList)
   if frame.RefreshRoleContainers then
     frame.RefreshRoleContainers()
   end
+  if frame.RefreshPlayersList then
+    frame.RefreshPlayersList()
+  end
   
   return assignmentCount
 end
@@ -1610,7 +1613,8 @@ function OGRH.ShowEncounterPlanning(encounterName)
         {text = "Tanks", value = "tanks", label = "Tanks"},
         {text = "Healers", value = "healers", label = "Healers"},
         {text = "Melee", value = "melee", label = "Melee"},
-        {text = "Ranged", value = "ranged", label = "Ranged"}
+        {text = "Ranged", value = "ranged", label = "Ranged"},
+        {text = "Unassigned", value = "unassigned", label = "Unassigned"}
       }
       
       -- Show menu
@@ -2385,6 +2389,29 @@ function OGRH.ShowEncounterPlanning(encounterName)
       -- Get selected unit source (Raid or Roster)
       local unitSource = frame.selectedUnitSource or "Raid"
       
+      -- Build set of currently assigned players for "Unassigned" filter
+      local assignedInEncounter = {}
+      if frame.selectedPlayerRole == "unassigned" and frame.selectedRaidIdx and frame.selectedEncounterIdx then
+        local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+        if encounterMgmt and encounterMgmt.raids and encounterMgmt.raids[frame.selectedRaidIdx] and
+           encounterMgmt.raids[frame.selectedRaidIdx].encounters and
+           encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx] then
+          local encounter = encounterMgmt.raids[frame.selectedRaidIdx].encounters[frame.selectedEncounterIdx]
+          if encounter.roles then
+            for roleIdx = 1, table.getn(encounter.roles) do
+              local role = encounter.roles[roleIdx]
+              if role and role.assignedPlayers then
+                for slotIdx = 1, table.getn(role.assignedPlayers) do
+                  if role.assignedPlayers[slotIdx] and role.assignedPlayers[slotIdx] ~= "" then
+                    assignedInEncounter[role.assignedPlayers[slotIdx]] = true
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+      
       if unitSource == "Roster" then
         -- Get planning roster from Invites module
         local planningRoster = OGRH.Invites and OGRH.Invites.GetPlanningRoster and OGRH.Invites.GetPlanningRoster()
@@ -2414,6 +2441,21 @@ function OGRH.ShowEncounterPlanning(encounterName)
                         playerSection = "melee"
                       elseif role == "RANGED" then
                         playerSection = "ranged"
+                      end
+                    elseif frame.selectedPlayerRole == "unassigned" then
+                      -- Include player only if not assigned in the current encounter
+                      if not assignedInEncounter[playerName] then
+                        includePlayer = true
+                        -- Group by role bucket
+                        if role == "TANKS" then
+                          playerSection = "tanks"
+                        elseif role == "HEALERS" then
+                          playerSection = "healers"
+                        elseif role == "MELEE" then
+                          playerSection = "melee"
+                        elseif role == "RANGED" then
+                          playerSection = "ranged"
+                        end
                       end
                     else
                       -- Map planning roster role to class filter
@@ -2497,6 +2539,24 @@ function OGRH.ShowEncounterPlanning(encounterName)
                     playerSection = "melee"
                   elseif assignments.ranged then
                     playerSection = "ranged"
+                  end
+                end
+              elseif frame.selectedPlayerRole == "unassigned" then
+                -- Include player only if not assigned in the current encounter
+                if not assignedInEncounter[name] then
+                  include = true
+                  -- Group by role assignment
+                  local rAssign = roleAssignments[name]
+                  if rAssign then
+                    if rAssign.tanks then
+                      playerSection = "tanks"
+                    elseif rAssign.healers then
+                      playerSection = "healers"
+                    elseif rAssign.melee then
+                      playerSection = "melee"
+                    elseif rAssign.ranged then
+                      playerSection = "ranged"
+                    end
                   end
                 end
               else
@@ -2763,6 +2823,9 @@ function OGRH.ShowEncounterPlanning(encounterName)
               -- Refresh display
               if frame.RefreshRoleContainers then
                 frame.RefreshRoleContainers()
+              end
+              if frame.RefreshPlayersList then
+                frame.RefreshPlayersList()
               end
             end
           end
@@ -3793,6 +3856,9 @@ function OGRH.ShowEncounterPlanning(encounterName)
             if frame.RefreshRoleContainers then
               frame.RefreshRoleContainers()
             end
+            if frame.RefreshPlayersList then
+              frame.RefreshPlayersList()
+            end
             
             -- Update preview if in locked mode
             if not frame.editMode and frame.UpdateAnnouncementPreview then
@@ -3842,6 +3908,9 @@ function OGRH.ShowEncounterPlanning(encounterName)
               -- Refresh display
               if frame.RefreshRoleContainers then
                 frame.RefreshRoleContainers()
+              end
+              if frame.RefreshPlayersList then
+                frame.RefreshPlayersList()
               end
               
               -- Update preview if in locked mode
