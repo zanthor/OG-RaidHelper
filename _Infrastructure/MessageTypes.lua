@@ -11,7 +11,9 @@ OGRH.MESSAGE_PREFIX = "OGRH"
 -- Sync protocol version (hex 00-FF, 256 versions)
 -- Bump this whenever the sync wire format or message semantics change.
 -- Clients with a different SYNC_VERSION will silently ignore each other's traffic.
-OGRH.SYNC_VERSION = "00"
+-- v01: DELTA_BATCH handler now delegates to SVM.OnBatchReceived (path/value format),
+--       old handler expected changes[] typed objects that no producer ever created.
+OGRH.SYNC_VERSION = "01"
 
 --[[
     Message Category Enums

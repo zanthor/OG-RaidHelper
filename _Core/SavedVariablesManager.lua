@@ -383,12 +383,6 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
         path = key .. "." .. subkey
     end
     
-    -- Compute structure checksum for validation
-    local structureChecksum = nil
-    if OGRH.SyncChecksum and OGRH.SyncChecksum.ComputeRaidChecksum and syncMetadata.scope and syncMetadata.scope.raid then
-        structureChecksum = OGRH.SyncChecksum.ComputeRaidChecksum(syncMetadata.scope.raid)
-    end
-    
     -- Check if sync mode is enabled (skip delta updates if sync disabled)
     if OGRH.SyncMode and not OGRH.SyncMode.CanSendDeltaUpdate() then
         if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.debug then
@@ -405,8 +399,7 @@ function OGRH.SVM.SyncRealtime(key, subkey, value, syncMetadata)
         componentType = syncMetadata.componentType or "generic",
         scope = syncMetadata.scope,
         timestamp = GetTime(),
-        author = UnitName("player"),
-        structureChecksum = structureChecksum  -- Include for client validation
+        author = UnitName("player")
     }
     
     -- Send via MessageRouter with high priority
@@ -719,24 +712,6 @@ function OGRH.SVM.OnDeltaReceived(sender, data, channel)
     end
     -- Other types (settings, consumes, etc.) accepted from anyone
     
-    -- Validate structure checksum if provided
-    if data.structureChecksum and data.scope and data.scope.raid then
-        if OGRH.SyncChecksum and OGRH.SyncChecksum.ComputeRaidChecksum then
-            local localChecksum = OGRH.SyncChecksum.ComputeRaidChecksum(data.scope.raid)
-            if localChecksum ~= data.structureChecksum then
-                OGRH.Msg("|cffff9900[RH-SVM]|r Delta rejected - structure mismatch. Requesting repair.")
-                -- Request structure repair from checksum system
-                if OGRH.SyncIntegrity and OGRH.SyncIntegrity.QueueRepairRequest then
-                    OGRH.SyncIntegrity.QueueRepairRequest(sender, {
-                        type = "ACTIVE_RAID_STRUCTURE",
-                        component = "structure"
-                    })
-                end
-                return
-            end
-        end
-    end
-    
     -- Apply update to local SavedVariables
     local success = OGRH.SVM.SetPath(data.path, data.value, nil)  -- nil = no sync (we're receiving)
     
@@ -798,6 +773,25 @@ function OGRH.SVM.OnBatchReceived(sender, data, channel)
             OGRH.rolesFrame.UpdatePlayerLists(false)
         elseif OGRH_RolesFrame and OGRH_RolesFrame:IsVisible() and OGRH.RenderRoles then
             OGRH.RenderRoles()
+        end
+        
+        -- Refresh encounter planning interface if it exists
+        if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then
+            OGRH_EncounterFrame.RefreshRoleContainers()
+        end
+        
+        -- Refresh encounter setup UI if open
+        local setupFrame = OGRH_EncounterSetupFrame or _G["OGRH_EncounterSetupFrame"]
+        if setupFrame and setupFrame:IsShown() then
+            if setupFrame.RefreshRaidsList then
+                setupFrame.RefreshRaidsList()
+            end
+            if setupFrame.RefreshEncountersList then
+                setupFrame.RefreshEncountersList()
+            end
+            if setupFrame.RefreshRolesList then
+                setupFrame.RefreshRolesList()
+            end
         end
     end
     
