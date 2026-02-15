@@ -10,6 +10,21 @@
 ]]
 
 --[[
+    Escape pipe characters in a %q-formatted string
+    
+    WoW's chat system uses | as an escape prefix (|cff, |r, |H, etc.).
+    Unescaped pipes in addon messages get corrupted or stripped by the client.
+    We replace literal | with \124 inside the quoted string, which loadstring()
+    natively interprets back to | on deserialize - no unescape step needed.
+    
+    @param quoted string - Output of string.format("%q", str)
+    @return string - Same string with | replaced by \124
+]]
+local function EscapePipe(quoted)
+    return string.gsub(quoted, "|", "\\124")
+end
+
+--[[
     Serialize a Lua table to string
     
     Handles nested tables, strings, numbers, booleans
@@ -37,7 +52,7 @@ function OGAddonMsg.Serialize(tbl)
         if type(k) == "number" then
             result = result .. "[" .. k .. "]="
         elseif type(k) == "string" then
-            result = result .. "[" .. string.format("%q", k) .. "]="
+            result = result .. "[" .. EscapePipe(string.format("%q", k)) .. "]="
         else
             -- Skip non-string/number keys (functions, etc.)
             first = true
@@ -48,7 +63,7 @@ function OGAddonMsg.Serialize(tbl)
         if type(v) == "table" then
             result = result .. OGAddonMsg.Serialize(v)
         elseif type(v) == "string" then
-            result = result .. string.format("%q", v)
+            result = result .. EscapePipe(string.format("%q", v))
         elseif type(v) == "number" or type(v) == "boolean" then
             result = result .. tostring(v)
         elseif v == nil then
