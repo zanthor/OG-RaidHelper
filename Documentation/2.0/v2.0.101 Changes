@@ -1,0 +1,2 @@
+Added EscapePipe() helper that replaces | with \124 in all serialized string keys and values
+\124 is the decimal escape for pipe that Lua's loadstring() natively decodes back to | — so the deserializer needs zero changes

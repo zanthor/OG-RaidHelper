@@ -2,8 +2,14 @@
 
 **Version:** 3.0 (Post-RollFor Replacement)  
 **Target Release:** 2.1 (Post-v2 Schema Migration)  
-**Last Updated:** February 3, 2026  
-**Status:** Design Phase
+**Last Updated:** February 15, 2026  
+**Status:** Design Phase — Future Phase (Blockchain)
+
+> **Note:** This document describes the *long-term blockchain-based SR+ tracking system* (Phase 3+ of the roadmap). For the *immediate implementation* being built first, see:
+> - [LootMan.md](LootMan.md) — LootManager design (RollFor replacement, import, distribution)
+> - [SR+ Validation.md](SR+%20Validation.md) — Updated SR+ Validation system (pre-raid checks, LootManager integration)
+>
+> The blockchain components in this document will be implemented *after* LootManager and updated SR+ Validation are stable.
 
 ---
 
