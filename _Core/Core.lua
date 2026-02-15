@@ -5,7 +5,7 @@ OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 
 -- Code version: updated by bump.ps1, takes effect on /reload
-OGRH.CODE_VERSION = "2.0.100"
+OGRH.CODE_VERSION = "2.0.101"
 -- TOC version: only updates on full client restart
 OGRH.TOC_VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 -- Active version used for all version checks (code version = live reloadable)
