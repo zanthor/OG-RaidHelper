@@ -5,7 +5,7 @@ OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 
 -- Code version: updated by bump.ps1, takes effect on /reload
-OGRH.CODE_VERSION = "2.0.101"
+OGRH.CODE_VERSION = "2.1.0"
 -- TOC version: only updates on full client restart
 OGRH.TOC_VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 -- Active version used for all version checks (code version = live reloadable)
@@ -530,17 +530,17 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
     componentType = "settings"
   })
   
-  -- Automatically select the first encounter in the new Active Raid by INDEX
-  if activeRaid.encounters and table.getn(activeRaid.encounters) > 0 then
+  -- Automatically select the second encounter (skip Admin at index 1)
+  if activeRaid.encounters and table.getn(activeRaid.encounters) > 1 then
     if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
-      OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Setting selectedEncounterIndex = 1")
+      OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Setting selectedEncounterIndex = 2")
     end
-    OGRH.SVM.Set("ui", "selectedEncounterIndex", 1, {
+    OGRH.SVM.Set("ui", "selectedEncounterIndex", 2, {
       syncLevel = "REALTIME",
       componentType = "settings"
     })
     if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
-      OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected first encounter (index 1): %s", activeRaid.encounters[1].name))
+      OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected encounter (index 2): %s", activeRaid.encounters[2].name))
     end
   end
   

@@ -1454,13 +1454,17 @@ function OGRH.ShowEncounterPlanning(encounterName)
     frame.rolesScrollBar = rolesScrollBar
     
     rolesScrollBar:SetScript("OnValueChanged", function()
-      rolesScrollFrame:SetVerticalScroll(this:GetValue())
+      local val = this:GetValue()
+      local minVal, maxVal = this:GetMinMaxValues()
+      if val < minVal then val = minVal end
+      if val > maxVal then val = maxVal end
+      rolesScrollFrame:SetVerticalScroll(val)
     end)
     
     -- Enable mouse wheel scrolling
     rolesScrollFrame:EnableMouseWheel(true)
     rolesScrollFrame:SetScript("OnMouseWheel", function()
-      if not rolesScrollBar:IsShown() then
+      if not frame.rolesScrollable then
         return
       end
       
@@ -2307,14 +2311,20 @@ function OGRH.ShowEncounterPlanning(encounterName)
         return
       end
       
+      -- Pre-expand [Rx.L] tags into individual lines
+      local expandedTemplates = announcementData
+      if OGRH.Announcements.ExpandLTags then
+        expandedTemplates = OGRH.Announcements.ExpandLTags(announcementData, orderedRoles)
+      end
+      
       -- Process announcement lines
       local lineHeight = 14
       local lineSpacing = 2
       local yOffset = -5
       local lineCount = 0
       
-      for i = 1, 20 do
-        local lineText = announcementData[i]
+      for i = 1, table.getn(expandedTemplates) do
+        local lineText = expandedTemplates[i]
         if lineText and lineText ~= "" then
           local processedText = OGRH.Announcements.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
           
@@ -2327,7 +2337,12 @@ function OGRH.ShowEncounterPlanning(encounterName)
             lineFS:SetText(processedText)
             table.insert(frame.announcementPreviewFontStrings, lineFS)
             
-            yOffset = yOffset - (lineHeight + lineSpacing)
+            -- Measure actual height (accounts for multi-line text from [Rx.L] tags)
+            local textHeight = lineFS:GetHeight()
+            if not textHeight or textHeight < lineHeight then
+              textHeight = lineHeight
+            end
+            yOffset = yOffset - (textHeight + lineSpacing)
             lineCount = lineCount + 1
           end
         end
@@ -2342,7 +2357,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
       end
       
       -- Set the scroll child height based on content
-      local contentHeight = math.max(106, (lineCount * (lineHeight + lineSpacing)) + 10)
+      local contentHeight = math.max(106, math.abs(yOffset) + 5)
       frame.announcementPreviewFrame:SetHeight(contentHeight)
       
       -- Update scrollbar
@@ -3216,6 +3231,77 @@ function OGRH.ShowEncounterPlanning(encounterName)
             end)
             
             table.insert(container.slots, slot)
+          end
+          
+          return container
+        end
+        
+        -- Text Field role UI (Admin encounter)
+        if role.isTextField then
+          local textSlots = role.textSlots or 1
+          local container = CreateFrame("Frame", nil, parent)
+          container:SetWidth(width)
+          container:SetHeight(25 + textSlots * 22 + 4)
+          container:SetPoint("TOPLEFT", parent, "TOPLEFT", xPos, yPos)
+          container:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 8,
+            insets = {left = 2, right = 2, top = 2, bottom = 2}
+          })
+          container:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+          
+          -- Role index label (top left)
+          local indexLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          indexLabel:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -5)
+          indexLabel:SetText("R" .. roleIndex)
+          indexLabel:SetTextColor(0.7, 0.7, 0.7)
+          
+          -- Role name (centered)
+          local titleText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+          titleText:SetPoint("TOP", container, "TOP", 5, -10)
+          titleText:SetText(role.name or "Text Field")
+          
+          -- Render content via EncounterAdmin
+          if OGRH.RenderTextFieldRole then
+            OGRH.RenderTextFieldRole(container, role, roleIndex, frame.selectedRaidIdx, frame.selectedEncounterIdx, width)
+          end
+          
+          return container
+        end
+        
+        -- Loot Settings role UI (Admin encounter)
+        if role.isLootSettings then
+          local container = CreateFrame("Frame", nil, parent)
+          container:SetWidth(width)
+          container:SetHeight(175)
+          container:SetPoint("TOPLEFT", parent, "TOPLEFT", xPos, yPos)
+          container:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 8,
+            insets = {left = 2, right = 2, top = 2, bottom = 2}
+          })
+          container:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+          
+          -- Role index label (top left)
+          local indexLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          indexLabel:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -5)
+          indexLabel:SetText("R" .. roleIndex)
+          indexLabel:SetTextColor(0.7, 0.7, 0.7)
+          
+          -- Role name (centered)
+          local titleText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+          titleText:SetPoint("TOP", container, "TOP", 5, -10)
+          titleText:SetText(role.name or "Loot Settings")
+          
+          -- Render content via EncounterAdmin
+          if OGRH.RenderLootSettingsRole then
+            OGRH.RenderLootSettingsRole(container, role, roleIndex, frame.selectedRaidIdx, frame.selectedEncounterIdx, width)
           end
           
           return container
@@ -4104,7 +4190,14 @@ function OGRH.ShowEncounterPlanning(encounterName)
           table.insert(frame.roleContainers, container)
           
           -- Calculate offset for next role in left column
-          local containerHeight = 40 + ((column1[i].slots or 1) * 22)
+          local containerHeight
+          if column1[i].isTextField then
+            containerHeight = 25 + ((column1[i].textSlots or 1) * 22) + 4
+          elseif column1[i].isLootSettings then
+            containerHeight = 175
+          else
+            containerHeight = 40 + ((column1[i].slots or 1) * 22)
+          end
           yOffsetLeft = yOffsetLeft - containerHeight - 10
         end
       end
@@ -4118,7 +4211,14 @@ function OGRH.ShowEncounterPlanning(encounterName)
           table.insert(frame.roleContainers, container)
           
           -- Calculate offset for next role in right column
-          local containerHeight = 40 + ((column2[i].slots or 1) * 22)
+          local containerHeight
+          if column2[i].isTextField then
+            containerHeight = 25 + ((column2[i].textSlots or 1) * 22) + 4
+          elseif column2[i].isLootSettings then
+            containerHeight = 175
+          else
+            containerHeight = 40 + ((column2[i].slots or 1) * 22)
+          end
           yOffsetRight = yOffsetRight - containerHeight - 10
         end
       end
@@ -4130,10 +4230,13 @@ function OGRH.ShowEncounterPlanning(encounterName)
       -- Update scrollbar visibility
       local scrollFrame = frame.rolesScrollFrame
       local scrollBar = frame.rolesScrollBar
-      local scrollFrameHeight = scrollFrame:GetHeight()
+      -- Use rightPanel's explicit height minus padding (anchor-sized frames may return 0 before layout)
+      local scrollFrameHeight = frame.rightPanel:GetHeight() - 10
       
       if contentHeight > scrollFrameHeight then
+        frame.rolesScrollable = true
         scrollBar:Show()
+        scrollBar:EnableMouse(true)
         local maxScroll = contentHeight - scrollFrameHeight
         scrollBar:SetMinMaxValues(0, maxScroll)
         
@@ -4142,7 +4245,11 @@ function OGRH.ShowEncounterPlanning(encounterName)
         scrollBar:SetValue(newScrollPos)
         scrollFrame:SetVerticalScroll(newScrollPos)
       else
-        scrollBar:Hide()
+        frame.rolesScrollable = false
+        scrollBar:Show()
+        scrollBar:EnableMouse(false)
+        scrollBar:SetMinMaxValues(0, 1)
+        scrollBar:SetValue(0)
         scrollFrame:SetVerticalScroll(0)
       end
       
@@ -4613,13 +4720,17 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
     return
   end
   
-  -- Process announcement lines exactly as they would be sent to chat
-  GameTooltip:SetOwner(anchorFrame, "ANCHOR_RIGHT")
-  GameTooltip:ClearLines()
+  -- Pre-expand [Rx.L] tags into individual lines
+  local expandedTemplates = announcementData
+  if OGRH.Announcements.ExpandLTags then
+    expandedTemplates = OGRH.Announcements.ExpandLTags(announcementData, orderedRoles)
+  end
   
+  -- Process announcement lines exactly as they would be sent to chat
+  -- Note: caller is responsible for SetOwner/ClearLines and header lines
   local hasLines = false
-  for i = 1, 20 do
-    local lineText = announcementData[i]
+  for i = 1, table.getn(expandedTemplates) do
+    local lineText = expandedTemplates[i]
     if lineText and lineText ~= "" then
       local processedText = OGRH.Announcements.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
       
@@ -4633,9 +4744,63 @@ function OGRH.ShowAnnouncementTooltip(anchorFrame)
       end
     end
   end
+end
+
+--- Adds Admin encounter announcement lines to the already-open GameTooltip
+-- Called from MainUI when Shift is held over the A button
+function OGRH.ShowAdminAnnouncementTooltip()
+  local raidIdx = OGRH.GetCurrentEncounter()
+  if not raidIdx then return end
   
-  if hasLines then
-    GameTooltip:Show()
+  if not OGRH.Announcements or not OGRH.Announcements.ReplaceTags then return end
+  
+  local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+  if not encounterMgmt or not encounterMgmt.raids or not encounterMgmt.raids[raidIdx] or 
+     not encounterMgmt.raids[raidIdx].encounters or not encounterMgmt.raids[raidIdx].encounters[1] then
+    return
+  end
+  
+  local encounter = encounterMgmt.raids[raidIdx].encounters[1]
+  if not OGRH.IsAdminEncounter or not OGRH.IsAdminEncounter(encounter) then return end
+  
+  local orderedRoles = {}
+  if encounter.roles then
+    for i = 1, table.getn(encounter.roles) do
+      local role = encounter.roles[i]
+      orderedRoles[role.roleId or i] = role
+    end
+  end
+  
+  local assignments, raidMarks, assignmentNumbers = {}, {}, {}
+  if encounter.roles then
+    for roleIdx = 1, table.getn(encounter.roles) do
+      local role = encounter.roles[roleIdx]
+      if role then
+        if role.assignedPlayers then assignments[roleIdx] = role.assignedPlayers end
+        if role.raidMarks then raidMarks[roleIdx] = role.raidMarks end
+        if role.assignmentNumbers then assignmentNumbers[roleIdx] = role.assignmentNumbers end
+      end
+    end
+  end
+  
+  local announcementData = encounter.announcements
+  if not announcementData then return end
+  
+  -- Pre-expand [Rx.L] tags into individual lines
+  local expandedTemplates = announcementData
+  if OGRH.Announcements.ExpandLTags then
+    expandedTemplates = OGRH.Announcements.ExpandLTags(announcementData, orderedRoles)
+  end
+  
+  GameTooltip:AddLine(" ")  -- spacer
+  for i = 1, table.getn(expandedTemplates) do
+    local lineText = expandedTemplates[i]
+    if lineText and lineText ~= "" then
+      local processedText = OGRH.Announcements.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
+      if processedText and processedText ~= "" then
+        GameTooltip:AddLine(processedText, 1, 1, 1, 1)
+      end
+    end
   end
 end
 
@@ -4798,6 +4963,8 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
         local activeEncounters = {}
         if activeRaid.encounters then
           for j = 1, table.getn(activeRaid.encounters) do
+            -- Skip Admin encounter in navigation menu
+            if not (OGRH.IsAdminEncounter and OGRH.IsAdminEncounter(activeRaid.encounters[j])) then
             local encounterName = activeRaid.encounters[j].name
             local capturedEncounterIdx = j
             
@@ -4820,6 +4987,7 @@ function OGRH.ShowEncounterRaidMenu(anchorBtn)
                 end
               end
             })
+            end
           end
         end
         

@@ -13,7 +13,8 @@ OGRH.MESSAGE_PREFIX = "OGRH"
 -- Clients with a different SYNC_VERSION will silently ignore each other's traffic.
 -- v01: DELTA_BATCH handler now delegates to SVM.OnBatchReceived (path/value format),
 --       old handler expected changes[] typed objects that no producer ever created.
-OGRH.SYNC_VERSION = "01"
+-- v02: Admin encounter scrollbar fix, Loot Settings UI refinements.
+OGRH.SYNC_VERSION = "02"
 
 --[[
     Message Category Enums
@@ -159,7 +160,10 @@ OGRH.MessageTypes.ADMIN = {
     
     -- Promotion operations
     PROMOTE_REQUEST = "OGRH_ADMIN_PROMOTE_REQUEST",
-    PROMOTE_RESPONSE = "OGRH_ADMIN_PROMOTE_RESPONSE"
+    PROMOTE_RESPONSE = "OGRH_ADMIN_PROMOTE_RESPONSE",
+    
+    -- Loot settings operations
+    LOOT_REQUEST = "OGRH_ADMIN_LOOT_REQUEST"
 }
 
 -- STATE: State change messages (raid lead, encounter, phase)

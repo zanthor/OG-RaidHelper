@@ -496,6 +496,14 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         OGRH.HideReadyCheckTimer()
     end)
     
+    OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.LOOT_REQUEST, function(sender, data, channel)
+        if IsRaidLeader and IsRaidLeader() == 1 then
+            if data and data.method then
+                OGRH.ExecuteLootSettings(data.method, data.mlName, data.thresholdValue)
+            end
+        end
+    end)
+    
     -- STATE messages
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.STATE.QUERY_LEAD, function(sender, data, channel)
         -- Respond with current raid lead

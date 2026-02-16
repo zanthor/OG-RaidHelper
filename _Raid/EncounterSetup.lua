@@ -424,6 +424,12 @@ function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
             end
             
             if raidObj and raidObj.encounters then
+              -- Guard: cannot swap with Admin encounter at index 1
+              if OGRH.CanMoveEncounterToIndex and not OGRH.CanMoveEncounterToIndex(capturedIndex, capturedIndex - 1, raidObj.encounters[capturedIndex]) then
+                OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot move encounter above Admin.")
+                return
+              end
+              
               local temp = raidObj.encounters[capturedIndex - 1]
               raidObj.encounters[capturedIndex - 1] = raidObj.encounters[capturedIndex]
               raidObj.encounters[capturedIndex] = temp
@@ -454,6 +460,12 @@ function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
             end
             
             if raidObj and raidObj.encounters then
+              -- Guard: cannot move Admin encounter away from index 1
+              if OGRH.CanMoveEncounterToIndex and not OGRH.CanMoveEncounterToIndex(capturedIndex, capturedIndex + 1, raidObj.encounters[capturedIndex]) then
+                OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot move Admin encounter.")
+                return
+              end
+              
               local temp = raidObj.encounters[capturedIndex + 1]
               raidObj.encounters[capturedIndex + 1] = raidObj.encounters[capturedIndex]
               raidObj.encounters[capturedIndex] = temp
@@ -468,6 +480,12 @@ function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
           end,
           function()
             -- Delete
+            -- Guard: cannot delete Admin encounter
+            if OGRH.IsAdminEncounter and OGRH.IsAdminEncounter({name = capturedEncounterName}) then
+              OGRH.Msg("|cffff9900[RH-Encounter]|r The Admin encounter cannot be deleted.")
+              return
+            end
+            
             -- Permission check for Active Raid
             if frame.selectedRaidIdx == 1 and not CanEditActiveRaid() then
               OGRH.Msg("|cffff0000[RH-Encounter]|r Only the Raid Admin can modify the Active Raid structure.")
@@ -1276,6 +1294,12 @@ StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"] = {
     local encounterName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg1
     local raidName = StaticPopupDialogs["OGRH_CONFIRM_DELETE_ENCOUNTER"].text_arg2
     if encounterName and raidName then
+      -- Guard: cannot delete Admin encounter (safety net)
+      if encounterName == "Admin" then
+        OGRH.Msg("|cffff9900[RH-Encounter]|r The Admin encounter cannot be deleted.")
+        return
+      end
+      
       -- Check if SVM is locked during repair
       if OGRH.SyncSession and OGRH.SyncSession.IsSVMLocked and OGRH.SyncSession.IsSVMLocked() then
         OGRH.Msg("|cffff9900[RH-Encounter]|r Cannot delete encounter - sync repair in progress")
