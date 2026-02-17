@@ -219,6 +219,18 @@ function OGRH.EnsureAdminEncounter(raidIdx)
       if OGRH.EncounterAdmin.debug then
         OGRH.Msg("|cff00ff00[RH-Admin]|r Rebuilt Admin encounter roles for raid: " .. tostring(raid.name))
       end
+    else
+      -- Structure matches but merge any NEW template flags/fields into existing
+      -- roles so upgrades (e.g. adding isBuffManager) propagate without a rebuild.
+      for i = 1, table.getn(template.roles) do
+        local existing = adminEnc.roles[i]
+        local tmpl = template.roles[i]
+        for k, v in pairs(tmpl) do
+          if existing[k] == nil then
+            existing[k] = DeepCopy(v)
+          end
+        end
+      end
     end
     return
   end
