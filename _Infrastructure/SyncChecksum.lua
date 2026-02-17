@@ -723,14 +723,42 @@ function OGRH.SyncChecksum.ComputeEncountersChecksums(raidName)
             roles = {}
         }
         
-        -- Include role structure (no assignedPlayers)
+        -- Include role structure (exclude runtime/assignment data)
         if encounter.roles then
             for roleIdx = 1, table.getn(encounter.roles) do
                 local role = encounter.roles[roleIdx]
                 local roleCopy = {}
-                -- Copy all fields EXCEPT assignedPlayers
+                -- Copy all fields EXCEPT assignedPlayers (checked by Layer 4)
+                -- For buffRoles: only include DATA fields (assignments/talents),
+                -- not definition fields from EnsureBuffRoles defaults (name,
+                -- shortName, buffType, etc.) which may differ between admin
+                -- (who opened the UI) and clients (who haven't).
+                local BUFF_ROLE_DATA_FIELDS = {
+                    assignedPlayers = true,
+                    groupAssignments = true,
+                    paladinAssignments = true,
+                    paladinTalents = true,
+                    improvedTalents = true,
+                }
                 for k, v in pairs(role) do
-                    if k ~= "assignedPlayers" then
+                    if k == "assignedPlayers" then
+                        -- skip: checked by Layer 4
+                    elseif k == "buffRoles" and type(v) == "table" then
+                        -- Include only the data fields from each buffRole
+                        local brCopy = {}
+                        for brKey, brRole in pairs(v) do
+                            if type(brRole) == "table" then
+                                local brDataCopy = {}
+                                for field, _ in pairs(BUFF_ROLE_DATA_FIELDS) do
+                                    if brRole[field] ~= nil then
+                                        brDataCopy[field] = brRole[field]
+                                    end
+                                end
+                                brCopy[brKey] = brDataCopy
+                            end
+                        end
+                        roleCopy[k] = brCopy
+                    else
                         roleCopy[k] = v
                     end
                 end

@@ -319,6 +319,16 @@ function OGRH.SyncGranular.ReceiveComponentSync(sender, syncData)
                 encounterFrame.RefreshRoleContainers()
             end
         end
+
+        -- Refresh BuffManager window if it exists and is shown
+        if OGRH.BuffManager and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+            OGRH.BuffManager.RefreshWindow()
+        end
+
+        -- Auto-detect improved talents if local player was just assigned
+        if OGRH.BuffManager.AutoDetectImprovedTalents then
+            OGRH.BuffManager.AutoDetectImprovedTalents()
+        end
     else
         OGRH.Msg(string.format("|cffff0000[RH-SyncGranular]|r Failed to apply: %s", componentName))
     end
@@ -643,6 +653,16 @@ function OGRH.SyncGranular.ReceiveEncounterSync(sender, syncData)
         -- Trigger UI refresh
         if OGRH.RefreshEncounterUI then
             OGRH.RefreshEncounterUI(raidName, encounterName)
+        end
+
+        -- Refresh BuffManager window if it exists and is shown
+        if OGRH.BuffManager and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+            OGRH.BuffManager.RefreshWindow()
+        end
+
+        -- Auto-detect improved talents if local player was just assigned
+        if OGRH.BuffManager.AutoDetectImprovedTalents then
+            OGRH.BuffManager.AutoDetectImprovedTalents()
         end
         
         OGRH.Msg(string.format("|cff00ff00[RH-SyncGranular]|r Applied encounter sync: %s > %s (from %s)", 

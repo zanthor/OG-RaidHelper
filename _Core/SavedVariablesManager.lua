@@ -727,6 +727,16 @@ function OGRH.SVM.OnDeltaReceived(sender, data, channel)
         if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then
             OGRH_EncounterFrame.RefreshRoleContainers()
         end
+
+        -- Refresh BuffManager window if it exists and is shown
+        if OGRH.BuffManager and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+            OGRH.BuffManager.RefreshWindow()
+        end
+
+        -- Auto-detect improved talents if local player was just assigned
+        if OGRH.BuffManager.AutoDetectImprovedTalents then
+            OGRH.BuffManager.AutoDetectImprovedTalents()
+        end
     else
         OGRH.Msg("|cffff0000[RH-SVM]|r Failed to apply delta update: " .. data.path)
     end
@@ -778,6 +788,16 @@ function OGRH.SVM.OnBatchReceived(sender, data, channel)
         -- Refresh encounter planning interface if it exists
         if OGRH_EncounterFrame and OGRH_EncounterFrame.RefreshRoleContainers then
             OGRH_EncounterFrame.RefreshRoleContainers()
+        end
+
+        -- Refresh BuffManager window if it exists and is shown
+        if OGRH.BuffManager and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+            OGRH.BuffManager.RefreshWindow()
+        end
+
+        -- Auto-detect improved talents if local player was just assigned
+        if OGRH.BuffManager.AutoDetectImprovedTalents then
+            OGRH.BuffManager.AutoDetectImprovedTalents()
         end
         
         -- Refresh encounter setup UI if open

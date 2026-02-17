@@ -185,6 +185,80 @@ OGRH_SV.v2.encounterMgmt = {
 - ✅ Consistent metadata structure (id, name, sortOrder)
 - ✅ Explicit column assignment for UI layout
 
+#### Admin Encounter (encounters[1]) — Special Role Types
+
+The first encounter in every raid (`encounters[1]`) is the **Admin encounter**. Its roles use special flags that change how they render:
+
+```lua
+encounters = {
+    [1] = {  -- Admin encounter (always index 1)
+        name = "Admin",
+        roles = {
+            [1] = {  -- Loot Settings
+                name = "Loot Settings",
+                column = 1,
+                isLootSettings = true,      -- flag: renders loot method/threshold dropdowns
+            },
+            [2] = {  -- Loot Rules
+                name = "Loot Rules",
+                column = 2,
+                isTextField = true,         -- flag: renders editable text area
+                textSlots = 6,              -- number of text lines
+                textContent = {},           -- table: saved text per slot
+            },
+            [3] = {  -- Discord
+                name = "Discord",
+                column = 1,
+                isTextField = true,
+                textSlots = 1,
+                textContent = {},
+            },
+            [4] = {  -- SR Link
+                name = "SR Link",
+                column = 1,
+                isTextField = true,
+                textSlots = 1,
+                textContent = {},
+            },
+            [5] = {  -- Buff Manager
+                name = "Buff Manager",
+                column = 2,
+                isBuffManager = true,       -- flag: renders compact buff indicators + "Manage Buffs" button
+                buffRoles = {
+                    [1] = {
+                        buffRoleId = 1,
+                        name = "Fortitude",
+                        buffType = "fortitude",
+                        spellIds = {1243, 1244, 1245, 2791, 10937, 10938, 21562, 21564},
+                        slots = 3,
+                        groupAssignments = {
+                            [1] = {1, 2, 3},   -- slot 1 covers groups 1-3
+                            [2] = {4, 5, 6},   -- slot 2 covers groups 4-6
+                            [3] = {7, 8}        -- slot 3 covers groups 7-8
+                        },
+                        assignedPlayers = {},   -- [slotIdx] = "PlayerName"
+                    },
+                    -- ... more buff roles (Spirit, MotW, Int, Pally, etc.)
+                },
+            },
+        },
+    },
+    [2] = {  -- First boss encounter
+        -- ... normal encounter with normal roles
+    }
+}
+```
+
+**Special role flags (mutually exclusive):**
+
+| Flag | Rendered by | Description |
+|------|------------|-------------|
+| `isLootSettings` | `RenderLootSettingsRole` | Loot method/threshold dropdowns, RL delegation |
+| `isTextField` | `RenderTextFieldRole` | Editable text area with `textSlots` lines |
+| `isBuffManager` | `RenderBuffManagerRole` | Compact buff coverage indicators + "Manage Buffs" button opening full window |
+
+Roles without any special flag render as standard encounter roles with player assignment slots.
+
 ---
 
 ### 2. roles (Player Role Assignments)

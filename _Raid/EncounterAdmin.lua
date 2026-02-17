@@ -60,6 +60,22 @@ local ADMIN_ENCOUNTER_TEMPLATE = {
       isTextField = true,
       textSlots = 1,
       textValues = {}
+    },
+    -- Role 5: Buff Manager (right column, below Loot Rules)
+    {
+      roleId = 5,
+      name = "Buff Manager",
+      column = 2,
+      isBuffManager = true,
+      enabled = false,
+      buffRoles = {},
+      settings = {
+        autoScan = true,
+        scanInterval = 30,
+        shameThreshold = 80,
+        whisperFirst = true,
+        pallyPowerSync = false
+      }
     }
   }
 }
@@ -156,7 +172,11 @@ function OGRH.EnsureAdminEncounter(raidIdx)
               textValue = r.textValue,  -- backward compat: old single-string field
               lootMethod = r.lootMethod,
               autoSwitch = r.autoSwitch,
-              threshold = r.threshold
+              threshold = r.threshold,
+              -- BuffManager data
+              buffRoles = r.buffRoles,
+              settings = r.settings,
+              enabled = r.enabled
             }
           end
         end
@@ -181,6 +201,11 @@ function OGRH.EnsureAdminEncounter(raidIdx)
             if saved.lootMethod then newRoles[i].lootMethod = saved.lootMethod end
             if saved.autoSwitch ~= nil then newRoles[i].autoSwitch = saved.autoSwitch end
             if saved.threshold then newRoles[i].threshold = saved.threshold end
+          end
+          if newRoles[i].isBuffManager then
+            if saved.buffRoles then newRoles[i].buffRoles = saved.buffRoles end
+            if saved.settings then newRoles[i].settings = saved.settings end
+            if saved.enabled ~= nil then newRoles[i].enabled = saved.enabled end
           end
           if newRoles[i].assignedPlayers and saved.assignedPlayers then
             newRoles[i].assignedPlayers = saved.assignedPlayers

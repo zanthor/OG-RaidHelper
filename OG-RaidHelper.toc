@@ -91,6 +91,8 @@ _Raid\ClassPriority.lua
 _Raid\LinkRole.lua
 _Raid\AdvancedSettings.lua
 _Raid\EncounterAdmin.lua
+_Raid\BuffManager.lua
+_Raid\BuffManagerPP.lua
 _Raid\RolesUI.lua
 _Raid\RolesPoll.lua
 _Raid\Announce.lua
@@ -110,6 +112,7 @@ _Administration\AddonAudit.lua
 ## ===================================================================
 ## Phase 6: UI - Main Interface
 ## ===================================================================
+_UI\RosterPanel.lua
 _UI\MainUI.lua
 
 ## ===================================================================
