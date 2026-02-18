@@ -479,6 +479,28 @@ function OGRH.BuffManager.ShowWindow(raidIdx, encounterIdx, roleIndex)
   window.roleIndex = roleIndex
   window.canEdit = canEdit
 
+  -- "Auto Assign All" button in the header (editors only)
+  if canEdit and window.closeButton then
+    local assignAllBtn = OGST.CreateButton(window.headerFrame, {
+      text = "Auto Assign All",
+      width = 120,
+      height = 24,
+      onClick = function()
+        OGRH.BuffManager.RunAutoAssignAll()
+      end
+    })
+    assignAllBtn:SetPoint("RIGHT", window.closeButton, "LEFT", -5, 0)
+    assignAllBtn:SetScript("OnEnter", function()
+      this:SetBackdropColor(0.3, 0.45, 0.45, 1)
+      this:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+    end)
+    assignAllBtn:SetScript("OnLeave", function()
+      this:SetBackdropColor(0.25, 0.35, 0.35, 1)
+      this:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    end)
+    window.assignAllBtn = assignAllBtn
+  end
+
   local content = window.contentFrame
 
   -- -------------------------------------------------------
@@ -603,17 +625,21 @@ function OGRH.BuffManager.RefreshWindow()
 
   sc:SetHeight(math.max(yOffset, 1))
 
-  -- Update scroll range
+  -- Update scroll range, preserving current position
   if window.buffScrollFrame and window.buffScrollBar then
     local frameH = window.buffScrollFrame:GetHeight()
+    local prevScroll = window.buffScrollFrame:GetVerticalScroll() or 0
     if yOffset > frameH then
       window.buffScrollBar:Show()
       window.buffScrollBar:SetMinMaxValues(0, yOffset - frameH)
-      window.buffScrollBar:SetValue(0)
+      local maxScroll = yOffset - frameH
+      local restored = math.min(prevScroll, maxScroll)
+      window.buffScrollBar:SetValue(restored)
+      window.buffScrollFrame:SetVerticalScroll(restored)
     else
       window.buffScrollBar:Hide()
+      window.buffScrollFrame:SetVerticalScroll(0)
     end
-    window.buffScrollFrame:SetVerticalScroll(0)
   end
 
   -- Also refresh the roster panel
@@ -1522,8 +1548,11 @@ local function DetectLocalImprovedTalent(buffType)
   return false
 end
 
---- Scan all buff roles for the local player and auto-set improved talent flags.
--- Bypasses CanEdit because players self-report their own talent state.
+--- Scan all buff roles for the local player and report improved talent status.
+-- Matches by class (not slot assignment) so it works before players are assigned.
+-- Writes improvedTalents keyed by player NAME (string key). AutoAssignStandard
+-- reads these name-keyed entries for filtering, then converts to slot-keyed
+-- entries after assignment for UI display.
 -- Safe to call from any context (assignment, sync receive, etc.).
 function OGRH.BuffManager.AutoDetectImprovedTalents()
   local window = OGRH.BuffManager.window
@@ -1535,31 +1564,42 @@ function OGRH.BuffManager.AutoDetectImprovedTalents()
   if not role then return end
   OGRH.BuffManager.EnsureBuffRoles(role)
 
-  -- Use discovered indices if window context unavailable
   if not encounterIdx then encounterIdx = ei end
   if not roleIndex then roleIndex = ri end
   if not encounterIdx or not roleIndex then return end
 
   local localName = UnitName("player")
   if not localName or localName == "" or localName == "Unknown" then return end
+  local _, localClass = UnitClass("player")
+  if not localClass then return end
+
+  local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
+  local syncMeta = BuildSyncMeta(raidIdx)
+  syncMeta.componentType = "self-report"
 
   for brIdx, br in ipairs(role.buffRoles) do
-    if br.hasImprovedTalent and br.assignedPlayers then
-      for slotIdx, pName in pairs(br.assignedPlayers) do
-        if pName == localName then
-          local hasImproved = DetectLocalImprovedTalent(br.buffType)
-          if not br.improvedTalents then br.improvedTalents = {} end
+    if br.hasImprovedTalent and br.requiredClass == localClass then
+      local hasImproved = DetectLocalImprovedTalent(br.buffType)
+      if not br.improvedTalents then br.improvedTalents = {} end
 
-          local current = br.improvedTalents[slotIdx] and true or false
-          if hasImproved ~= current then
-            br.improvedTalents[slotIdx] = hasImproved or nil  -- nil = false to keep data clean
-            local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
-            local path = basePath .. ".buffRoles." .. brIdx .. ".improvedTalents." .. slotIdx
-            -- Use "self-report" componentType so regular members can broadcast
-            -- their own talent status without needing officer/admin permission.
-            local syncMeta = BuildSyncMeta(raidIdx)
-            syncMeta.componentType = "self-report"
-            OGRH.SVM.SetPath(path, br.improvedTalents[slotIdx], syncMeta)
+      -- Name-keyed entry: used by AutoAssignStandard for filtering before assignment
+      local currentName = br.improvedTalents[localName] and true or false
+      if hasImproved ~= currentName then
+        br.improvedTalents[localName] = hasImproved or nil
+        local path = basePath .. ".buffRoles." .. brIdx .. ".improvedTalents." .. localName
+        OGRH.SVM.SetPath(path, br.improvedTalents[localName], syncMeta)
+      end
+
+      -- Slot-keyed entry: used by UI for green checkmark display
+      if br.assignedPlayers then
+        for slotIdx, pName in pairs(br.assignedPlayers) do
+          if pName == localName then
+            local currentSlot = br.improvedTalents[slotIdx] and true or false
+            if hasImproved ~= currentSlot then
+              br.improvedTalents[slotIdx] = hasImproved or nil
+              local slotPath = basePath .. ".buffRoles." .. brIdx .. ".improvedTalents." .. slotIdx
+              OGRH.SVM.SetPath(slotPath, br.improvedTalents[slotIdx], syncMeta)
+            end
           end
         end
       end
@@ -1663,51 +1703,35 @@ local function FindOrCreateSlot(br, playerName)
   return maxSlot + 1
 end
 
---- Standard auto-assign: fill slots with matching class players, then split groups evenly.
--- For MotW/Fort: only improved-talent holders get assigned if any exist.
+--- Which prior priest buff roles to account for when balancing group distribution.
+-- Spirit balances against Fort; Shadow Prot balances against Fort + Spirit.
+local BALANCE_AGAINST = {
+  spirit     = { "fortitude" },
+  shadowprot = { "fortitude", "spirit" },
+}
+
+--- Fallback improved-talent assumptions for players who don't have the addon.
+-- Maps buffType → { requiredClass, roles that imply improved talent }.
+-- If a player of the required class is in one of these roles and did NOT respond
+-- to the talent poll, we assume they have the improved talent.
+local TALENT_FALLBACK_ROLES = {
+  motw      = { "HEALERS", "RANGED" },  -- healer/balance druids likely have improved MotW
+  fortitude = { "HEALERS" },             -- healer priests likely have improved Fort
+}
+
+--- Standard auto-assign: fill slots with matching class players, then split groups.
+-- For MotW/Fort: only improved-talent holders get groups if any exist.
+-- For Spirit/SP: groups are distributed to balance total casts per priest
+-- accounting for groups already assigned in prior buff roles.
 local function AutoAssignStandard(br, brIdx, raidIdx, encounterIdx, roleIndex)
   local window = OGRH.BuffManager.window
   if not window then return end
   local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
   local syncMeta = BuildSyncMeta(raidIdx)
 
-  -- Get all raid members of the required class
-  local members = GetRaidMembersByClass(br.requiredClass)
-  if not members or not next(members) then return end
+  local role = OGRH.BuffManager.GetRole(raidIdx)
 
-  -- For roles with improved talent, filter to only improved players if any exist
-  local candidates = {}
-  if br.hasImprovedTalent then
-    -- Collect improved candidates
-    local improved = {}
-    for name, _ in pairs(members) do
-      -- Check if this player is already in a slot with improved flagged
-      local isImp = false
-      if br.assignedPlayers and br.improvedTalents then
-        for sIdx, pName in pairs(br.assignedPlayers) do
-          if pName == name and br.improvedTalents[sIdx] then
-            isImp = true
-            break
-          end
-        end
-      end
-      if isImp then
-        table.insert(improved, name)
-      end
-    end
-    if table.getn(improved) > 0 then
-      for _, name in ipairs(improved) do
-        candidates[name] = members[name]
-      end
-    else
-      -- No improved players known, use all
-      candidates = members
-    end
-  else
-    candidates = members
-  end
-
-  -- Clear existing assignments for this role
+  -- Clear existing assignments for this role (always, even if no members remain)
   if br.assignedPlayers then
     for idx, _ in pairs(br.assignedPlayers) do
       br.assignedPlayers[idx] = nil
@@ -1721,22 +1745,29 @@ local function AutoAssignStandard(br, brIdx, raidIdx, encounterIdx, roleIndex)
     end
   end
   if br.improvedTalents then
+    -- Only clear numeric (slot-keyed) entries; preserve string (name-keyed) talent reports
     for idx, _ in pairs(br.improvedTalents) do
-      br.improvedTalents[idx] = nil
-      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".improvedTalents." .. idx, nil, syncMeta)
+      if type(idx) == "number" then
+        br.improvedTalents[idx] = nil
+        OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".improvedTalents." .. idx, nil, syncMeta)
+      end
     end
   end
 
-  -- Convert candidates to an ordered list
+  -- Get all raid members of the required class
+  local members = GetRaidMembersByClass(br.requiredClass)
+  if not members or not next(members) then return end
+
+  -- Convert all members to an ordered list
   local playerList = {}
-  for name, _ in pairs(candidates) do
+  for name, _ in pairs(members) do
     table.insert(playerList, name)
   end
   table.sort(playerList)  -- deterministic ordering
 
   if table.getn(playerList) == 0 then return end
 
-  -- Assign players to slots
+  -- Assign ALL players to slots
   if not br.assignedPlayers then br.assignedPlayers = {} end
   for slotIdx, name in ipairs(playerList) do
     br.assignedPlayers[slotIdx] = name
@@ -1750,19 +1781,72 @@ local function AutoAssignStandard(br, brIdx, raidIdx, encounterIdx, roleIndex)
     if activeGroups[g] then table.insert(groupList, g) end
   end
 
-  -- Split groups as evenly as possible among assigned players
-  local numPlayers = table.getn(playerList)
-  local numGroups = table.getn(groupList)
-  if not br.groupAssignments then br.groupAssignments = {} end
+  -- Determine who gets groups: only improved players if any exist, else all
+  local groupRecipients = {}
+  if br.hasImprovedTalent and br.improvedTalents then
+    for slotIdx, name in ipairs(playerList) do
+      if br.improvedTalents[name] then
+        table.insert(groupRecipients, slotIdx)
+      end
+    end
+  end
+  if table.getn(groupRecipients) == 0 then
+    for slotIdx = 1, table.getn(playerList) do
+      table.insert(groupRecipients, slotIdx)
+    end
+  end
 
+  -- Initialize group assignments for all slots (empty for non-recipients)
+  local numPlayers = table.getn(playerList)
+  if not br.groupAssignments then br.groupAssignments = {} end
   for slotIdx = 1, numPlayers do
     br.groupAssignments[slotIdx] = {}
   end
 
-  -- Round-robin distribute groups to slots
-  for gi, g in ipairs(groupList) do
-    local slotIdx = math.mod(gi - 1, numPlayers) + 1
-    table.insert(br.groupAssignments[slotIdx], g)
+  -- Build prior-load map: how many groups each player already has from earlier
+  -- priest buff roles (Fort for Spirit, Fort+Spirit for Shadow Prot).
+  local priorLoad = {}  -- [slotIdx] = count
+  for _, si in ipairs(groupRecipients) do
+    priorLoad[si] = 0
+  end
+
+  local balanceList = BALANCE_AGAINST[br.buffType]
+  if balanceList and role then
+    for _, priorType in ipairs(balanceList) do
+      for _, otherBr in ipairs(role.buffRoles) do
+        if otherBr.buffType == priorType and otherBr.groupAssignments then
+          -- Map player names to their slot in THIS role's playerList
+          for _, si in ipairs(groupRecipients) do
+            local pName = playerList[si]
+            -- Find this player in the other role and count their groups
+            if otherBr.assignedPlayers then
+              for otherSlot, otherName in pairs(otherBr.assignedPlayers) do
+                if otherName == pName and otherBr.groupAssignments[otherSlot] then
+                  priorLoad[si] = priorLoad[si] + table.getn(otherBr.groupAssignments[otherSlot])
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- Distribute groups one at a time to the recipient with the lowest total load
+  -- (prior groups + groups assigned so far in this role).
+  for _, g in ipairs(groupList) do
+    local bestSlot = nil
+    local bestLoad = 999999
+    for _, si in ipairs(groupRecipients) do
+      local totalLoad = priorLoad[si] + table.getn(br.groupAssignments[si])
+      if totalLoad < bestLoad then
+        bestLoad = totalLoad
+        bestSlot = si
+      end
+    end
+    if bestSlot then
+      table.insert(br.groupAssignments[bestSlot], g)
+    end
   end
 
   -- Sort each slot's groups and persist
@@ -1772,8 +1856,16 @@ local function AutoAssignStandard(br, brIdx, raidIdx, encounterIdx, roleIndex)
       br.groupAssignments[slotIdx], syncMeta)
   end
 
-  -- Re-check improved talents for local player
-  OGRH.BuffManager.AutoDetectImprovedTalents()
+  -- Copy name-keyed improved flags to slot-keyed for UI display
+  if br.hasImprovedTalent and br.improvedTalents then
+    for slotIdx = 1, numPlayers do
+      local pName = br.assignedPlayers[slotIdx]
+      local isImp = pName and br.improvedTalents[pName]
+      br.improvedTalents[slotIdx] = isImp or nil
+      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".improvedTalents." .. slotIdx,
+        br.improvedTalents[slotIdx], syncMeta)
+    end
+  end
 end
 
 --- Paladin auto-assign: fill slots with paladins, then apply blessing algorithm.
@@ -2018,25 +2110,34 @@ function OGRH.BuffManager.RunAutoAssign(brIdx)
     AutoAssignPaladin(br, brIdx, window.raidIdx, window.encounterIdx, window.roleIndex)
     OGRH.BuffManager.RefreshWindow()
   else
-    -- Standard buff: assign players first, then wait for talent responses
-    -- Phase 1: Assign matching-class players to slots (clears old data)
-    AutoAssignStandard(br, brIdx, window.raidIdx, window.encounterIdx, window.roleIndex)
-    OGRH.BuffManager.RefreshWindow()
-
-    -- For roles with improved talent, wait 2s for talent auto-detect responses
+    -- Standard buff: wait for talent responses first, then assign once.
     if br.hasImprovedTalent then
-      -- Store pre-wait state: which slots had improved set
-      local preImproved = {}
-      if br.improvedTalents then
-        for k, v in pairs(br.improvedTalents) do preImproved[k] = v end
+      -- If no members of the required class exist, clear immediately and skip the poll
+      local preCheckMembers = GetRaidMembersByClass(br.requiredClass)
+      if not preCheckMembers or not next(preCheckMembers) then
+        AutoAssignStandard(br, brIdx, window.raidIdx, window.encounterIdx, window.roleIndex)
+        OGRH.BuffManager.RefreshWindow()
+        OGRH.Msg("|cff00ff00[BuffManager]|r Auto-assign complete (no " .. (br.requiredClass or "players") .. " in raid).")
+        return
       end
 
-      -- Update button text to show scanning
-      -- (find the section's auto-assign button in the scroll child)
       local scanningBrIdx = brIdx
+      local capturedRaidIdx = window.raidIdx
+      local capturedEncIdx = window.encounterIdx
+      local capturedRoleIdx = window.roleIndex
       OGRH.Msg("|cff00aaff[BuffManager]|r Scanning for improved talents... (2s)")
 
-      -- Create a one-shot timer frame
+      -- Ask: bump talentScanSeq to trigger all clients to report their talent.
+      -- Only matching-class players (priests/druids) will respond.
+      local basePath = SVMBase(capturedRaidIdx, capturedEncIdx, capturedRoleIdx)
+      br.talentScanSeq = (br.talentScanSeq or 0) + 1
+      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. scanningBrIdx .. ".talentScanSeq",
+        br.talentScanSeq, BuildSyncMeta(capturedRaidIdx))
+
+      -- Also run local detection (in case admin IS the matching class)
+      OGRH.BuffManager.AutoDetectImprovedTalents()
+
+      -- Wait 2s for remote talent responses, then do a single assignment pass
       local timerFrame = CreateFrame("Frame")
       timerFrame.elapsed = 0
       timerFrame:SetScript("OnUpdate", function()
@@ -2044,24 +2145,35 @@ function OGRH.BuffManager.RunAutoAssign(brIdx)
         if timerFrame.elapsed >= 2 then
           timerFrame:SetScript("OnUpdate", nil)
 
-          -- Re-read the role data (may have been updated by incoming syncs)
-          local r2 = OGRH.BuffManager.GetRole(window.raidIdx)
+          -- Re-read role data (talent flags may have arrived during the wait)
+          local r2 = OGRH.BuffManager.GetRole(capturedRaidIdx)
           if r2 then
             OGRH.BuffManager.EnsureBuffRoles(r2)
             local br2 = r2.buffRoles[scanningBrIdx]
-            if br2 and br2.hasImprovedTalent then
-              -- Check if any improved talents are now set
-              local hasAnyImproved = false
-              if br2.improvedTalents then
-                for _, v in pairs(br2.improvedTalents) do
-                  if v then hasAnyImproved = true; break end
+            if br2 then
+              -- Apply fallback talent assumptions for players who didn't respond
+              local fallbackRoles = TALENT_FALLBACK_ROLES[br2.buffType]
+              if fallbackRoles and br2.hasImprovedTalent then
+                if not br2.improvedTalents then br2.improvedTalents = {} end
+                local classMembers = GetRaidMembersByClass(br2.requiredClass)
+                for name, _ in pairs(classMembers) do
+                  if not br2.improvedTalents[name] then
+                    -- No response from this player — check their role for a default
+                    local playerRole = OGRH_GetPlayerRole(name)
+                    if playerRole then
+                      for _, fbRole in ipairs(fallbackRoles) do
+                        if playerRole == fbRole then
+                          br2.improvedTalents[name] = true
+                          OGRH.Msg("|cff00aaff[BuffManager]|r Assuming improved talent for " .. name .. " (role: " .. playerRole .. ")")
+                          break
+                        end
+                      end
+                    end
+                  end
                 end
               end
 
-              -- If improved players were found, re-run assignment with only improved
-              if hasAnyImproved then
-                AutoAssignStandard(br2, scanningBrIdx, window.raidIdx, window.encounterIdx, window.roleIndex)
-              end
+              AutoAssignStandard(br2, scanningBrIdx, capturedRaidIdx, capturedEncIdx, capturedRoleIdx)
             end
           end
 
@@ -2069,8 +2181,164 @@ function OGRH.BuffManager.RunAutoAssign(brIdx)
           OGRH.Msg("|cff00ff00[BuffManager]|r Auto-assign complete.")
         end
       end)
+    else
+      -- No improved talent to scan — assign immediately
+      AutoAssignStandard(br, brIdx, window.raidIdx, window.encounterIdx, window.roleIndex)
+      OGRH.BuffManager.RefreshWindow()
+      OGRH.Msg("|cff00ff00[BuffManager]|r Auto-assign complete.")
     end
   end
+end
+
+-- ============================================
+-- AUTO ASSIGN ALL
+-- ============================================
+
+--- Desired assignment order for "Auto Assign All".
+-- Fort must precede Spirit, and Spirit must precede Shadow Prot
+-- so that load-balancing (BALANCE_AGAINST) works correctly.
+local AUTO_ASSIGN_ALL_ORDER = { 1, 2, 3, 4, 5, 6 }  -- pally, motw, fort, spirit, shadowprot, int
+
+--- Auto-assign every buff role in a single operation.
+-- Fires talent-scan requests for all improved-talent roles up front,
+-- assigns immediate roles right away, then after 2 s assigns the
+-- talent-scan roles in the order defined by AUTO_ASSIGN_ALL_ORDER.
+function OGRH.BuffManager.RunAutoAssignAll()
+  local window = OGRH.BuffManager.window
+  if not window then return end
+  if not OGRH.BuffManager.CanEdit(window.raidIdx) then return end
+  if GetNumRaidMembers() == 0 then
+    OGRH.Msg("|cffff8800[BuffManager]|r Must be in a raid to auto-assign.")
+    return
+  end
+
+  local role = OGRH.BuffManager.GetRole(window.raidIdx)
+  if not role then return end
+  OGRH.BuffManager.EnsureBuffRoles(role)
+
+  local capturedRaidIdx = window.raidIdx
+  local capturedEncIdx  = window.encounterIdx
+  local capturedRoleIdx = window.roleIndex
+  local basePath = SVMBase(capturedRaidIdx, capturedEncIdx, capturedRoleIdx)
+  local syncMeta = BuildSyncMeta(capturedRaidIdx)
+
+  -- Classify roles into immediate (no talent wait) and deferred (need 2 s poll)
+  local immediateRoles = {}   -- { brIdx, ... }
+  local deferredRoles  = {}   -- { brIdx, ... } — preserves AUTO_ASSIGN_ALL_ORDER
+  local needTalentScan = false
+
+  for _, brIdx in ipairs(AUTO_ASSIGN_ALL_ORDER) do
+    local br = role.buffRoles[brIdx]
+    if br then
+      if br.isPaladinRole then
+        table.insert(immediateRoles, brIdx)
+      elseif br.hasImprovedTalent then
+        -- Only defer if there are actually members of the required class
+        local members = GetRaidMembersByClass(br.requiredClass)
+        if members and next(members) then
+          table.insert(deferredRoles, brIdx)
+          -- Bump talentScanSeq now so all clients start reporting in parallel
+          br.talentScanSeq = (br.talentScanSeq or 0) + 1
+          OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".talentScanSeq",
+            br.talentScanSeq, syncMeta)
+          needTalentScan = true
+        else
+          -- No members of required class — assign (clear) immediately
+          table.insert(immediateRoles, brIdx)
+        end
+      else
+        -- Non-talent standard roles are deferred too so they run after
+        -- their prerequisite (e.g. Spirit after Fort).
+        table.insert(deferredRoles, brIdx)
+      end
+    end
+  end
+
+  -- Fire local talent detection once (covers every class the admin might be)
+  if needTalentScan then
+    OGRH.BuffManager.AutoDetectImprovedTalents()
+  end
+
+  -- Assign immediate roles now (paladins and empty-class talent roles)
+  for _, brIdx in ipairs(immediateRoles) do
+    local br = role.buffRoles[brIdx]
+    if br then
+      if br.isPaladinRole then
+        AutoAssignPaladin(br, brIdx, capturedRaidIdx, capturedEncIdx, capturedRoleIdx)
+      else
+        AutoAssignStandard(br, brIdx, capturedRaidIdx, capturedEncIdx, capturedRoleIdx)
+      end
+    end
+  end
+
+  -- If nothing needs the 2 s talent window, finish now
+  if not needTalentScan then
+    -- Still need to process deferred (non-talent) roles in order
+    for _, brIdx in ipairs(deferredRoles) do
+      local br = role.buffRoles[brIdx]
+      if br then
+        AutoAssignStandard(br, brIdx, capturedRaidIdx, capturedEncIdx, capturedRoleIdx)
+      end
+    end
+    OGRH.BuffManager.RefreshWindow()
+    OGRH.Msg("|cff00ff00[BuffManager]|r Auto-assign all complete.")
+    return
+  end
+
+  OGRH.Msg("|cff00aaff[BuffManager]|r Scanning for improved talents... (2s)")
+
+  -- Wait 2 s for talent responses, then assign deferred roles in order
+  local timerFrame = CreateFrame("Frame")
+  timerFrame.elapsed = 0
+  timerFrame:SetScript("OnUpdate", function()
+    timerFrame.elapsed = timerFrame.elapsed + arg1
+    if timerFrame.elapsed >= 2 then
+      timerFrame:SetScript("OnUpdate", nil)
+
+      -- Re-read role data (talent flags may have arrived during the wait)
+      local r2 = OGRH.BuffManager.GetRole(capturedRaidIdx)
+      if r2 then
+        OGRH.BuffManager.EnsureBuffRoles(r2)
+
+        -- Apply fallback talent assumptions for all deferred roles that need them
+        for _, brIdx in ipairs(deferredRoles) do
+          local br2 = r2.buffRoles[brIdx]
+          if br2 and br2.hasImprovedTalent then
+            local fallbackRoles = TALENT_FALLBACK_ROLES[br2.buffType]
+            if fallbackRoles then
+              if not br2.improvedTalents then br2.improvedTalents = {} end
+              local classMembers = GetRaidMembersByClass(br2.requiredClass)
+              for name, _ in pairs(classMembers) do
+                if not br2.improvedTalents[name] then
+                  local playerRole = OGRH_GetPlayerRole(name)
+                  if playerRole then
+                    for _, fbRole in ipairs(fallbackRoles) do
+                      if playerRole == fbRole then
+                        br2.improvedTalents[name] = true
+                        OGRH.Msg("|cff00aaff[BuffManager]|r Assuming improved talent for " .. name .. " (role: " .. playerRole .. ")")
+                        break
+                      end
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+
+        -- Now assign all deferred roles in the correct order
+        for _, brIdx in ipairs(deferredRoles) do
+          local br2 = r2.buffRoles[brIdx]
+          if br2 then
+            AutoAssignStandard(br2, brIdx, capturedRaidIdx, capturedEncIdx, capturedRoleIdx)
+          end
+        end
+      end
+
+      OGRH.BuffManager.RefreshWindow()
+      OGRH.Msg("|cff00ff00[BuffManager]|r Auto-assign all complete.")
+    end
+  end)
 end
 
 -- ============================================

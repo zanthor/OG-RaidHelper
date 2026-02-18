@@ -733,8 +733,12 @@ function OGRH.SVM.OnDeltaReceived(sender, data, channel)
             OGRH.BuffManager.RefreshWindow()
         end
 
-        -- Auto-detect improved talents if local player was just assigned
-        if OGRH.BuffManager.AutoDetectImprovedTalents then
+        -- Auto-detect improved talents when relevant paths change:
+        -- - assignedPlayers: player got assigned, report own talent for that slot
+        -- - talentScanSeq: admin requested a talent scan (pre-assignment query)
+        if OGRH.BuffManager.AutoDetectImprovedTalents and data.path
+            and (string.find(data.path, "assignedPlayers")
+              or string.find(data.path, "talentScanSeq")) then
             OGRH.BuffManager.AutoDetectImprovedTalents()
         end
     else
@@ -795,9 +799,20 @@ function OGRH.SVM.OnBatchReceived(sender, data, channel)
             OGRH.BuffManager.RefreshWindow()
         end
 
-        -- Auto-detect improved talents if local player was just assigned
+        -- Auto-detect improved talents if any relevant path changed in the batch
         if OGRH.BuffManager.AutoDetectImprovedTalents then
-            OGRH.BuffManager.AutoDetectImprovedTalents()
+            local hasTalentTrigger = false
+            for i = 1, table.getn(data.updates) do
+                if data.updates[i].path
+                    and (string.find(data.updates[i].path, "assignedPlayers")
+                      or string.find(data.updates[i].path, "talentScanSeq")) then
+                    hasTalentTrigger = true
+                    break
+                end
+            end
+            if hasTalentTrigger then
+                OGRH.BuffManager.AutoDetectImprovedTalents()
+            end
         end
         
         -- Refresh encounter setup UI if open

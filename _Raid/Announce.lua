@@ -700,7 +700,8 @@ function OGRH.Announcements.ReplaceTags(text, roles, assignments, raidMarks, ass
       local vals = roles[roleIndex].textValues or {}
       local textValue = vals[textIndex] or ""
       if textValue ~= "" then
-        AddReplacement(tagStart, tagEnd, textValue, OGRH.COLOR.ROLE, true)
+        -- Pad with spaces so URL-detection addons (pfUI) can match patterns
+        AddReplacement(tagStart, tagEnd, " " .. textValue .. " ", OGRH.COLOR.ROLE, true)
       else
         AddReplacement(tagStart, tagEnd, "", "", false)
       end
@@ -725,7 +726,8 @@ function OGRH.Announcements.ReplaceTags(text, roles, assignments, raidMarks, ass
       local lines = {}
       for i = 1, table.getn(vals) do
         if vals[i] and vals[i] ~= "" then
-          table.insert(lines, vals[i])
+          -- Pad with spaces so URL-detection addons (pfUI) can match patterns
+          table.insert(lines, " " .. vals[i] .. " ")
         end
       end
       if table.getn(lines) > 0 then

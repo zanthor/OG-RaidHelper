@@ -1,12 +1,12 @@
 # Readyness Dashboard — Design Document
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Module:** ReadynessDashboard.lua  
 **Location:** `_Raid/ReadynessDashboard.lua`  
 **Target Release:** 2.1  
-**Last Updated:** February 15, 2026  
+**Last Updated:** February 17, 2026  
 **Status:** Design Phase  
-**Dependencies:** EncounterMgmt.lua, ConsumesTracking.lua, BuffManager.lua (future), SVM, OGST, ChatThrottleLib
+**Dependencies:** EncounterMgmt.lua, ConsumesTracking.lua, BuffManager.lua, SVM, OGST, ChatThrottleLib
 
 ---
 
@@ -16,7 +16,7 @@ The Readyness Dashboard is a compact, always-visible status panel that aggregate
 
 **Core Goals:**
 
-- **At-a-Glance Readiness** — Single panel showing buff, consume, mana, and cooldown readiness for the entire raid
+- **At-a-Glance Readiness** — Single panel showing buff, consume, mana, health, and cooldown readiness for the entire raid
 - **Traffic-Light Indicators** — Red / Yellow / Green with X/Y deficit counts per category
 - **Click-to-Announce** — Left-click any indicator to announce the responsible assignee(s) to raid chat
 - **Combat-Aware Behavior** — Cooldown indicators change behavior in combat (announce cast vs. poll availability)
@@ -35,10 +35,11 @@ The Readyness Dashboard is a compact, always-visible status panel that aggregate
 3. **No accountability feedback** — When a buff is missing, there's no quick way to announce who is assigned to provide it
 4. **Cooldown tracking is blind** — Leaders have no visibility into Rebirth, Tranquility, or AOE Taunt availability across the raid
 5. **Mana readiness is manual** — Leaders visually scan raid frames to estimate healer/DPS mana before pulling
+6. **Health readiness is invisible** — Tank and raid health status requires scanning individual raid frames; no aggregated view exists for pre-pull or mid-combat assessment
 
 ### Target State
 
-A single dockable panel with 7 readiness indicators that updates automatically, surfaces deficits at a glance, and enables one-click targeted announcements. The panel is always contextual to the currently selected encounter, so consume and buff requirements adapt automatically.
+A single dockable panel with 8 readiness indicators that updates automatically, surfaces deficits at a glance, and enables one-click targeted announcements. The panel is always contextual to the currently selected encounter, so consume and buff requirements adapt automatically.
 
 ---
 
@@ -55,19 +56,18 @@ _Raid/
 ### Integration Points
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Readyness Dashboard                         │
-├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┤
-│  Buff    │ Class    │ Enc.     │  Mana    │ Rebirth  │ Tranq/   │
-│  Ready   │ Consume  │ Consume  │  Ready   │  Ready   │ Taunt    │
-├──────────┴──────────┴──────────┴──────────┴──────────┴──────────┤
-│                         Data Sources                            │
-├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┤
-│ RABuffs  │ Consumes │ Encounter│ UnitMana │ Combat   │ Combat   │
-│ API      │ Tracking │ Mgmt     │ API      │ Log      │ Log      │
-│ BuffMgr  │ Scoring  │ Consume  │          │ Polling  │ Polling  │
-│ (future) │          │ Roles    │          │          │          │
-└──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          Readyness Dashboard                                 │
+├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬────────────┤
+│  Buff    │ Class    │ Enc.     │  Mana    │ Health   │ Rebirth  │ Tranq/     │
+│  Ready   │ Consume  │ Consume  │  Ready   │  Ready   │  Ready   │ Taunt      │
+├──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴────────────┤
+│                              Data Sources                                    │
+├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬────────────┤
+│ RABuffs  │ Consumes │ Encounter│ UnitMana │ UnitHP   │ Combat   │ Combat     │
+│ API      │ Tracking │ Mgmt     │ API      │ API      │ Log      │ Log        │
+│ BuffMgr  │ Scoring  │ Consume  │          │          │ Polling  │ Polling    │
+└──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴────────────┘
 ```
 
 ### Data Flow
@@ -78,7 +78,8 @@ Every N seconds (configurable, default 5s):
   2. ScanClassConsumes()      → Calls CT.CalculatePlayerScore() for each player
   3. ScanEncounterConsumes()  → Checks encounter consume role items via RABuffs
   4. ScanManaReadyness()      → UnitMana/UnitManaMax for healers and DPS casters
-  5. UpdateCooldownTrackers() → Updates timers from combat log events
+  5. ScanHealthReadyness()    → UnitHealth/UnitHealthMax for tanks and non-tanks
+  6. UpdateCooldownTrackers() → Updates timers from combat log events
 
 Each scan produces:
   { status = "green"|"yellow"|"red", ready = N, total = N, missing = {} }
@@ -94,7 +95,7 @@ UI reads state → Updates indicator colors + text → Done
 
 **Purpose:** Evaluate that all desired buffs (Fortitude, Spirit, MotW, Arcane Int, Shadow Prot, Paladin Blessings) are applied to all raid members.
 
-**Data Source:** `UnitBuff(unitId, buffSlot)` (TurtleWoW extended API returns buff name, rank, icon, count, debuffType, duration, expirationTime). Future: BuffManager encounter assignments.
+**Data Source:** `UnitBuff(unitId, buffSlot)` (TurtleWoW extended API returns buff name, rank, icon, count, debuffType, duration, expirationTime). BuffManager encounter assignments provide per-player buff responsibility for targeted announcements.
 
 **Tracked Buffs:**
 
@@ -187,13 +188,13 @@ All classes require: Fortitude, MotW. Additionally:
 
 **Click Behavior:**
 
-Left-click announces the buff with the most missing players. If BuffManager is active, announces the assigned player responsible for that buff and which groups they're missing:
+Left-click announces the buff with the most missing players. When BuffManager assignments are configured for the current encounter, the announcement includes the assigned player responsible for that buff and which groups they're missing:
 
 ```
 [RH] Fort missing on 5 players — Priestbro (Groups 1-3), Holyman (Groups 4-8)
 ```
 
-If BuffManager is not active, announces the deficit only:
+If no BuffManager assignments exist for the current encounter, announces the deficit only:
 
 ```
 [RH] Buffs: 5 players missing Fortitude, 3 missing Spirit
@@ -515,7 +516,92 @@ Left-click announces mana status:
 
 ---
 
-### 5. Rebirth Readyness
+### 5. Health Readyness
+
+**Purpose:** Show health readiness split into Tank Health and Raid Health (everyone else) pools to help the raid leader assess survivability before pulling and monitor raid health during combat.
+
+**Data Source:** `UnitHealth(unitId)` and `UnitHealthMax(unitId)` for each raid member. Role determined via `OGRH_GetPlayerRole(playerName)` → T for tanks, all other roles for raid.
+
+**Split Display:**
+
+The Health Readyness indicator shows two sub-indicators side by side, identical in layout to the Mana indicator:
+
+```
+┌───────────────────┐
+│ T: 100% R: 95%    │
+│ ██████  █████░    │
+└───────────────────┘
+```
+
+**Scanning Logic:**
+
+```lua
+function RD.ScanHealthReadyness()
+  local healthStatus = {
+    tankHealth = { current = 0, max = 0, players = {}, belowThreshold = {} },
+    raidHealth = { current = 0, max = 0, players = {}, belowThreshold = {} }
+  }
+
+  local healthThreshold = RD.GetHealthThreshold()  -- Default: 80%
+
+  for i = 1, GetNumRaidMembers() do
+    local name, rank, subgroup, level, class = GetRaidRosterInfo(i)
+    local unitId = "raid" .. i
+    if UnitIsConnected(unitId) and not UnitIsDeadOrGhost(unitId) then
+      local healthMax = UnitHealthMax(unitId)
+      if healthMax > 0 then
+        local healthCurrent = UnitHealth(unitId)
+        local healthPercent = floor((healthCurrent / healthMax) * 100)
+        local role = OGRH_GetPlayerRole and OGRH_GetPlayerRole(name)
+
+        local pool = nil
+        if role == "T" then
+          pool = healthStatus.tankHealth
+        else
+          pool = healthStatus.raidHealth
+        end
+
+        if pool then
+          pool.current = pool.current + healthCurrent
+          pool.max = pool.max + healthMax
+          table.insert(pool.players, {name = name, percent = healthPercent})
+          if healthPercent < healthThreshold then
+            table.insert(pool.belowThreshold, {name = name, percent = healthPercent})
+          end
+        end
+      end
+    end
+  end
+
+  -- Calculate aggregate percentages
+  healthStatus.tankHealth.percent = healthStatus.tankHealth.max > 0
+    and floor((healthStatus.tankHealth.current / healthStatus.tankHealth.max) * 100) or 100
+  healthStatus.raidHealth.percent = healthStatus.raidHealth.max > 0
+    and floor((healthStatus.raidHealth.current / healthStatus.raidHealth.max) * 100) or 100
+
+  return healthStatus
+end
+```
+
+**Click Behavior:**
+
+Left-click announces health status:
+
+```
+[RH] Health: Tanks 100% | Raid 95% — Low: Gnuzmas (32%), Shadyman (55%)
+```
+
+**Status Thresholds:**
+
+| Color | Condition (per sub-indicator) |
+|-------|-------------------------------|
+| Green | Aggregate health ≥90% |
+| Yellow | Aggregate health ≥70% and <90% |
+| Red | Aggregate health <70% |
+
+---
+
+### 6. Rebirth Readyness
 
 **Purpose:** Track X/Y druids who have Rebirth available (off cooldown). Rebirth has a 30-minute cooldown.
 
@@ -677,7 +763,7 @@ Shows detailed tooltip with per-druid cooldown timers.
 
 ---
 
-### 6. Tranquility Readyness
+### 7. Tranquility Readyness
 
 **Purpose:** Identical to Rebirth tracking except for Tranquility (5-minute cooldown, Druid only).
 
@@ -706,7 +792,7 @@ end
 
 ---
 
-### 7. Taunt Readyness
+### 8. Taunt Readyness
 
 **Purpose:** Track AOE Taunt cooldowns for Druids (Challenging Roar, 10-min CD) and Warriors (Challenging Shout, 10-min CD).
 
@@ -787,7 +873,7 @@ The Readyness Dashboard is an OGST docked panel that attaches to the main OGRH f
 └─────────────────────────────────────────┘
 ┌─ Readyness Dashboard ──────────────────────────────────────────────┐
 │ ● Buffs 2/40   ● CCon 4/40   ● ECon 3/40   H:92% D:85%          │
-│ ● Reb 3/5      ● Tranq 4/5   ● Taunt 2/4                  [⇱/⇲] │
+│ T:100% R:95%   ● Reb 3/5    ● Tranq 4/5   ● Taunt 2/4     [⇱/⇲] │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -818,6 +904,16 @@ Each indicator is a horizontal row element containing:
 ```
 
 Uses two compact `OGST.CreateProgressBar` instances side by side with bar color matching the traffic-light system.
+
+**Health Indicator (special layout):**
+
+```
+┌───────────────────────────────────┐
+│ T: ██████████ 100%  R: ████████░ 95% │
+└───────────────────────────────────┘
+```
+
+Uses two compact `OGST.CreateProgressBar` instances side by side, identical in structure to the Mana indicator. Bar color uses the traffic-light system based on aggregate health percentage.
 
 ### Panel Frame Structure
 
@@ -850,12 +946,13 @@ function RD.CreateDashboardPanel()
   panel.encConsumeIndicator = RD.CreateIndicator(row1, "ECon", "encConsume")
   panel.manaIndicator = RD.CreateManaIndicator(row1)
 
-  -- Row 2: Rebirth, Tranquility, Taunt, Dock/Undock
+  -- Row 2: Health, Rebirth, Tranquility, Taunt, Dock/Undock
   local row2 = CreateFrame("Frame", nil, panel)
   row2:SetWidth(330)
   row2:SetHeight(20)
   row2:SetPoint("TOPLEFT", row1, "BOTTOMLEFT", 0, -2)
 
+  panel.healthIndicator = RD.CreateHealthIndicator(row2)
   panel.rebirthIndicator = RD.CreateIndicator(row2, "Reb", "rebirth")
   panel.tranqIndicator = RD.CreateIndicator(row2, "Tranq", "tranquility")
   panel.tauntIndicator = RD.CreateIndicator(row2, "Taunt", "taunt")
@@ -1035,6 +1132,85 @@ function RD.GetManaColor(percent)
 end
 ```
 
+### Health Indicator (Special)
+
+```lua
+function RD.CreateHealthIndicator(parent)
+  local frame = CreateFrame("Button", nil, parent)
+  frame:SetWidth(120)
+  frame:SetHeight(16)
+  frame.indicatorType = "health"
+
+  -- Tank health mini-bar
+  local tankLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  tankLabel:SetPoint("LEFT", frame, "LEFT", 2, 0)
+  tankLabel:SetText("T:")
+  frame.tankLabel = tankLabel
+
+  local tankBar = OGST.CreateProgressBar(frame, {
+    width = 40, height = 10, barColor = {0, 0.8, 0}, showText = false
+  })
+  tankBar:SetPoint("LEFT", tankLabel, "RIGHT", 2, 0)
+  frame.tankBar = tankBar
+
+  local tankPct = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  tankPct:SetPoint("LEFT", tankBar, "RIGHT", 2, 0)
+  tankPct:SetText("0%")
+  frame.tankPct = tankPct
+
+  -- Raid health mini-bar
+  local raidLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  raidLabel:SetPoint("LEFT", tankPct, "RIGHT", 6, 0)
+  raidLabel:SetText("R:")
+  frame.raidLabel = raidLabel
+
+  local raidBar = OGST.CreateProgressBar(frame, {
+    width = 40, height = 10, barColor = {0, 0.8, 0}, showText = false
+  })
+  raidBar:SetPoint("LEFT", raidLabel, "RIGHT", 2, 0)
+  frame.raidBar = raidBar
+
+  local raidPct = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  raidPct:SetPoint("LEFT", raidBar, "RIGHT", 2, 0)
+  raidPct:SetText("0%")
+  frame.raidPct = raidPct
+
+  -- Click handler
+  frame:SetScript("OnClick", function()
+    RD.OnIndicatorClick("health")
+  end)
+  frame:RegisterForClicks("LeftButtonUp")
+
+  return frame
+end
+
+function RD.UpdateHealthDisplay(healthIndicator, healthStatus)
+  -- Tank bar
+  local tPct = healthStatus.tankHealth.percent
+  healthIndicator.tankBar:SetValue(tPct)
+  healthIndicator.tankPct:SetText(tPct .. "%")
+  local tColor = RD.GetHealthColor(tPct)
+  healthIndicator.tankBar:SetBarColor(tColor.r, tColor.g, tColor.b)
+
+  -- Raid bar
+  local rPct = healthStatus.raidHealth.percent
+  healthIndicator.raidBar:SetValue(rPct)
+  healthIndicator.raidPct:SetText(rPct .. "%")
+  local rColor = RD.GetHealthColor(rPct)
+  healthIndicator.raidBar:SetBarColor(rColor.r, rColor.g, rColor.b)
+end
+
+function RD.GetHealthColor(percent)
+  if percent >= 90 then
+    return { r = 0, g = 1, b = 0 }
+  elseif percent >= 70 then
+    return { r = 1, g = 0.9, b = 0 }
+  else
+    return { r = 1, g = 0, b = 0 }
+  end
+end
+```
+
 ### Tooltip Detail
 
 Right-click or hover on any indicator shows a GameTooltip with detailed breakdown:
@@ -1097,6 +1273,28 @@ function RD.ShowIndicatorTooltip(frame, indicatorType)
       GameTooltip:AddLine(" ")
       GameTooltip:AddLine("Low Mana Healers:", 1, 0.5, 0)
       for _, entry in ipairs(below) do
+        GameTooltip:AddDoubleLine(entry.name, entry.percent .. "%", 1, 1, 1, 1, 0.5, 0)
+      end
+    end
+
+  elseif indicatorType == "health" then
+    GameTooltip:AddLine("Health Readyness", 1, 1, 1)
+    GameTooltip:AddDoubleLine("Tanks:", state.tankHealth.percent .. "%", 1, 0.82, 0, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Raid:", state.raidHealth.percent .. "%", 1, 0.82, 0, 1, 1, 1)
+    -- Show players below threshold
+    local belowTanks = state.tankHealth.belowThreshold
+    if belowTanks and table.getn(belowTanks) > 0 then
+      GameTooltip:AddLine(" ")
+      GameTooltip:AddLine("Low Health Tanks:", 1, 0.5, 0)
+      for _, entry in ipairs(belowTanks) do
+        GameTooltip:AddDoubleLine(entry.name, entry.percent .. "%", 1, 1, 1, 1, 0.5, 0)
+      end
+    end
+    local belowRaid = state.raidHealth.belowThreshold
+    if belowRaid and table.getn(belowRaid) > 0 then
+      GameTooltip:AddLine(" ")
+      GameTooltip:AddLine("Low Health Raid:", 1, 0.5, 0)
+      for _, entry in ipairs(belowRaid) do
         GameTooltip:AddDoubleLine(entry.name, entry.percent .. "%", 1, 1, 1, 1, 0.5, 0)
       end
     end
@@ -1200,6 +1398,8 @@ function RD.OnIndicatorClick(indicatorType)
     lines = RD.BuildEncConsumeAnnouncement(state)
   elseif indicatorType == "mana" then
     lines = RD.BuildManaAnnouncement(state)
+  elseif indicatorType == "health" then
+    lines = RD.BuildHealthAnnouncement(state)
   elseif indicatorType == "rebirth" then
     lines = RD.BuildCooldownAnnouncement(state, "Rebirth", "Druids")
   elseif indicatorType == "tranquility" then
@@ -1377,6 +1577,7 @@ function RD.RunFullScan()
   RD.State.classConsume = RD.ScanClassConsumes()
   RD.State.encConsume = RD.ScanEncounterConsumes()
   RD.State.mana = RD.ScanManaReadyness()
+  RD.State.health = RD.ScanHealthReadyness()
   RD.State.rebirth = RD.GetRebirthReadyness()
   RD.State.tranquility = RD.GetTranquilityReadyness()
   RD.State.taunt = RD.GetTauntReadyness()
@@ -1402,6 +1603,9 @@ function RD.RefreshDashboard()
 
   RD.UpdateManaDisplay(panel.manaIndicator, RD.State.mana or {
     healerMana = {percent = 0}, dpsMana = {percent = 0}
+  })
+  RD.UpdateHealthDisplay(panel.healthIndicator, RD.State.health or {
+    tankHealth = {percent = 0}, raidHealth = {percent = 0}
   })
   RD.UpdateIndicatorDisplay(panel.rebirthIndicator, RD.State.rebirth or {status="gray"})
   RD.UpdateIndicatorDisplay(panel.tranqIndicator, RD.State.tranquility or {status="gray"})
@@ -1447,11 +1651,16 @@ readynessDashboard = {
   },
   scanInterval = 5,              -- Seconds between scans
   manaThreshold = 80,            -- % below which mana is "low"
+  healthThreshold = 80,          -- % below which health is "low"
   thresholds = {                 -- Per-indicator threshold overrides
     buff = 80,                   -- % for yellow/red boundary
     classConsume = 75,
     encConsume = 80,
     mana = {
+      green = 90,
+      yellow = 70
+    },
+    health = {
       green = 90,
       yellow = 70
     },
@@ -1478,11 +1687,14 @@ readynessDashboard.isDocked
 readynessDashboard.position
 readynessDashboard.scanInterval
 readynessDashboard.manaThreshold
+readynessDashboard.healthThreshold
 readynessDashboard.thresholds.buff
 readynessDashboard.thresholds.classConsume
 readynessDashboard.thresholds.encConsume
 readynessDashboard.thresholds.mana.green
 readynessDashboard.thresholds.mana.yellow
+readynessDashboard.thresholds.health.green
+readynessDashboard.thresholds.health.yellow
 readynessDashboard.thresholds.cooldown
 readynessDashboard.announceChannel
 readynessDashboard.showInRaidOnly
@@ -1579,6 +1791,7 @@ end
 | `RD.ScanClassConsumes()` | Evaluate consume scores | `{status, ready, total, missing, averageScore}` |
 | `RD.ScanEncounterConsumes()` | Check encounter consume role items | `{status, ready, total, missing, consumeItems}` |
 | `RD.ScanManaReadyness()` | Check healer + DPS mana levels | `{healerMana, dpsMana}` |
+| `RD.ScanHealthReadyness()` | Check tank + raid health levels | `{tankHealth, raidHealth}` |
 | `RD.GetRebirthReadyness()` | Check druid Rebirth cooldowns | `{status, ready, total, onCooldown, available}` |
 | `RD.GetTranquilityReadyness()` | Check druid Tranquility cooldowns | `{status, ready, total, onCooldown, available}` |
 | `RD.GetTauntReadyness()` | Check AOE Taunt cooldowns | `{status, ready, total, onCooldown, available}` |
@@ -1590,8 +1803,10 @@ end
 | `RD.CreateDashboardPanel()` | Build the OGST panel | Frame |
 | `RD.CreateIndicator(parent, label, type)` | Create a single indicator widget | Frame |
 | `RD.CreateManaIndicator(parent)` | Create the special mana indicator | Frame |
+| `RD.CreateHealthIndicator(parent)` | Create the special health indicator | Frame |
 | `RD.UpdateIndicatorDisplay(indicator, result)` | Update indicator color and text | `nil` |
 | `RD.UpdateManaDisplay(indicator, manaStatus)` | Update mana bars | `nil` |
+| `RD.UpdateHealthDisplay(indicator, healthStatus)` | Update health bars | `nil` |
 | `RD.ShowIndicatorTooltip(frame, type)` | Show detailed tooltip | `nil` |
 
 ### Announcement Functions
@@ -1603,6 +1818,7 @@ end
 | `RD.BuildClassConsumeAnnouncement(state)` | Build consume score message | `lines` table |
 | `RD.BuildEncConsumeAnnouncement(state)` | Build encounter consume message | `lines` table |
 | `RD.BuildManaAnnouncement(state)` | Build mana status message | `lines` table |
+| `RD.BuildHealthAnnouncement(state)` | Build health status message | `lines` table |
 | `RD.BuildCooldownAnnouncement(state, name, group)` | Build cooldown poll/report | `lines` table |
 
 ### Utility Functions
@@ -1614,6 +1830,7 @@ end
 | `RD.FormatTime(seconds)` | Format seconds to "Xm Ys" | string |
 | `RD.GetConsumeThreshold()` | Get encounter/raid ready threshold | number |
 | `RD.GetManaThreshold()` | Get mana low threshold | number |
+| `RD.GetHealthThreshold()` | Get health low threshold | number |
 | `RD.PlayerHasConsumeBuff(unitId, data)` | Check if unit has consume buff | boolean |
 | `RD.BuildRaidData()` | Build RABuffs raid data table | table |
 
@@ -1629,9 +1846,9 @@ The dashboard listens for encounter changes (via hooks on `NavigateToNextEncount
 
 The dashboard reuses `CT.CalculatePlayerScore()` directly — it does not duplicate scoring logic. It also reuses `CT.IsRABuffsAvailable()` and `CT.CheckForOGRHProfile()` for availability checks.
 
-### BuffManager (Future)
+### BuffManager
 
-When BuffManager is implemented, the Buff Readyness indicator will read assignments from the BuffManager encounter to determine which player is responsible for which buff on which groups. This enables the announcement to include the assignee ("Priestbro should be casting Fortitude on Groups 1-3").
+The Buff Readyness indicator reads assignments from BuffManager encounters to determine which player is responsible for which buff on which groups. This enables targeted announcements that include the assignee (e.g., "Priestbro should be casting Fortitude on Groups 1-3"). When no BuffManager assignments exist for the current encounter, the dashboard falls back to reporting deficits without assignee attribution.
 
 ### Announce System
 
@@ -1639,7 +1856,7 @@ Uses `OGRH.SendAnnouncement(lines)` for raid-wide messages. Respects `OGRH.CanRW
 
 ### MainUI Integration
 
-The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPanel`. The dock/undock toggle is a small button in the bottom-right corner of the panel. A future enhancement could add a "Ready" button to the MainUI toolbar that toggles the dashboard.
+The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPanel`. The dock/undock toggle is a small button in the bottom-right corner of the panel.
 
 ---
 
@@ -1667,6 +1884,7 @@ The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPane
 | PlayerHasConsumeBuff | Mock `UnitBuff` with known spellIds, verify detection |
 | FormatTime | Edge cases: 0s, 60s, 600s, 1800s |
 | GetConsumeThreshold | Falls back from encounter → raid → default (80) |
+| GetHealthThreshold | Falls back from encounter → raid → default (80) |
 
 ### Integration Tests
 
@@ -1686,7 +1904,8 @@ The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPane
 4. **Click indicators** — Verify announcements appear correctly in raid chat
 5. **Undock dashboard** — Verify it floats and saves position on `/reload`
 6. **Enter combat** — Verify scan interval increases, cooldown click behavior changes
-7. **Druid casts Rebirth** — Verify Rebirth indicator changes from green to yellow/red
+7. **Check health indicators** — Verify tank vs. raid health bars update correctly, color thresholds match
+8. **Druid casts Rebirth** — Verify Rebirth indicator changes from green to yellow/red
 
 ---
 
@@ -1699,9 +1918,11 @@ The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPane
 - [ ] Event registration, periodic scanning
 - [ ] Slash command integration
 
-### Phase 2: Mana & Buff Indicators
+### Phase 2: Mana, Health & Buff Indicators
 - [ ] Mana scanning (healer + DPS split)
 - [ ] Mana dual progress bar indicator
+- [ ] Health scanning (tank + raid split)
+- [ ] Health dual progress bar indicator
 - [ ] Buff scanning via `UnitBuff()` TurtleWoW API
 - [ ] Buff classification and required-buff-per-class logic
 - [ ] Buff deficit announcement builder
@@ -1722,7 +1943,7 @@ The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPane
 
 ### Phase 5: Polish & Integration
 - [ ] Tooltip detail views for all indicators
-- [ ] BuffManager integration (when available)
+- [ ] BuffManager integration for targeted buff announcements
 - [ ] Settings UI for thresholds, buff categories, scan interval
 - [ ] Right-click context menus for indicator configuration
 - [ ] Performance profiling and optimization
@@ -1746,7 +1967,7 @@ The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPane
 |--------|-------------|
 | `EncounterMgmt.lua` | Provides encounter data, consume roles, advanced settings |
 | `ConsumesTracking.lua` | Provides `CalculatePlayerScore()` and RABuffs integration |
-| `BuffManager.lua` | (future) Provides buff assignments for targeted announcements |
+| `BuffManager.lua` | Provides buff assignments for targeted announcements |
 | `MainUI.lua` | Provides OGRH_Main frame for docking |
 | `Announce.lua` | Provides `OGRH.SendAnnouncement()` for raid messages |
 | `Core.lua` | Provides `OGRH.CanRW()`, `OGRH.COLOR`, `OGRH.Msg()` |
@@ -1758,4 +1979,5 @@ The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPane
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | Feb 2026 | Added Health Readyness indicator (Tanks/Raid split); Updated BuffManager from future to implemented across all references |
 | 1.0 | Feb 2026 | Initial Readyness Dashboard specification |

@@ -2099,10 +2099,8 @@ function OGRH.SendAnnouncement(lines, testMode)
   local canRW = OGRH.CanRW()
   for _, line in ipairs(lines) do
     if testMode then
-      -- In test mode, display to local chat frame
       DEFAULT_CHAT_FRAME:AddMessage(OGRH.Announce("OGRH: ") .. line)
     else
-      -- Send to raid warning or raid chat
       if canRW then
         SendChatMessage(line, "RAID_WARNING")
       else

@@ -325,7 +325,8 @@ function OGRH.SyncGranular.ReceiveComponentSync(sender, syncData)
             OGRH.BuffManager.RefreshWindow()
         end
 
-        -- Auto-detect improved talents if local player was just assigned
+        -- Granular sync replaces entire encounters — re-check talents since
+        -- the local player may now be assigned to a buff slot.
         if OGRH.BuffManager.AutoDetectImprovedTalents then
             OGRH.BuffManager.AutoDetectImprovedTalents()
         end
@@ -660,7 +661,8 @@ function OGRH.SyncGranular.ReceiveEncounterSync(sender, syncData)
             OGRH.BuffManager.RefreshWindow()
         end
 
-        -- Auto-detect improved talents if local player was just assigned
+        -- Granular sync replaces entire encounters — re-check talents since
+        -- the local player may now be assigned to a buff slot.
         if OGRH.BuffManager.AutoDetectImprovedTalents then
             OGRH.BuffManager.AutoDetectImprovedTalents()
         end

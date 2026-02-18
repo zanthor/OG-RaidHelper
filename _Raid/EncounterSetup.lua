@@ -351,16 +351,26 @@ function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
         return
       end
       
+      -- If the selected encounter is the Admin encounter, clear selection
+      if frame.selectedEncounter and OGRH.IsAdminEncounter and OGRH.IsAdminEncounter({name = frame.selectedEncounter}) then
+        frame.selectedEncounter = nil
+      end
+      
       local yOffset = -5
       local selectedIndex = nil
       local contentWidth = scrollChild:GetWidth()
       
-      -- Add existing encounters for selected raid
-      local encounters = {}
+      -- Add existing encounters for selected raid (skip Admin encounter)
+      local encounters = {}    -- { {name=..., realIndex=...}, ... }
       for i = 1, table.getn(raid.encounters) do
-        table.insert(encounters, raid.encounters[i].name)
+        local enc = raid.encounters[i]
+        -- Skip the Admin encounter - it's programmatically managed
+        if not (OGRH.IsAdminEncounter and OGRH.IsAdminEncounter(enc)) then
+          table.insert(encounters, {name = enc.name, realIndex = i})
+        end
       end
-      for i, encounterName in ipairs(encounters) do
+      for i, encInfo in ipairs(encounters) do
+        local encounterName = encInfo.name
         if encounterName == frame.selectedEncounter then
           selectedIndex = i
         end
@@ -381,7 +391,8 @@ function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
         
         -- Click to select encounter, right-click to rename
         local capturedEncounterName = encounterName
-        local capturedIndex = i
+        local capturedIndex = encInfo.realIndex  -- Real index in raid.encounters (Admin is hidden)
+        local capturedDisplayIndex = i            -- Display index for UI positioning
         local capturedRaid = frame.selectedRaid
         encounterBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         encounterBtn:SetScript("OnClick", function()
@@ -404,7 +415,7 @@ function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
         -- Add up/down/delete buttons using template
         OGRH.AddListItemButtons(
           encounterBtn,
-          capturedIndex,
+          capturedDisplayIndex,
           table.getn(encounters),
           function()
             -- Move up
@@ -1048,6 +1059,10 @@ function OGRH.ShowEncounterSetup(raidName, encounterName, raidIdx)
   
   -- Set specific raid and encounter if provided
   if raidName and encounterName then
+    -- Don't pre-select the Admin encounter - it's not editable here
+    if OGRH.IsAdminEncounter and OGRH.IsAdminEncounter({name = encounterName}) then
+      encounterName = nil
+    end
     frame.selectedRaid = raidName
     frame.selectedRaidIdx = raidIdx
     frame.selectedEncounter = encounterName
