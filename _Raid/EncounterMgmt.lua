@@ -2677,7 +2677,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
         if role.isBuffManager then
           local container = CreateFrame("Frame", nil, parent)
           container:SetWidth(width)
-          container:SetHeight(100)
+          container:SetHeight(108)
           container:SetPoint("TOPLEFT", parent, "TOPLEFT", xPos, yPos)
           container:SetBackdrop({
             bgFile = "Interface/Tooltips/UI-Tooltip-Background",
@@ -3597,7 +3597,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
           elseif column1[i].isLootSettings then
             containerHeight = 175
           elseif column1[i].isBuffManager then
-            containerHeight = 100
+            containerHeight = 108
           else
             containerHeight = 40 + ((column1[i].slots or 1) * 22)
           end
@@ -3620,7 +3620,7 @@ function OGRH.ShowEncounterPlanning(encounterName)
           elseif column2[i].isLootSettings then
             containerHeight = 175
           elseif column2[i].isBuffManager then
-            containerHeight = 100
+            containerHeight = 108
           else
             containerHeight = 40 + ((column2[i].slots or 1) * 22)
           end

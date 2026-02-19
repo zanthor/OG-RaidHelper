@@ -186,6 +186,23 @@ All classes require: Fortitude, MotW. Additionally:
 - All: +Shadow Protection (if priests in raid)
 - All: +Paladin Blessings (if paladins in raid)
 
+**Managed vs Unmanaged Buff Classes:**
+
+The Admin encounter's Buff Manager checkboxes (`managedBuffClasses`) control how each buff class is evaluated and announced:
+
+| State | Readiness Evaluation | Announcements |
+|-------|---------------------|---------------|
+| **Managed** (checked) | Group-gated via BuffManager slot/group assignments | Included — directed at assigned caster with group/player targets |
+| **Unmanaged** (unchecked) | Simple X/Y — all raid members checked if provider class is present | **Excluded** — deficits contribute to the score but are not announced |
+| **Paladin** | Always via PallyPower integration regardless of checkbox state | Always included when blessings are assigned |
+
+Unmanaged buff mapping:
+- **Priest unchecked** → Fortitude and Spirit evaluated (Spirit respects mana-class + blacklist filters)
+- **Druid unchecked** → MotW evaluated for all players
+- **Mage unchecked** → Int evaluated (respects mana-class filter)
+
+This is implemented via `OGRH.BuffManager.IsClassManaged(classKey)` checks in both `GetRequiredBuffsWithComposition` (for evaluation) and `BuildBuffAnnouncement` (for filtering).
+
 **Click Behavior:**
 
 Left-click announces the buff with the most missing players. When BuffManager assignments are configured for the current encounter, the announcement includes the assigned player responsible for that buff and which groups they're missing:
@@ -1912,20 +1929,20 @@ The dashboard panel docks below the OGRH main frame via `OGST.RegisterDockedPane
 ## Implementation Phases
 
 ### Phase 1: Core Framework
-- [ ] Create `ReadynessDashboard.lua` — module skeleton, state management, scan engine
-- [ ] Create `ReadynessDashboardUI.lua` — OGST panel, indicator widgets, dock system
-- [ ] SVM schema initialization and defaults
-- [ ] Event registration, periodic scanning
-- [ ] Slash command integration
+- [x] Create `ReadynessDashboard.lua` — module skeleton, state management, scan engine
+- [x] Create `ReadynessDashboardUI.lua` — OGST panel, indicator widgets, dock system
+- [x] SVM schema initialization and defaults
+- [x] Event registration, periodic scanning
+- [x] Slash command integration
 
 ### Phase 2: Mana, Health & Buff Indicators
-- [ ] Mana scanning (healer + DPS split)
-- [ ] Mana dual progress bar indicator
-- [ ] Health scanning (tank + raid split)
-- [ ] Health dual progress bar indicator
-- [ ] Buff scanning via `UnitBuff()` TurtleWoW API
-- [ ] Buff classification and required-buff-per-class logic
-- [ ] Buff deficit announcement builder
+- [x] Mana scanning (healer + DPS split)
+- [x] Mana dual progress bar indicator
+- [x] Health scanning (tank + raid split)
+- [x] Health dual progress bar indicator
+- [x] Buff scanning via `UnitBuff()` TurtleWoW API
+- [x] Buff classification and required-buff-per-class logic
+- [x] Buff deficit announcement builder
 
 ### Phase 3: Consume Indicators
 - [ ] Class Consume scanning via `CT.CalculatePlayerScore()` integration

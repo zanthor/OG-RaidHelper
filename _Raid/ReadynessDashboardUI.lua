@@ -148,7 +148,11 @@ function RD.CreateIndicator(parent, indicatorType)
   -- Click handler
   frame:SetScript("OnClick", function()
     if arg1 == "LeftButton" then
-      RD.OnIndicatorClick(indicatorType)
+      if IsShiftKeyDown() and indicatorType == "buff" then
+        RD.OpenBuffManager()
+      else
+        RD.OnIndicatorClick(indicatorType)
+      end
     end
   end)
   frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -186,7 +190,11 @@ function RD.CreateIconIndicator(parent, indicatorType, iconPath)
   -- Click handler
   frame:SetScript("OnClick", function()
     if arg1 == "LeftButton" then
-      RD.OnIndicatorClick(indicatorType)
+      if IsShiftKeyDown() and indicatorType == "buff" then
+        RD.OpenBuffManager()
+      else
+        RD.OnIndicatorClick(indicatorType)
+      end
     end
   end)
   frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -438,14 +446,9 @@ function RD.ShowIndicatorTooltip(frame, indicatorType)
       end
     end
 
-    -- Blacklisted buff warnings
-    if state.blacklisted and table.getn(state.blacklisted) > 0 then
-      GameTooltip:AddLine(" ")
-      GameTooltip:AddLine("Blacklisted Buffs Detected:", 1, 0.3, 0.3)
-      for _, entry in ipairs(state.blacklisted) do
-        GameTooltip:AddLine(string.format("  %s has %s", entry.player or "?", entry.buff or "?"), 1, 0.4, 0.4)
-      end
-    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Click to announce missing buffs", 0.6, 0.6, 0.6)
+    GameTooltip:AddLine("Shift-Click to open Buff Manager", 0.6, 0.6, 0.6)
 
   elseif indicatorType == "classCon" then
     GameTooltip:SetText("Class Consume Readyness")

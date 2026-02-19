@@ -1,9 +1,10 @@
 -- _Raid/BuffManagerPP.lua
 -- PallyPower ↔ BuffManager bridge.
--- Reads talents + assignments FROM PallyPower (Raid-Admin only).
--- Writes assignment changes TO PallyPower as they are made.
+-- Parses PallyPower addon messages directly so BM works without PP installed.
+-- Reads talents + assignments FROM PallyPower protocol (Raid-Admin only).
+-- Writes assignment changes TO PallyPower protocol as they are made.
 --
--- Only CHAT_MSG_ADDON from Admin (A) or Leader (L) is accepted.
+-- Only CHAT_MSG_ADDON from Admin (A) or Leader (L) is accepted for ASSIGN/MASSIGN/CLEAR.
 -- Outbound writes only happen when the local player is Admin.
 
 if not OGRH then
@@ -58,13 +59,19 @@ for id, name in pairs(PP_CLASS_TO_NAME) do
 end
 
 -- ============================================
+-- INTERNAL DATA STORE
+-- ============================================
+-- Mirror of PP's AllPallys / PallyPower_Assignments, maintained by parsing
+-- the PLPWR protocol directly so we don't depend on PP being installed.
+--
+-- ppPallyData[name][blessingId] = { rank = "3", talent = "5" }
+-- ppAssignments[name][classId]  = blessingId (-1 = none)
+local ppPallyData   = {}
+local ppAssignments  = {}
+
+-- ============================================
 -- HELPERS
 -- ============================================
-
---- Is PallyPower loaded?
-local function PP_Loaded()
-  return (PallyPower_Assignments ~= nil)
-end
 
 --- Build sync metadata for active-raid delta sync (mirrors BuffManager.BuildSyncMeta).
 local function BuildSyncMeta(raidIdx)
@@ -142,77 +149,144 @@ local function FindSlotByPaladin(br, paladinName)
 end
 
 -- ============================================
--- INBOUND: PallyPower → BuffManager
+-- SELF MESSAGE PARSER
 -- ============================================
 
---- Import talent data from PP's AllPallys table for a specific paladin.
---- Populates paladinTalents[slotIdx] = {improved, kings, sanctuary}
-local function ImportTalentsForPaladin(paladinName, slotIdx, br, roleIndex, encounterIdx)
-  if not AllPallys or not AllPallys[paladinName] then return end
+--- Parse a SELF message directly from the PP protocol.
+-- Format: "SELF <12 chars: 6 blessing entries × (rank digit + talent digit)>@<up to 10 assignment digits>"
+-- Blessing IDs: 0=Wisdom, 1=Might, 2=Salvation, 3=Light, 4=Kings, 5=Sanctuary
+-- Each blessing entry is 2 chars: rank digit (or "n" if not learned) + talent digit (or "n")
+-- Assignments: classId 0-9, each char is blessingId or "n" for unassigned
+--
+-- Example: "SELF 32320111nn@n0nn1nnnn"
+--   Wisdom: rank=3, talent=2  (has Improved Blessings rank 2)
+--   Might:  rank=3, talent=2  (has Improved Blessings rank 2)
+--   Salv:   rank=0, talent=1
+--   Light:  rank=1, talent=1
+--   Kings:  n,n = does not have Kings
+--   Sanc:   nothing
+--
+-- @return pallyData table  {[blessingId] = {rank=string, talent=string}} or nil
+-- @return assignData table {[classId] = blessingId} or nil
+local function ParseSelfMessage(msg)
+  local _, _, numbers, assign = string.find(msg, "^SELF ([0-9n]+)@?([0-9n]*)")
+  if not numbers then return nil, nil end
 
-  local ppData = AllPallys[paladinName]
-  local talents = {}
-
-  -- Improved Blessings: talent field on Wisdom (0) or Might (1) is > 0.
-  -- The value can be a number (local player via ScanSpells) or a string (remote via SELF message).
-  local wisdomEntry = ppData[0]
-  local mightEntry = ppData[1]
-  local wTalent = wisdomEntry and tonumber(wisdomEntry.talent)
-  local mTalent = mightEntry and tonumber(mightEntry.talent)
-  if (wTalent and wTalent > 0) or (mTalent and mTalent > 0) then
-    talents.improved = true
+  local pallyData = {}
+  for id = 0, 5 do
+    local rank   = string.sub(numbers, id * 2 + 1, id * 2 + 1)
+    local talent = string.sub(numbers, id * 2 + 2, id * 2 + 2)
+    if rank ~= "n" and rank ~= "" then
+      pallyData[id] = { rank = rank, talent = talent }
+    end
   end
 
+  local assignData = {}
+  if assign and assign ~= "" then
+    for id = 0, 9 do
+      local ch = string.sub(assign, id + 1, id + 1)
+      if ch == "n" or ch == "" then
+        assignData[id] = -1
+      else
+        assignData[id] = tonumber(ch) or -1
+      end
+    end
+  end
+
+  return pallyData, assignData
+end
+
+-- ============================================
+-- INBOUND: PallyPower Protocol → BuffManager
+-- ============================================
+
+--- Extract talent flags from our parsed pallyData for a paladin.
+-- @param paladinName string
+-- @return talents table {improvedMight, improvedWisdom, kings, sanctuary, mightPoints, wisdomPoints}
+local function ExtractTalents(paladinName)
+  local data = ppPallyData[paladinName]
+  if not data then return {} end
+
+  local talents = {}
+
+  -- Improved Blessings: talent field on Wisdom (0) or Might (1) > 0
+  local wisdomEntry = data[0]
+  local mightEntry  = data[1]
+  local mTalent = mightEntry  and tonumber(mightEntry.talent)
+  local wTalent = wisdomEntry and tonumber(wisdomEntry.talent)
+  if mTalent and mTalent > 0 then talents.improvedMight  = true end
+  if wTalent and wTalent > 0 then talents.improvedWisdom = true end
+  talents.mightPoints  = mTalent or 0
+  talents.wisdomPoints = wTalent or 0
+
   -- Kings: has the spell (rank not nil/"n")
-  local kingsEntry = ppData[4]
+  local kingsEntry = data[4]
   if kingsEntry and kingsEntry.rank and tostring(kingsEntry.rank) ~= "n" then
     talents.kings = true
   end
 
   -- Sanctuary: has the spell (rank not nil/"n")
-  local sancEntry = ppData[5]
+  local sancEntry = data[5]
   if sancEntry and sancEntry.rank and tostring(sancEntry.rank) ~= "n" then
     talents.sanctuary = true
   end
 
-  -- Write to data model
+  return talents
+end
+
+--- Write talent data for a paladin slot into the BM data model + SVM.
+local function WriteTalentsToSlot(slotIdx, talents, br, roleIndex, encounterIdx)
   if not br.paladinTalents then br.paladinTalents = {} end
   br.paladinTalents[slotIdx] = talents
-
-  -- Persist + delta sync to other OGRH clients
   local basePath = string.format("encounterMgmt.raids.1.encounters.%d.roles.%d", encounterIdx, roleIndex)
   OGRH.SVM.SetPath(basePath .. ".buffRoles.1.paladinTalents." .. slotIdx, talents, BuildSyncMeta(1))
 end
 
---- Import class-wide blessing assignments from PallyPower for a specific paladin.
+--- Import talent data from our internal store for a specific paladin.
+local function ImportTalentsForPaladin(paladinName, slotIdx, br, roleIndex, encounterIdx)
+  -- Try our own parsed data first, fall back to PP's AllPallys if available
+  if ppPallyData[paladinName] then
+    local talents = ExtractTalents(paladinName)
+    WriteTalentsToSlot(slotIdx, talents, br, roleIndex, encounterIdx)
+    return
+  end
+
+  -- Fallback: PP's AllPallys (for when PP is installed and has data we haven't seen via messages)
+  if AllPallys and AllPallys[paladinName] then
+    ppPallyData[paladinName] = AllPallys[paladinName]
+    local talents = ExtractTalents(paladinName)
+    WriteTalentsToSlot(slotIdx, talents, br, roleIndex, encounterIdx)
+  end
+end
+
+--- Import class-wide blessing assignments from our internal store for a specific paladin.
 local function ImportBlessingsForPaladin(paladinName, slotIdx, br, roleIndex, encounterIdx)
-  if not PallyPower_Assignments or not PallyPower_Assignments[paladinName] then return end
+  -- Try our own parsed data first, fall back to PP's PallyPower_Assignments
+  local source = ppAssignments[paladinName]
+  if not source and PallyPower_Assignments then
+    source = PallyPower_Assignments[paladinName]
+  end
+  if not source then return end
 
-  local ppAssign = PallyPower_Assignments[paladinName]
   local assignments = {}
-
   for classId = 0, 8 do
-    local blessingId = ppAssign[classId]
+    local blessingId = source[classId]
     local className = PP_CLASS_TO_NAME[classId]
     if className and blessingId and blessingId >= 0 then
       assignments[className] = PP_BLESSING_TO_KEY[blessingId]
     end
   end
 
-  -- Write to data model
   if not br.paladinAssignments then br.paladinAssignments = {} end
   br.paladinAssignments[slotIdx] = assignments
 
-  -- Persist + delta sync to other OGRH clients
   local basePath = string.format("encounterMgmt.raids.1.encounters.%d.roles.%d", encounterIdx, roleIndex)
   OGRH.SVM.SetPath(basePath .. ".buffRoles.1.paladinAssignments." .. slotIdx, assignments, BuildSyncMeta(1))
 end
 
---- Auto-assign any paladins found in AllPallys that are not yet in a BM slot.
+--- Auto-assign any paladins found in our internal store that are not yet in a BM slot.
 --- Creates new slots as needed.  Admin-only.
 local function AutoAddPPPaladins(br, roleIndex, encounterIdx)
-  if not AllPallys then return false end
-
   -- Build set of already-assigned paladin names
   local assigned = {}
   if br.assignedPlayers then
@@ -222,10 +296,11 @@ local function AutoAddPPPaladins(br, roleIndex, encounterIdx)
   end
 
   local added = false
-  for paladinName, _ in pairs(AllPallys) do
+
+  -- Add from our own internal store
+  for paladinName, _ in pairs(ppPallyData) do
     if not assigned[paladinName] then
       local slotIdx = FindNextEmptySlot(br)
-      -- Write directly (bypasses CanEdit since caller already checked admin)
       if not br.assignedPlayers then br.assignedPlayers = {} end
       br.assignedPlayers[slotIdx] = paladinName
       local basePath = string.format("encounterMgmt.raids.1.encounters.%d.roles.%d", encounterIdx, roleIndex)
@@ -234,13 +309,28 @@ local function AutoAddPPPaladins(br, roleIndex, encounterIdx)
       added = true
     end
   end
+
+  -- Also check PP's AllPallys if installed (may have data from before we loaded)
+  if AllPallys then
+    for paladinName, _ in pairs(AllPallys) do
+      if not assigned[paladinName] then
+        local slotIdx = FindNextEmptySlot(br)
+        if not br.assignedPlayers then br.assignedPlayers = {} end
+        br.assignedPlayers[slotIdx] = paladinName
+        local basePath = string.format("encounterMgmt.raids.1.encounters.%d.roles.%d", encounterIdx, roleIndex)
+        OGRH.SVM.SetPath(basePath .. ".buffRoles.1.assignedPlayers." .. slotIdx, paladinName, BuildSyncMeta(1))
+        assigned[paladinName] = true
+        added = true
+      end
+    end
+  end
+
   return added
 end
 
---- Full import: pull all talent + blessing data from PallyPower for every paladin
+--- Full import: pull all talent + blessing data for every paladin
 --- that has an assigned slot in BM.  Admin-only.
 function OGRH.BuffManagerPP.ImportAll()
-  if not PP_Loaded() then return end
   if not IsLocalAdmin() then return end
 
   local role, roleIndex, encounterIdx, br, brIdx = GetPaladinBuffRole()
@@ -249,7 +339,7 @@ function OGRH.BuffManagerPP.ImportAll()
   -- Suppress per-item RefreshWindow calls during batch work
   suppressRefresh = true
 
-  -- Auto-add any PP paladins not yet assigned to a BM slot
+  -- Auto-add any known paladins not yet assigned to a BM slot
   local slotsAdded = AutoAddPPPaladins(br, roleIndex, encounterIdx)
 
   -- Import talents + blessings for every assigned paladin
@@ -273,11 +363,97 @@ function OGRH.BuffManagerPP.ImportAll()
   end
 end
 
---- Handle a SELF message from PallyPower (paladin announcing skills + assignments).
---- Auto-adds the paladin to a BM slot if not already assigned, then imports talents/blessings.
+--- Re-import talents from ppPallyData for a list of paladins assigned to slots.
+--- Called by AutoAssignPaladin after clearing and re-assigning slots.
+function OGRH.BuffManagerPP.ImportTalentsForSlots(br, brIdx, raidIdx, encounterIdx, roleIndex)
+  if not br or not br.assignedPlayers then return end
+  for slotIdx, paladinName in pairs(br.assignedPlayers) do
+    if paladinName and paladinName ~= "" then
+      local numIdx = tonumber(slotIdx) or slotIdx
+      ImportTalentsForPaladin(paladinName, numIdx, br, roleIndex, encounterIdx)
+    end
+  end
+end
+
+--- Remove paladins from BM slots who are no longer in the raid.
+--- Clears their talents, assignments, and slot assignment.
+--- This is a local cleanup — safe to run regardless of admin status.
+function OGRH.BuffManagerPP.CleanStalePaladins()
+  local role, roleIndex, encounterIdx, br, brIdx = GetPaladinBuffRole()
+  if not br or not br.assignedPlayers then return end
+
+  -- Build set of current raid/party member names
+  local raidNames = {}
+  for i = 1, GetNumRaidMembers() do
+    local name = GetRaidRosterInfo(i)
+    if name then raidNames[name] = true end
+  end
+  for i = 1, GetNumPartyMembers() do
+    local name = UnitName("party" .. i)
+    if name then raidNames[name] = true end
+  end
+  local selfName = UnitName("player")
+  if selfName then raidNames[selfName] = true end
+
+  -- If we couldn't build a roster at all (too early), bail out
+  if not next(raidNames) then return end
+
+  local basePath = string.format("encounterMgmt.raids.1.encounters.%d.roles.%d", encounterIdx, roleIndex)
+  local syncMeta = BuildSyncMeta(1)
+  local changed = false
+
+  for slotIdx, paladinName in pairs(br.assignedPlayers) do
+    if paladinName and paladinName ~= "" and not raidNames[paladinName] then
+      -- This paladin is no longer in the group — clear the slot
+      br.assignedPlayers[slotIdx] = nil
+      OGRH.SVM.SetPath(basePath .. ".buffRoles.1.assignedPlayers." .. slotIdx, nil, syncMeta)
+      if br.paladinTalents and br.paladinTalents[slotIdx] then
+        br.paladinTalents[slotIdx] = nil
+        OGRH.SVM.SetPath(basePath .. ".buffRoles.1.paladinTalents." .. slotIdx, nil, syncMeta)
+      end
+      if br.paladinAssignments and br.paladinAssignments[slotIdx] then
+        br.paladinAssignments[slotIdx] = nil
+        OGRH.SVM.SetPath(basePath .. ".buffRoles.1.paladinAssignments." .. slotIdx, nil, syncMeta)
+      end
+      -- Also clear PP assignment data (only broadcasts if admin)
+      OGRH.BuffManagerPP.ClearBlessingsForPaladin(paladinName)
+      changed = true
+    end
+  end
+
+  if changed and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+    OGRH.BuffManager.RefreshWindow()
+  end
+end
+
+--- Handle a SELF message from the PP protocol (paladin announcing skills + assignments).
+--- Parses the message directly — does NOT rely on PP being installed.
 local function HandlePPSelf(sender, msg)
   local role, roleIndex, encounterIdx, br = GetPaladinBuffRole()
   if not br then return end
+
+  -- Parse the SELF message ourselves
+  local pallyData, assignData = ParseSelfMessage(msg)
+  if not pallyData then return end
+
+  -- Store in our internal tables
+  ppPallyData[sender] = pallyData
+  if assignData then
+    ppAssignments[sender] = assignData
+  end
+
+  -- Also update PP's tables if PP is installed (keep them in sync)
+  if AllPallys then
+    AllPallys[sender] = pallyData
+  end
+  if PallyPower_Assignments and assignData then
+    PallyPower_Assignments[sender] = {}
+    for id = 0, 9 do
+      if assignData[id] then
+        PallyPower_Assignments[sender][id] = assignData[id]
+      end
+    end
+  end
 
   -- Auto-add this paladin if not already in a slot
   local slotIdx = FindSlotByPaladin(br, sender)
@@ -289,31 +465,13 @@ local function HandlePPSelf(sender, msg)
     OGRH.SVM.SetPath(basePath .. ".buffRoles.1.assignedPlayers." .. slotIdx, sender, BuildSyncMeta(1))
   end
 
-  -- Talent data comes from AllPallys which PP already updated before we get here.
-  -- Small delay to let PP finish parsing its own SELF message.
-  local timerFrame = OGRH.BuffManagerPP.timerFrame
-  if not timerFrame then
-    timerFrame = CreateFrame("Frame")
-    OGRH.BuffManagerPP.timerFrame = timerFrame
+  -- Import talents and blessings immediately (no delay needed — we parsed it ourselves)
+  ImportTalentsForPaladin(sender, slotIdx, br, roleIndex, encounterIdx)
+  ImportBlessingsForPaladin(sender, slotIdx, br, roleIndex, encounterIdx)
+
+  if not suppressRefresh and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+    OGRH.BuffManager.RefreshWindow()
   end
-  timerFrame.elapsed = 0
-  timerFrame.pendingSender = sender
-  timerFrame.pendingSlot = slotIdx
-  timerFrame.pendingBR = br
-  timerFrame.pendingRoleIdx = roleIndex
-  timerFrame.pendingEncIdx = encounterIdx
-  timerFrame:SetScript("OnUpdate", function()
-    this.elapsed = (this.elapsed or 0) + arg1
-    if this.elapsed < 0.2 then return end
-    this:SetScript("OnUpdate", nil)
-    if PP_Loaded() then
-      ImportTalentsForPaladin(this.pendingSender, this.pendingSlot, this.pendingBR, this.pendingRoleIdx, this.pendingEncIdx)
-      ImportBlessingsForPaladin(this.pendingSender, this.pendingSlot, this.pendingBR, this.pendingRoleIdx, this.pendingEncIdx)
-      if OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
-        OGRH.BuffManager.RefreshWindow()
-      end
-    end
-  end)
 end
 
 --- Handle an ASSIGN message from PallyPower ("ASSIGN <paladin> <classId> <blessingId>").
@@ -330,6 +488,18 @@ local function HandlePPAssign(sender, msg)
 
   local role, roleIndex, encounterIdx, br = GetPaladinBuffRole()
   if not br then return end
+
+  -- Update our internal assignment store
+  if not ppAssignments[paladinName] then ppAssignments[paladinName] = {} end
+  ppAssignments[paladinName][classId] = blessingId
+
+  -- Also update PP's table if installed
+  if PallyPower_Assignments then
+    if not PallyPower_Assignments[paladinName] then
+      PallyPower_Assignments[paladinName] = {}
+    end
+    PallyPower_Assignments[paladinName][classId] = blessingId
+  end
 
   local slotIdx = FindSlotByPaladin(br, paladinName)
   if not slotIdx then
@@ -368,6 +538,22 @@ local function HandlePPMassign(sender, msg)
 
   local role, roleIndex, encounterIdx, br = GetPaladinBuffRole()
   if not br then return end
+
+  -- Update our internal assignment store
+  if not ppAssignments[paladinName] then ppAssignments[paladinName] = {} end
+  for classId = 0, 8 do
+    ppAssignments[paladinName][classId] = blessingId
+  end
+
+  -- Also update PP's table if installed
+  if PallyPower_Assignments then
+    if not PallyPower_Assignments[paladinName] then
+      PallyPower_Assignments[paladinName] = {}
+    end
+    for classId = 0, 8 do
+      PallyPower_Assignments[paladinName][classId] = blessingId
+    end
+  end
 
   local slotIdx = FindSlotByPaladin(br, paladinName)
   if not slotIdx then
@@ -425,6 +611,11 @@ local function SendPPMessage(msg)
   SendAddonMessage(PP_PREFIX, msg, channel)
 end
 
+--- Send a REQ message to solicit SELF responses from all paladins with PallyPower.
+local function SendPPRequest()
+  SendPPMessage("REQ")
+end
+
 --- Send a blessing assignment change to PallyPower.
 --- Called from SetPaladinBlessing.  Admin only.
 function OGRH.BuffManagerPP.SendBlessing(paladinName, className, blessingKey)
@@ -434,6 +625,10 @@ function OGRH.BuffManagerPP.SendBlessing(paladinName, className, blessingKey)
   if classId == nil then return end
 
   local blessingId = blessingKey and BM_KEY_TO_PP[blessingKey] or -1
+
+  -- Update our internal assignment store
+  if not ppAssignments[paladinName] then ppAssignments[paladinName] = {} end
+  ppAssignments[paladinName][classId] = blessingId
 
   -- Update PP's local table if PP is installed
   if PallyPower_Assignments then
@@ -455,6 +650,13 @@ end
 --- Send a CLEAR to PallyPower for a specific paladin slot (all classes → -1).
 function OGRH.BuffManagerPP.ClearBlessingsForPaladin(paladinName)
   if not IsLocalAdmin() then return end
+
+  -- Update our internal assignment store
+  if ppAssignments[paladinName] then
+    for classId = 0, 8 do
+      ppAssignments[paladinName][classId] = -1
+    end
+  end
 
   -- Update PP's local table if PP is installed
   if PallyPower_Assignments and PallyPower_Assignments[paladinName] then
@@ -483,18 +685,19 @@ local function RebroadcastPaladin(paladinName)
 
   local assignments = br.paladinAssignments and br.paladinAssignments[slotIdx]
   if not assignments then
-    -- No assignments on file — clear them in PP
-    -- Also update local PP table
+    -- No assignments on file — clear them
+    if ppAssignments[paladinName] then
+      for classId = 0, 8 do ppAssignments[paladinName][classId] = -1 end
+    end
     if PallyPower_Assignments and PallyPower_Assignments[paladinName] then
-      for classId = 0, 8 do
-        PallyPower_Assignments[paladinName][classId] = -1
-      end
+      for classId = 0, 8 do PallyPower_Assignments[paladinName][classId] = -1 end
     end
     SendPPMessage("MASSIGN " .. paladinName .. " -1")
     return
   end
 
-  -- Update local PP table + broadcast each class assignment
+  -- Update internal + PP tables and broadcast each class assignment
+  if not ppAssignments[paladinName] then ppAssignments[paladinName] = {} end
   if PallyPower_Assignments then
     if not PallyPower_Assignments[paladinName] then
       PallyPower_Assignments[paladinName] = {}
@@ -506,7 +709,9 @@ local function RebroadcastPaladin(paladinName)
     if className then
       local blessingKey = assignments[className]
       local blessingId = blessingKey and BM_KEY_TO_PP[blessingKey] or -1
-      -- Update local PP table
+      -- Update internal store
+      ppAssignments[paladinName][classId] = blessingId
+      -- Update PP's table
       if PallyPower_Assignments and PallyPower_Assignments[paladinName] then
         PallyPower_Assignments[paladinName][classId] = blessingId
       end
@@ -538,13 +743,99 @@ function OGRH.BuffManagerPP.RebroadcastAll()
   RebroadcastAllPaladins()
 end
 
+--- Refresh button handler: clean stale paladins, send REQ, re-import.
+--- Mirrors PallyPower's Refresh button behavior.
+function OGRH.BuffManagerPP.RefreshPaladins()
+  -- 1. Clean stale paladins from BM slots (not admin-gated)
+  OGRH.BuffManagerPP.CleanStalePaladins()
+
+  -- 2. Send REQ to solicit fresh SELF from all PP paladins (admin-gated)
+  if IsLocalAdmin() and GetNumRaidMembers() > 0 then
+    SendPPRequest()
+  end
+
+  -- 3. Re-import all known data immediately
+  OGRH.BuffManagerPP.ImportAll()
+
+  OGRH.Msg("|cff66ff66[BuffManager]|r Paladin data refreshed.")
+end
+
 -- ============================================
--- EVENT FRAME: Listen for PP addon messages
+-- EVENT FRAME: Listen for PP addon messages + roster changes
 -- ============================================
 
 local eventFrame = CreateFrame("Frame", "OGRH_BuffManagerPP_EventFrame", UIParent)
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:SetScript("OnEvent", function()
+  -- ------------------------------------------------
+  -- On login / reload: clean stale slots and solicit fresh data
+  -- ------------------------------------------------
+  if event == "PLAYER_ENTERING_WORLD" then
+    -- Delay to let SVM, raid roster, and admin discovery initialise
+    if not eventFrame.loginThrottle then
+      eventFrame.loginThrottle = CreateFrame("Frame")
+    end
+    eventFrame.loginThrottle.elapsed = 0
+    eventFrame.loginThrottle:SetScript("OnUpdate", function()
+      this.elapsed = (this.elapsed or 0) + arg1
+      if this.elapsed < 3 then return end
+      this:SetScript("OnUpdate", nil)
+      -- Cleanup stale paladins (always safe, not admin-gated)
+      if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+        OGRH.BuffManagerPP.CleanStalePaladins()
+      end
+      -- Send REQ only if admin
+      if IsLocalAdmin() and GetNumRaidMembers() > 0 then
+        SendPPRequest()
+      end
+    end)
+    return
+  end
+
+  -- ------------------------------------------------
+  -- Roster change: send REQ to solicit SELF from all PP paladins
+  -- ------------------------------------------------
+  if event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
+    -- Throttle: avoid spamming on rapid roster changes
+    if not eventFrame.rosterThrottle then
+      eventFrame.rosterThrottle = CreateFrame("Frame")
+    end
+    eventFrame.rosterThrottle.elapsed = 0
+    eventFrame.rosterThrottle:SetScript("OnUpdate", function()
+      this.elapsed = (this.elapsed or 0) + arg1
+      if this.elapsed < 1 then return end
+      this:SetScript("OnUpdate", nil)
+
+      -- Clean up stale paladins from internal PP tables
+      local raidNames = {}
+      for i = 1, GetNumRaidMembers() do
+        local name = GetRaidRosterInfo(i)
+        if name then raidNames[name] = true end
+      end
+      for name, _ in pairs(ppPallyData) do
+        if not raidNames[name] then
+          ppPallyData[name] = nil
+          ppAssignments[name] = nil
+        end
+      end
+
+      -- Clean up stale paladins from BM data model (always — not admin-gated)
+      OGRH.BuffManagerPP.CleanStalePaladins()
+
+      -- Send REQ only if admin
+      if IsLocalAdmin() and GetNumRaidMembers() > 0 then
+        SendPPRequest()
+      end
+    end)
+    return
+  end
+
+  -- ------------------------------------------------
+  -- Addon message handling
+  -- ------------------------------------------------
   if event ~= "CHAT_MSG_ADDON" then return end
   if arg1 ~= PP_PREFIX then return end
 
@@ -658,13 +949,12 @@ OGRH.BuffManager.AssignPlayerToSlot = function(brIdx, slotIdx, playerName)
     OGRH.BuffManagerPP.ClearBlessingsForPaladin(oldPlayer)
   end
 
-  -- If a new paladin was assigned, do a one-time talent import from PP
+  -- If a new paladin was assigned, do a one-time talent import
   if playerName and playerName ~= "" and playerName ~= oldPlayer then
     local r, ri, ei, br2 = GetPaladinBuffRole()
     if br2 then
       local si = tonumber(slotIdx) or slotIdx
       ImportTalentsForPaladin(playerName, si, br2, ri, ei)
-      -- Also import any existing PP assignments for this paladin
       ImportBlessingsForPaladin(playerName, si, br2, ri, ei)
       if not suppressRefresh and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
         OGRH.BuffManager.RefreshWindow()
@@ -674,17 +964,39 @@ OGRH.BuffManager.AssignPlayerToSlot = function(brIdx, slotIdx, playerName)
 end
 
 -- ============================================
--- INITIAL IMPORT: When the BM window opens, pull current PP state
+-- INITIAL IMPORT: When the BM window opens, pull current state
 -- ============================================
 
--- Hook ShowWindow to trigger an initial import
+-- Hook ShowWindow to trigger an initial import + REQ
 local OrigShowWindow = OGRH.BuffManager.ShowWindow
 OGRH.BuffManager.ShowWindow = function(raidIdx, encounterIdx, roleIndex)
   OrigShowWindow(raidIdx, encounterIdx, roleIndex)
-  -- After window opens, import PP data (only if active raid and admin)
+  -- After window opens, clean stale paladins and import data
   if raidIdx == 1 then
+    -- Clean stale paladins first (always safe, not admin-gated)
+    OGRH.BuffManagerPP.CleanStalePaladins()
+    -- Import PP data (admin-gated internally)
     OGRH.BuffManagerPP.ImportAll()
+    -- Send REQ to solicit fresh SELF from all PP paladins
+    if IsLocalAdmin() and GetNumRaidMembers() > 0 then
+      SendPPRequest()
+    end
   end
+end
+
+-- Hook SetRaidAdmin: when admin is discovered (especially after reload),
+-- trigger cleanup + REQ immediately
+local OrigSetRaidAdmin = OGRH.SetRaidAdmin
+OGRH.SetRaidAdmin = function(playerName, suppressBroadcast, skipLastAdminUpdate)
+  local result = OrigSetRaidAdmin(playerName, suppressBroadcast, skipLastAdminUpdate)
+  -- If we just became admin, clean stale paladins and request PP data
+  if playerName == UnitName("player") then
+    OGRH.BuffManagerPP.CleanStalePaladins()
+    if GetNumRaidMembers() > 0 then
+      SendPPRequest()
+    end
+  end
+  return result
 end
 
 -- ============================================

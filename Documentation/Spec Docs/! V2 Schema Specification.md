@@ -224,6 +224,12 @@ encounters = {
                 name = "Buff Manager",
                 column = 2,
                 isBuffManager = true,       -- flag: renders compact buff indicators + "Manage Buffs" button
+                managedBuffClasses = {      -- which buff classes are actively managed (checkboxes)
+                    paladin = true,         -- Paladin blessings managed
+                    priest = false,         -- Priest buffs (Fort, Spirit, SP) not managed
+                    druid = true,           -- Druid buffs (MotW) managed
+                    mage = false,           -- Mage buffs (Int) not managed
+                },
                 buffRoles = {
                     [1] = {
                         buffRoleId = 1,

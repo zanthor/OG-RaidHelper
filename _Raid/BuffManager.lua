@@ -207,6 +207,18 @@ function OGRH.BuffManager.CanEdit(raidIdx)
   return false
 end
 
+--- Check whether a particular buff class is being managed (checkbox enabled in Admin).
+-- @param classKey string  One of "paladin", "priest", "druid", "mage"
+-- @param raidIdx number   (optional) Raid index, defaults to 1
+-- @return boolean  true if that class's buffs are managed, false if using defaults
+function OGRH.BuffManager.IsClassManaged(classKey, raidIdx)
+  raidIdx = raidIdx or 1
+  local role = OGRH.BuffManager.GetRole(raidIdx)
+  if not role then return false end
+  if not role.managedBuffClasses then return false end
+  return role.managedBuffClasses[classKey] and true or false
+end
+
 --- Calculate how many slot rows to show for a buff role.
 -- Rule: always show at least 2 rows; show one empty row beyond the highest assigned slot.
 function OGRH.BuffManager.CalcVisibleSlots(buffRole)
@@ -312,13 +324,20 @@ end
 -- ADMIN ROLE RENDERING (compact summary)
 -- ============================================
 
---- Render the compact buff status inside the Admin encounter's role container.
+--- Managed buff class definitions for the Admin encounter checkboxes.
+-- 2 columns × 2 rows: Paladin, Priest, Druid, Mage
+local MANAGED_BUFF_CLASSES = {
+  { key = "paladin", label = "Paladin", col = 1, row = 1 },
+  { key = "priest",  label = "Priest",  col = 2, row = 1 },
+  { key = "druid",   label = "Druid",   col = 1, row = 2 },
+  { key = "mage",    label = "Mage",    col = 2, row = 2 },
+}
+
+--- Render the compact buff management controls inside the Admin encounter's role container.
 -- Called by EncounterMgmt when it hits a role with isBuffManager = true.
 --
 -- Layout:
---   Row 1: buff type labels
---   Row 2: colored indicator panels
---   Row 3: percentage numbers
+--   2×2 grid of checkboxes: Paladin, Priest, Druid, Mage
 --   Bottom: "Manage Buffs" button
 --
 function OGRH.RenderBuffManagerRole(container, role, roleIndex, raidIdx, encounterIdx, containerWidth)
@@ -327,53 +346,46 @@ function OGRH.RenderBuffManagerRole(container, role, roleIndex, raidIdx, encount
   -- Ensure data exists
   OGRH.BuffManager.EnsureBuffRoles(role)
 
-  local frame = CreateFrame("Frame", nil, container)
-  frame:SetWidth(containerWidth - 10)
-  frame:SetHeight(65)
-  frame:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -25)
-
-  -- Top row: buff type short names + indicators
-  local buffTypes = {}
-  for i = 1, table.getn(role.buffRoles) do
-    table.insert(buffTypes, {
-      short = role.buffRoles[i].shortName or role.buffRoles[i].name,
-      type  = role.buffRoles[i].buffType
-    })
+  -- Ensure managedBuffClasses table exists
+  if not role.managedBuffClasses then
+    role.managedBuffClasses = {}
   end
 
-  local numTypes = table.getn(buffTypes)
-  local indicatorW = 30
-  local spacing = 6
-  local totalW = numTypes * indicatorW + (numTypes - 1) * spacing
-  local startX = math.floor(((containerWidth - 10) - totalW) / 2)
+  local frame = CreateFrame("Frame", nil, container)
+  frame:SetWidth(containerWidth - 10)
+  frame:SetHeight(80)
+  frame:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -25)
 
-  -- Store indicator references for dynamic updates
-  frame.indicators = {}
+  local canEdit = OGRH.BuffManager.CanEdit(raidIdx)
+  local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
 
-  for idx, bt in ipairs(buffTypes) do
-    local x = startX + (idx - 1) * (indicatorW + spacing)
+  -- 2×2 checkbox grid
+  local colWidth = math.floor((containerWidth - 10) / 2)
+  local rowHeight = 26
+  local startY = 0
 
-    -- Label
-    local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    lbl:SetPoint("TOPLEFT", frame, "TOPLEFT", x, 0)
-    lbl:SetText(bt.short)
-    lbl:SetTextColor(0.8, 0.8, 0.8)
+  for _, def in ipairs(MANAGED_BUFF_CLASSES) do
+    local x = (def.col - 1) * colWidth
+    local y = startY - (def.row - 1) * rowHeight
 
-    -- Colored indicator
-    local indicator = OGST.CreateColoredPanel(frame, indicatorW, 10,
-      {r = 0.3, g = 0.3, b = 0.3},
-      {r = 0.2, g = 0.2, b = 0.2, a = 0.8}
-    )
-    indicator:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -14)
-    indicator.buffType = bt.type
+    local isChecked = role.managedBuffClasses[def.key] and true or false
+    local capturedKey = def.key
 
-    -- Percentage text
-    local pctText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pctText:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -28)
-    pctText:SetText("--")
-    pctText:SetTextColor(0.6, 0.6, 0.6)
-
-    frame.indicators[idx] = {panel = indicator, pctText = pctText, buffType = bt.type}
+    local cb = OGST.CreateCheckbox(frame, {
+      label = def.label,
+      labelWidth = 60,
+      checked = isChecked,
+      disabled = not canEdit,
+      onChange = function(checked)
+        role.managedBuffClasses[capturedKey] = checked
+        OGRH.SVM.SetPath(
+          basePath .. ".managedBuffClasses." .. capturedKey,
+          checked,
+          BuildSyncMeta(raidIdx)
+        )
+      end
+    })
+    cb:SetPoint("TOPLEFT", frame, "TOPLEFT", x, y)
   end
 
   -- "Manage Buffs" button (centered at bottom)
@@ -388,43 +400,9 @@ function OGRH.RenderBuffManagerRole(container, role, roleIndex, raidIdx, encount
     OGRH.BuffManager.ShowWindow(raidIdx, encounterIdx, roleIndex)
   end)
 
-  -- Update indicators from last scan (if any)
-  OGRH.BuffManager.RefreshIndicators(frame)
-
   -- Keep reference so we can refresh later
   container.buffIndicatorFrame = frame
   return frame
-end
-
---- Refresh the small coloured indicators inside the admin role
-function OGRH.BuffManager.RefreshIndicators(frame)
-  if not frame or not frame.indicators then return end
-
-  for _, ind in ipairs(frame.indicators) do
-    local cov = OGRH.BuffManager.CalculateCoverage(ind.buffType)
-    local pct = cov.percent
-
-    -- Color coding
-    local r, g, b
-    if cov.total == 0 then
-      r, g, b = 0.3, 0.3, 0.3  -- gray = no data
-    elseif pct >= 100 then
-      r, g, b = 0.0, 0.8, 0.0  -- green
-    elseif pct >= 80 then
-      r, g, b = 0.9, 0.9, 0.0  -- yellow
-    else
-      r, g, b = 0.9, 0.2, 0.2  -- red
-    end
-
-    if ind.panel.bg then
-      ind.panel.bg:SetVertexColor(r, g, b, 1)
-    end
-    if cov.total > 0 then
-      ind.pctText:SetText(pct .. "%")
-    else
-      ind.pctText:SetText("--")
-    end
-  end
 end
 
 -- ============================================
@@ -681,6 +659,151 @@ local function GetBlessingByKey(key)
   return nil
 end
 
+--- Classes that receive Might when might/wisdom is the mass-assign choice.
+-- All others receive Wisdom.
+local MIGHT_CLASSES = { WARRIOR = true, ROGUE = true, DRUID = true, HUNTER = true }
+
+--- Normalise a blessing key for mass-assign cycling purposes.
+-- Might and Wisdom are treated as one combined "might/wisdom" unit.
+local function NormaliseBlessingKey(key)
+  if key == "might" or key == "wisdom" then return "might/wisdom" end
+  return key
+end
+
+--- Get the ordered cycle of mass-assign blessing keys for a paladin slot.
+-- Might/Wisdom are merged into a single "might/wisdom" entry.
+-- Filters by paladin talents (kings/sanctuary) and skips blessings already
+-- mass-assigned by other paladin slots.
+-- @return table  ordered list of keys (nil = "None", "might/wisdom" = combined)
+local function GetMassAssignCycle(brIdx, slotIdx)
+  local window = OGRH.BuffManager.window
+  local talents = {}
+  local br
+  if window then
+    local role = OGRH.BuffManager.GetRole(window.raidIdx)
+    if role then
+      OGRH.BuffManager.EnsureBuffRoles(role)
+      br = role.buffRoles[brIdx]
+      if br and br.paladinTalents and br.paladinTalents[slotIdx] then
+        talents = br.paladinTalents[slotIdx]
+      end
+    end
+  end
+
+  -- Collect blessings already mass-assigned by OTHER paladin slots
+  local takenBlessings = {}  -- normalised key → true
+  if br and br.paladinAssignments then
+    local numSlots = OGRH.BuffManager.CalcVisibleSlots(br)
+    for otherSlot = 1, numSlots do
+      if otherSlot ~= slotIdx and br.paladinAssignments[otherSlot] then
+        -- Check if this slot has a mass-assign (majority blessing)
+        local counts = {}
+        for _, cls in ipairs(PALADIN_CLASSES) do
+          local k = br.paladinAssignments[otherSlot][cls]
+          if k then
+            local nk = NormaliseBlessingKey(k)
+            counts[nk] = (counts[nk] or 0) + 1
+          end
+        end
+        -- If any normalised key covers most classes, consider it taken
+        for nk, cnt in pairs(counts) do
+          if cnt >= 5 then  -- majority of 9 classes
+            takenBlessings[nk] = true
+          end
+        end
+      end
+    end
+  end
+
+  -- Build available cycle: None, then blessings (might/wisdom merged, taken skipped)
+  local available = { nil }  -- nil = "None"
+  local addedMightWisdom = false
+  for _, b in ipairs(BLESSING_OPTIONS) do
+    local show = true
+    if b.key == "kings" and not talents.kings then show = false end
+    if b.key == "sanctuary" and not talents.sanctuary then show = false end
+    if not show then
+      -- talent not available, skip
+    elseif b.key == "might" or b.key == "wisdom" then
+      if not addedMightWisdom then
+        addedMightWisdom = true
+        if not takenBlessings["might/wisdom"] then
+          table.insert(available, "might/wisdom")
+        end
+      end
+    else
+      if not takenBlessings[b.key] then
+        table.insert(available, b.key)
+      end
+    end
+  end
+  return available
+end
+
+--- Determine the current mass-assign key for a paladin slot (normalised).
+local function GetCurrentMassKey(br, slotIdx)
+  if not br or not br.paladinAssignments or not br.paladinAssignments[slotIdx] then
+    return nil
+  end
+  -- Use first class's blessing, normalised
+  local firstKey = br.paladinAssignments[slotIdx][PALADIN_CLASSES[1]]
+  return NormaliseBlessingKey(firstKey)
+end
+
+--- Cycle all class blessings for a paladin slot to the next mass-assign blessing.
+-- Might/Wisdom combined: melee classes get Might, casters get Wisdom.
+-- Skips blessings already mass-assigned by other paladin slots.
+local function CycleAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleIndex)
+  local window = OGRH.BuffManager.window
+  if not window then return end
+  local role = OGRH.BuffManager.GetRole(raidIdx)
+  if not role then return end
+  OGRH.BuffManager.EnsureBuffRoles(role)
+  local br = role.buffRoles[brIdx]
+  if not br then return end
+
+  local cycle = GetMassAssignCycle(brIdx, slotIdx)
+  local currentNorm = GetCurrentMassKey(br, slotIdx)
+
+  -- Find current position in cycle
+  local currentIdx = 1
+  for i, key in ipairs(cycle) do
+    if key == currentNorm then
+      currentIdx = i
+      break
+    end
+  end
+  local nextIdx = currentIdx + 1
+  if nextIdx > table.getn(cycle) then nextIdx = 1 end
+  local nextKey = cycle[nextIdx]
+
+  -- Apply the blessing
+  if nextKey == "might/wisdom" then
+    -- Split assignment: melee → Might, casters → Wisdom
+    for _, cls in ipairs(PALADIN_CLASSES) do
+      if MIGHT_CLASSES[cls] then
+        OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, "might", raidIdx, encounterIdx, roleIndex)
+      else
+        OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, "wisdom", raidIdx, encounterIdx, roleIndex)
+      end
+    end
+  else
+    -- Uniform assignment (nil = clear, or a single blessing for all)
+    for _, cls in ipairs(PALADIN_CLASSES) do
+      OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, nextKey, raidIdx, encounterIdx, roleIndex)
+    end
+  end
+  OGRH.BuffManager.RefreshWindow()
+end
+
+--- Clear all class blessings for a paladin slot.
+local function ClearAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleIndex)
+  for _, cls in ipairs(PALADIN_CLASSES) do
+    OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, nil, raidIdx, encounterIdx, roleIndex)
+  end
+  OGRH.BuffManager.RefreshWindow()
+end
+
 -- ============================================
 -- BUFF SECTION WIDGET
 -- ============================================
@@ -828,115 +951,7 @@ end
 -- PALADIN BLESSING SECTION
 -- ============================================
 
---- Paladin talent options for the multi-select menu.
--- Each paladin player slot can toggle which talents/abilities they have.
-local PALADIN_TALENT_OPTIONS = {
-  {
-    key = "improved",
-    name = "Improved",
-    icons = {
-      PP_ICON_PATH .. "Spell_Holy_FistOfJustice",           -- Might
-      PP_ICON_PATH .. "Spell_Holy_SealOfWisdom",            -- Wisdom
-    }
-  },
-  {
-    key = "kings",
-    name = "Kings",
-    icons = { PP_ICON_PATH .. "Spell_Magic_GreaterBlessingofKings" }
-  },
-  {
-    key = "sanctuary",
-    name = "Sanctuary",
-    icons = { PP_ICON_PATH .. "Spell_Holy_GreaterBlessingofSanctuary" }
-  },
-}
-
---- Show a multi-select popup for paladin talents on a given slot.
-local function ShowTalentMenu(anchorBtn, brIdx, slotIdx, buffRole, raidIdx, encounterIdx, roleIndex)
-  local menuName = "OGRHPaladinTalentMenu"
-  local menuFrame = getglobal(menuName)
-  if not menuFrame then
-    menuFrame = CreateFrame("Frame", menuName, UIParent)
-    menuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-    menuFrame:SetWidth(160)
-    menuFrame:SetBackdrop({
-      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 12,
-      insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    menuFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-    menuFrame:EnableMouse(true)
-    menuFrame:Hide()
-  end
-
-  -- Clear old children
-  local oldChildren = { menuFrame:GetChildren() }
-  for _, child in ipairs(oldChildren) do child:Hide(); child:SetParent(nil) end
-
-  -- Read current talents
-  local talents = {}
-  if buffRole.paladinTalents and buffRole.paladinTalents[slotIdx] then
-    talents = buffRole.paladinTalents[slotIdx]
-  end
-
-  local itemH = 24
-  local numItems = table.getn(PALADIN_TALENT_OPTIONS)
-  local totalH = numItems * itemH + 8
-  menuFrame:SetHeight(totalH)
-  menuFrame:ClearAllPoints()
-  menuFrame:SetPoint("TOPLEFT", anchorBtn, "BOTTOMLEFT", 0, 0)
-  menuFrame:Show()
-
-  for i, opt in ipairs(PALADIN_TALENT_OPTIONS) do
-    local btn = CreateFrame("Button", nil, menuFrame)
-    btn:SetWidth(154)
-    btn:SetHeight(itemH)
-    btn:SetPoint("TOPLEFT", menuFrame, "TOPLEFT", 3, -((i - 1) * itemH) - 4)
-
-    -- Icons (one or two, side by side)
-    local iconOffset = 2
-    for _, iconPath in ipairs(opt.icons) do
-      local ico = btn:CreateTexture(nil, "ARTWORK")
-      ico:SetWidth(16)
-      ico:SetHeight(16)
-      ico:SetPoint("LEFT", btn, "LEFT", iconOffset, 0)
-      ico:SetTexture(iconPath)
-      iconOffset = iconOffset + 18
-    end
-
-    -- Label: green if selected, grey if not
-    local isSelected = talents[opt.key] and true or false
-    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    label:SetPoint("LEFT", btn, "LEFT", iconOffset + 2, 0)
-    if isSelected then
-      label:SetText("|cff00ff00" .. opt.name .. "|r")
-    else
-      label:SetText("|cff888888" .. opt.name .. "|r")
-    end
-
-    -- Highlight
-    local hl = btn:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetAllPoints()
-    hl:SetTexture("Interface\\Buttons\\WHITE8X8")
-    hl:SetVertexColor(0.3, 0.3, 0.5, 0.4)
-
-    local capturedKey = opt.key
-    btn:SetScript("OnClick", function()
-      OGRH.BuffManager.TogglePaladinTalent(brIdx, slotIdx, capturedKey, raidIdx, encounterIdx, roleIndex)
-      -- Re-show with updated state
-      ShowTalentMenu(anchorBtn, brIdx, slotIdx, buffRole, raidIdx, encounterIdx, roleIndex)
-    end)
-  end
-
-  -- Auto-hide; refresh when menu closes so the talent icon updates
-  menuFrame:SetScript("OnUpdate", function()
-    if not MouseIsOver(menuFrame) and not MouseIsOver(anchorBtn) then
-      menuFrame:Hide()
-      OGRH.BuffManager.RefreshWindow()
-    end
-  end)
-end
+-- (Talent menu removed — talent indicators are now direct toggle buttons)
 
 --- Show a popup menu to pick a blessing for a given paladin slot + class.
 local function ShowBlessingMenu(anchorBtn, brIdx, slotIdx, className, raidIdx, encounterIdx, roleIndex)
@@ -965,23 +980,45 @@ local function ShowBlessingMenu(anchorBtn, brIdx, slotIdx, className, raidIdx, e
   -- Read paladin talents for this slot to filter available blessings
   local window = OGRH.BuffManager.window
   local talents = {}
+  local br
   if window then
     local role = OGRH.BuffManager.GetRole(window.raidIdx)
     if role then
       OGRH.BuffManager.EnsureBuffRoles(role)
-      local br = role.buffRoles[brIdx]
+      br = role.buffRoles[brIdx]
       if br and br.paladinTalents and br.paladinTalents[slotIdx] then
         talents = br.paladinTalents[slotIdx]
       end
     end
   end
 
-  -- "None" option + blessing options filtered by talents
+  -- Collect blessings already assigned to OTHER paladin slots for this class
+  local takenKeys = {}  -- key → true
+  if br and br.paladinAssignments then
+    local numSlots = OGRH.BuffManager.CalcVisibleSlots(br)
+    for otherSlot = 1, numSlots do
+      if otherSlot ~= slotIdx and br.paladinAssignments[otherSlot] then
+        local otherKey = br.paladinAssignments[otherSlot][className]
+        if otherKey then
+          takenKeys[otherKey] = true
+        end
+      end
+    end
+  end
+
+  -- Class-based blessing restrictions
+  local NO_WISDOM = { WARRIOR = true, ROGUE = true }
+  local NO_MIGHT  = { PRIEST = true, MAGE = true, WARLOCK = true }
+
+  -- "None" option + blessing options filtered by talents, class, and already-taken
   local items = { { key = nil, name = "None", icon = nil } }
   for _, b in ipairs(BLESSING_OPTIONS) do
     local show = true
     if b.key == "kings" and not talents.kings then show = false end
     if b.key == "sanctuary" and not talents.sanctuary then show = false end
+    if b.key == "wisdom" and NO_WISDOM[className] then show = false end
+    if b.key == "might" and NO_MIGHT[className] then show = false end
+    if takenKeys[b.key] then show = false end
     if show then
       table.insert(items, b)
     end
@@ -1051,12 +1088,56 @@ local function CreatePaladinBuffSection(parent, buffRole, brIdx, width, raidIdx,
   end
 
   local contentTop = -28 - autoAssignH  -- first player row Y (matches standard sections)
-  local classStartX = 166  -- shifted right to make room for talent button
+  local talentColWidth = 22  -- spacing between talent indicator columns
+  local classStartX = 208   -- shifted right to make room for 3 talent columns
 
-  -- Class icon headers — when auto-assign shown, sit alongside the button;
+  -- Talent column definitions: key, icon, tooltip, talent field(s)
+  local TALENT_COLUMNS = {
+    { x = 140, icon = PP_ICON_PATH .. "Spell_Holy_FistOfJustice", tip = "Imp",
+      field = "improvedMight", field2 = "improvedWisdom",
+      pointsField = "mightPoints", pointsField2 = "wisdomPoints",
+      tipName = "Improved Might/Wisdom", split = true,
+      splitIcon2 = PP_ICON_PATH .. "Spell_Holy_SealOfWisdom" },
+    { x = 140 + talentColWidth, icon = PP_ICON_PATH .. "Spell_Magic_GreaterBlessingofKings", tip = "K",
+      field = "kings", tipName = "Kings" },
+    { x = 140 + talentColWidth * 2, icon = PP_ICON_PATH .. "Spell_Holy_GreaterBlessingofSanctuary", tip = "S",
+      field = "sanctuary", tipName = "Sanctuary" },
+  }
+
+  -- Column headers — when auto-assign shown, sit alongside the button;
   -- when hidden, sit between title and first player row.
   local iconY = autoAssignH > 0 and -30 or -28
 
+  -- Talent column "Poll" header — spans all 3 talent columns
+  local pollWidth = talentColWidth * 2 + 20  -- from first column x to last column x + icon width
+  local pollBtn = OGST.CreateButton(section, {
+    text = "Poll",
+    width = pollWidth,
+    height = 20,
+    onClick = function()
+      if OGRH.BuffManagerPP and OGRH.BuffManagerPP.RefreshPaladins then
+        OGRH.BuffManagerPP.RefreshPaladins()
+      end
+    end
+  })
+  pollBtn:SetPoint("TOPLEFT", section, "TOPLEFT", 140, iconY)
+
+  -- Re-apply hover scripts (OGST.AddDesignTooltip overwrites StyleButton's OnEnter/OnLeave)
+  pollBtn:SetScript("OnEnter", function()
+    this:SetBackdropColor(0.3, 0.45, 0.45, 1)
+    this:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+    GameTooltip:SetOwner(this, "ANCHOR_TOP")
+    GameTooltip:SetText("Poll Paladins", 1, 1, 1)
+    GameTooltip:AddLine("Request fresh talent and blessing data from PallyPower.", 0.7, 0.7, 0.7, true)
+    GameTooltip:Show()
+  end)
+  pollBtn:SetScript("OnLeave", function()
+    this:SetBackdropColor(0.25, 0.35, 0.35, 1)
+    this:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    GameTooltip:Hide()
+  end)
+
+  -- Class icon headers
   for ci = 1, numClasses do
     local cls = PALADIN_CLASSES[ci]
     local iconX = classStartX + (ci - 1) * colWidth
@@ -1080,66 +1161,115 @@ local function CreatePaladinBuffSection(parent, buffRole, brIdx, width, raidIdx,
     iconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
   end
 
-  -- Player rows with blessing icon buttons per class
+  -- Player rows with talent indicators and blessing icon buttons per class
   -- When no auto-assign, rows start below the icon header row
   local rowStartY = autoAssignH > 0 and contentTop or (-28 - headerRowH)
   for slotIdx = 1, numSlots do
     local rowY = rowStartY - ((slotIdx - 1) * 26)
     CreatePlayerSlot(section, brIdx, slotIdx, buffRole, rowY)
 
-    -- Talent toggle button (between player name and class columns)
-    local talentBtn = CreateFrame("Button", nil, section)
-    talentBtn:SetWidth(20)
-    talentBtn:SetHeight(20)
-    talentBtn:SetPoint("TOPLEFT", section, "TOPLEFT", 140, rowY)
-
-    local talentBg = talentBtn:CreateTexture(nil, "BACKGROUND")
-    talentBg:SetAllPoints()
-    talentBg:SetTexture("Interface\\Buttons\\WHITE8X8")
-    talentBg:SetVertexColor(0.15, 0.15, 0.15, 0.6)
-
-    -- Show a small gear/talent indicator
-    local talentIcon = talentBtn:CreateTexture(nil, "ARTWORK")
-    talentIcon:SetWidth(16)
-    talentIcon:SetHeight(16)
-    talentIcon:SetPoint("CENTER", talentBtn, "CENTER", 0, 0)
-    talentIcon:SetTexture("Interface\\Icons\\Spell_Holy_SealOfWisdom")
-
-    -- Count active talents for visual feedback
+    -- Talent indicator buttons (3 columns: Imp M/W, Kings, Sanctuary)
     local talents = (buffRole.paladinTalents and buffRole.paladinTalents[slotIdx]) or {}
-    local talentCount = 0
-    if talents.improved then talentCount = talentCount + 1 end
-    if talents.kings then talentCount = talentCount + 1 end
-    if talents.sanctuary then talentCount = talentCount + 1 end
-    if talentCount > 0 then
-      talentIcon:SetVertexColor(0.2, 1, 0.2, 1)  -- green tint when talents set
-    else
-      talentIcon:SetVertexColor(0.5, 0.5, 0.5, 0.6)  -- dim when no talents
-    end
-
-    local hlTex = talentBtn:CreateTexture(nil, "HIGHLIGHT")
-    hlTex:SetAllPoints()
-    hlTex:SetTexture("Interface\\Buttons\\WHITE8X8")
-    hlTex:SetVertexColor(0.4, 0.4, 0.6, 0.3)
-
     local capturedSlotIdx = slotIdx
     local capturedBrIdx = brIdx
-    talentBtn:SetScript("OnClick", function()
-      ShowTalentMenu(talentBtn, capturedBrIdx, capturedSlotIdx, buffRole, raidIdx, encounterIdx, roleIndex)
-    end)
-    talentBtn:SetScript("OnEnter", function()
-      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-      GameTooltip:SetText("Paladin Talents", 1, 1, 1)
-      local t = (buffRole.paladinTalents and buffRole.paladinTalents[capturedSlotIdx]) or {}
-      if t.improved then GameTooltip:AddLine("Improved Might/Wisdom", 0, 1, 0) end
-      if t.kings then GameTooltip:AddLine("Kings", 0, 1, 0) end
-      if t.sanctuary then GameTooltip:AddLine("Sanctuary", 0, 1, 0) end
-      if not (t.improved or t.kings or t.sanctuary) then
-        GameTooltip:AddLine("Click to set talents", 0.6, 0.6, 0.6)
+
+    for _, tc in ipairs(TALENT_COLUMNS) do
+      local tBtn = CreateFrame("Button", nil, section)
+      tBtn:SetWidth(20)
+      tBtn:SetHeight(20)
+      tBtn:SetPoint("TOPLEFT", section, "TOPLEFT", tc.x, rowY)
+
+      local tBg = tBtn:CreateTexture(nil, "BACKGROUND")
+      tBg:SetAllPoints()
+      tBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+      tBg:SetVertexColor(0.15, 0.15, 0.15, 0.6)
+
+      -- Determine learned state
+      local learned = talents[tc.field] and true or false
+      if tc.field2 then
+        learned = learned or (talents[tc.field2] and true or false)
       end
-      GameTooltip:Show()
-    end)
-    talentBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+      if tc.split then
+        -- Split icon: left half = Might, right half = Wisdom
+        local leftTex = tBtn:CreateTexture(nil, "ARTWORK")
+        leftTex:SetWidth(10)
+        leftTex:SetHeight(20)
+        leftTex:SetPoint("LEFT", tBtn, "LEFT", 0, 0)
+        leftTex:SetTexture(tc.icon)
+        leftTex:SetTexCoord(0, 0.5, 0, 1)
+        if learned then
+          leftTex:SetVertexColor(1, 1, 1, 1)
+        else
+          leftTex:SetVertexColor(0.35, 0.35, 0.35, 0.8)
+        end
+
+        local rightTex = tBtn:CreateTexture(nil, "ARTWORK")
+        rightTex:SetWidth(10)
+        rightTex:SetHeight(20)
+        rightTex:SetPoint("RIGHT", tBtn, "RIGHT", 0, 0)
+        rightTex:SetTexture(tc.splitIcon2)
+        rightTex:SetTexCoord(0.5, 1, 0, 1)
+        if learned then
+          rightTex:SetVertexColor(1, 1, 1, 1)
+        else
+          rightTex:SetVertexColor(0.35, 0.35, 0.35, 0.8)
+        end
+
+        -- Talent points overlay (show max of might/wisdom points)
+        local pts1 = talents[tc.pointsField] or 0
+        local pts2 = talents[tc.pointsField2] or 0
+        local pts = pts1 > pts2 and pts1 or pts2
+        if pts > 0 then
+          local ptStr = tBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          ptStr:SetPoint("BOTTOMRIGHT", tBtn, "BOTTOMRIGHT", -1, 1)
+          ptStr:SetText("|cff00ff00" .. pts .. "|r")
+        end
+      else
+        -- Single icon
+        local tIcon = tBtn:CreateTexture(nil, "ARTWORK")
+        tIcon:SetAllPoints()
+        tIcon:SetTexture(tc.icon)
+        if learned then
+          tIcon:SetVertexColor(1, 1, 1, 1)
+        else
+          tIcon:SetVertexColor(0.35, 0.35, 0.35, 0.8)
+        end
+      end
+
+      -- Highlight
+      local hlTex = tBtn:CreateTexture(nil, "HIGHLIGHT")
+      hlTex:SetAllPoints()
+      hlTex:SetTexture("Interface\\Buttons\\WHITE8X8")
+      hlTex:SetVertexColor(0.4, 0.4, 0.6, 0.3)
+
+      -- Click → directly toggle this talent
+      local capturedTc = tc
+      tBtn:SetScript("OnClick", function()
+        if capturedTc.field2 then
+          -- Combined toggle (improvedMight + improvedWisdom)
+          OGRH.BuffManager.TogglePaladinTalent(capturedBrIdx, capturedSlotIdx, capturedTc.field, raidIdx, encounterIdx, roleIndex)
+          OGRH.BuffManager.TogglePaladinTalent(capturedBrIdx, capturedSlotIdx, capturedTc.field2, raidIdx, encounterIdx, roleIndex)
+        else
+          OGRH.BuffManager.TogglePaladinTalent(capturedBrIdx, capturedSlotIdx, capturedTc.field, raidIdx, encounterIdx, roleIndex)
+        end
+        OGRH.BuffManager.RefreshWindow()
+      end)
+
+      -- Tooltip
+      tBtn:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+        GameTooltip:SetText(capturedTc.tipName, 1, 1, 1)
+        local t = (buffRole.paladinTalents and buffRole.paladinTalents[capturedSlotIdx]) or {}
+        if t[capturedTc.field] or (capturedTc.field2 and t[capturedTc.field2]) then
+          GameTooltip:AddLine("Learned (click to unset)", 0, 1, 0)
+        else
+          GameTooltip:AddLine("Not learned (click to set)", 0.6, 0.6, 0.6)
+        end
+        GameTooltip:Show()
+      end)
+      tBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
 
     -- Blessing icon buttons (one per class)
     for ci = 1, numClasses do
@@ -1179,12 +1309,21 @@ local function CreatePaladinBuffSection(parent, buffRole, brIdx, width, raidIdx,
       hlTex:SetTexture("Interface\\Buttons\\WHITE8X8")
       hlTex:SetVertexColor(0.4, 0.4, 0.6, 0.3)
 
-      -- Click to open blessing picker
+      -- Click handling: normal click = menu, shift-click = cycle all, shift-right = clear all
       local capturedSlotIdx = slotIdx
       local capturedBrIdx = brIdx
       local capturedCls = cls
+      blessBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
       blessBtn:SetScript("OnClick", function()
-        ShowBlessingMenu(blessBtn, capturedBrIdx, capturedSlotIdx, capturedCls, raidIdx, encounterIdx, roleIndex)
+        if IsShiftKeyDown() then
+          if arg1 == "RightButton" then
+            ClearAllBlessings(capturedBrIdx, capturedSlotIdx, raidIdx, encounterIdx, roleIndex)
+          else
+            CycleAllBlessings(capturedBrIdx, capturedSlotIdx, raidIdx, encounterIdx, roleIndex)
+          end
+        else
+          ShowBlessingMenu(blessBtn, capturedBrIdx, capturedSlotIdx, capturedCls, raidIdx, encounterIdx, roleIndex)
+        end
       end)
 
       -- Tooltip
@@ -1198,6 +1337,8 @@ local function CreatePaladinBuffSection(parent, buffRole, brIdx, width, raidIdx,
           GameTooltip:SetText(clsName .. ": (none)", 0.6, 0.6, 0.6)
         end
         GameTooltip:AddLine("Click to assign a blessing", 0.8, 0.8, 0.8, 1)
+        GameTooltip:AddLine("Shift-click to cycle all classes", 0.6, 0.8, 1, 1)
+        GameTooltip:AddLine("Shift-right-click to clear all", 0.6, 0.8, 1, 1)
         GameTooltip:Show()
       end)
       blessBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1892,7 +2033,14 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
       OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. idx, nil, syncMeta)
     end
   end
-  -- Keep paladin talents (from PP sync), don't clear those
+  -- Clear talents — slot→paladin mapping is about to change, stale data would show wrong icons.
+  -- Talents will be re-imported from PP data after new slot assignment below.
+  if br.paladinTalents then
+    for idx, _ in pairs(br.paladinTalents) do
+      br.paladinTalents[idx] = nil
+      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinTalents." .. idx, nil, syncMeta)
+    end
+  end
 
   -- Assign paladins to slots
   local pallyList = {}
@@ -1905,6 +2053,11 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
   for slotIdx, name in ipairs(pallyList) do
     br.assignedPlayers[slotIdx] = name
     OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".assignedPlayers." .. slotIdx, name, syncMeta)
+  end
+
+  -- Re-import talents from PP data for the new slot→paladin mapping
+  if OGRH.BuffManagerPP and OGRH.BuffManagerPP.ImportTalentsForSlots then
+    OGRH.BuffManagerPP.ImportTalentsForSlots(br, brIdx, raidIdx, encounterIdx, roleIndex, pallyList)
   end
 
   local numPallys = table.getn(pallyList)
@@ -1986,6 +2139,7 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
   -- Step 3: Build paladin capability map (what blessings each paladin CAN give)
   -- Check talents: kings requires talent, sanctuary requires talent, improved affects might/wisdom
   local pallyCapabilities = {}
+  local pallyTalents = {}  -- raw talent data per slot
   for slotIdx, pallyName in ipairs(pallyList) do
     local talents = (br.paladinTalents and br.paladinTalents[slotIdx]) or {}
     local canGive = {
@@ -1997,12 +2151,17 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
       sanctuary = talents.sanctuary and true or false,
     }
     pallyCapabilities[slotIdx] = canGive
+    pallyTalents[slotIdx] = talents
   end
 
   -- Step 4: Greedy assignment algorithm
   -- For each class (by priority order: DPS classes first benefit from Salv),
   -- assign the highest-priority blessing that a paladin can provide.
   -- Each paladin can only give ONE blessing per class.
+  --
+  -- Special handling for Might/Wisdom:
+  --   1. Concentrate: prefer a paladin already giving that same blessing to other classes
+  --   2. Improved talent: prefer paladins with improvedMight for might, improvedWisdom for wisdom
 
   if not br.paladinAssignments then br.paladinAssignments = {} end
   for slotIdx = 1, numPallys do
@@ -2048,20 +2207,36 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
         end
 
         if not alreadyHas then
-          -- Find the best paladin to give this blessing
-          -- Prefer a paladin who hasn't assigned this class yet AND can give this blessing
-          -- Among eligible, prefer the one with the fewest total assignments (load balance)
+          -- Find the best paladin to give this blessing.
+          -- Scoring: lower is better.
+          --   - Base: total assignment count (load balance)
+          --   - Bonus -100: paladin already gives this same blessing to other classes (concentrate)
+          --   - Bonus -50:  paladin has improved talent for might/wisdom
           local bestSlot = nil
-          local bestLoad = 9999
+          local bestScore = 99999
           for slotIdx = 1, numPallys do
             if not assigned[cls][slotIdx]
                 and pallyCapabilities[slotIdx][desiredBlessing] then
-              local load = 0
+              -- Base load
+              local score = 0
               for _, cnt in pairs(pallyBlessingCount[slotIdx]) do
-                load = load + cnt
+                score = score + cnt
               end
-              if load < bestLoad then
-                bestLoad = load
+
+              -- Concentration bonus: already giving this blessing to other classes
+              if pallyBlessingCount[slotIdx][desiredBlessing] and pallyBlessingCount[slotIdx][desiredBlessing] > 0 then
+                score = score - 100
+              end
+
+              -- Improved talent bonus for might/wisdom
+              if desiredBlessing == "might" and pallyTalents[slotIdx].improvedMight then
+                score = score - 50
+              elseif desiredBlessing == "wisdom" and pallyTalents[slotIdx].improvedWisdom then
+                score = score - 50
+              end
+
+              if score < bestScore then
+                bestScore = score
                 bestSlot = slotIdx
               end
             end

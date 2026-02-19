@@ -136,77 +136,100 @@ local ADMIN_ENCOUNTER_TEMPLATE = {
 
 ### Admin Role Rendering (`RenderBuffManagerRole`)
 
-When `EncounterMgmt` encounters a role with `isBuffManager = true`, it calls `OGRH.RenderBuffManagerRole()`. This renders a compact summary inside the Admin encounter's right column:
+When `EncounterMgmt` encounters a role with `isBuffManager = true`, it calls `OGRH.RenderBuffManagerRole()`. This renders a compact set of controls inside the Admin encounter's right column:
 
 ```
 ┌─ Buff Manager ──────────────────────────┐
-│  Fort  Spirit  SP  MotW  Int  Pally     │
-│  [██]  [██]   [░░] [██] [██]  [██]     │
-│  100%  100%   0%   95%  100%  100%      │
+│  [✓] Paladin    [✓] Priest              │
+│  [✓] Druid      [ ] Mage                │
 │                                          │
 │         [ Manage Buffs ]                 │
 └──────────────────────────────────────────┘
 ```
 
+The checkboxes indicate which buff classes are actively being managed for the encounter:
+
+- **Managed (checked):** BuffManager assignments control which groups/players need the buff. Deficits are included in chat announcements directed at the assigned caster.
+- **Unmanaged (unchecked):** The Readiness Dashboard performs a simple X/Y evaluation (every raid member checked against provider-class presence in raid, respecting blacklists). Deficits contribute to the readiness score but are **not** included in chat announcements.
+- **Paladin** is a special case — it always ties into the PallyPower integration regardless of the checkbox state.
+
 **Components:**
-- `OGST.CreateColoredPanel` for each buff type indicator (green = 100%, yellow = 80%+, red = <80%, gray = disabled/no data)
-- `OGST.CreateStaticText` for buff type labels and percentage text
-- `OGST.CreateButton` for "Manage Buffs" which calls `OGRH.ShowBuffManagerWindow()`
+- `MANAGED_BUFF_CLASSES` constant: 4 entries defining the 2×2 grid layout (`paladin`, `priest`, `druid`, `mage`)
+- `OGST.CreateCheckbox` for each buff class (disabled when user lacks edit permission)
+- Styled "Manage Buffs" button which opens the Buff Manager window
+
+**Data persistence:** Each checkbox persists to `role.managedBuffClasses[classKey]` via SVM at path:
+```
+encounterMgmt.raids[raidIdx].encounters[encounterIdx].roles[roleIndex].managedBuffClasses.<classKey>
+```
 
 ```lua
+local MANAGED_BUFF_CLASSES = {
+  { key = "paladin", label = "Paladin", col = 1, row = 1 },
+  { key = "priest",  label = "Priest",  col = 2, row = 1 },
+  { key = "druid",   label = "Druid",   col = 1, row = 2 },
+  { key = "mage",    label = "Mage",    col = 2, row = 2 },
+}
+
 function OGRH.RenderBuffManagerRole(container, role, roleIndex, raidIdx, encounterIdx, containerWidth)
-  if not role.isBuffManager then return nil end
+  if not role or not role.isBuffManager then return nil end
+
+  OGRH.BuffManager.EnsureBuffRoles(role)
+
+  if not role.managedBuffClasses then
+    role.managedBuffClasses = {}
+  end
 
   local frame = CreateFrame("Frame", nil, container)
   frame:SetWidth(containerWidth - 10)
-  frame:SetHeight(80)
+  frame:SetHeight(75)
   frame:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -25)
 
-  -- Buff type indicators row
-  local buffTypes = {"Fort", "Spirit", "SP", "MotW", "Int", "Pally"}
-  local indicatorWidth = 32
-  local startX = 5
+  local canEdit = OGRH.BuffManager.CanEdit(raidIdx)
+  local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
 
-  for i, label in ipairs(buffTypes) do
-    local x = startX + (i - 1) * (indicatorWidth + 8)
+  -- 2×2 checkbox grid
+  local colWidth = math.floor((containerWidth - 10) / 2)
+  local rowHeight = 26
 
-    -- Label
-    OGST.CreateStaticText(frame, {
-      text = label,
-      point = {"TOPLEFT", frame, "TOPLEFT", x, 0},
-      font = "GameFontNormalSmall",
-      color = {r = 0.8, g = 0.8, b = 0.8}
+  for _, def in ipairs(MANAGED_BUFF_CLASSES) do
+    local x = (def.col - 1) * colWidth
+    local y = -(def.row - 1) * rowHeight
+    local capturedKey = def.key
+
+    local cb = OGST.CreateCheckbox(frame, {
+      label = def.label,
+      labelWidth = 60,
+      checked = role.managedBuffClasses[def.key] and true or false,
+      disabled = not canEdit,
+      onChange = function(checked)
+        role.managedBuffClasses[capturedKey] = checked
+        OGRH.SVM.SetPath(
+          basePath .. ".managedBuffClasses." .. capturedKey,
+          checked,
+          BuildSyncMeta(raidIdx)
+        )
+      end
     })
-
-    -- Colored indicator panel
-    local indicator = OGST.CreateColoredPanel(frame, indicatorWidth, 12,
-      {r = 0.3, g = 0.3, b = 0.3, a = 1},  -- border
-      {r = 0.2, g = 0.2, b = 0.2, a = 0.8}  -- bg (updated dynamically)
-    )
-    indicator:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -14)
-
-    -- Percentage text
-    OGST.CreateStaticText(frame, {
-      text = "--",
-      point = {"TOPLEFT", frame, "TOPLEFT", x, -30},
-      font = "GameFontNormalSmall",
-      color = {r = 0.6, g = 0.6, b = 0.6}
-    })
+    cb:SetPoint("TOPLEFT", frame, "TOPLEFT", x, y)
   end
 
-  -- Manage Buffs button (centered)
-  OGST.CreateButton(frame, {
-    text = "Manage Buffs",
-    width = 100,
-    height = 20,
-    point = {"BOTTOM", frame, "BOTTOM", 0, 2},
-    onClick = function()
-      OGRH.ShowBuffManagerWindow(raidIdx, encounterIdx, roleIndex)
-    end
-  })
+  -- "Manage Buffs" button (centered at bottom)
+  -- ...
 
   return frame
 end
+```
+
+### `OGRH.BuffManager.IsClassManaged(classKey, raidIdx)`
+
+Public API to check whether a particular buff class is being managed (checkbox enabled in Admin).
+
+```lua
+-- @param classKey string  One of "paladin", "priest", "druid", "mage"
+-- @param raidIdx number   (optional) Defaults to 1
+-- @return boolean  true if managed, false otherwise
+OGRH.BuffManager.IsClassManaged("paladin")  -- true/false
 ```
 
 ---
@@ -657,7 +680,16 @@ When `_UI/RosterPanel.lua` is implemented:
 
 ## Buff Role Data Structure
 
-The buff assignment data lives inside the Admin role's `buffRoles` table:
+The buff assignment data lives inside the Admin role's `buffRoles` table. The `managedBuffClasses` table controls which buff classes are actively being managed via the Admin checkboxes:
+
+```lua
+managedBuffClasses = {
+  paladin = true,   -- Paladin blessings managed
+  priest  = false,  -- Priest buffs (Fort, Spirit, SP) not managed
+  druid   = true,   -- Druid buffs (MotW) managed
+  mage    = false,  -- Mage buffs (Int) not managed
+}
+```
 
 ```lua
 buffRoles = {

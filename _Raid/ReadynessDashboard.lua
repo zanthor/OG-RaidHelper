@@ -437,6 +437,7 @@ end
 RD.BUFF_BLACKLIST = {
   TANKS = {
     { category = "paladin", blessingKey = "salvation", spellPattern = "Salvation" },
+    { category = "int", classFilter = "PALADIN" },
   },
 }
 
@@ -455,6 +456,10 @@ RD.CLASS_BUFF_BLACKLIST = {
   },
   PALADIN = {
     { category = "spirit" },
+    { category = "paladin", blessingKey = "might", spellPattern = "Might", roleFilter = { HEALERS = true } },
+  },
+  DRUID = {
+    { category = "paladin", blessingKey = "wisdom", spellPattern = "Wisdom", roleFilter = { TANKS = true, MELEE = true } },
   },
   HUNTER = {
     { category = "spirit" },
@@ -485,12 +490,21 @@ function RD.IsBuffBlacklisted(role, category, buffName, playerClass)
     if roleBlacklist then
       for _, entry in ipairs(roleBlacklist) do
         if entry.category == category then
-          if entry.spellPattern then
-            if buffName and string.find(buffName, entry.spellPattern) then
+          -- If classFilter is set, only apply to that specific class
+          local classMatch = true
+          if entry.classFilter and playerClass then
+            classMatch = string.upper(playerClass) == entry.classFilter
+          elseif entry.classFilter then
+            classMatch = false
+          end
+          if classMatch then
+            if entry.spellPattern then
+              if buffName and string.find(buffName, entry.spellPattern) then
+                return true
+              end
+            else
               return true
             end
-          else
-            return true
           end
         end
       end
@@ -504,12 +518,19 @@ function RD.IsBuffBlacklisted(role, category, buffName, playerClass)
     if classBlacklist then
       for _, entry in ipairs(classBlacklist) do
         if entry.category == category then
-          if entry.spellPattern then
-            if buffName and string.find(buffName, entry.spellPattern) then
+          -- If roleFilter is set, only apply when player's role matches
+          local roleMatch = true
+          if entry.roleFilter then
+            roleMatch = role and entry.roleFilter[role] or false
+          end
+          if roleMatch then
+            if entry.spellPattern then
+              if buffName and string.find(buffName, entry.spellPattern) then
+                return true
+              end
+            else
               return true
             end
-          else
-            return true
           end
         end
       end
@@ -789,20 +810,25 @@ function RD.ScanBuffReadyness()
       local playerMissingAny = false
 
       for _, buffCat in ipairs(required) do
-        -- Initialize byBuff tracking
-        if not buffStatus.byBuff[buffCat] then
-          buffStatus.byBuff[buffCat] = { ready = 0, total = 0, missing = {} }
-        end
-        buffStatus.byBuff[buffCat].total = buffStatus.byBuff[buffCat].total + 1
-
-        if playerCategories[buffCat] then
-          buffStatus.byBuff[buffCat].ready = buffStatus.byBuff[buffCat].ready + 1
+        -- Skip buff categories that are blacklisted for this player's role/class
+        if RD.IsBuffBlacklisted(playerRole, buffCat, nil, class) then
+          -- Don't count this buff as required for this player
         else
-          playerMissingAny = true
-          local upperClass = string.upper(class)
-          local assignee = RD.GetStandardBuffAssignee(buffCat, subgroup) or "?"
-          table.insert(buffStatus.missing, { player = name, buff = buffCat, class = upperClass, subgroup = subgroup, assignee = assignee })
-          table.insert(buffStatus.byBuff[buffCat].missing, { name = name, class = upperClass, subgroup = subgroup, assignee = assignee })
+          -- Initialize byBuff tracking
+          if not buffStatus.byBuff[buffCat] then
+            buffStatus.byBuff[buffCat] = { ready = 0, total = 0, missing = {} }
+          end
+          buffStatus.byBuff[buffCat].total = buffStatus.byBuff[buffCat].total + 1
+
+          if playerCategories[buffCat] then
+            buffStatus.byBuff[buffCat].ready = buffStatus.byBuff[buffCat].ready + 1
+          else
+            playerMissingAny = true
+            local upperClass = string.upper(class)
+            local assignee = RD.GetStandardBuffAssignee(buffCat, subgroup) or "?"
+            table.insert(buffStatus.missing, { player = name, buff = buffCat, class = upperClass, subgroup = subgroup, assignee = assignee })
+            table.insert(buffStatus.byBuff[buffCat].missing, { name = name, class = upperClass, subgroup = subgroup, assignee = assignee })
+          end
         end
       end
 
@@ -858,9 +884,10 @@ end
 function RD.GetRequiredBuffsWithComposition(class, classesInRaid, subgroup)
   -- Only require buff types that have active BuffManager assignments
   local assignedBuffTypes = RD.GetAssignedBuffTypes()
-  if not assignedBuffTypes then return {} end
+  if not assignedBuffTypes then assignedBuffTypes = {} end
 
   local candidates = {}
+  local candidateSet = {}  -- track what's already added
   for buffType, groupData in pairs(assignedBuffTypes) do
     local coversThisGroup = false
 
@@ -876,6 +903,28 @@ function RD.GetRequiredBuffsWithComposition(class, classesInRaid, subgroup)
 
     if coversThisGroup then
       table.insert(candidates, buffType)
+      candidateSet[buffType] = true
+    end
+  end
+
+  -- Add buff types from UNMANAGED classes (simple X/Y evaluation, no group gating).
+  -- Only added when the provider class is present in the raid.
+  local UNMANAGED_BUFF_MAP = {
+    priest = { types = {"fortitude", "spirit"}, provider = "Priest" },
+    druid  = { types = {"motw"},               provider = "Druid"  },
+    mage   = { types = {"int"},                provider = "Mage"   },
+  }
+  local isClassManaged = OGRH.BuffManager and OGRH.BuffManager.IsClassManaged
+  for classKey, info in pairs(UNMANAGED_BUFF_MAP) do
+    if isClassManaged and not isClassManaged(classKey) then
+      if classesInRaid[info.provider] then
+        for _, bt in ipairs(info.types) do
+          if not candidateSet[bt] then
+            table.insert(candidates, bt)
+            candidateSet[bt] = true
+          end
+        end
+      end
     end
   end
 
@@ -1652,6 +1701,26 @@ function RD.OnRaidChatMessage(msg, sender)
 end
 
 -- ============================================
+-- Open Buff Manager (shift-click from buff indicator)
+-- ============================================
+function RD.OpenBuffManager()
+  if not OGRH.BuffManager or not OGRH.BuffManager.ShowWindow then return end
+
+  local raidIdx = 1  -- active raid
+  local _, _, encIdx = RD.GetCurrentEncounterData()
+  if not encIdx then encIdx = 1 end
+
+  -- Find the BuffManager role index in the Admin encounter
+  local role, roleIndex, encounterIdx = OGRH.BuffManager.GetRole(raidIdx)
+  if not role then
+    OGRH.Msg("|cffff8800[Dashboard]|r Could not find Buff Manager role data.")
+    return
+  end
+
+  OGRH.BuffManager.ShowWindow(raidIdx, encounterIdx, roleIndex)
+end
+
+-- ============================================
 -- Announcement System
 -- ============================================
 function RD.OnIndicatorClick(indicatorType)
@@ -1737,7 +1806,25 @@ function RD.BuildBuffAnnouncement(state)
   for buffCat, data in pairs(state.byBuff) do
     local missingCount = table.getn(data.missing or {})
     if missingCount > 0 then
-      if string.find(buffCat, "^Blessing: ") then
+      -- Skip unmanaged class buffs from chat announcements
+      -- (they still appear in the readiness indicator as X/Y)
+      local BUFF_CLASS_MAP = {
+        fortitude = "priest", spirit = "priest", shadowprot = "priest",
+        motw = "druid", int = "mage",
+      }
+      local managedClassKey = BUFF_CLASS_MAP[buffCat]
+      local skipUnmanaged = false
+      if managedClassKey then
+        local isManaged = OGRH.BuffManager and OGRH.BuffManager.IsClassManaged
+          and OGRH.BuffManager.IsClassManaged(managedClassKey)
+        if not isManaged then
+          skipUnmanaged = true
+        end
+      end
+
+      if skipUnmanaged then
+        -- Not managed: skip from announcements (readiness indicator still shows X/Y)
+      elseif string.find(buffCat, "^Blessing: ") then
         table.insert(blessingDeficits, { cat = buffCat, count = missingCount, missing = data.missing })
       else
         table.insert(standardDeficits, { cat = buffCat, count = missingCount, missing = data.missing })
