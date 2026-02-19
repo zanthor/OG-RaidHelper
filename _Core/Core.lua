@@ -1379,149 +1379,58 @@ OGRH.LIST_ITEM_SPACING = OGST and OGST.LIST_ITEM_SPACING or 2
 -- ========================================
 -- AUXILIARY PANEL POSITIONING SYSTEM
 -- ========================================
--- Centralized system for managing stacked panels below/above main UI
+-- Delegates to OGST.RegisterDockedPanel for unified panel stacking.
+-- All panels dock vertically below/above OGRH_Main with auto-swap.
+-- Priority: lower numbers appear closer to main UI (1 = closest).
+
 OGRH.AuxiliaryPanels = OGRH.AuxiliaryPanels or {
-  panels = {}, -- Registered panels in display order
+  panels = {}, -- Legacy tracking table (kept for compatibility)
   updateFrame = nil
 }
 
 -- Register an auxiliary panel for automatic positioning
+-- Delegates to OGST.RegisterDockedPanel with vertical axis on OGRH_Main
 -- priority: lower numbers appear closer to main UI (1 = closest)
 function OGRH.RegisterAuxiliaryPanel(frame, priority)
   if not frame then return end
-  
-  priority = priority or 100
-  
-  -- Check if already registered
-  for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
-    if panel.frame == frame then
-      panel.priority = priority
-      OGRH.RepositionAuxiliaryPanels()
-      return
-    end
+  if not OGST or not OGST.RegisterDockedPanel then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH] OGST not loaded — cannot register auxiliary panel|r")
+    return
   end
-  
-  -- Add new panel
-  table.insert(OGRH.AuxiliaryPanels.panels, {
-    frame = frame,
-    priority = priority
+  if not OGRH_Main then return end
+
+  priority = priority or 100
+
+  OGST.RegisterDockedPanel(frame, {
+    parentFrame = OGRH_Main,
+    axis = "vertical",
+    preferredSide = "bottom",
+    priority = priority,
+    autoMove = true,
+    hideInCombat = false,
   })
-  
-  -- Sort by priority
-  table.sort(OGRH.AuxiliaryPanels.panels, function(a, b)
-    return a.priority < b.priority
-  end)
-  
-  OGRH.RepositionAuxiliaryPanels()
 end
 
 -- Unregister an auxiliary panel
 function OGRH.UnregisterAuxiliaryPanel(frame)
   if not frame then return end
-  
-  for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
-    if panel.frame == frame then
-      table.remove(OGRH.AuxiliaryPanels.panels, i)
-      OGRH.RepositionAuxiliaryPanels()
-      return
-    end
+  if OGST and OGST.UnregisterDockedPanel then
+    OGST.UnregisterDockedPanel(frame)
   end
 end
 
--- Reposition all registered auxiliary panels
+-- Reposition all registered auxiliary panels (delegates to OGST)
 function OGRH.RepositionAuxiliaryPanels()
-  if not OGRH_Main or not OGRH_Main:IsVisible() then return end
-  
-  local screenHeight = UIParent:GetHeight()
-  local mainBottom = OGRH_Main:GetBottom()
-  local mainTop = OGRH_Main:GetTop()
-  
-  if not mainBottom or not mainTop then return end
-  
-  -- Separate panels into visible below and above
-  local visibleBelow = {}
-  local visibleAbove = {}
-  
-  for _, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
-    if panel.frame:IsVisible() then
-      local frameHeight = panel.frame:GetHeight() or 0
-      table.insert(visibleBelow, {frame = panel.frame, height = frameHeight})
-    end
-  end
-  
-  -- Calculate total height of panels
-  local totalBelowHeight = 0
-  for _, panel in ipairs(visibleBelow) do
-    totalBelowHeight = totalBelowHeight + panel.height
-  end
-  
-  -- Position panels below or above based on available space
-  local gap = -2  -- Negative gap to stack panels with small spacing
-  
-  if (mainBottom - totalBelowHeight) > 0 then
-    -- Stack below main UI
-    local currentAnchor = OGRH_Main
-    local currentPoint = "BOTTOM"
-    
-    for _, panel in ipairs(visibleBelow) do
-      panel.frame:ClearAllPoints()
-      panel.frame:SetPoint("TOP", currentAnchor, currentPoint, 0, gap)
-      currentAnchor = panel.frame
-      currentPoint = "BOTTOM"
-    end
-  elseif (mainTop + totalBelowHeight) < screenHeight then
-    -- Stack above main UI (reverse order)
-    local currentAnchor = OGRH_Main
-    local currentPoint = "TOP"
-    
-    for i = table.getn(visibleBelow), 1, -1 do
-      local panel = visibleBelow[i]
-      panel.frame:ClearAllPoints()
-      panel.frame:SetPoint("BOTTOM", currentAnchor, currentPoint, 0, -gap)
-      currentAnchor = panel.frame
-      currentPoint = "TOP"
-    end
-  else
-    -- Not enough space either way, fallback to individual positioning
-    for _, panel in ipairs(visibleBelow) do
-      panel.frame:ClearAllPoints()
-      panel.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    end
+  if OGST and OGST.RepositionDockedPanels then
+    OGST.RepositionDockedPanels()
   end
 end
 
--- Initialize automatic repositioning on main UI movement or panel visibility changes
+-- Legacy updateFrame is no longer needed — OGST has its own OnUpdate repositioning.
+-- Keep the field so existing code that checks `if not OGRH.AuxiliaryPanels.updateFrame`
+-- doesn't re-create it.
 if not OGRH.AuxiliaryPanels.updateFrame then
-  local updateFrame = CreateFrame("Frame")
-  updateFrame.lastMainPos = nil
-  updateFrame.lastPanelStates = {}
-  
-  updateFrame:SetScript("OnUpdate", function()
-    if not OGRH_Main or not OGRH_Main:IsVisible() then return end
-    
-    -- Check for main UI movement
-    local currentPos = OGRH_Main:GetLeft()
-    if currentPos and currentPos ~= this.lastMainPos then
-      this.lastMainPos = currentPos
-      OGRH.RepositionAuxiliaryPanels()
-    end
-    
-    -- Check for panel visibility changes
-    local needsUpdate = false
-    for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
-      local isVisible = panel.frame:IsVisible()
-      if this.lastPanelStates[i] ~= isVisible then
-        this.lastPanelStates[i] = isVisible
-        needsUpdate = true
-      end
-    end
-    
-    if needsUpdate then
-      OGRH.RepositionAuxiliaryPanels()
-    end
-  end)
-  
-  OGRH.AuxiliaryPanels.updateFrame = updateFrame
+  OGRH.AuxiliaryPanels.updateFrame = true  -- Sentinel to prevent legacy re-init
 end
 
 -- ========================================

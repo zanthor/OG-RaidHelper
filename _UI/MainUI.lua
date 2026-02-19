@@ -1029,6 +1029,8 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
         (OGRH.ConsumesTracking and (OGRH.ConsumesTracking.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
       OGRH.Msg("  |cff00ccff/ogrh debug bigwigs|r - Toggle BigWigs integration debug messages " ..
         (OGRH.BigWigs and (OGRH.BigWigs.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("  |cff00ccff/ogrh debug ready|r - Toggle ReadynessDashboard debug messages " ..
+        (OGRH.ReadynessDashboard and (OGRH.ReadynessDashboard.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
       OGRH.Msg("|cff66ccff[RH][DEBUG]|r Use /ogrh debug [option] to toggle")
     elseif debugOption == "sync" then
       if OGRH.SyncIntegrity then
@@ -1078,6 +1080,14 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
       else
         OGRH.Msg("BigWigs integration not loaded.")
       end
+    elseif debugOption == "ready" then
+      if OGRH.ReadynessDashboard then
+        OGRH.ReadynessDashboard.State.debug = not OGRH.ReadynessDashboard.State.debug
+        local status = OGRH.ReadynessDashboard.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("ReadynessDashboard debug: " .. status)
+      else
+        OGRH.Msg("ReadynessDashboard not loaded.")
+      end
     else
       OGRH.Msg("|cffff0000[RH]|r Unknown debug option: " .. debugOption)
       OGRH.Msg("Use |cff00ccff/ogrh debug help|r to see available options")
@@ -1094,9 +1104,18 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Permission system not loaded.")
     end
+  elseif string.find(sub, "^ready") then
+    local _, _, readyArgs = string.find(sub, "^ready%s*(.*)")
+    if OGRH.ReadynessDashboard and OGRH.ReadynessDashboard.HandleSlashCommand then
+      OGRH.ReadynessDashboard.HandleSlashCommand(readyArgs or "")
+    else
+      OGRH.Msg("ReadynessDashboard not loaded.")
+    end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
     OGRH.Msg("Commands:")
+    OGRH.Msg("  ready - Toggle Readyness Dashboard")
+    OGRH.Msg("  ready dock|undock|scan|reset")
     OGRH.Msg("  debug help - Show debug toggle options")
     OGRH.Msg("  messages - Show all message types")
     OGRH.Msg("  permissions - Show raid permissions")

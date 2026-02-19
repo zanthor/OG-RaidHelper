@@ -98,6 +98,8 @@ _Raid\RolesPoll.lua
 _Raid\Announce.lua
 _Raid\BigWigs.lua
 _Raid\Trade.lua
+_Raid\ReadynessDashboard.lua
+_Raid\ReadynessDashboardUI.lua
 
 ## ===================================================================
 ## Phase 5: Administration - Guild & Validation
