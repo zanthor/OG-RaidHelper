@@ -14,7 +14,8 @@ OGRH.MESSAGE_PREFIX = "OGRH"
 -- v01: DELTA_BATCH handler now delegates to SVM.OnBatchReceived (path/value format),
 --       old handler expected changes[] typed objects that no producer ever created.
 -- v02: Admin encounter scrollbar fix, Loot Settings UI refinements.
-OGRH.SYNC_VERSION = "02"
+-- v03: ReadynessDashboard class consume + encounter consume scanning, announcement formatting.
+OGRH.SYNC_VERSION = "03"
 
 --[[
     Message Category Enums
