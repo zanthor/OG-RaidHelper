@@ -204,6 +204,15 @@ OGRH.MessageTypes.ROLESUI = {
     BATCH_UPDATE = "OGRH_ROLESUI_BATCH_UPDATE"   -- Multiple bucket updates
 }
 
+-- READYDASH: Readyness Dashboard messages (cooldown polls, results broadcast, sync)
+OGRH.MessageTypes.READYDASH = {
+    POLL_REQUEST       = "OGRH_READYDASH_POLL_REQUEST",      -- A/L asks admin to start a poll
+    POLL_RESULTS       = "OGRH_READYDASH_POLL_RESULTS",      -- Admin broadcasts final results to other OGRH users
+    COOLDOWN_SYNC      = "OGRH_READYDASH_CD_SYNC",           -- Admin broadcasts full cooldown state every 60s OOC
+    COOLDOWN_CAST      = "OGRH_READYDASH_CD_CAST",           -- Any player broadcasts a detected cast
+    COOLDOWN_CORRECTION = "OGRH_READYDASH_CD_CORRECTION",    -- Druid/Warrior self-reports exact CD remaining
+}
+
 --[[
     Helper Functions
 ]]
@@ -254,4 +263,4 @@ end
 
 -- Initialize message type system
 OGRH.Msg(string.format("|cff00ccff[RH-MsgTypes]|r Loaded %d message categories", 
-    table.getn({OGRH.MessageTypes.STRUCT, OGRH.MessageTypes.ASSIGN, OGRH.MessageTypes.SYNC, OGRH.MessageTypes.ADMIN, OGRH.MessageTypes.STATE, OGRH.MessageTypes.READHELPER})))
+    table.getn({OGRH.MessageTypes.STRUCT, OGRH.MessageTypes.ASSIGN, OGRH.MessageTypes.SYNC, OGRH.MessageTypes.ADMIN, OGRH.MessageTypes.STATE, OGRH.MessageTypes.READHELPER, OGRH.MessageTypes.ROLESUI, OGRH.MessageTypes.READYDASH})))

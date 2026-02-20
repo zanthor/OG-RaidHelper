@@ -31,6 +31,18 @@ function RD.CreateDashboardPanel()
   panel:SetMovable(1)
   panel:SetClampedToScreen(1)
 
+  -- Apply backdrop so it's visible even when undocked (OGST only applies it on first dock)
+  panel:SetBackdrop({
+    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+    tile = true,
+    tileSize = 16,
+    edgeSize = 16,
+    insets = {left = 4, right = 4, top = 4, bottom = 4}
+  })
+  panel:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+  panel:SetBackdropBorderColor(0.4, 0.6, 0.6, 1)
+
   -- Movable when undocked
   panel:RegisterForDrag("LeftButton")
   panel:SetScript("OnDragStart", function()
@@ -151,8 +163,10 @@ function RD.CreateIndicator(parent, indicatorType)
       if IsShiftKeyDown() and indicatorType == "buff" then
         RD.OpenBuffManager()
       else
-        RD.OnIndicatorClick(indicatorType)
+        RD.OnIndicatorClick(indicatorType, "LeftButton")
       end
+    elseif arg1 == "RightButton" then
+      RD.OnIndicatorClick(indicatorType, "RightButton")
     end
   end)
   frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -193,8 +207,10 @@ function RD.CreateIconIndicator(parent, indicatorType, iconPath)
       if IsShiftKeyDown() and indicatorType == "buff" then
         RD.OpenBuffManager()
       else
-        RD.OnIndicatorClick(indicatorType)
+        RD.OnIndicatorClick(indicatorType, "LeftButton")
       end
+    elseif arg1 == "RightButton" then
+      RD.OnIndicatorClick(indicatorType, "RightButton")
     end
   end)
   frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -509,7 +525,9 @@ function RD.ShowIndicatorTooltip(frame, indicatorType)
 
   GameTooltip:AddLine(" ")
   GameTooltip:AddLine("Left-click: Announce to raid", 0.5, 0.5, 0.5)
-  GameTooltip:AddLine("Right-click: Show details", 0.5, 0.5, 0.5)
+  if indicatorType == "rebirth" or indicatorType == "tranq" or indicatorType == "taunt" then
+    GameTooltip:AddLine("Right-click: Start readiness poll", 0.5, 0.5, 0.5)
+  end
   GameTooltip:Show()
 end
 
@@ -528,6 +546,13 @@ function RD.AddCooldownTooltipLines(state, abilityName)
     for _, entry in ipairs(state.onCooldown) do
       local remaining = entry.remaining or 0
       GameTooltip:AddLine(string.format("  %s: %s", entry.name, RD.FormatTime(remaining)), 1.0, 0.7, 0.3)
+    end
+  end
+
+  if state.unknown and table.getn(state.unknown) > 0 then
+    GameTooltip:AddLine("Unknown:", 0.5, 0.5, 0.5)
+    for _, name in ipairs(state.unknown) do
+      GameTooltip:AddLine("  " .. name, 0.4, 0.4, 0.4)
     end
   end
 end

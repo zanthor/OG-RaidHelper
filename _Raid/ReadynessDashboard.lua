@@ -35,9 +35,9 @@ RD.State.indicators = {
     MELEE   = { health = 0, mana = 0, healthPlayers = {}, manaPlayers = {} },
     RANGED  = { health = 0, mana = 0, healthPlayers = {}, manaPlayers = {} },
   },
-  rebirth    = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {} },
-  tranq      = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {} },
-  taunt      = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {} },
+  rebirth    = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {}, unknown = {} },
+  tranq      = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {}, unknown = {} },
+  taunt      = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {}, unknown = {} },
 }
 
 -- ============================================
@@ -459,6 +459,7 @@ RD.CLASS_BUFF_BLACKLIST = {
     { category = "paladin", blessingKey = "might", spellPattern = "Might", roleFilter = { HEALERS = true } },
   },
   DRUID = {
+    { category = "spirit", roleFilter = { TANKS = true, MELEE = true } },
     { category = "paladin", blessingKey = "wisdom", spellPattern = "Wisdom", roleFilter = { TANKS = true, MELEE = true } },
   },
   HUNTER = {
@@ -1427,6 +1428,27 @@ function RD.StartScanning()
     end)
   end
 
+  -- Cooldown sync frame (60s OOC, admin broadcasts + all self-report)
+  if not RD.CooldownSyncFrame then
+    RD.CooldownSyncFrame = CreateFrame("Frame")
+    RD.CooldownSyncFrame:SetScript("OnUpdate", function()
+      if RD.State.inCombat then return end  -- Only sync out of combat
+      local now = GetTime()
+      if now - RD.lastCooldownSyncTime >= RD.COOLDOWN_SYNC_INTERVAL then
+        RD.lastCooldownSyncTime = now
+        -- Admin broadcasts full cooldown state
+        if OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(UnitName("player")) then
+          RD.BroadcastCooldownSync()
+        end
+      end
+      if now - RD.lastSelfReportTime >= RD.SELF_REPORT_INTERVAL then
+        RD.lastSelfReportTime = now
+        -- All Druids/Warriors self-report their own cooldowns
+        RD.SelfReportCooldowns()
+      end
+    end)
+  end
+
   RD.State.scanning = true
 
   if RD.State.debug then
@@ -1442,6 +1464,10 @@ function RD.StopScanning()
   if RD.ResourceScanFrame then
     RD.ResourceScanFrame:SetScript("OnUpdate", nil)
     RD.ResourceScanFrame = nil
+  end
+  if RD.CooldownSyncFrame then
+    RD.CooldownSyncFrame:SetScript("OnUpdate", nil)
+    RD.CooldownSyncFrame = nil
   end
   RD.State.scanning = false
 
@@ -1524,9 +1550,9 @@ function RD.ResetAllIndicators()
     MELEE   = { health = 0, mana = 0, healthPlayers = {}, manaPlayers = {} },
     RANGED  = { health = 0, mana = 0, healthPlayers = {}, manaPlayers = {} },
   }
-  RD.State.indicators.rebirth  = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {} }
-  RD.State.indicators.tranq    = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {} }
-  RD.State.indicators.taunt    = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {} }
+  RD.State.indicators.rebirth  = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {}, unknown = {} }
+  RD.State.indicators.tranq    = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {}, unknown = {} }
+  RD.State.indicators.taunt    = { status = "gray", ready = 0, total = 0, onCooldown = {}, available = {}, unknown = {} }
 
   if RD.RefreshDashboard then
     RD.RefreshDashboard()
@@ -1578,59 +1604,145 @@ end
 -- ============================================
 -- Combat Log Parsing (Phase 4 stubs, basic framework now)
 -- ============================================
+
+-- Strip WoW hyperlink/color codes from a message so pattern matching works on plain text.
+-- e.g. "|cff71d5ff|Hspell:20748|h[Rebirth]|h|r" → "Rebirth"
+local function StripLinks(msg)
+  msg = string.gsub(msg, "|c%x%x%x%x%x%x%x%x", "")
+  msg = string.gsub(msg, "|r", "")
+  msg = string.gsub(msg, "|H.-|h", "")
+  msg = string.gsub(msg, "|h", "")
+  msg = string.gsub(msg, "%[", "")
+  msg = string.gsub(msg, "%]", "")
+  return msg
+end
+
+-- Detect a spell cast from a combat log message.
+-- Handles: "You cast SpellName" (self) and "PlayerName casts SpellName" (others)
+-- Returns caster name or nil.
+local function DetectSpellCast(msg, spellName)
+  if string.find(msg, "You cast " .. spellName) then
+    return UnitName("player")
+  end
+  for name in string.gfind(msg, "(.+) casts " .. spellName) do
+    return name
+  end
+  return nil
+end
+
 function RD.OnCombatLogEvent(msg)
   if not msg then return end
 
-  -- Rebirth detection: "X's Rebirth" or "X casts Rebirth" patterns
-  local caster = nil
-  for name in string.gfind(msg, "(.+)'s Rebirth") do
-    caster = name
-    break
-  end
-  if not caster then
-    for name in string.gfind(msg, "(.+) casts Rebirth") do
-      caster = name
-      break
-    end
-  end
+  -- Strip hyperlinks/color codes so patterns match plain spell names
+  msg = StripLinks(msg)
+
+  local caster
+
+  -- Rebirth detection
+  caster = DetectSpellCast(msg, "Rebirth")
   if caster then
     RD.RecordCooldownCast(caster, "rebirth")
     return
   end
 
-  -- Tranquility detection
-  for name in string.gfind(msg, "(.+)'s Tranquility") do
-    caster = name
-    break
+  -- Tranquility detection (channeled spell — no "casts" message)
+  -- Heal ticks show: "You gain 88 health from Hooliganscha's Tranquility."
+  -- Self ticks show: "You gain 88 health from Tranquility."
+  -- We only need to detect once per cast, RecordCooldownCast handles dedup via lastCast timestamp.
+  for name in string.gfind(msg, "from (.+)'s Tranquility") do
+    RD.RecordCooldownCast(name, "tranquility")
+    return
   end
-  if not caster then
-    for name in string.gfind(msg, "(.+) begins to cast Tranquility") do
-      caster = name
-      break
-    end
-  end
-  if caster then
-    RD.RecordCooldownCast(caster, "tranquility")
+  -- Self-cast: "from Tranquility" with no possessive (CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS)
+  if string.find(msg, "from Tranquility") then
+    RD.RecordCooldownCast(UnitName("player"), "tranquility")
     return
   end
 
-  -- Challenging Shout / Challenging Roar detection
-  for name in string.gfind(msg, "(.+)'s Challenging Shout") do
-    RD.RecordCooldownCast(name, "taunt")
+  -- Challenging Shout detection (instant cast — may not appear in combat log)
+  -- Primary detection via BigWigs sync (see OnAddonMessage below).
+  -- Fallback combat log detection kept for when BigWigs sync is unavailable.
+  caster = DetectSpellCast(msg, "Challenging Shout")
+  if caster then
+    RD.RecordCooldownCast(caster, "taunt")
     return
   end
-  for name in string.gfind(msg, "(.+)'s Challenging Roar") do
-    RD.RecordCooldownCast(name, "taunt")
+
+  -- Challenging Roar detection (instant cast — may not appear in combat log)
+  caster = DetectSpellCast(msg, "Challenging Roar")
+  if caster then
+    RD.RecordCooldownCast(caster, "taunt")
     return
   end
 end
+
+-- ============================================
+-- BigWigs Sync Listener (for abilities that don't appear in combat log)
+-- ============================================
+-- BigWigs sends addon messages with prefix "BigWigs" and body like "BWCACS" / "BWCACR"
+-- when a Warrior uses Challenging Shout or a Druid uses Challenging Roar.
+-- Each player's BigWigs detects their OWN cast (via SuperWoW or SpellStatusV2)
+-- and broadcasts it to the raid. We piggyback on these syncs.
+function RD.OnAddonMessage(prefix, message, channel, sender)
+  if prefix ~= "BigWigs" or channel ~= "RAID" then return end
+  if not sender or sender == "" then return end
+
+  -- Parse sync key (first word of message)
+  local _, _, sync = string.find(message, "^(%S+)")
+  if not sync then return end
+
+  if sync == "BWCACS" or sync == "BWCACR" then
+    -- Challenging Shout or Challenging Roar
+    RD.RecordCooldownCast(sender, "taunt")
+    if RD.State.debug then
+      OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r BigWigs sync: " .. sender .. " " .. sync)
+    end
+  end
+end
+
+-- Broadcast throttle: prevent spamming the same cast (e.g. Tranquility heal ticks)
+RD.lastCastBroadcast = {}  -- { ["playerName:abilityKey"] = timestamp }
+RD.CAST_BROADCAST_THROTTLE = 5  -- seconds
 
 function RD.RecordCooldownCast(casterName, abilityKey)
   local tracker = RD.CooldownTrackers[abilityKey]
   if not tracker then return end
 
-  tracker.casts[casterName] = { lastCast = GetTime() }
+  local now = GetTime()
+  tracker.casts[casterName] = { lastCast = now }
   tracker.reportedReady[casterName] = nil  -- Clear any previous report
+
+  -- Invalidate cached poll indicator so GetCooldownReadyness recalculates
+  -- from tracker data (casts + reportedReady), reflecting this cast immediately.
+  local indicatorKey = abilityKey == "tranquility" and "tranq" or abilityKey
+  local existing = RD.State.indicators[indicatorKey]
+  if existing and existing.pollTimestamp then
+    existing.pollTimestamp = nil
+  end
+
+  -- Force immediate indicator refresh so the UI updates now
+  RD.State.indicators[indicatorKey] = RD.GetCooldownReadyness(abilityKey)
+  if RD.RefreshDashboard then
+    RD.RefreshDashboard()
+  end
+
+  -- Broadcast cast detection to other OGRH users (throttled to avoid Tranquility tick spam)
+  local throttleKey = casterName .. ":" .. abilityKey
+  local lastBroadcast = RD.lastCastBroadcast[throttleKey]
+  if not lastBroadcast or (now - lastBroadcast) > RD.CAST_BROADCAST_THROTTLE then
+    RD.lastCastBroadcast[throttleKey] = now
+    if OGRH.MessageRouter and OGRH.MessageRouter.Broadcast then
+      OGRH.MessageRouter.Broadcast(
+        OGRH.MessageTypes.READYDASH.COOLDOWN_CAST,
+        {
+          caster = casterName,
+          ability = abilityKey,
+          timestamp = now,
+        },
+        { priority = "NORMAL" }
+      )
+    end
+  end
 
   if RD.State.debug then
     OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Cooldown recorded: " .. casterName .. " cast " .. abilityKey)
@@ -1638,66 +1750,723 @@ function RD.RecordCooldownCast(casterName, abilityKey)
 end
 
 -- ============================================
--- Poll System
+-- Cooldown Sync System
 -- ============================================
+-- Admin broadcasts full cooldown state every 60s OOC.
+-- Any OGRH player broadcasts detected casts.
+-- Druids/Warriors self-report exact CD via GetSpellCooldown every 60s.
+
+RD.COOLDOWN_SYNC_INTERVAL = 60       -- Admin sync broadcast interval (seconds)
+RD.SELF_REPORT_INTERVAL = 60         -- Self-report check interval (seconds)
+RD.SELF_REPORT_TOLERANCE = 2         -- Seconds of drift before correcting
+RD.lastCooldownSyncTime = 0
+RD.lastSelfReportTime = 0
+
+-- Spell name → abilityKey mapping for self-reporting
+RD.SELF_REPORT_SPELLS = {
+  ["Rebirth"]           = "rebirth",
+  ["Tranquility"]       = "tranquility",
+  ["Challenging Shout"] = "taunt",
+  ["Challenging Roar"]  = "taunt",
+}
+
+--- Find a spell's spellbook index by name.
+-- Returns (index, bookType) or nil.
+local function FindSpellIndex(spellName)
+  local i = 1
+  while true do
+    local name = GetSpellName(i, "spell")
+    if not name then return nil end
+    if name == spellName then return i, "spell" end
+    i = i + 1
+  end
+end
+
+--- Get the remaining cooldown for a spell by name.
+-- Returns remaining seconds, or 0 if ready, or nil if spell not found.
+function RD.GetOwnSpellCooldown(spellName)
+  local idx, book = FindSpellIndex(spellName)
+  if not idx then return nil end
+  local start, duration = GetSpellCooldown(idx, book)
+  if not start or start == 0 then return 0 end
+  local remaining = (start + duration) - GetTime()
+  if remaining < 0 then remaining = 0 end
+  return remaining
+end
+
+--- Build serializable cooldown state from all trackers (for admin sync).
+function RD.BuildCooldownSyncData()
+  local data = {}
+  local now = GetTime()
+  for abilityKey, tracker in pairs(RD.CooldownTrackers) do
+    local castData = {}
+    for name, info in pairs(tracker.casts) do
+      if info.lastCast then
+        local remaining = tracker.cooldownDuration - (now - info.lastCast)
+        if remaining > 0 then
+          castData[name] = remaining
+        end
+        -- If remaining <= 0, cooldown expired, don't include (they're available)
+      end
+    end
+    data[abilityKey] = castData
+  end
+  return data
+end
+
+--- Admin: broadcast full cooldown state to all OGRH users.
+function RD.BroadcastCooldownSync()
+  if not OGRH.MessageRouter or not OGRH.MessageRouter.Broadcast then return end
+
+  local data = RD.BuildCooldownSyncData()
+  OGRH.MessageRouter.Broadcast(
+    OGRH.MessageTypes.READYDASH.COOLDOWN_SYNC,
+    data,
+    { priority = "NORMAL" }
+  )
+
+  if RD.State.debug then
+    OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Admin cooldown sync broadcast sent")
+  end
+end
+
+--- Self-report: Druids/Warriors check their own spell cooldowns and broadcast corrections.
+function RD.SelfReportCooldowns()
+  if not OGRH.MessageRouter or not OGRH.MessageRouter.Broadcast then return end
+
+  local _, playerClass = UnitClass("player")
+  if not playerClass then return end
+  playerClass = string.upper(playerClass)
+
+  local playerName = UnitName("player")
+  local corrections = {}
+  local now = GetTime()
+
+  for spellName, abilityKey in pairs(RD.SELF_REPORT_SPELLS) do
+    -- Check if this spell is relevant for our class
+    local classes = RD.POLL_CLASSES[abilityKey]
+    if classes and classes[playerClass] then
+      local remaining = RD.GetOwnSpellCooldown(spellName)
+      if remaining then
+        -- Compare against what the tracker thinks
+        local tracker = RD.CooldownTrackers[abilityKey]
+        local trackerRemaining = 0
+        if tracker and tracker.casts[playerName] and tracker.casts[playerName].lastCast then
+          trackerRemaining = tracker.cooldownDuration - (now - tracker.casts[playerName].lastCast)
+          if trackerRemaining < 0 then trackerRemaining = 0 end
+        end
+
+        local drift = math.abs(remaining - trackerRemaining)
+        if drift > RD.SELF_REPORT_TOLERANCE then
+          table.insert(corrections, {
+            ability = abilityKey,
+            spell = spellName,
+            remaining = remaining,
+          })
+
+          -- Also update local tracker immediately
+          if remaining > 0 then
+            tracker.casts[playerName] = { lastCast = now - (tracker.cooldownDuration - remaining) }
+          else
+            tracker.casts[playerName] = nil
+            tracker.reportedReady[playerName] = true
+          end
+        end
+      end
+    end
+  end
+
+  if table.getn(corrections) > 0 then
+    OGRH.MessageRouter.Broadcast(
+      OGRH.MessageTypes.READYDASH.COOLDOWN_CORRECTION,
+      {
+        player = playerName,
+        corrections = corrections,
+      },
+      { priority = "NORMAL" }
+    )
+
+    -- Refresh indicators after local correction
+    RD.RunBuffScan()
+
+    if RD.State.debug then
+      OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Self-reported " .. table.getn(corrections) .. " cooldown corrections")
+    end
+  end
+end
+
+--- Handle incoming COOLDOWN_SYNC from admin.
+function RD.OnCooldownSync(sender, data)
+  -- Only accept from admin
+  if not OGRH.IsRaidAdmin(sender) then return end
+
+  local now = GetTime()
+  for abilityKey, castData in pairs(data) do
+    local tracker = RD.CooldownTrackers[abilityKey]
+    if tracker then
+      -- Update casts from admin's data: remaining seconds → backdate lastCast
+      for name, remaining in pairs(castData) do
+        if remaining > 0 then
+          tracker.casts[name] = { lastCast = now - (tracker.cooldownDuration - remaining) }
+        end
+      end
+    end
+  end
+
+  -- Refresh indicators
+  RD.RunBuffScan()
+
+  if RD.State.debug then
+    OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Received cooldown sync from admin: " .. sender)
+  end
+end
+
+--- Handle incoming COOLDOWN_CAST from any OGRH player.
+function RD.OnCooldownCast(sender, data)
+  if not data or not data.caster or not data.ability then return end
+
+  local tracker = RD.CooldownTrackers[data.ability]
+  if not tracker then return end
+
+  -- Fuzzy dedup: if we already have a cast from this player within 5 seconds, skip
+  local existing = tracker.casts[data.caster]
+  if existing and existing.lastCast then
+    local diff = math.abs(GetTime() - existing.lastCast)
+    if diff < RD.CAST_BROADCAST_THROTTLE then
+      return  -- Already know about this cast
+    end
+  end
+
+  -- Record it (without re-broadcasting — the sender already broadcast)
+  local now = GetTime()
+  tracker.casts[data.caster] = { lastCast = now }
+  tracker.reportedReady[data.caster] = nil
+
+  -- Invalidate poll cache and refresh
+  local indicatorKey = data.ability == "tranquility" and "tranq" or data.ability
+  local ind = RD.State.indicators[indicatorKey]
+  if ind and ind.pollTimestamp then
+    ind.pollTimestamp = nil
+  end
+  RD.State.indicators[indicatorKey] = RD.GetCooldownReadyness(data.ability)
+  if RD.RefreshDashboard then
+    RD.RefreshDashboard()
+  end
+
+  if RD.State.debug then
+    OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Received cast broadcast: " .. data.caster .. " used " .. data.ability .. " (from " .. sender .. ")")
+  end
+end
+
+--- Handle incoming COOLDOWN_CORRECTION from a Druid/Warrior.
+function RD.OnCooldownCorrection(sender, data)
+  if not data or not data.player or not data.corrections then return end
+
+  local now = GetTime()
+  for _, correction in ipairs(data.corrections) do
+    local tracker = RD.CooldownTrackers[correction.ability]
+    if tracker then
+      if correction.remaining > 0 then
+        tracker.casts[data.player] = { lastCast = now - (tracker.cooldownDuration - correction.remaining) }
+        tracker.reportedReady[data.player] = nil
+      else
+        tracker.casts[data.player] = nil
+        tracker.reportedReady[data.player] = true
+      end
+    end
+  end
+
+  -- Refresh indicators
+  RD.RunBuffScan()
+
+  if RD.State.debug then
+    OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Received CD correction from " .. data.player .. " (via " .. sender .. ")")
+  end
+end
+
+-- ============================================
+-- Poll System (Raid-Chat Based)
+-- ============================================
+
+-- Which classes are relevant for each ability poll
+RD.POLL_CLASSES = {
+  rebirth     = { DRUID = true },
+  tranquility = { DRUID = true },
+  taunt       = { WARRIOR = true, DRUID = true },
+}
+
+-- Human-readable ability labels
+RD.POLL_LABELS = {
+  rebirth     = "Rebirth",
+  tranquility = "Tranquility",
+  taunt       = "AOE Taunt",
+}
+
+-- /rw messages for each poll type
+-- Build poll messages dynamically for spell links + class colors
+local function GetPollMessage(abilityKey)
+  local druid   = "\124cffFF7D0ADruids\124r"
+  local warrior = "\124cffC79C6EWarriors\124r"
+
+  if abilityKey == "rebirth" then
+    local spellLink = RD.GetSpellLink(20748, "Rebirth")
+    return "[RH] " .. druid .. ": + in /raid if your " .. spellLink .. " is ready"
+  elseif abilityKey == "tranquility" then
+    local spellLink = RD.GetSpellLink(21791, "Tranquility")
+    return "[RH] " .. druid .. ": + in /raid if your " .. spellLink .. " is ready"
+  elseif abilityKey == "taunt" then
+    local shoutLink = RD.GetSpellLink(1161, "Challenging Shout")
+    local roarLink  = RD.GetSpellLink(5209, "Challenging Roar")
+    return "[RH] " .. druid .. "/" .. warrior .. ": + in /raid if your " .. shoutLink .. "/" .. roarLink .. " is ready"
+  end
+  return nil
+end
+
+local POLL_TIMEOUT = 10  -- seconds before poll auto-closes (resets on each "+" response)
+
+--- Count how many raid members match the relevant classes for a poll.
+local function CountRelevantPlayers(abilityKey)
+  local classes = RD.POLL_CLASSES[abilityKey]
+  if not classes then return 0 end
+  local count = 0
+  for i = 1, GetNumRaidMembers() do
+    local name, _, _, _, class = GetRaidRosterInfo(i)
+    if name and class then
+      local upper = string.upper(class)
+      if classes[upper] then
+        count = count + 1
+      end
+    end
+  end
+  return count
+end
+
+--- Start a raid-chat cooldown poll (admin only).
+-- Sends /rw telling relevant classes to "+" in raid chat.
+-- Only one poll at a time; clears previous data.
 function RD.StartCooldownPoll(abilityKey)
-  RD.activePoll = {
-    abilityKey = abilityKey,
-    startTime = GetTime(),
-    timeout = 30,
-    respondents = {},
-  }
+  -- Block if already polling
+  if RD.activePoll then
+    OGRH.Msg("|cffff8800[Dashboard]|r A poll is already in progress.")
+    return
+  end
+
+  -- Must be out of combat
+  if RD.State.inCombat then
+    OGRH.Msg("|cffff8800[Dashboard]|r Cannot poll while in combat.")
+    return
+  end
+
+  local totalExpected = CountRelevantPlayers(abilityKey)
 
   -- Clear old reportedReady for this ability
   local tracker = RD.CooldownTrackers[abilityKey]
   if tracker then
     tracker.reportedReady = {}
   end
+
+  -- If 0 expected (no relevant classes in raid), skip the poll
+  if totalExpected == 0 then
+    OGRH.Msg("|cffff8800[Dashboard]|r No " .. (RD.POLL_LABELS[abilityKey] or abilityKey) .. " classes in raid.")
+    return
+  end
+
+  -- Setup active poll state
+  RD.activePoll = {
+    abilityKey = abilityKey,
+    startTime = GetTime(),
+    lastResponseTime = GetTime(),
+    timeout = POLL_TIMEOUT,
+    respondents = {},        -- { playerName = true }
+    totalExpected = totalExpected,
+    totalResponded = 0,
+  }
+
+  -- Send /rw announcement telling players to "+" in raid chat
+  local rwMsg = GetPollMessage(abilityKey)
+  if rwMsg then
+    SendChatMessage(rwMsg, "RAID_WARNING")
+  end
+
+  -- Show progress bar
+  RD.ShowPollProgressBar(abilityKey, totalExpected)
+
+  -- Start the timeout ticker
+  RD.StartPollTimer()
+
+  if RD.State.debug then
+    OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Poll started: " .. abilityKey .. " expecting " .. totalExpected)
+  end
 end
 
+--- Finish the active poll, update indicator data, broadcast results to other OGRH users.
+function RD.FinishPoll()
+  if not RD.activePoll then return end
+  local poll = RD.activePoll
+  local abilityKey = poll.abilityKey
+
+  -- Build available list (everyone who responded "+" is available)
+  local available = {}
+  for name, _ in pairs(poll.respondents) do
+    table.insert(available, name)
+  end
+
+  -- Store into tracker
+  local tracker = RD.CooldownTrackers[abilityKey]
+  if tracker then
+    tracker.reportedReady = {}
+    for _, n in ipairs(available) do
+      tracker.reportedReady[n] = true
+    end
+  end
+
+  -- Build indicator data
+  local indicatorKey = abilityKey == "tranquility" and "tranq" or abilityKey
+  RD.State.indicators[indicatorKey] = {
+    status = table.getn(available) > 0 and "green" or "red",
+    ready = table.getn(available),
+    total = poll.totalExpected,
+    available = available,
+    onCooldown = {},
+    pollTimestamp = GetTime(),
+  }
+
+  -- Broadcast results to other OGRH users via MessageRouter
+  if OGRH.MessageRouter and OGRH.MessageRouter.Broadcast then
+    OGRH.MessageRouter.Broadcast(
+      OGRH.MessageTypes.READYDASH.POLL_RESULTS,
+      {
+        ability = abilityKey,
+        available = available,
+        total = poll.totalExpected,
+      },
+      { priority = "NORMAL" }
+    )
+  end
+
+  -- Hide progress bar
+  RD.HidePollProgressBar()
+
+  if RD.State.debug then
+    OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Poll finished: " .. abilityKey ..
+      " available=" .. table.getn(available) .. " nonResponders=" .. (poll.totalExpected - poll.totalResponded))
+  end
+
+  RD.activePoll = nil
+
+  -- Refresh dashboard UI
+  if RD.RefreshDashboard then
+    RD.RefreshDashboard()
+  end
+end
+
+--- Handle a "+" message in raid chat during an active poll.
 function RD.OnRaidChatMessage(msg, sender)
   if not RD.activePoll then return end
   if not msg or not sender then return end
 
-  -- Check if the message is just "+" (the raid convention for readiness)
-  local trimmed = OGRH.Trim and OGRH.Trim(msg) or msg
+  -- Only react to "+" messages
+  local trimmed = string.gsub(msg, "^%s*(.-)%s*$", "%1")
   if trimmed ~= "+" then return end
 
-  -- Check if poll is still active (within timeout)
-  if GetTime() - RD.activePoll.startTime > RD.activePoll.timeout then
-    RD.activePoll = nil
+  -- Check if this player is a relevant class for the active poll
+  local classes = RD.POLL_CLASSES[RD.activePoll.abilityKey]
+  if not classes then return end
+  local playerClass = OGRH.GetPlayerClass and OGRH.GetPlayerClass(sender)
+  if not playerClass or not classes[playerClass] then return end
+
+  -- Ignore duplicates
+  if RD.activePoll.respondents[sender] then return end
+
+  RD.activePoll.respondents[sender] = true
+  RD.activePoll.totalResponded = RD.activePoll.totalResponded + 1
+  RD.activePoll.lastResponseTime = GetTime()
+
+  -- Update progress bar
+  RD.UpdatePollProgressBar()
+
+  if RD.State.debug then
+    OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Poll +1: " .. sender)
+  end
+
+  -- Check if all expected players have responded -> finish early
+  if RD.activePoll.totalResponded >= RD.activePoll.totalExpected then
+    RD.FinishPoll()
+  end
+end
+
+--- Timer that checks for poll timeout.
+function RD.StartPollTimer()
+  if RD.pollTimerFrame then
+    RD.pollTimerFrame:Show()
     return
   end
 
-  local abilityKey = RD.activePoll.abilityKey
+  local f = CreateFrame("Frame", nil, UIParent)
+  f.elapsed = 0
+  f:SetScript("OnUpdate", function()
+    this.elapsed = this.elapsed + arg1
+    if this.elapsed < 0.25 then return end
+    this.elapsed = 0
+
+    if not RD.activePoll then
+      this:Hide()
+      return
+    end
+
+    local elapsed = GetTime() - RD.activePoll.lastResponseTime
+    if elapsed >= RD.activePoll.timeout then
+      -- Timed out
+      RD.FinishPoll()
+      this:Hide()
+    else
+      -- Update progress bar countdown
+      RD.UpdatePollProgressBar()
+    end
+  end)
+  RD.pollTimerFrame = f
+end
+
+--- Handle incoming POLL_REQUEST from an A/L who is NOT admin.
+-- If I am admin, start the poll on their behalf.
+function RD.OnPollRequest(sender, data)
+  if not data or not data.ability then return end
+
+  -- Only the admin should act on this
+  local myName = UnitName("player")
+  if not OGRH.IsRaidAdmin or not OGRH.IsRaidAdmin(myName) then return end
+
+  if RD.State.debug then
+    OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Poll request from A/L: " .. (sender or "?") .. " for " .. data.ability)
+  end
+
+  RD.StartCooldownPoll(data.ability)
+end
+
+--- Handle incoming poll results (non-admin clients receive broadcast).
+function RD.OnPollResults(sender, data)
+  if not data or not data.ability then return end
+
+  local abilityKey = data.ability
+  local indicatorKey = abilityKey == "tranquility" and "tranq" or abilityKey
+
+  RD.State.indicators[indicatorKey] = {
+    status = (data.available and table.getn(data.available) > 0) and "green" or "red",
+    ready = data.available and table.getn(data.available) or 0,
+    total = data.total or 0,
+    available = data.available or {},
+    onCooldown = {},
+    pollTimestamp = GetTime(),
+  }
+
+  if RD.RefreshDashboard then
+    RD.RefreshDashboard()
+  end
+end
+
+-- ============================================
+-- Poll Progress Bar UI
+-- ============================================
+
+function RD.ShowPollProgressBar(abilityKey, totalExpected)
+  local bar = RD.pollProgressBar
+  if not bar then
+    bar = CreateFrame("Frame", "OGRH_PollProgressBar", UIParent)
+    bar:SetWidth(180)
+    bar:SetHeight(30)
+    bar:SetFrameStrata("DIALOG")
+    bar:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 8,
+      insets = { left = 2, right = 2, top = 2, bottom = 2 }
+    })
+    bar:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+
+    -- Status bar
+    local statusBar = CreateFrame("StatusBar", nil, bar)
+    statusBar:SetWidth(164)
+    statusBar:SetHeight(12)
+    statusBar:SetPoint("TOP", bar, "TOP", 0, -4)
+    statusBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    statusBar:SetStatusBarColor(0.2, 0.7, 1.0, 1)
+    statusBar:SetMinMaxValues(0, 1)
+    statusBar:SetValue(1)
+    bar.statusBar = statusBar
+
+    -- Background for status bar
+    local barBg = statusBar:CreateTexture(nil, "BACKGROUND")
+    barBg:SetAllPoints(statusBar)
+    barBg:SetTexture(0.15, 0.15, 0.15, 0.8)
+
+    -- Label text
+    local label = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("BOTTOM", bar, "BOTTOM", 0, 4)
+    label:SetTextColor(0.9, 0.9, 0.9)
+    bar.label = label
+
+    RD.pollProgressBar = bar
+  end
+
+  bar.abilityKey = abilityKey
+  bar.totalExpected = totalExpected
+  bar.label:SetText(string.format("Polling %s... 0/%d", RD.POLL_LABELS[abilityKey] or abilityKey, totalExpected))
+  bar.statusBar:SetValue(1)
+
+  -- Unregister first in case of re-poll (clean slate)
+  if OGRH.UnregisterAuxiliaryPanel then
+    OGRH.UnregisterAuxiliaryPanel(bar)
+  end
+
+  -- Show BEFORE registration so OGST sees the bar as visible during its
+  -- synchronous RepositionDockedPanels() call.  Without this, a stale
+  -- lastPanelStates entry in OGST's OnUpdate can prevent the bar from
+  -- being repositioned on subsequent polls.
+  bar:Show()
+
+  -- Position: dock to readiness panel or main UI
+  bar:ClearAllPoints()
+  local panel = OGRH_ReadynessDashboard
+  if panel and panel:IsVisible() and not RD.isDocked then
+    -- Dashboard is undocked: dock bar below it
+    bar:SetWidth(panel:GetWidth())
+    bar:SetPoint("TOPLEFT", panel, "BOTTOMLEFT", 0, -2)
+  elseif OGRH_Main and OGRH_Main:IsVisible() then
+    -- Dashboard is docked: register as auxiliary panel below the readiness panel
+    bar:SetWidth(OGRH_Main:GetWidth())
+    if OGRH.RegisterAuxiliaryPanel then
+      OGRH.RegisterAuxiliaryPanel(bar, 10)  -- priority 10: below readiness panel (priority 5)
+    else
+      bar:SetPoint("TOPLEFT", OGRH_Main, "BOTTOMLEFT", 0, -2)
+    end
+  else
+    bar:SetPoint("TOP", UIParent, "TOP", 0, -100)
+  end
+end
+
+function RD.UpdatePollProgressBar()
+  local bar = RD.pollProgressBar
+  if not bar or not bar:IsVisible() then return end
+  if not RD.activePoll then return end
+
+  local poll = RD.activePoll
+  local remaining = poll.timeout - (GetTime() - poll.lastResponseTime)
+  if remaining < 0 then remaining = 0 end
+
+  bar.statusBar:SetValue(remaining / poll.timeout)
+  bar.label:SetText(string.format(
+    "Polling %s... %d/%d (%.0fs)",
+    RD.POLL_LABELS[poll.abilityKey] or poll.abilityKey,
+    poll.totalResponded,
+    poll.totalExpected,
+    remaining
+  ))
+end
+
+function RD.HidePollProgressBar()
+  local bar = RD.pollProgressBar
+  if not bar then return end
+
+  -- Unregister from auxiliary stacking
+  if OGRH.UnregisterAuxiliaryPanel then
+    OGRH.UnregisterAuxiliaryPanel(bar)
+  end
+
+  bar:Hide()
+end
+
+-- ============================================
+-- Readyness Functions (evaluate from last poll data)
+-- ============================================
+
+function RD.GetRebirthReadyness()
+  return RD.GetCooldownReadyness("rebirth")
+end
+
+function RD.GetTranquilityReadyness()
+  return RD.GetCooldownReadyness("tranquility")
+end
+
+function RD.GetTauntReadyness()
+  return RD.GetCooldownReadyness("taunt")
+end
+
+--- Shared helper: build indicator state from tracker data.
+function RD.GetCooldownReadyness(abilityKey)
+  local indicatorKey = abilityKey == "tranquility" and "tranq" or abilityKey
+  local existing = RD.State.indicators[indicatorKey]
+
+  -- If we have poll-sourced data, keep it until it's stale (> 10 min)
+  if existing and existing.pollTimestamp then
+    local age = GetTime() - existing.pollTimestamp
+    if age < 600 then
+      return existing
+    end
+  end
+
+  -- Fallback: use combat-log based cooldown tracking
   local tracker = RD.CooldownTrackers[abilityKey]
-  if not tracker then return end
+  if not tracker then
+    return { status = "gray", ready = 0, total = 0, available = {}, onCooldown = {} }
+  end
 
-  -- Validate sender is a relevant class for this ability
-  local isRelevant = false
-  if abilityKey == "rebirth" or abilityKey == "tranquility" then
-    -- Only druids
-    local class = OGRH.GetPlayerClass and OGRH.GetPlayerClass(sender)
-    if class == "Druid" then
-      isRelevant = true
-    end
-  elseif abilityKey == "taunt" then
-    -- Warriors and druids with tank role
-    local class = OGRH.GetPlayerClass and OGRH.GetPlayerClass(sender)
-    local role = OGRH_GetPlayerRole and OGRH_GetPlayerRole(sender)
-    if (class == "Warrior" or class == "Druid") and role == "TANKS" then
-      isRelevant = true
+  -- Count relevant players
+  local classes = RD.POLL_CLASSES[abilityKey]
+  local total = 0
+  local available = {}
+  local onCooldown = {}
+  local unknown = {}
+  local now = GetTime()
+
+  for i = 1, GetNumRaidMembers() do
+    local name, _, _, _, class = GetRaidRosterInfo(i)
+    if name and class then
+      local upper = string.upper(class)
+      if classes and classes[upper] then
+        total = total + 1
+        local cast = tracker.casts[name]
+        if cast and cast.lastCast then
+          local elapsed = now - cast.lastCast
+          if elapsed < tracker.cooldownDuration then
+            table.insert(onCooldown, { name = name, remaining = tracker.cooldownDuration - elapsed })
+          else
+            -- Cooldown expired — ability is available again
+            table.insert(available, name)
+          end
+        elseif tracker.reportedReady and tracker.reportedReady[name] then
+          -- Confirmed available via poll
+          table.insert(available, name)
+        else
+          -- No cast data — assume available (default assumption at raid start)
+          table.insert(available, name)
+        end
+      end
     end
   end
 
-  if isRelevant then
-    tracker.reportedReady[sender] = true
-    RD.activePoll.respondents[sender] = true
-
-    if RD.State.debug then
-      OGRH.Msg("|cffff6666[RH-ReadyDash][DEBUG]|r Poll response: " .. sender .. " (+) for " .. abilityKey)
+  local readyCount = table.getn(available)
+  local unknownCount = table.getn(unknown)
+  local status = "gray"
+  if total > 0 then
+    if unknownCount == total then
+      status = "gray"  -- No data at all
+    elseif readyCount == total then
+      status = "green"
+    elseif readyCount > 0 then
+      status = "yellow"
+    else
+      status = "red"
     end
   end
+
+  return {
+    status = status,
+    ready = readyCount,
+    total = total,
+    available = available,
+    onCooldown = onCooldown,
+    unknown = unknown,
+  }
 end
 
 -- ============================================
@@ -1723,11 +2492,44 @@ end
 -- ============================================
 -- Announcement System
 -- ============================================
-function RD.OnIndicatorClick(indicatorType)
+--- Left-click: announce current state.  Right-click: start poll (OOC only).
+-- @param indicatorType string
+-- @param mouseButton string  "LeftButton" or "RightButton"
+function RD.OnIndicatorClick(indicatorType, mouseButton)
   local state = RD.State.indicators[indicatorType]
   if not state then return end
 
-  -- Determine which announcement to build
+  -- Right-click on cooldown indicators → permission-gated poll
+  if mouseButton == "RightButton" then
+    if indicatorType == "rebirth" or indicatorType == "tranq" or indicatorType == "taunt" then
+      local myName = UnitName("player")
+      local isAdmin = OGRH.IsRaidAdmin and OGRH.IsRaidAdmin(myName)
+      local isOfficer = OGRH.IsRaidOfficer and OGRH.IsRaidOfficer(myName)
+
+      local abilityKey = indicatorType
+      if indicatorType == "tranq" then abilityKey = "tranquility" end
+
+      if isAdmin then
+        -- Admin: start poll directly
+        RD.StartCooldownPoll(abilityKey)
+      elseif isOfficer then
+        -- A/L but not admin: ask admin to start the poll via MessageRouter
+        local adminName = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+        if adminName then
+          OGRH.MessageRouter.SendTo(adminName, OGRH.MessageTypes.READYDASH.POLL_REQUEST,
+            { ability = abilityKey })
+          OGRH.Msg("|cffff8800[Dashboard]|r Poll request sent to admin (" .. adminName .. ").")
+        else
+          OGRH.Msg("|cffff8800[Dashboard]|r No admin found to start the poll.")
+        end
+      end
+      -- Random raid members: nothing happens (no message, no action)
+      return
+    end
+    return
+  end
+
+  -- Left-click: announce
   local lines = {}
 
   if indicatorType == "buff" then
@@ -1741,26 +2543,11 @@ function RD.OnIndicatorClick(indicatorType)
   elseif indicatorType == "health" then
     lines = RD.BuildHealthAnnouncement(state)
   elseif indicatorType == "rebirth" then
-    if RD.State.inCombat then
-      lines = RD.BuildCooldownAnnouncement(state, "Rebirth", "druids")
-    else
-      RD.StartCooldownPoll("rebirth")
-      lines = { "[RH] Druids: + in /raid if your Rebirth is ready" }
-    end
+    lines = RD.BuildCooldownAnnouncement(state, "Rebirth", "druids")
   elseif indicatorType == "tranq" then
-    if RD.State.inCombat then
-      lines = RD.BuildCooldownAnnouncement(state, "Tranquility", "druids")
-    else
-      RD.StartCooldownPoll("tranquility")
-      lines = { "[RH] Druids: + in /raid if your Tranquility is ready" }
-    end
+    lines = RD.BuildCooldownAnnouncement(state, "Tranquility", "druids")
   elseif indicatorType == "taunt" then
-    if RD.State.inCombat then
-      lines = RD.BuildCooldownAnnouncement(state, "AOE Taunt", "tanks")
-    else
-      RD.StartCooldownPoll("taunt")
-      lines = { "[RH] Tanks: + in /raid if your Challenging Shout/Roar is ready" }
-    end
+    lines = RD.BuildCooldownAnnouncement(state, "AOE Taunt", "druids/warriors")
   end
 
   -- Send announcement
@@ -2191,12 +2978,21 @@ function RD.BuildCooldownAnnouncement(state, abilityName, groupLabel)
     end
   end
 
+  local unknownCount = state.unknown and table.getn(state.unknown) or 0
+
   if table.getn(availableNames) > 0 then
-    table.insert(lines, string.format("[RH] %s available: %s (%d/%d)",
+    local msg = string.format("[RH] %s available: %s (%d/%d)",
       abilityName,
       table.concat(availableNames, ", "),
       state.ready or 0,
-      state.total or 0))
+      state.total or 0)
+    if unknownCount > 0 then
+      msg = msg .. string.format(" — %d unpolled", unknownCount)
+    end
+    table.insert(lines, msg)
+  elseif unknownCount > 0 and unknownCount == (state.total or 0) then
+    table.insert(lines, string.format("[RH] %s: %d %s not yet polled",
+      abilityName, unknownCount, groupLabel))
   else
     table.insert(lines, string.format("[RH] %s: None available (0/%d)",
       abilityName,
@@ -2219,21 +3015,47 @@ function RD.RegisterEvents()
   eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
   eventFrame:RegisterEvent("CHAT_MSG_RAID")
   eventFrame:RegisterEvent("CHAT_MSG_RAID_LEADER")
+  eventFrame:RegisterEvent("CHAT_MSG_ADDON")  -- BigWigs sync messages for taunt detection
+
+  -- Register addon-message handlers for cooldown polls and sync
+  if OGRH.MessageRouter and OGRH.MessageRouter.RegisterHandler then
+    local MT = OGRH.MessageTypes.READYDASH
+    OGRH.MessageRouter.RegisterHandler(MT.POLL_REQUEST, function(sender, data)
+      RD.OnPollRequest(sender, data)
+    end)
+    OGRH.MessageRouter.RegisterHandler(MT.POLL_RESULTS, function(sender, data)
+      RD.OnPollResults(sender, data)
+    end)
+    OGRH.MessageRouter.RegisterHandler(MT.COOLDOWN_SYNC, function(sender, data)
+      RD.OnCooldownSync(sender, data)
+    end)
+    OGRH.MessageRouter.RegisterHandler(MT.COOLDOWN_CAST, function(sender, data)
+      RD.OnCooldownCast(sender, data)
+    end)
+    OGRH.MessageRouter.RegisterHandler(MT.COOLDOWN_CORRECTION, function(sender, data)
+      RD.OnCooldownCorrection(sender, data)
+    end)
+  end
 
   -- Combat log events for cooldown tracking
+  -- Non-periodic spell events (cast messages: "X casts Y", "You cast Y")
   eventFrame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PARTY_DAMAGE")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE")
   eventFrame:RegisterEvent("CHAT_MSG_SPELL_SELF_BUFF")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PARTY_DAMAGE")
   eventFrame:RegisterEvent("CHAT_MSG_SPELL_PARTY_BUFF")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE")
   eventFrame:RegisterEvent("CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_BUFF")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_BUFF")
-  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFF")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF")
+  -- Periodic spell events (note: BUFFS with S, DAMAGE without)
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE")
+  eventFrame:RegisterEvent("CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_BUFFS")
 
   eventFrame:SetScript("OnEvent", function()
     if event == "ADDON_LOADED" and arg1 == "OG-RaidHelper" then
@@ -2287,8 +3109,14 @@ function RD.RegisterEvents()
     end
 
     if event == "CHAT_MSG_RAID" or event == "CHAT_MSG_RAID_LEADER" then
-      -- Poll listener
+      -- Poll listener: watch for "+" during active polls
       RD.OnRaidChatMessage(arg1, arg2)
+      return
+    end
+
+    -- BigWigs addon sync messages (Challenging Shout/Roar detection)
+    if event == "CHAT_MSG_ADDON" then
+      RD.OnAddonMessage(arg1, arg2, arg3, arg4)
       return
     end
 

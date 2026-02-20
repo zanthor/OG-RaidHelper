@@ -5,7 +5,7 @@ OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 
 -- Code version: updated by bump.ps1, takes effect on /reload
-OGRH.CODE_VERSION = "2.1.2"
+OGRH.CODE_VERSION = "2.1.3"
 -- TOC version: only updates on full client restart
 OGRH.TOC_VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 -- Active version used for all version checks (code version = live reloadable)
@@ -3674,8 +3674,9 @@ function OGRH.GetPlayerClass(playerName)
   
   -- Check raid roster (most reliable for current raid members)
   if OGRH.Roles.nameClass[playerName] then
-    OGRH.classCache[playerName] = OGRH.Roles.nameClass[playerName]
-    return OGRH.Roles.nameClass[playerName]
+    local upperClass = string.upper(OGRH.Roles.nameClass[playerName])
+    OGRH.classCache[playerName] = upperClass
+    return upperClass
   end
   
   -- Check current raid roster directly
@@ -4623,26 +4624,6 @@ local function CreateMinimapButton()
             end
           },
           {
-            text = "Monitor Consumes",
-            onClick = function()
-              OGRH.EnsureSV()
-              local currentValue = OGRH.SVM.Get("monitorConsumes")
-              OGRH.SVM.Set("monitorConsumes", nil, not currentValue)
-              
-              if OGRH.SVM.Get("monitorConsumes") then
-                if OGRH.ShowConsumeMonitor then
-                  OGRH.ShowConsumeMonitor()
-                end
-                OGRH.Msg("Consume monitoring |cff00ff00enabled|r.")
-              else
-                if OGRH.HideConsumeMonitor then
-                  OGRH.HideConsumeMonitor()
-                end
-                OGRH.Msg("Consume monitoring |cffff0000disabled|r.")
-              end
-            end
-          },
-          {
             text = "Track Consumes",
             onClick = function()
               OGRH.CloseAllWindows("OGRH_TrackConsumesFrame")
@@ -4714,7 +4695,89 @@ local function CreateMinimapButton()
         }
       })
       
-      -- Hide/Show toggle
+      -- Dashboards submenu
+      local dashboardItems = {
+        {
+          text = "Readyness Dashboard",
+          onClick = function()
+            if not OGRH.ReadynessDashboard then return end
+            local RD = OGRH.ReadynessDashboard
+            local current = RD.GetSetting("enabled")
+            if current == false then
+              RD.SetSetting("enabled", true)
+              RD.ShowDashboard()
+              OGRH.Msg("Dashboard |cff00ff00enabled|r.")
+            else
+              RD.SetSetting("enabled", false)
+              RD.HideDashboard()
+              OGRH.Msg("Dashboard |cffff0000disabled|r.")
+            end
+          end
+        },
+        {
+          text = "     Docked",
+          onClick = function()
+            if not OGRH.ReadynessDashboard then return end
+            local RD = OGRH.ReadynessDashboard
+            RD.ToggleDock()
+            if RD.isDocked then
+              OGRH.Msg("Dashboard |cff00ff00docked|r.")
+            else
+              OGRH.Msg("Dashboard |cffff0000undocked|r.")
+            end
+          end
+        },
+        {
+          text = "Rebirth Caller",
+          onClick = function()
+            if OGRH.RebirthCaller and OGRH.RebirthCaller.Toggle then
+              OGRH.RebirthCaller.Toggle()
+            else
+              OGRH.Msg("Rebirth Caller module not loaded.")
+            end
+          end
+        },
+        {
+          text = "     Settings",
+          onClick = function()
+            if OGRH.RebirthCaller and OGRH.RebirthCaller.ShowSettings then
+              OGRH.RebirthCaller.ShowSettings()
+            end
+          end
+        },
+      }
+
+      local dashboardMenuItem = menu:AddItem({
+        text = "Dashboards",
+        submenu = dashboardItems
+      })
+
+      -- Hook into Dashboards menu item OnEnter to update green/white text
+      local dashOrigOnEnter = dashboardMenuItem:GetScript("OnEnter")
+      dashboardMenuItem:SetScript("OnEnter", function()
+        dashboardMenuItem.submenu = nil
+        if OGRH.ReadynessDashboard then
+          local RD = OGRH.ReadynessDashboard
+          local isEnabled = RD.GetSetting("enabled")
+          dashboardItems[1].text = (isEnabled ~= false) and "|cff00ff00Readyness Dashboard|r" or "Readyness Dashboard"
+          dashboardItems[2].text = RD.isDocked and "|cff00ff00     Docked|r" or "     Docked"
+        end
+        if OGRH.RebirthCaller then
+          local RC = OGRH.RebirthCaller
+          local rcEnabled = RC.IsEnabled and RC.IsEnabled()
+          dashboardItems[3].text = rcEnabled and "|cff00ff00Rebirth Caller|r" or "Rebirth Caller"
+          dashboardItems[4].text = "     Settings"
+        end
+        if dashOrigOnEnter then dashOrigOnEnter() end
+      end)
+
+      -- Settings submenu
+      menu:AddItem({
+        text = "Settings",
+        submenu = settingsItems
+      })
+
+      -- Hide/Show toggle (at bottom)
       menu.toggleItem = menu:AddItem({
         text = "Hide",
         onClick = function()
@@ -4729,32 +4792,6 @@ local function CreateMinimapButton()
           end
         end
       })
-      
-      -- Settings submenu (at bottom)
-      local settingsMenuItem = menu:AddItem({
-        text = "Settings",
-        submenu = settingsItems
-      })
-      
-      -- Hook into Settings menu item OnEnter to update Monitor Consumes text before submenu shows
-      local originalOnEnter = settingsMenuItem:GetScript("OnEnter")
-      settingsMenuItem:SetScript("OnEnter", function()
-        -- Clear cached submenu to force recreation with updated text
-        settingsMenuItem.submenu = nil
-        
-        -- Update Monitor Consumes text (4th item in settings) before submenu is created
-        OGRH.EnsureSV()
-        if OGRH.SVM.Get("monitorConsumes") then
-          settingsItems[4].text = "|cff00ff00Monitor Consumes|r"
-        else
-          settingsItems[4].text = "Monitor Consumes"
-        end
-        
-        -- Call original OnEnter to show submenu
-        if originalOnEnter then
-          originalOnEnter()
-        end
-      end)
       
       -- Helper function to update toggle text
       menu.UpdateToggleText = function()
@@ -4888,6 +4925,15 @@ local minimapLoader = CreateFrame("Frame")
 minimapLoader:RegisterEvent("PLAYER_LOGIN")
 minimapLoader:SetScript("OnEvent", function()
   CreateMinimapButton()
+
+  -- Deprecate monitorConsumes: force disabled so the old consume monitor UI never shows
+  OGRH.EnsureSV()
+  if OGRH.SVM.Get("monitorConsumes") then
+    OGRH.SVM.Set("monitorConsumes", nil, false)
+  end
+  if OGRH.HideConsumeMonitor then
+    OGRH.HideConsumeMonitor()
+  end
 end)
 
 -- ============================================================================

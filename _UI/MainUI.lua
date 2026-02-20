@@ -1111,11 +1111,20 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("ReadynessDashboard not loaded.")
     end
+  elseif string.find(sub, "^test rebirth") then
+    if OGRH.RebirthCaller and OGRH.RebirthCaller.TestMode then
+      local _, _, countStr = string.find(sub, "^test rebirth%s+(%d+)")
+      local count = countStr and tonumber(countStr) or nil
+      OGRH.RebirthCaller.TestMode(count)
+    else
+      OGRH.Msg("RebirthCaller module not loaded.")
+    end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
     OGRH.Msg("Commands:")
     OGRH.Msg("  ready - Toggle Readyness Dashboard")
     OGRH.Msg("  ready dock|undock|scan|reset")
+    OGRH.Msg("  test rebirth [N] - Toggle Rebirth Caller test mode (N = 1-40 dead)")
     OGRH.Msg("  debug help - Show debug toggle options")
     OGRH.Msg("  messages - Show all message types")
     OGRH.Msg("  permissions - Show raid permissions")
