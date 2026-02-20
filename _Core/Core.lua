@@ -5,7 +5,7 @@ OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 
 -- Code version: updated by bump.ps1, takes effect on /reload
-OGRH.CODE_VERSION = "2.0.101"
+OGRH.CODE_VERSION = "2.1.3"
 -- TOC version: only updates on full client restart
 OGRH.TOC_VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 -- Active version used for all version checks (code version = live reloadable)
@@ -530,17 +530,17 @@ function OGRH.SetActiveRaid(sourceRaidIdx)
     componentType = "settings"
   })
   
-  -- Automatically select the first encounter in the new Active Raid by INDEX
-  if activeRaid.encounters and table.getn(activeRaid.encounters) > 0 then
+  -- Automatically select the second encounter (skip Admin at index 1)
+  if activeRaid.encounters and table.getn(activeRaid.encounters) > 1 then
     if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
-      OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Setting selectedEncounterIndex = 1")
+      OGRH.Msg("|cff00ccff[RH-ActiveRaid]|r Setting selectedEncounterIndex = 2")
     end
-    OGRH.SVM.Set("ui", "selectedEncounterIndex", 1, {
+    OGRH.SVM.Set("ui", "selectedEncounterIndex", 2, {
       syncLevel = "REALTIME",
       componentType = "settings"
     })
     if OGRH.MainUI and OGRH.MainUI.State and OGRH.MainUI.State.debug then
-      OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected first encounter (index 1): %s", activeRaid.encounters[1].name))
+      OGRH.Msg(string.format("|cff00ccff[RH-ActiveRaid]|r Auto-selected encounter (index 2): %s", activeRaid.encounters[2].name))
     end
   end
   
@@ -1379,149 +1379,58 @@ OGRH.LIST_ITEM_SPACING = OGST and OGST.LIST_ITEM_SPACING or 2
 -- ========================================
 -- AUXILIARY PANEL POSITIONING SYSTEM
 -- ========================================
--- Centralized system for managing stacked panels below/above main UI
+-- Delegates to OGST.RegisterDockedPanel for unified panel stacking.
+-- All panels dock vertically below/above OGRH_Main with auto-swap.
+-- Priority: lower numbers appear closer to main UI (1 = closest).
+
 OGRH.AuxiliaryPanels = OGRH.AuxiliaryPanels or {
-  panels = {}, -- Registered panels in display order
+  panels = {}, -- Legacy tracking table (kept for compatibility)
   updateFrame = nil
 }
 
 -- Register an auxiliary panel for automatic positioning
+-- Delegates to OGST.RegisterDockedPanel with vertical axis on OGRH_Main
 -- priority: lower numbers appear closer to main UI (1 = closest)
 function OGRH.RegisterAuxiliaryPanel(frame, priority)
   if not frame then return end
-  
-  priority = priority or 100
-  
-  -- Check if already registered
-  for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
-    if panel.frame == frame then
-      panel.priority = priority
-      OGRH.RepositionAuxiliaryPanels()
-      return
-    end
+  if not OGST or not OGST.RegisterDockedPanel then
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[RH] OGST not loaded — cannot register auxiliary panel|r")
+    return
   end
-  
-  -- Add new panel
-  table.insert(OGRH.AuxiliaryPanels.panels, {
-    frame = frame,
-    priority = priority
+  if not OGRH_Main then return end
+
+  priority = priority or 100
+
+  OGST.RegisterDockedPanel(frame, {
+    parentFrame = OGRH_Main,
+    axis = "vertical",
+    preferredSide = "bottom",
+    priority = priority,
+    autoMove = true,
+    hideInCombat = false,
   })
-  
-  -- Sort by priority
-  table.sort(OGRH.AuxiliaryPanels.panels, function(a, b)
-    return a.priority < b.priority
-  end)
-  
-  OGRH.RepositionAuxiliaryPanels()
 end
 
 -- Unregister an auxiliary panel
 function OGRH.UnregisterAuxiliaryPanel(frame)
   if not frame then return end
-  
-  for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
-    if panel.frame == frame then
-      table.remove(OGRH.AuxiliaryPanels.panels, i)
-      OGRH.RepositionAuxiliaryPanels()
-      return
-    end
+  if OGST and OGST.UnregisterDockedPanel then
+    OGST.UnregisterDockedPanel(frame)
   end
 end
 
--- Reposition all registered auxiliary panels
+-- Reposition all registered auxiliary panels (delegates to OGST)
 function OGRH.RepositionAuxiliaryPanels()
-  if not OGRH_Main or not OGRH_Main:IsVisible() then return end
-  
-  local screenHeight = UIParent:GetHeight()
-  local mainBottom = OGRH_Main:GetBottom()
-  local mainTop = OGRH_Main:GetTop()
-  
-  if not mainBottom or not mainTop then return end
-  
-  -- Separate panels into visible below and above
-  local visibleBelow = {}
-  local visibleAbove = {}
-  
-  for _, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
-    if panel.frame:IsVisible() then
-      local frameHeight = panel.frame:GetHeight() or 0
-      table.insert(visibleBelow, {frame = panel.frame, height = frameHeight})
-    end
-  end
-  
-  -- Calculate total height of panels
-  local totalBelowHeight = 0
-  for _, panel in ipairs(visibleBelow) do
-    totalBelowHeight = totalBelowHeight + panel.height
-  end
-  
-  -- Position panels below or above based on available space
-  local gap = -2  -- Negative gap to stack panels with small spacing
-  
-  if (mainBottom - totalBelowHeight) > 0 then
-    -- Stack below main UI
-    local currentAnchor = OGRH_Main
-    local currentPoint = "BOTTOM"
-    
-    for _, panel in ipairs(visibleBelow) do
-      panel.frame:ClearAllPoints()
-      panel.frame:SetPoint("TOP", currentAnchor, currentPoint, 0, gap)
-      currentAnchor = panel.frame
-      currentPoint = "BOTTOM"
-    end
-  elseif (mainTop + totalBelowHeight) < screenHeight then
-    -- Stack above main UI (reverse order)
-    local currentAnchor = OGRH_Main
-    local currentPoint = "TOP"
-    
-    for i = table.getn(visibleBelow), 1, -1 do
-      local panel = visibleBelow[i]
-      panel.frame:ClearAllPoints()
-      panel.frame:SetPoint("BOTTOM", currentAnchor, currentPoint, 0, -gap)
-      currentAnchor = panel.frame
-      currentPoint = "TOP"
-    end
-  else
-    -- Not enough space either way, fallback to individual positioning
-    for _, panel in ipairs(visibleBelow) do
-      panel.frame:ClearAllPoints()
-      panel.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    end
+  if OGST and OGST.RepositionDockedPanels then
+    OGST.RepositionDockedPanels()
   end
 end
 
--- Initialize automatic repositioning on main UI movement or panel visibility changes
+-- Legacy updateFrame is no longer needed — OGST has its own OnUpdate repositioning.
+-- Keep the field so existing code that checks `if not OGRH.AuxiliaryPanels.updateFrame`
+-- doesn't re-create it.
 if not OGRH.AuxiliaryPanels.updateFrame then
-  local updateFrame = CreateFrame("Frame")
-  updateFrame.lastMainPos = nil
-  updateFrame.lastPanelStates = {}
-  
-  updateFrame:SetScript("OnUpdate", function()
-    if not OGRH_Main or not OGRH_Main:IsVisible() then return end
-    
-    -- Check for main UI movement
-    local currentPos = OGRH_Main:GetLeft()
-    if currentPos and currentPos ~= this.lastMainPos then
-      this.lastMainPos = currentPos
-      OGRH.RepositionAuxiliaryPanels()
-    end
-    
-    -- Check for panel visibility changes
-    local needsUpdate = false
-    for i, panel in ipairs(OGRH.AuxiliaryPanels.panels) do
-      local isVisible = panel.frame:IsVisible()
-      if this.lastPanelStates[i] ~= isVisible then
-        this.lastPanelStates[i] = isVisible
-        needsUpdate = true
-      end
-    end
-    
-    if needsUpdate then
-      OGRH.RepositionAuxiliaryPanels()
-    end
-  end)
-  
-  OGRH.AuxiliaryPanels.updateFrame = updateFrame
+  OGRH.AuxiliaryPanels.updateFrame = true  -- Sentinel to prevent legacy re-init
 end
 
 -- ========================================
@@ -2099,10 +2008,8 @@ function OGRH.SendAnnouncement(lines, testMode)
   local canRW = OGRH.CanRW()
   for _, line in ipairs(lines) do
     if testMode then
-      -- In test mode, display to local chat frame
       DEFAULT_CHAT_FRAME:AddMessage(OGRH.Announce("OGRH: ") .. line)
     else
-      -- Send to raid warning or raid chat
       if canRW then
         SendChatMessage(line, "RAID_WARNING")
       else
@@ -3767,8 +3674,9 @@ function OGRH.GetPlayerClass(playerName)
   
   -- Check raid roster (most reliable for current raid members)
   if OGRH.Roles.nameClass[playerName] then
-    OGRH.classCache[playerName] = OGRH.Roles.nameClass[playerName]
-    return OGRH.Roles.nameClass[playerName]
+    local upperClass = string.upper(OGRH.Roles.nameClass[playerName])
+    OGRH.classCache[playerName] = upperClass
+    return upperClass
   end
   
   -- Check current raid roster directly
@@ -4716,26 +4624,6 @@ local function CreateMinimapButton()
             end
           },
           {
-            text = "Monitor Consumes",
-            onClick = function()
-              OGRH.EnsureSV()
-              local currentValue = OGRH.SVM.Get("monitorConsumes")
-              OGRH.SVM.Set("monitorConsumes", nil, not currentValue)
-              
-              if OGRH.SVM.Get("monitorConsumes") then
-                if OGRH.ShowConsumeMonitor then
-                  OGRH.ShowConsumeMonitor()
-                end
-                OGRH.Msg("Consume monitoring |cff00ff00enabled|r.")
-              else
-                if OGRH.HideConsumeMonitor then
-                  OGRH.HideConsumeMonitor()
-                end
-                OGRH.Msg("Consume monitoring |cffff0000disabled|r.")
-              end
-            end
-          },
-          {
             text = "Track Consumes",
             onClick = function()
               OGRH.CloseAllWindows("OGRH_TrackConsumesFrame")
@@ -4807,7 +4695,89 @@ local function CreateMinimapButton()
         }
       })
       
-      -- Hide/Show toggle
+      -- Dashboards submenu
+      local dashboardItems = {
+        {
+          text = "Readyness Dashboard",
+          onClick = function()
+            if not OGRH.ReadynessDashboard then return end
+            local RD = OGRH.ReadynessDashboard
+            local current = RD.GetSetting("enabled")
+            if current == false then
+              RD.SetSetting("enabled", true)
+              RD.ShowDashboard()
+              OGRH.Msg("Dashboard |cff00ff00enabled|r.")
+            else
+              RD.SetSetting("enabled", false)
+              RD.HideDashboard()
+              OGRH.Msg("Dashboard |cffff0000disabled|r.")
+            end
+          end
+        },
+        {
+          text = "     Docked",
+          onClick = function()
+            if not OGRH.ReadynessDashboard then return end
+            local RD = OGRH.ReadynessDashboard
+            RD.ToggleDock()
+            if RD.isDocked then
+              OGRH.Msg("Dashboard |cff00ff00docked|r.")
+            else
+              OGRH.Msg("Dashboard |cffff0000undocked|r.")
+            end
+          end
+        },
+        {
+          text = "Rebirth Caller",
+          onClick = function()
+            if OGRH.RebirthCaller and OGRH.RebirthCaller.Toggle then
+              OGRH.RebirthCaller.Toggle()
+            else
+              OGRH.Msg("Rebirth Caller module not loaded.")
+            end
+          end
+        },
+        {
+          text = "     Settings",
+          onClick = function()
+            if OGRH.RebirthCaller and OGRH.RebirthCaller.ShowSettings then
+              OGRH.RebirthCaller.ShowSettings()
+            end
+          end
+        },
+      }
+
+      local dashboardMenuItem = menu:AddItem({
+        text = "Dashboards",
+        submenu = dashboardItems
+      })
+
+      -- Hook into Dashboards menu item OnEnter to update green/white text
+      local dashOrigOnEnter = dashboardMenuItem:GetScript("OnEnter")
+      dashboardMenuItem:SetScript("OnEnter", function()
+        dashboardMenuItem.submenu = nil
+        if OGRH.ReadynessDashboard then
+          local RD = OGRH.ReadynessDashboard
+          local isEnabled = RD.GetSetting("enabled")
+          dashboardItems[1].text = (isEnabled ~= false) and "|cff00ff00Readyness Dashboard|r" or "Readyness Dashboard"
+          dashboardItems[2].text = RD.isDocked and "|cff00ff00     Docked|r" or "     Docked"
+        end
+        if OGRH.RebirthCaller then
+          local RC = OGRH.RebirthCaller
+          local rcEnabled = RC.IsEnabled and RC.IsEnabled()
+          dashboardItems[3].text = rcEnabled and "|cff00ff00Rebirth Caller|r" or "Rebirth Caller"
+          dashboardItems[4].text = "     Settings"
+        end
+        if dashOrigOnEnter then dashOrigOnEnter() end
+      end)
+
+      -- Settings submenu
+      menu:AddItem({
+        text = "Settings",
+        submenu = settingsItems
+      })
+
+      -- Hide/Show toggle (at bottom)
       menu.toggleItem = menu:AddItem({
         text = "Hide",
         onClick = function()
@@ -4822,32 +4792,6 @@ local function CreateMinimapButton()
           end
         end
       })
-      
-      -- Settings submenu (at bottom)
-      local settingsMenuItem = menu:AddItem({
-        text = "Settings",
-        submenu = settingsItems
-      })
-      
-      -- Hook into Settings menu item OnEnter to update Monitor Consumes text before submenu shows
-      local originalOnEnter = settingsMenuItem:GetScript("OnEnter")
-      settingsMenuItem:SetScript("OnEnter", function()
-        -- Clear cached submenu to force recreation with updated text
-        settingsMenuItem.submenu = nil
-        
-        -- Update Monitor Consumes text (4th item in settings) before submenu is created
-        OGRH.EnsureSV()
-        if OGRH.SVM.Get("monitorConsumes") then
-          settingsItems[4].text = "|cff00ff00Monitor Consumes|r"
-        else
-          settingsItems[4].text = "Monitor Consumes"
-        end
-        
-        -- Call original OnEnter to show submenu
-        if originalOnEnter then
-          originalOnEnter()
-        end
-      end)
       
       -- Helper function to update toggle text
       menu.UpdateToggleText = function()
@@ -4981,6 +4925,15 @@ local minimapLoader = CreateFrame("Frame")
 minimapLoader:RegisterEvent("PLAYER_LOGIN")
 minimapLoader:SetScript("OnEvent", function()
   CreateMinimapButton()
+
+  -- Deprecate monitorConsumes: force disabled so the old consume monitor UI never shows
+  OGRH.EnsureSV()
+  if OGRH.SVM.Get("monitorConsumes") then
+    OGRH.SVM.Set("monitorConsumes", nil, false)
+  end
+  if OGRH.HideConsumeMonitor then
+    OGRH.HideConsumeMonitor()
+  end
 end)
 
 -- ============================================================================

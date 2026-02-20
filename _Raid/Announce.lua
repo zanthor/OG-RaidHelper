@@ -9,6 +9,45 @@ end
 
 OGRH.Announcements = OGRH.Announcements or {}
 
+--- Pre-expand [Rx.L] tags into individual [Rx.Ln] lines.
+-- A template line containing [Rx.L] is replaced by N lines (one per non-empty textValue),
+-- each with [Rx.L] substituted by the corresponding [Rx.Ln] tag.
+-- Lines without [Rx.L] pass through unchanged.
+-- @param templateLines table - array of announcement template strings
+-- @param roles table - ordered roles keyed by roleId
+-- @return table - expanded array of template strings
+function OGRH.Announcements.ExpandLTags(templateLines, roles)
+  local expanded = {}
+  for i = 1, table.getn(templateLines) do
+    local line = templateLines[i]
+    if not line or line == "" then
+      -- skip empty
+    else
+      -- Check if this line contains any [Rx.L] tag
+      local roleNum = nil
+      local tagStart, tagEnd
+      tagStart, tagEnd, roleNum = string.find(line, "%[R(%d+)%.L%]")
+      if tagStart then
+        local roleIndex = tonumber(roleNum)
+        if roles and roles[roleIndex] and roles[roleIndex].isTextField then
+          local vals = roles[roleIndex].textValues or {}
+          for slotIdx = 1, table.getn(vals) do
+            if vals[slotIdx] and vals[slotIdx] ~= "" then
+              -- Replace [Rx.L] with [Rx.Ln] so ReplaceTags handles it as a single-line tag
+              local expanded_line = string.sub(line, 1, tagStart - 1) .. "[R" .. roleNum .. ".L" .. slotIdx .. "]" .. string.sub(line, tagEnd + 1)
+              table.insert(expanded, expanded_line)
+            end
+          end
+        end
+        -- If no values found, line is dropped (empty expansion)
+      else
+        table.insert(expanded, line)
+      end
+    end
+  end
+  return expanded
+end
+
 -- Main tag replacement function
 -- Replaces tags like [R1.T], [R1.P1], etc. with actual values
 -- Parameters:
@@ -134,6 +173,31 @@ function OGRH.Announcements.ReplaceTags(text, roles, assignments, raidMarks, ass
       return false -- Invalid consume reference
     end
     
+    -- Check [Rx.Lx] tags (Text field line value)
+    roleNum, textNum = string.match(tagText, "^%[R(%d+)%.L(%d+)%]$")
+    if roleNum and textNum then
+      local roleIndex = tonumber(roleNum)
+      local textIndex = tonumber(textNum)
+      if roles and roles[roleIndex] and roles[roleIndex].isTextField then
+        local vals = roles[roleIndex].textValues or {}
+        return vals[textIndex] ~= nil and vals[textIndex] ~= ""
+      end
+      return false
+    end
+    
+    -- Check [Rx.L] tags (All text field lines)
+    roleNum = string.match(tagText, "^%[R(%d+)%.L%]$")
+    if roleNum then
+      local roleIndex = tonumber(roleNum)
+      if roles and roles[roleIndex] and roles[roleIndex].isTextField then
+        local vals = roles[roleIndex].textValues or {}
+        for _, v in ipairs(vals) do
+          if v and v ~= "" then return true end
+        end
+      end
+      return false
+    end
+    
     return true -- Not a tag, consider it valid
   end
   
@@ -183,7 +247,7 @@ function OGRH.Announcements.ReplaceTags(text, roles, assignments, raidMarks, ass
           local content = string.sub(result, openBracket + 1, closeBracket - 1)
           
           -- Check if this block contains at least one tag
-          if string.find(content, "%[R%d+%.[TPMAC]") then
+          if string.find(content, "%[R%d+%.[TPMACL]") then
             -- This is a conditional block
             bestStart = openBracket
             bestEnd = closeBracket
@@ -214,7 +278,7 @@ function OGRH.Announcements.ReplaceTags(text, roles, assignments, raidMarks, ass
       local pos = 1
       
       while true do
-        local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPMAC][^%]]*%]", pos)
+        local tagStart, tagEnd = string.find(contentToCheck, "%[R%d+%.[TPMACL][^%]]*%]", pos)
         if not tagStart then break end
         
         local tagText = string.sub(contentToCheck, tagStart, tagEnd)
@@ -623,6 +687,62 @@ function OGRH.Announcements.ReplaceTags(text, roles, assignments, raidMarks, ass
     pos = tagEnd + 1
   end
   
+  -- Find [Rx.Lx] tags (Text field line value from text field roles)
+  pos = 1
+  while true do
+    local tagStart, tagEnd, roleNum, textNum = string.find(result, "%[R(%d+)%.L(%d+)%]", pos)
+    if not tagStart then break end
+    
+    local roleIndex = tonumber(roleNum)
+    
+    if roles and roles[roleIndex] and roles[roleIndex].isTextField then
+      local textIndex = tonumber(textNum)
+      local vals = roles[roleIndex].textValues or {}
+      local textValue = vals[textIndex] or ""
+      if textValue ~= "" then
+        -- Pad with spaces so URL-detection addons (pfUI) can match patterns
+        AddReplacement(tagStart, tagEnd, " " .. textValue .. " ", OGRH.COLOR.ROLE, true)
+      else
+        AddReplacement(tagStart, tagEnd, "", "", false)
+      end
+    else
+      -- Not a text field role - replace with empty string
+      AddReplacement(tagStart, tagEnd, "", "", false)
+    end
+    
+    pos = tagEnd + 1
+  end
+  
+  -- Find [Rx.L] tags (All lines from text field role, one output line per non-empty value)
+  pos = 1
+  while true do
+    local tagStart, tagEnd, roleNum = string.find(result, "%[R(%d+)%.L%]", pos)
+    if not tagStart then break end
+    
+    local roleIndex = tonumber(roleNum)
+    
+    if roles and roles[roleIndex] and roles[roleIndex].isTextField then
+      local vals = roles[roleIndex].textValues or {}
+      local lines = {}
+      for i = 1, table.getn(vals) do
+        if vals[i] and vals[i] ~= "" then
+          -- Pad with spaces so URL-detection addons (pfUI) can match patterns
+          table.insert(lines, " " .. vals[i] .. " ")
+        end
+      end
+      if table.getn(lines) > 0 then
+        local combined = table.concat(lines, "\n")
+        AddReplacement(tagStart, tagEnd, combined, OGRH.COLOR.ROLE, true)
+      else
+        AddReplacement(tagStart, tagEnd, "", "", false)
+      end
+    else
+      AddReplacement(tagStart, tagEnd, "", "", false)
+    end
+    
+    pos = tagEnd + 1
+  end
+  
   -- Sort replacements by position (descending) so we can replace from end to start
   table.sort(replacements, function(a, b) return a.startPos > b.startPos end)
   
@@ -768,10 +888,13 @@ function OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEnco
     end
   end
   
-  -- Process announcement lines using ReplaceTags
+  -- Pre-expand [Rx.L] tags into individual lines before ReplaceTags
+  local expandedTemplates = OGRH.Announcements.ExpandLTags(announcementData, orderedRoles)
+  
+  -- Process each expanded line through ReplaceTags independently
   local announcementLines = {}
-  for i = 1, table.getn(announcementData) do
-    local lineText = announcementData[i]
+  for i = 1, table.getn(expandedTemplates) do
+    local lineText = expandedTemplates[i]
     if lineText and lineText ~= "" then
       local processedText = OGRH.Announcements.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
       if processedText and processedText ~= "" then
@@ -786,11 +909,113 @@ function OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEnco
     return false
   end
   
-  -- Send announcement using SendAnnouncement (which checks for raid warning permission)
   if OGRH.SendAnnouncement then
     OGRH.SendAnnouncement(announcementLines)
   else
-    -- Fallback if SendAnnouncement not loaded
+    for _, line in ipairs(announcementLines) do
+      SendChatMessage(line, "RAID")
+    end
+  end
+  
+  return true
+end
+
+--- Sends the Admin encounter announcement for the current raid
+-- Admin encounter is always at encounter index 1
+function OGRH.Announcements.SendAdminAnnouncement()
+  -- Check if in raid
+  if GetNumRaidMembers() == 0 then
+    OGRH.Msg("You must be in a raid to announce.")
+    return false
+  end
+  
+  -- Get current raid index
+  local raidIdx = OGRH.GetCurrentEncounter()
+  if not raidIdx then
+    OGRH.Msg("No raid selected.")
+    return false
+  end
+  
+  -- Admin is always encounter index 1
+  local encIdx = 1
+  
+  local encounterMgmt = OGRH.SVM.GetPath('encounterMgmt')
+  if not encounterMgmt or not encounterMgmt.raids or not encounterMgmt.raids[raidIdx] or 
+     not encounterMgmt.raids[raidIdx].encounters or not encounterMgmt.raids[raidIdx].encounters[encIdx] then
+    OGRH.Msg("Could not load Admin encounter data.")
+    return false
+  end
+  
+  local encounter = encounterMgmt.raids[raidIdx].encounters[encIdx]
+  
+  if not OGRH.IsAdminEncounter or not OGRH.IsAdminEncounter(encounter) then
+    OGRH.Msg("First encounter is not an Admin encounter.")
+    return false
+  end
+  
+  local announcementData = encounter.announcements
+  if not announcementData or table.getn(announcementData) == 0 then
+    OGRH.Msg("No Admin announcement text configured.")
+    return false
+  end
+  
+  -- Build roles/assignments from Admin encounter
+  local encounterRoles = encounter.roles
+  if not encounterRoles then
+    OGRH.Msg("No roles configured for Admin encounter.")
+    return false
+  end
+  
+  local orderedRoles = {}
+  for i = 1, table.getn(encounterRoles) do
+    local role = encounterRoles[i]
+    if role and role.roleId then
+      orderedRoles[role.roleId] = role
+    end
+  end
+  
+  local assignments = {}
+  local raidMarks = {}
+  local assignmentNumbers = {}
+  
+  for roleIdx = 1, table.getn(encounterRoles) do
+    local role = encounterRoles[roleIdx]
+    if role then
+      if role.assignedPlayers then
+        assignments[roleIdx] = role.assignedPlayers
+      end
+      if role.raidMarks then
+        raidMarks[roleIdx] = role.raidMarks
+      end
+      if role.assignmentNumbers then
+        assignmentNumbers[roleIdx] = role.assignmentNumbers
+      end
+    end
+  end
+  
+  -- Pre-expand [Rx.L] tags into individual lines before ReplaceTags
+  local expandedTemplates = OGRH.Announcements.ExpandLTags(announcementData, orderedRoles)
+  
+  -- Process each expanded line through ReplaceTags independently
+  local announcementLines = {}
+  for i = 1, table.getn(expandedTemplates) do
+    local lineText = expandedTemplates[i]
+    if lineText and lineText ~= "" then
+      local processedText = OGRH.Announcements.ReplaceTags(lineText, orderedRoles, assignments, raidMarks, assignmentNumbers)
+      if processedText and processedText ~= "" then
+        table.insert(announcementLines, processedText)
+      end
+    end
+  end
+  
+  if table.getn(announcementLines) == 0 then
+    OGRH.Msg("No Admin announcement text to send.")
+    return false
+  end
+  
+  if OGRH.SendAnnouncement then
+    OGRH.SendAnnouncement(announcementLines)
+  else
     for _, line in ipairs(announcementLines) do
       SendChatMessage(line, "RAID")
     end

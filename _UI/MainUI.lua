@@ -390,15 +390,45 @@ announceBtn:SetScript("OnClick", function()
   end
   
   -- Left-click: Normal announcement
+  if IsShiftKeyDown() then
+    -- Shift+Left-click: Announce Admin encounter
+    if OGRH.Announcements and OGRH.Announcements.SendAdminAnnouncement then
+      OGRH.Announcements.SendAdminAnnouncement()
+    else
+      OGRH.Msg("Admin announcement not available.")
+    end
+    return
+  end
+  
   if OGRH.Announcements and OGRH.Announcements.SendEncounterAnnouncement then
     local selectedRaid, selectedEncounter = OGRH.GetCurrentEncounterNames()
     OGRH.Announcements.SendEncounterAnnouncement(selectedRaid, selectedEncounter)
   end
 end)
 announceBtn:SetScript("OnEnter", function()
-  if OGRH.ShowAnnouncementTooltip then
-    OGRH.ShowAnnouncementTooltip(this)
+  GameTooltip:SetOwner(this, "ANCHOR_TOP")
+  GameTooltip:ClearLines()
+  
+  -- Always show all three click options
+  GameTooltip:AddLine("Left Click: Encounter Announcement", 1, 0.82, 0)
+  GameTooltip:AddLine("Shift Left Click: Admin Announcement", 1, 0.82, 0)
+  GameTooltip:AddLine("Right Click: Consume Announcement", 1, 0.82, 0)
+  
+  -- Show preview based on modifier held
+  if IsShiftKeyDown() then
+    GameTooltip:AddLine(" ", 1, 1, 1)  -- blank separator
+    if OGRH.ShowAdminAnnouncementTooltip then
+      OGRH.ShowAdminAnnouncementTooltip()
+    end
+  else
+    -- Show encounter announcement preview by default
+    if OGRH.ShowAnnouncementTooltip then
+      GameTooltip:AddLine(" ", 1, 1, 1)  -- blank separator
+      OGRH.ShowAnnouncementTooltip(this)
+    end
   end
+  
+  GameTooltip:Show()
 end)
 announceBtn:SetScript("OnLeave", function()
   GameTooltip:Hide()
@@ -531,8 +561,14 @@ function OGRH.NavigateToPreviousEncounter()
   
   local raid = raids[raidIdx]
   if raid and raid.encounters then
+    -- Determine minimum navigable index (skip Admin encounter at index 1)
+    local minIdx = 1
+    if OGRH.IsAdminEncounter and raid.encounters[1] and OGRH.IsAdminEncounter(raid.encounters[1]) then
+      minIdx = 2
+    end
+    
     -- Navigate to previous encounter by index
-    if encounterIdx > 1 then
+    if encounterIdx > minIdx then
       -- Update encounter using centralized setter (triggers REALTIME sync)
       OGRH.SetCurrentEncounter(raidIdx, encounterIdx - 1)
       
@@ -628,11 +664,18 @@ function OGRH.UpdateEncounterNavButton()
     local raids = OGRH.SVM.GetPath("encounterMgmt.raids")
     if raids and raids[1] and raids[1].encounters and table.getn(raids[1].encounters) > 0 then
       raidIdx = 1
-      encounterIdx = 1
-      OGRH.SVM.Set("ui", "selectedRaidIndex", 1)
-      OGRH.SVM.Set("ui", "selectedEncounterIndex", 1)
-      if OGRH.MainUI.State.debug then
-        OGRH.Msg("|cff66ccff[RH][DEBUG]|r Initialized indices to 1, 1")
+      -- Skip Admin encounter at index 1 for default selection
+      local startIdx = 1
+      if OGRH.IsAdminEncounter and OGRH.IsAdminEncounter(raids[1].encounters[1]) then
+        startIdx = 2
+      end
+      if startIdx <= table.getn(raids[1].encounters) then
+        encounterIdx = startIdx
+        OGRH.SVM.Set("ui", "selectedRaidIndex", 1)
+        OGRH.SVM.Set("ui", "selectedEncounterIndex", startIdx)
+        if OGRH.MainUI.State.debug then
+          OGRH.Msg("|cff66ccff[RH][DEBUG]|r Initialized indices to 1, " .. startIdx)
+        end
       end
     end
   end
@@ -749,7 +792,13 @@ function OGRH.UpdateEncounterNavButton()
   
   -- Enable/disable prev/next buttons based on encounter index
   if raid and raid.encounters then
-    if encounterIdx and encounterIdx > 1 then
+    -- Determine minimum navigable index (skip Admin encounter at index 1)
+    local minIdx = 1
+    if OGRH.IsAdminEncounter and raid.encounters[1] and OGRH.IsAdminEncounter(raid.encounters[1]) then
+      minIdx = 2
+    end
+    
+    if encounterIdx and encounterIdx > minIdx then
       prevBtn:Enable()
     else
       prevBtn:Disable()
@@ -925,39 +974,8 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
   local fullMsg = OGRH.Trim(m or "")
   local sub = string.lower(fullMsg)
   
-  if sub=="sand" then 
-    if OGRH.SetTradeType and OGRH.ExecuteTrade then 
-      OGRH.SetTradeType("sand")
-      OGRH.ExecuteTrade()
-    else 
-      OGRH.Msg("Trade helper not loaded.") 
-    end
-  elseif string.find(sub, "^shuffle") then
-    if OGRH.ShuffleRaid then
-      -- Extract number from command (e.g., "shuffle 50")
-      local _, _, numStr = string.find(fullMsg, "^%s*%a+%s+(%d+)")
-      local delayMs = tonumber(numStr)
-      OGRH.ShuffleRaid(delayMs)
-    else
-      OGRH.Msg("Shuffle function not loaded.")
-    end
-  elseif string.find(sub, "^sortspeed") then
-    -- Extract number from command (e.g., "sortspeed 50")
-    local _, _, numStr = string.find(fullMsg, "^%s*%a+%s+(%d+)")
-    local speedMs = tonumber(numStr)
-    if speedMs then
-      OGRH.SVM.Set("sorting", "speed", speedMs)
-      OGRH.Msg("Auto-sort speed set to " .. speedMs .. "ms between moves")
-    else
-      local currentSpeed = OGRH.SVM.Get("sorting", "speed")
-      if currentSpeed then
-        OGRH.Msg("Current auto-sort speed: " .. currentSpeed .. "ms")
-      else
-        OGRH.Msg("Current auto-sort speed: 250ms (default)")
-      end
-    end
   -- Phase 1 Debug Commands
-  elseif sub == "debug messages" or sub == "messages" then
+  if sub == "debug messages" or sub == "messages" then
     if OGRH.DebugPrintMessageTypes then
       OGRH.DebugPrintMessageTypes()
     else
@@ -1011,6 +1029,8 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
         (OGRH.ConsumesTracking and (OGRH.ConsumesTracking.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
       OGRH.Msg("  |cff00ccff/ogrh debug bigwigs|r - Toggle BigWigs integration debug messages " ..
         (OGRH.BigWigs and (OGRH.BigWigs.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("  |cff00ccff/ogrh debug ready|r - Toggle ReadynessDashboard debug messages " ..
+        (OGRH.ReadynessDashboard and (OGRH.ReadynessDashboard.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
       OGRH.Msg("|cff66ccff[RH][DEBUG]|r Use /ogrh debug [option] to toggle")
     elseif debugOption == "sync" then
       if OGRH.SyncIntegrity then
@@ -1060,6 +1080,14 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
       else
         OGRH.Msg("BigWigs integration not loaded.")
       end
+    elseif debugOption == "ready" then
+      if OGRH.ReadynessDashboard then
+        OGRH.ReadynessDashboard.State.debug = not OGRH.ReadynessDashboard.State.debug
+        local status = OGRH.ReadynessDashboard.State.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("ReadynessDashboard debug: " .. status)
+      else
+        OGRH.Msg("ReadynessDashboard not loaded.")
+      end
     else
       OGRH.Msg("|cffff0000[RH]|r Unknown debug option: " .. debugOption)
       OGRH.Msg("Use |cff00ccff/ogrh debug help|r to see available options")
@@ -1076,822 +1104,28 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Permission system not loaded.")
     end
-  -- Migration Commands (Phase 1 - SavedVariables v2)
-  -- Check force FIRST before regular create (order matters for string matching)
-  elseif sub == "migration create force" or sub == "migrate force" then
-    if OGRH.Migration and OGRH.Migration.MigrateToV2 then
-      OGRH.Migration.MigrateToV2(true)
+  elseif string.find(sub, "^ready") then
+    local _, _, readyArgs = string.find(sub, "^ready%s*(.*)")
+    if OGRH.ReadynessDashboard and OGRH.ReadynessDashboard.HandleSlashCommand then
+      OGRH.ReadynessDashboard.HandleSlashCommand(readyArgs or "")
     else
-      OGRH.Msg("Migration system not loaded.")
+      OGRH.Msg("ReadynessDashboard not loaded.")
     end
-  elseif sub == "migration create" or sub == "migrate" then
-    if OGRH.Migration and OGRH.Migration.MigrateToV2 then
-      OGRH.Migration.MigrateToV2(false)
+  elseif string.find(sub, "^test rebirth") then
+    if OGRH.RebirthCaller and OGRH.RebirthCaller.TestMode then
+      local _, _, countStr = string.find(sub, "^test rebirth%s+(%d+)")
+      local count = countStr and tonumber(countStr) or nil
+      OGRH.RebirthCaller.TestMode(count)
     else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration validate" then
-    if OGRH.Migration and OGRH.Migration.ValidateV2 then
-      OGRH.Migration.ValidateV2()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration cutover confirm" then
-    if OGRH.Migration and OGRH.Migration.CutoverToV2 then
-      OGRH.Migration.CutoverToV2()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration rollback" then
-    if OGRH.Migration and OGRH.Migration.RollbackFromV2 then
-      OGRH.Migration.RollbackFromV2()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration purge" then
-    if OGRH.Migration and OGRH.Migration.PurgeV1Data then
-      OGRH.Migration.PurgeV1Data(false)
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif string.find(sub, "^migration comp raid") then
-    local _, _, raidName = string.find(fullMsg, "^%s*migration%s+comp%s+raid%s+(.+)$")
-    if not raidName or raidName == "" then
-      OGRH.Msg("Usage: /ogrh migration comp raid <raidname>")
-      OGRH.Msg("Example: /ogrh migration comp raid MC")
-    else
-      if OGRH.Migration and OGRH.Migration.CompareRaid then
-        OGRH.Migration.CompareRaid(raidName)
-      else
-        OGRH.Msg("Migration system not loaded.")
-      end
-    end
-  elseif string.find(fullMsg, "^%s*migration%s+comp%s+enc") then
-    -- Extract raid/encounter from "migration comp enc RaidName/EncounterName"
-    local _, _, fullPath = string.find(fullMsg, "^%s*migration%s+comp%s+enc%s+(.+)$")
-    if not fullPath or fullPath == "" then
-      OGRH.Msg("Usage: /ogrh migration comp enc <raidname>/<encountername>")
-      OGRH.Msg("Example: /ogrh migration comp enc BWL/Razorgore")
-    else
-      -- Split by / delimiter
-      local slashPos = string.find(fullPath, "/")
-      if not slashPos then
-        OGRH.Msg("ERROR: Missing '/' delimiter. Use format: <raidname>/<encountername>")
-        OGRH.Msg("Example: /ogrh migration comp enc BWL/Razorgore")
-      else
-        local raidName = string.sub(fullPath, 1, slashPos - 1)
-        local encounterName = string.sub(fullPath, slashPos + 1)
-        
-        -- Trim whitespace
-        raidName = string.gsub(raidName, "^%s*(.-)%s*$", "%1")
-        encounterName = string.gsub(encounterName, "^%s*(.-)%s*$", "%1")
-        
-        if raidName == "" or encounterName == "" then
-          OGRH.Msg("ERROR: Both raid name and encounter name required")
-          OGRH.Msg("Example: /ogrh migration comp enc BWL/Razorgore")
-        else
-          if OGRH.Migration and OGRH.Migration.CompareEncounter then
-            OGRH.Migration.CompareEncounter(raidName, encounterName)
-          else
-            OGRH.Msg("Migration system not loaded.")
-          end
-        end
-      end
-    end
-  elseif string.find(fullMsg, "^%s*migration%s+comp%s+roles") then
-    -- Extract raid/encounter/role from "migration comp roles RaidName/EncounterName/RoleID"
-    local _, _, fullPath = string.find(fullMsg, "^%s*migration%s+comp%s+roles%s+(.+)$")
-    if not fullPath or fullPath == "" then
-      OGRH.Msg("Usage: /ogrh migration comp roles <raid>/<encounter>/<role>")
-      OGRH.Msg("Example: /ogrh migration comp roles BWL/Vael/R1")
-    else
-      -- Split by / delimiter (Lua 5.0 compatible)
-      local slash1 = string.find(fullPath, "/")
-      if not slash1 then
-        OGRH.Msg("ERROR: Format must be <raid>/<encounter>/<role>")
-        OGRH.Msg("Example: /ogrh migration comp roles BWL/Vael/R1")
-      else
-        local slash2 = string.find(fullPath, "/", slash1 + 1)
-        if not slash2 then
-          OGRH.Msg("ERROR: Format must be <raid>/<encounter>/<role>")
-          OGRH.Msg("Example: /ogrh migration comp roles BWL/Vael/R1")
-        else
-          local raidName = string.sub(fullPath, 1, slash1 - 1)
-          local encounterName = string.sub(fullPath, slash1 + 1, slash2 - 1)
-          local roleId = string.sub(fullPath, slash2 + 1)
-          
-          -- Trim whitespace
-          raidName = string.gsub(raidName, "^%s*(.-)%s*$", "%1")
-          encounterName = string.gsub(encounterName, "^%s*(.-)%s*$", "%1")
-          roleId = string.gsub(roleId, "^%s*(.-)%s*$", "%1")
-          
-          if raidName == "" or encounterName == "" or roleId == "" then
-            OGRH.Msg("ERROR: All parts required: <raid>/<encounter>/<role>")
-            OGRH.Msg("Example: /ogrh migration comp roles BWL/Vael/R1")
-          else
-            if OGRH.Migration and OGRH.Migration.CompareRole then
-              OGRH.Migration.CompareRole(raidName, encounterName, roleId)
-            else
-              OGRH.Msg("Migration system not loaded.")
-            end
-          end
-        end
-      end
-    end
-  elseif string.find(fullMsg, "^%s*migration%s+comp%s+class") then
-    -- Extract raid/encounter/role from "migration comp class RaidName/EncounterName/RoleID"
-    local _, _, fullPath = string.find(fullMsg, "^%s*migration%s+comp%s+class%s+(.+)$")
-    if not fullPath or fullPath == "" then
-      OGRH.Msg("Usage: /ogrh migration comp class <raid>/<encounter>/<role>")
-      OGRH.Msg("Example: /ogrh migration comp class BWL/Vael/R1")
-    else
-      -- Split by / delimiter (Lua 5.0 compatible)
-      local slash1 = string.find(fullPath, "/")
-      if not slash1 then
-        OGRH.Msg("ERROR: Format must be <raid>/<encounter>/<role>")
-        OGRH.Msg("Example: /ogrh migration comp class BWL/Vael/R1")
-      else
-        local slash2 = string.find(fullPath, "/", slash1 + 1)
-        if not slash2 then
-          OGRH.Msg("ERROR: Format must be <raid>/<encounter>/<role>")
-          OGRH.Msg("Example: /ogrh migration comp class BWL/Vael/R1")
-        else
-          local raidName = string.sub(fullPath, 1, slash1 - 1)
-          local encounterName = string.sub(fullPath, slash1 + 1, slash2 - 1)
-          local roleId = string.sub(fullPath, slash2 + 1)
-          
-          -- Trim whitespace
-          raidName = string.gsub(raidName, "^%s*(.-)%s*$", "%1")
-          encounterName = string.gsub(encounterName, "^%s*(.-)%s*$", "%1")
-          roleId = string.gsub(roleId, "^%s*(.-)%s*$", "%1")
-          
-          if raidName == "" or encounterName == "" or roleId == "" then
-            OGRH.Msg("ERROR: All parts required: <raid>/<encounter>/<role>")
-            OGRH.Msg("Example: /ogrh migration comp class BWL/Vael/R1")
-          else
-            if OGRH.Migration and OGRH.Migration.CompareClassPriority then
-              OGRH.Migration.CompareClassPriority(raidName, encounterName, roleId)
-            else
-              OGRH.Msg("Migration system not loaded.")
-            end
-          end
-        end
-      end
-    end
-  elseif string.find(fullMsg, "^%s*migration%s+comp%s+announce") then
-    local _, _, fullPath = string.find(fullMsg, "^%s*migration%s+comp%s+announce%s+(.+)$")
-    if fullPath then
-      -- Manual "/" parsing for Lua 5.0 compatibility
-      local firstSlashPos = string.find(fullPath, "/")
-      if firstSlashPos then
-        local raidName = string.sub(fullPath, 1, firstSlashPos - 1)
-        local encounterName = string.sub(fullPath, firstSlashPos + 1)
-        
-        if raidName and encounterName and string.len(raidName) > 0 and string.len(encounterName) > 0 then
-          if OGRH.Migration and OGRH.Migration.CompareAnnouncements then
-            OGRH.Migration.CompareAnnouncements(raidName, encounterName)
-          else
-            OGRH.Msg("|cffff0000[OGRH]|r Migration system not loaded")
-          end
-        else
-          OGRH.Msg("|cffff0000[OGRH]|r Invalid format. Use: /ogrh migration comp announce <raid>/<encounter>")
-        end
-      else
-        OGRH.Msg("|cffff0000[OGRH]|r Invalid format. Use: /ogrh migration comp announce <raid>/<encounter>")
-      end
-    else
-      OGRH.Msg("|cffff0000[OGRH]|r Usage: /ogrh migration comp announce <raid>/<encounter>")
-    end
-  elseif sub == "migration comp recruitment" or sub == "migration comp recruit" then
-    if OGRH.Migration and OGRH.Migration.CompareRecruitment then
-      OGRH.Migration.CompareRecruitment()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp consumes" or sub == "migration comp consumestracking" then
-    if OGRH.Migration and OGRH.Migration.CompareConsumesTracking then
-      OGRH.Migration.CompareConsumesTracking()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp baseconsumes" then
-    if OGRH.Migration and OGRH.Migration.CompareBaseConsumes then
-      OGRH.Migration.CompareBaseConsumes()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp trade" then
-    if OGRH.Migration and OGRH.Migration.CompareTrade then
-      OGRH.Migration.CompareTrade()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp promotes" then
-    if OGRH.Migration and OGRH.Migration.ComparePromotes then
-      OGRH.Migration.ComparePromotes()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp roster" then
-    if OGRH.Migration and OGRH.Migration.CompareRoster then
-      OGRH.Migration.CompareRoster()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp core" then
-    if OGRH.Migration and OGRH.Migration.CompareCore then
-      OGRH.Migration.CompareCore()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp messagerouter" or sub == "migration comp router" then
-    if OGRH.Migration and OGRH.Migration.CompareMessageRouter then
-      OGRH.Migration.CompareMessageRouter()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp permissions" or sub == "migration comp perms" then
-    if OGRH.Migration and OGRH.Migration.ComparePermissions then
-      OGRH.Migration.ComparePermissions()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration comp versioning" or sub == "migration comp version" then
-    if OGRH.Migration and OGRH.Migration.CompareVersioning then
-      OGRH.Migration.CompareVersioning()
-    else
-      OGRH.Msg("Migration system not loaded.")
-    end
-  elseif sub == "migration help" then
-    OGRH.Msg("|cff00ff00[OGRH Migration]|r Available commands:")
-    OGRH.Msg("  /ogrh migration create - Create v2 schema")
-    OGRH.Msg("  /ogrh migration validate - Compare v1 vs v2")
-    OGRH.Msg("  /ogrh migration cutover confirm - Switch to v2")
-    OGRH.Msg("  /ogrh migration rollback - Revert to v1")
-    OGRH.Msg("  /ogrh migration purge - Remove v1 data (keeps only v2)")
-    OGRH.Msg(" ")
-    OGRH.Msg("|cff00ff00Encounter Comparisons:|r")
-    OGRH.Msg("  /ogrh migration comp raid <name> - Compare raid")
-    OGRH.Msg("  /ogrh migration comp enc <raid>/<encounter> - Compare encounter")
-    OGRH.Msg("  /ogrh migration comp roles <raid>/<enc>/<role> - Compare role data")
-    OGRH.Msg("  /ogrh migration comp class <raid>/<enc>/<role> - Compare class priority")
-    OGRH.Msg("  /ogrh migration comp announce <raid>/<encounter> - Compare announcements")
-    OGRH.Msg(" ")
-    OGRH.Msg("|cff00ff00Component Comparisons:|r")
-    OGRH.Msg("  /ogrh migration comp recruitment - Compare recruitment settings")
-    OGRH.Msg("  /ogrh migration comp consumes - Compare consumes tracking")
-    OGRH.Msg("  /ogrh migration comp promotes - Compare auto-promotes list")
-    OGRH.Msg("  /ogrh migration comp roster - Compare roster management")
-    OGRH.Msg("  /ogrh migration comp core - Compare core settings")
-    OGRH.Msg("  /ogrh migration comp messagerouter - Compare message router state")
-    OGRH.Msg("  /ogrh migration comp permissions - Compare permissions data")
-    OGRH.Msg("  /ogrh migration comp versioning - Compare versioning data")
-  -- Chat Window Cleanup Command
-  elseif sub == "chat clean" or sub == "chatclean" then
-    if OGRH._ogrhChatFrame and OGRH._ogrhChatFrameIndex then
-      local frameIndex = OGRH._ogrhChatFrameIndex
-      
-      -- Remove all channels using the correct API
-      local channels = {GetChatWindowChannels(frameIndex)}
-      for i = 1, table.getn(channels), 2 do
-        local channelName = channels[i]
-        if channelName then
-          RemoveChatWindowChannel(frameIndex, channelName)
-        end
-      end
-      
-      -- Remove all message groups using the correct API
-      local messageGroups = {
-        "SAY", "YELL", "EMOTE",
-        "PARTY", "RAID", "GUILD", "OFFICER",
-        "WHISPER",
-        "CHANNEL",
-        "SYSTEM"
-      }
-      
-      for i = 1, table.getn(messageGroups) do
-        RemoveChatWindowMessages(frameIndex, messageGroups[i])
-      end
-      
-      OGRH.Msg("Cleaned OGRH chat window (ChatFrame" .. frameIndex .. ") - removed all channels and message types")
-    else
-      OGRH.Msg("|cffFF0000[OGRH]|r OGRH chat window not found. Run /ogrh chatwindow first.")
-    end
-  -- Chat Window Test
-  elseif sub == "chatwindow" or sub == "chat window" or sub == "chat test" then
-    -- Detect pfUI
-    local pfUIDetected = pfUI ~= nil
-    if pfUIDetected then
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r pfUI detected - keeping window docked")
-    end
-    
-    -- Find or create OGRH chat window
-    local ogrh_frame = nil
-    local frameIndex = nil
-    
-    -- Search existing chat frames by checking their tab text AND if they're actually shown/active
-    for i = 1, NUM_CHAT_WINDOWS do
-      local frame = getglobal("ChatFrame" .. i)
-      if frame then
-        local tab = getglobal("ChatFrame" .. i .. "Tab")
-        if tab then
-          local tabText = tab:GetText()
-          -- Check if this is OGRH AND the frame is actually shown/visible (not a zombie)
-          if tabText and tabText == "OGRH" and frame:IsShown() then
-            ogrh_frame = frame
-            frameIndex = i
-            break
-          elseif tabText and tabText == "OGRH" and not frame:IsShown() then
-            -- Found zombie frame - log it but keep searching
-            DEFAULT_CHAT_FRAME:AddMessage("|cffFFFF00[OGRH]|r Found hidden OGRH window (ChatFrame" .. i .. ") - ignoring zombie frame")
-          end
-        end
-      end
-    end
-    
-    -- Create if doesn't exist
-    if not ogrh_frame then
-      ogrh_frame = FCF_OpenNewWindow("OGRH")
-      if ogrh_frame then
-        -- Find the index of the newly created frame
-        for i = 1, NUM_CHAT_WINDOWS do
-          if getglobal("ChatFrame" .. i) == ogrh_frame then
-            frameIndex = i
-            break
-          end
-        end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Created new OGRH chat window (ChatFrame" .. (frameIndex or "?") .. ")")
-        
-        -- If pfUI detected, trigger a refresh first so pfUI knows about the new window
-        if pfUIDetected and pfUI.chat and pfUI.chat.RefreshChat then
-          pfUI.chat.RefreshChat()
-          DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Refreshed pfUI chat layout")
-        end
-        
-        -- Remove all channels using the correct API
-        if frameIndex then
-          local channels = {GetChatWindowChannels(frameIndex)}
-          for i = 1, table.getn(channels), 2 do
-            local channelName = channels[i]
-            if channelName then
-              RemoveChatWindowChannel(frameIndex, channelName)
-            end
-          end
-        end
-        
-        -- Remove all message groups using the correct API
-        local messageGroups = {
-          "SAY", "YELL", "EMOTE",
-          "PARTY", "RAID", "GUILD", "OFFICER",
-          "WHISPER",
-          "CHANNEL",
-          "SYSTEM"
-        }
-        
-        if frameIndex then
-          for i = 1, table.getn(messageGroups) do
-            RemoveChatWindowMessages(frameIndex, messageGroups[i])
-          end
-        end
-        
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Removed channels and message types - OGRH-only window")
-      else
-        OGRH.Msg("|cffFF0000[OGRH]|r Failed to create chat window")
-        return
-      end
-    else
-      DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[OGRH]|r Found existing OGRH chat window (ChatFrame" .. (frameIndex or "?") .. ")")
-    end
-    
-    -- Store frame reference and index globally for later access
-    OGRH._ogrhChatFrame = ogrh_frame
-    OGRH._ogrhChatFrameIndex = frameIndex
-    
-    -- Test it
-    if ogrh_frame then
-      ogrh_frame:AddMessage("|cff00ff00[OGRH]|r Dedicated chat window test successful!", 1, 1, 1)
-      ogrh_frame:AddMessage("|cff00ff00[OGRH]|r All addon messages can be directed here.", 1, 1, 1)
-      if pfUIDetected then
-        ogrh_frame:AddMessage("|cff00ff00[OGRH]|r pfUI detected - window stays docked", 1, 1, 1)
-      end
-    end
-  -- Phase 6.1 Test Commands
-  elseif string.find(sub, "^test") then
-    local _, _, testName = string.find(fullMsg, "^%s*test%s+(%S+)")
-    
-    -- Route to appropriate test suite
-    if testName == "svm" then
-      if OGRH.Tests and OGRH.Tests.SVM and OGRH.Tests.SVM.RunAll then
-        OGRH.Tests.SVM.RunAll()
-      else
-        OGRH.Msg("SVM tests not loaded.")
-      end
-    elseif testName == "phase1" then
-      if OGRH.Tests and OGRH.Tests.Phase1 and OGRH.Tests.Phase1.RunAll then
-        OGRH.Tests.Phase1.RunAll()
-      else
-        OGRH.Msg("Phase 1 tests not loaded.")
-      end
-    elseif OGRH.SyncIntegrity and OGRH.SyncIntegrity.RunTests then
-      OGRH.SyncIntegrity.RunTests(testName)
-    else
-      OGRH.Msg("Test system not loaded. Available: test svm, test phase1")
-    end
-  -- Manual checksum broadcast for testing
-  elseif sub == "checkpoll" or sub == "checksumpoll" then
-    if OGRH.SyncIntegrity and OGRH.SyncIntegrity.BroadcastChecksums then
-      if OGRH.CanModifyStructure(UnitName("player")) then
-        OGRH.Msg("|cff00ccff[RH-SyncIntegrity]|r Broadcasting checksums...")
-        OGRH.SyncIntegrity.BroadcastChecksums(true)
-      else
-        OGRH.Msg("|cffff0000[RH-SyncIntegrity]|r Only admin can broadcast checksums")
-      end
-    else
-      OGRH.Msg("|cffff0000[RH-SyncIntegrity]|r SyncIntegrity not loaded")
-    end
-  -- Pending Segments Debug Command
-  elseif sub == "segments" or sub == "pendingsegments" or sub == "ps" then
-    if OGRH.PendingSegments and OGRH.PendingSegments.PrintSegmentList then
-      OGRH.PendingSegments.PrintSegmentList()
-    else
-      OGRH.Msg("PendingSegments module not loaded.")
-    end
-  -- Test: Manually create DPSMate segment
-  elseif string.find(sub, "^saveseg") then
-    local _, _, segmentName = string.find(fullMsg, "^%s*saveseg%s+(.+)$")
-    if not segmentName or segmentName == "" then
-      OGRH.Msg("Usage: /ogrh saveseg <segmentname>")
-      OGRH.Msg("Example: /ogrh saveseg Test Segment")
-    else
-      if DPSMate and DPSMate.Options and DPSMate.Options.NewSegment then
-        DPSMate.Options:NewSegment(segmentName)
-        OGRH.Msg("Created DPSMate segment: " .. segmentName)
-      else
-        OGRH.Msg("DPSMate not loaded.")
-      end
-    end
-  -- Manually trigger segment purge
-  elseif sub == "purgesegments" or sub == "purgeseg" then
-    if OGRH.PendingSegments and OGRH.PendingSegments.ManualPurge then
-      OGRH.PendingSegments.ManualPurge()
-    else
-      OGRH.Msg("PendingSegments module not loaded.")
-    end
-  -- Test: Set segment expiresAt to 3 days ago
-  elseif string.find(sub, "^segexp") then
-    local _, _, indexStr = string.find(fullMsg, "^%s*segexp%s+(%d+)$")
-    if not indexStr then
-      OGRH.Msg("Usage: /ogrh segexp <index>")
-      OGRH.Msg("Sets segment expiresAt to 3 days ago for purge testing")
-    else
-      local index = tonumber(indexStr)
-      local pendingSegments = OGRH.SVM.GetPath("rosterManagement.pendingSegments") or {}
-      if index < 1 or index > table.getn(pendingSegments) then
-        OGRH.Msg("Invalid index. Valid range: 1-" .. table.getn(pendingSegments))
-      else
-        local segment = pendingSegments[index]
-        segment.expiresAt = time() - (3 * 86400) -- 3 days ago
-        OGRH.SVM.SetPath("rosterManagement.pendingSegments", pendingSegments, {
-          source = "MainUI",
-          action = "test_expire",
-          sync = false,
-        })
-        OGRH.Msg("Set segment " .. index .. " (" .. segment.name .. ") to expire 3 days ago")
-      end
-    end
-  -- Checksum testing commands (Phase 1 Sync Optimization)
-  elseif sub == "checksum" or sub == "checksums" then
-    if not OGRH.SyncChecksum then
-      OGRH.Msg("SyncChecksum module not loaded.")
-    elseif not OGRH.GetActiveRaid then
-      OGRH.Msg("GetActiveRaid function not loaded.")
-    else
-      local activeRaid = OGRH.GetActiveRaid()
-      if not activeRaid or not activeRaid.name then
-        OGRH.Msg("|cffff0000Active Raid not found.|r")
-      else
-        local raidName = activeRaid.name
-        OGRH.Msg("|cff00ff00Testing hierarchical checksums for Active Raid:|r " .. (activeRaid.displayName or raidName))
-        
-        -- Layer 1: Structure
-        local l1 = OGRH.SyncChecksum.ComputeRaidStructureChecksum(raidName)
-        OGRH.Msg("  |cffffcc00Layer 1 (Structure):|r " .. l1)
-        
-        -- Layer 2: Encounters
-        local l2 = OGRH.SyncChecksum.ComputeEncountersChecksums(raidName)
-        OGRH.Msg("  |cffffcc00Layer 2 (Encounters):|r " .. table.getn(l2) .. " encounters")
-        for i = 1, table.getn(l2) do
-          OGRH.Msg("    [" .. i .. "]: " .. l2[i])
-        end
-        
-        -- Layer 3: Roles
-        local l3 = OGRH.SyncChecksum.ComputeRolesChecksums(raidName)
-        OGRH.Msg("  |cffffcc00Layer 3 (Roles):|r " .. table.getn(l3) .. " encounters")
-        for encIdx = 1, table.getn(l3) do
-          if l3[encIdx] then
-            OGRH.Msg("    Enc[" .. encIdx .. "]: " .. table.getn(l3[encIdx]) .. " roles")
-          end
-        end
-        
-        -- Layer 4: Assignments (per-role)
-        local l4 = OGRH.SyncChecksum.ComputeApRoleChecksums(raidName)
-        OGRH.Msg("  |cffffcc00Layer 4 (Assignments per-role):|r " .. table.getn(l4) .. " encounters")
-        for encIdx = 1, table.getn(l4) do
-          if l4[encIdx] then
-            OGRH.Msg("    Enc[" .. encIdx .. "]: " .. table.getn(l4[encIdx]) .. " roles")
-          end
-        end
-        
-        -- Layer 4: Assignments (per-encounter aggregate)
-        local l4enc = OGRH.SyncChecksum.ComputeApEncounterChecksums(raidName)
-        OGRH.Msg("  |cffffcc00Layer 4 (Assignments per-encounter):|r " .. table.getn(l4enc) .. " encounters")
-        for i = 1, table.getn(l4enc) do
-          OGRH.Msg("    [" .. i .. "]: " .. l4enc[i])
-        end
-      end
-    end
-  -- Repair testing commands (Phase 3 Sync Optimization)
-  elseif sub == "repair" then
-    if not OGRH.SyncRepair or not OGRH.SyncChecksum then
-      OGRH.Msg("SyncRepair or SyncChecksum module not loaded.")
-    else
-      local activeRaid = OGRH.GetActiveRaid()
-      if not activeRaid then
-        OGRH.Msg("|cffff0000No active raid found.|r")
-        return
-      end
-      
-      local raidName = activeRaid.name
-      OGRH.Msg("|cff00ff00Repair System Test:|r " .. raidName)
-      
-      -- Test adaptive pacing
-      local queueDepth = OGRH.SyncRepair.GetQueueDepth()
-      OGRH.Msg("  |cffffcc00Queue Depth:|r " .. queueDepth .. " messages")
-      
-      OGRH.SyncRepair.UpdateAdaptiveDelay()
-      local currentDelay = OGRH.SyncRepair.State.currentDelay
-      OGRH.Msg("  |cffffcc00Adaptive Delay:|r " .. string.format("%.3fs", currentDelay))
-      
-      -- Test validation checksums (compute for first 2 encounters)
-      if activeRaid.encounters and table.getn(activeRaid.encounters) > 0 then
-        local layerIds = {
-          structure = true,
-          encounters = {1, 2},
-          roles = {},
-          assignments = {}
-        }
-        
-        -- Add first 2 roles from first encounter
-        if activeRaid.encounters[1] and activeRaid.encounters[1].roles then
-          layerIds.roles[1] = {1, 2}
-          layerIds.assignments[1] = {1, 2}
-        end
-        
-        OGRH.Msg("  |cffffcc00Computing validation checksums...|r")
-        local checksums = OGRH.SyncRepair.ComputeValidationChecksums(raidName, layerIds)
-        
-        if checksums.structure then
-          OGRH.Msg("    Structure: " .. checksums.structure)
-        end
-        if checksums.encounters then
-          for encIdx, hash in pairs(checksums.encounters) do
-            OGRH.Msg("    Encounter[" .. encIdx .. "]: " .. hash)
-          end
-        end
-        if checksums.roles then
-          for encIdx, roles in pairs(checksums.roles) do
-            for roleIdx, hash in pairs(roles) do
-              OGRH.Msg("    Role[" .. encIdx .. "][" .. roleIdx .. "]: " .. hash)
-            end
-          end
-        end
-        
-        -- Test validation (compare with itself - should pass)
-        local success, mismatches = OGRH.SyncRepair.ValidateRepair(raidName, checksums, checksums)
-        OGRH.Msg("  |cffffcc00Self-Validation:|r " .. (success and "|cff00ff00PASS|r" or "|cffff0000FAIL|r"))
-        if not success then
-          OGRH.Msg("    Mismatches: " .. table.getn(mismatches))
-        end
-        
-        -- Test priority ordering
-        local failedLayers = {
-          encounters = {1, 3, 2},
-          roles = {[2] = {1}},
-          assignments = {[1] = {1, 2}}
-        }
-        local priority = OGRH.SyncRepair.DetermineRepairPriority(raidName, 2, failedLayers)
-        OGRH.Msg("  |cffffcc00Repair Priority (selected: 2):|r")
-        for i = 1, table.getn(priority) do
-          OGRH.Msg("    [" .. i .. "] Encounter " .. priority[i])
-        end
-      else
-        OGRH.Msg("  |cffff0000No encounters found in active raid.|r")
-      end
-      
-      -- Test packet building
-      OGRH.Msg("  |cffffcc00Testing Packet Builders:|r")
-      local structPkt = OGRH.SyncRepair.BuildStructurePacket(raidName)
-      if structPkt then
-        OGRH.Msg("    Structure packet: type=" .. structPkt.type .. ", layer=" .. structPkt.layer)
-      end
-      
-      if activeRaid.encounters and table.getn(activeRaid.encounters) > 0 then
-        local encPkts = OGRH.SyncRepair.BuildEncountersPackets(raidName, {1})
-        OGRH.Msg("    Encounters packets: " .. table.getn(encPkts) .. " packet(s)")
-        
-        if activeRaid.encounters[1] and activeRaid.encounters[1].roles and table.getn(activeRaid.encounters[1].roles) > 0 then
-          local rolePkts = OGRH.SyncRepair.BuildRolesPackets(raidName, 1, {1})
-          OGRH.Msg("    Roles packets: " .. table.getn(rolePkts) .. " packet(s)")
-          
-          local apPkts = OGRH.SyncRepair.BuildAssignmentsPackets(raidName, 1, {1})
-          OGRH.Msg("    Assignments packets: " .. table.getn(apPkts) .. " packet(s)")
-        end
-      end
-    end
-  
-  -- Phase 6: Initiate repair session (test)
-  elseif sub == "repairsession" or sub == "repsess" then
-    if not OGRH.SyncRepairHandlers then
-      OGRH.Msg("SyncRepairHandlers module not loaded.")
-    else
-      local activeRaid = OGRH.GetActiveRaid()
-      if not activeRaid or not activeRaid.name then
-        OGRH.Msg("No active raid found.")
-      else
-        local raidName = activeRaid.name  -- Use internal name, not displayName
-        -- Simulate failed layers (structure + first encounter + first 2 roles)
-        local failedLayers = {
-          structure = true,
-          encounters = {1},
-          roles = {[1] = {1, 2}},
-          assignments = {[1] = {1, 2}}
-        }
-        
-        local success = OGRH.SyncRepairHandlers.InitiateRepair(raidName, failedLayers, 1)
-        if success then
-          OGRH.Msg("|cff00ff00Test repair session initiated|r")
-        else
-          OGRH.Msg("|cffff0000Failed to initiate repair session|r")
-        end
-      end
-    end
-  
-  -- Repair UI testing commands (Phase 4 Sync Optimization)
-  elseif string.find(sub, "^repairui") then
-    if not OGRH.SyncRepairUI then
-      OGRH.Msg("SyncRepairUI module not loaded.")
-    else
-      -- Parse subcommand
-      local _, _, subCmd = string.find(fullMsg, "^%s*repairui%s+(%w+)")
-      
-      if subCmd == "admin" then
-        -- Test admin panel
-        local testClients = {
-          {name = "PlayerOne", components = "Structure, Enc1"},
-          {name = "PlayerTwo", components = "Enc2, Roles"},
-          {name = "PlayerThree", components = "All Encounters"},
-          {name = "PlayerFour", components = "Assignments"},
-          {name = "PlayerFive", components = "Structure"},
-          {name = "PlayerSix", components = "Enc1, Enc2"},
-          {name = "PlayerSeven", components = "Roles"},
-          {name = "PlayerEight", components = "All Layers"},
-          {name = "PlayerNine", components = "Enc3, Assignments"},
-          {name = "PlayerTen", components = "Structure, Roles"}
-        }
-        OGRH.SyncRepairUI.ShowAdminPanel("TEST_TOKEN", testClients)
-        OGRH.Msg("Showing admin repair panel (test)")
-        
-        -- Simulate progress updates
-        OGRH.ScheduleTimer(function()
-          OGRH.SyncRepairUI.UpdateAdminProgress(5, 20, "Sending Roles", {PlayerOne = true})
-        end, 2)
-        
-        OGRH.ScheduleTimer(function()
-          OGRH.SyncRepairUI.UpdateAdminProgress(15, 20, "Sending Assignments", {PlayerOne = true, PlayerTwo = true})
-        end, 4)
-        
-      elseif subCmd == "client" then
-        -- Test client panel
-        OGRH.SyncRepairUI.ShowClientPanel("TEST_TOKEN", 20)
-        OGRH.Msg("Showing client repair panel (test)")
-        
-        -- Simulate progress updates
-        OGRH.ScheduleTimer(function()
-          OGRH.SyncRepairUI.UpdateClientProgress(5, 20, "Applying Roles")
-          OGRH.SyncRepairUI.UpdateClientCountdown(12)
-        end, 2)
-        
-        OGRH.ScheduleTimer(function()
-          OGRH.SyncRepairUI.UpdateClientProgress(15, 20, "Applying Assignments")
-          OGRH.SyncRepairUI.UpdateClientCountdown(5)
-        end, 4)
-        
-      elseif subCmd == "waiting" then
-        -- Test waiting panel
-        OGRH.SyncRepairUI.ShowWaitingPanel(30)
-        OGRH.Msg("Showing waiting panel (test)")
-        
-      elseif subCmd == "hide" then
-        -- Hide all panels
-        OGRH.SyncRepairUI.HideAdminPanel()
-        OGRH.SyncRepairUI.HideClientPanel()
-        OGRH.SyncRepairUI.HideWaitingPanel()
-        OGRH.Msg("All repair UI panels hidden")
-        
-      else
-        OGRH.Msg("/ogrh repairui <admin|client|waiting|hide>")
-        OGRH.Msg("  admin - Show admin repair panel (test)")
-        OGRH.Msg("  client - Show client repair panel (test)")
-        OGRH.Msg("  waiting - Show waiting panel (test)")
-        OGRH.Msg("  hide - Hide all repair panels")
-      end
-    end
-  -- Session testing commands (Phase 2 Sync Optimization)
-  elseif sub == "session" or sub == "sess" then
-    if not OGRH.SyncSession then
-      OGRH.Msg("SyncSession module not loaded.")
-    else
-      local session = OGRH.SyncSession.GetActiveSession()
-      
-      OGRH.Msg("|cff00ff00Session State:|r")
-      
-      if session then
-        OGRH.Msg("  |cffffcc00Active Session:|r")
-        OGRH.Msg("    Token: " .. session.token)
-        OGRH.Msg("    Start Time: " .. string.format("%.2f", session.startTime))
-        OGRH.Msg("    Encounter: " .. (session.encounterName or "N/A"))
-        OGRH.Msg("    Layers: " .. table.getn(session.layerIds))
-        
-        local validations = OGRH.SyncSession.GetClientValidations()
-        local validCount = 0
-        for _ in pairs(validations) do validCount = validCount + 1 end
-        OGRH.Msg("    Client Validations: " .. validCount)
-        
-        for playerName, validation in pairs(validations) do
-          OGRH.Msg(string.format("      %s: %s", playerName, validation.status))
-        end
-      else
-        OGRH.Msg("  |cffaaaaaa No active session|r")
-      end
-      
-      OGRH.Msg("  |cffffcc00Repair Mode:|r " .. (OGRH.SyncSession.IsInRepairMode() and "ACTIVE" or "Inactive"))
-      OGRH.Msg("  |cffffcc00UI Locked:|r " .. (OGRH.SyncSession.IsUILocked() and "Yes" or "No"))
-      OGRH.Msg("  |cffffcc00SVM Locked:|r " .. (OGRH.SyncSession.IsSVMLocked() and "Yes" or "No"))
-      
-      local queue = OGRH.SyncSession.State.pendingChangesQueue
-      OGRH.Msg("  |cffffcc00Queued Changes:|r " .. table.getn(queue))
-      
-      local highestVer = OGRH.SyncSession.State.highestVersion
-      if highestVer then
-        OGRH.Msg("  |cffffcc00Highest Version:|r " .. highestVer.str .. " (" .. highestVer.playerName .. ")")
-      else
-        OGRH.Msg("  |cffffcc00Highest Version:|r Unknown")
-      end
-      
-      -- Phase 5: Show repair mode status
-      local repairMode = OGRH.SyncIntegrity and OGRH.SyncIntegrity.State.repairModeActive or false
-      local buffered = OGRH.SyncIntegrity and table.getn(OGRH.SyncIntegrity.State.bufferedRequests or {}) or 0
-      OGRH.Msg(string.format("  |cffffcc00Integrity Repair Mode:|r %s (buffered: %d)", 
-        repairMode and "ACTIVE" or "Inactive", buffered))
-    end
-  
-  -- Phase 5: Repair mode testing
-  elseif string.find(sub, "^repairmode") then
-    if not OGRH.SyncIntegrity then
-      OGRH.Msg("SyncIntegrity module not loaded.")
-    else
-      local _, _, subCmd = string.find(fullMsg, "^%s*repairmode%s+(%w+)")
-      
-      if subCmd == "enter" then
-        OGRH.SyncIntegrity.EnterRepairMode()
-        OGRH.Msg("Entered repair mode (broadcasts suppressed)")
-      elseif subCmd == "exit" then
-        OGRH.SyncIntegrity.ExitRepairMode()
-        OGRH.Msg("Exited repair mode (broadcasts resumed)")
-      elseif subCmd == "status" then
-        local active = OGRH.SyncIntegrity.State.repairModeActive
-        local buffered = table.getn(OGRH.SyncIntegrity.State.bufferedRequests or {})
-        OGRH.Msg(string.format("Repair mode: %s, Buffered requests: %d", 
-          active and "ACTIVE" or "INACTIVE", buffered))
-      else
-        OGRH.Msg("/ogrh repairmode <enter|exit|status>")
-        OGRH.Msg("  enter  - Enter repair mode (suppress broadcasts)")
-        OGRH.Msg("  exit   - Exit repair mode (resume broadcasts)")
-        OGRH.Msg("  status - Show current repair mode status")
-      end
+      OGRH.Msg("RebirthCaller module not loaded.")
     end
   elseif sub == "help" or sub == "" then
     OGRH.Msg("Usage: /" .. OGRH.CMD .. " <command>")
     OGRH.Msg("Commands:")
-    OGRH.Msg("  sand - Execute sand trade")
-    OGRH.Msg("  shuffle [ms] - Shuffle raid with delay")
-    OGRH.Msg("  sortspeed [ms] - Set/get auto-sort speed")
-    OGRH.Msg("Migration Commands:")
-    OGRH.Msg("  migration help - Show migration commands")
-    OGRH.Msg("Chat Window Commands:")
-    OGRH.Msg("  chatwindow - Create/find OGRH chat window")
-    OGRH.Msg("  chat clean - Remove channels from OGRH window")
-    OGRH.Msg("Debug Commands (Phase 1):")
+    OGRH.Msg("  ready - Toggle Readyness Dashboard")
+    OGRH.Msg("  ready dock|undock|scan|reset")
+    OGRH.Msg("  test rebirth [N] - Toggle Rebirth Caller test mode (N = 1-40 dead)")
+    OGRH.Msg("  debug help - Show debug toggle options")
     OGRH.Msg("  messages - Show all message types")
     OGRH.Msg("  permissions - Show raid permissions")
     OGRH.Msg("  denials - Show permission denials")
@@ -1900,26 +1134,6 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     OGRH.Msg("  handlers - Show message handlers")
     OGRH.Msg("  takeadmin - Request admin role")
     OGRH.Msg("  sa - Set session admin (temporary)")
-    OGRH.Msg("Sync Optimization Commands (Phase 1):")
-    OGRH.Msg("  checksum - Test hierarchical checksums for active raid")
-    OGRH.Msg("  checkpoll - Manually broadcast checksums to clients (admin only)")
-    OGRH.Msg("Sync Optimization Commands (Phase 2):")
-    OGRH.Msg("  session - Show current session state and repair mode status")
-    OGRH.Msg("Sync Optimization Commands (Phase 3):")
-    OGRH.Msg("  repair - Test repair packet system (builders, validation, pacing)")
-    OGRH.Msg("Sync Optimization Commands (Phase 4):")
-    OGRH.Msg("  repairui <panel> - Test repair UI panels (admin|client|waiting|hide)")
-    OGRH.Msg("Sync Optimization Commands (Phase 5):")
-    OGRH.Msg("  repairmode <cmd> - Test repair mode (enter|exit|status)")
-    OGRH.Msg("Sync Optimization Commands (Phase 6):")
-    OGRH.Msg("  repairsession - Initiate test repair session (admin only)")
-    OGRH.Msg("Test Commands:")
-    OGRH.Msg("  test svm - Run SavedVariablesManager tests")
-    OGRH.Msg("  test phase1 - Run Phase 1 Core Infrastructure tests")
-    OGRH.Msg("  segments - Show pending DPSMate segments for ranking import")
-    OGRH.Msg("  saveseg <name> - Manually create a DPSMate segment")
-    OGRH.Msg("  segexp <index> - Set segment expiresAt to 3 days ago (test purge)")
-    OGRH.Msg("  purgesegments - Manually purge expired segments")
   else
     OGRH.Msg("Unknown command. Type /" .. OGRH.CMD .. " help for usage.")
   end

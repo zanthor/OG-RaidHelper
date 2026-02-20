@@ -13,7 +13,9 @@ OGRH.MESSAGE_PREFIX = "OGRH"
 -- Clients with a different SYNC_VERSION will silently ignore each other's traffic.
 -- v01: DELTA_BATCH handler now delegates to SVM.OnBatchReceived (path/value format),
 --       old handler expected changes[] typed objects that no producer ever created.
-OGRH.SYNC_VERSION = "01"
+-- v02: Admin encounter scrollbar fix, Loot Settings UI refinements.
+-- v03: ReadynessDashboard class consume + encounter consume scanning, announcement formatting.
+OGRH.SYNC_VERSION = "03"
 
 --[[
     Message Category Enums
@@ -159,7 +161,10 @@ OGRH.MessageTypes.ADMIN = {
     
     -- Promotion operations
     PROMOTE_REQUEST = "OGRH_ADMIN_PROMOTE_REQUEST",
-    PROMOTE_RESPONSE = "OGRH_ADMIN_PROMOTE_RESPONSE"
+    PROMOTE_RESPONSE = "OGRH_ADMIN_PROMOTE_RESPONSE",
+    
+    -- Loot settings operations
+    LOOT_REQUEST = "OGRH_ADMIN_LOOT_REQUEST"
 }
 
 -- STATE: State change messages (raid lead, encounter, phase)
@@ -197,6 +202,15 @@ OGRH.MessageTypes.ROLESUI = {
     -- Manual operations
     UPDATE = "OGRH_ROLESUI_UPDATE",              -- Single bucket update
     BATCH_UPDATE = "OGRH_ROLESUI_BATCH_UPDATE"   -- Multiple bucket updates
+}
+
+-- READYDASH: Readyness Dashboard messages (cooldown polls, results broadcast, sync)
+OGRH.MessageTypes.READYDASH = {
+    POLL_REQUEST       = "OGRH_READYDASH_POLL_REQUEST",      -- A/L asks admin to start a poll
+    POLL_RESULTS       = "OGRH_READYDASH_POLL_RESULTS",      -- Admin broadcasts final results to other OGRH users
+    COOLDOWN_SYNC      = "OGRH_READYDASH_CD_SYNC",           -- Admin broadcasts full cooldown state every 60s OOC
+    COOLDOWN_CAST      = "OGRH_READYDASH_CD_CAST",           -- Any player broadcasts a detected cast
+    COOLDOWN_CORRECTION = "OGRH_READYDASH_CD_CORRECTION",    -- Druid/Warrior self-reports exact CD remaining
 }
 
 --[[
@@ -249,4 +263,4 @@ end
 
 -- Initialize message type system
 OGRH.Msg(string.format("|cff00ccff[RH-MsgTypes]|r Loaded %d message categories", 
-    table.getn({OGRH.MessageTypes.STRUCT, OGRH.MessageTypes.ASSIGN, OGRH.MessageTypes.SYNC, OGRH.MessageTypes.ADMIN, OGRH.MessageTypes.STATE, OGRH.MessageTypes.READHELPER})))
+    table.getn({OGRH.MessageTypes.STRUCT, OGRH.MessageTypes.ASSIGN, OGRH.MessageTypes.SYNC, OGRH.MessageTypes.ADMIN, OGRH.MessageTypes.STATE, OGRH.MessageTypes.READHELPER, OGRH.MessageTypes.ROLESUI, OGRH.MessageTypes.READYDASH})))

@@ -20,80 +20,62 @@ local ADMIN_ENCOUNTER_TEMPLATE = {
   name = "Admin",
   displayName = "Raid Admin",
   roles = {
-    -- Role 1: Master Looter
+    -- Left Column: Loot Settings, Discord
+    -- Role 1: Loot Settings (includes 3 player assignment slots)
     {
       roleId = 1,
-      name = "Master Looter",
-      slots = 1,
-      showRaidIcons = false,
-      showAssignment = false,
-      markPlayer = false,
-      allowOtherRoles = true,
-      linkRole = false,
-      invertFillOrder = false,
-      assignedPlayers = {},
-      raidMarks = {0},
-      assignmentNumbers = {0}
-    },
-    -- Role 2: Loot Settings
-    {
-      roleId = 2,
       name = "Loot Settings",
+      column = 1,
       isLootSettings = true,   -- Custom role flag
       lootMethod = "master",    -- "master" or "group"
       autoSwitch = false,       -- Auto-switch for trash/bosses
-      threshold = "rare"        -- "uncommon", "rare", "epic"
+      threshold = "rare",       -- "uncommon", "rare", "epic"
+      assignedPlayers = {},     -- [1]=Master Looter, [2]=Disenchant, [3]=Bagspace Buffer
+      slotLabels = {"Master Looter", "Disenchant", "Bagspace Buffer"}
     },
-    -- Role 3: Disenchant
+    -- Right Column: Loot Rules
+    -- Role 2: Loot Rules (4 text field slots)
+    {
+      roleId = 2,
+      name = "Loot Rules",
+      column = 2,
+      isTextField = true,
+      textSlots = 6,
+      textValues = {}
+    },
+    -- Role 3: Discord (left column, below Loot Settings)
     {
       roleId = 3,
-      name = "Disenchant",
-      slots = 1,
-      showRaidIcons = false,
-      showAssignment = false,
-      markPlayer = false,
-      allowOtherRoles = true,
-      linkRole = false,
-      invertFillOrder = false,
-      assignedPlayers = {},
-      raidMarks = {0},
-      assignmentNumbers = {0}
+      name = "Discord",
+      column = 1,
+      isTextField = true,
+      textSlots = 1,
+      textValues = {}
     },
-    -- Role 4: Loot Rules
+    -- Role 4: SR Link (left column, below Discord)
     {
       roleId = 4,
-      name = "Loot Rules",
-      isTextField = true,  -- Text field role flag
-      textValue = ""
+      name = "SR Link",
+      column = 1,
+      isTextField = true,
+      textSlots = 1,
+      textValues = {}
     },
-    -- Role 5: Bagspace Buffer
+    -- Role 5: Buff Manager (right column, below Loot Rules)
     {
       roleId = 5,
-      name = "Bagspace Buffer",
-      slots = 1,
-      showRaidIcons = false,
-      showAssignment = false,
-      markPlayer = false,
-      allowOtherRoles = true,
-      linkRole = false,
-      invertFillOrder = false,
-      assignedPlayers = {},
-      raidMarks = {0},
-      assignmentNumbers = {0}
-    },
-    -- Role 6: Discord
-    {
-      roleId = 6,
-      name = "Discord",
-      isTextField = true,
-      textValue = ""
-    },
-    -- Role 7: SR Link
-    {
-      roleId = 7,
-      name = "SR Link",
-      isTextField = true,
-      textValue = ""
+      name = "Buff Manager",
+      column = 2,
+      isBuffManager = true,
+      enabled = false,
+      buffRoles = {},
+      settings = {
+        autoScan = true,
+        scanInterval = 30,
+        shameThreshold = 80,
+        whisperFirst = true,
+        pallyPowerSync = false
+      }
     }
   }
 }
@@ -154,7 +136,103 @@ function OGRH.EnsureAdminEncounter(raidIdx)
   
   -- Check if first encounter is Admin
   if table.getn(raid.encounters) > 0 and raid.encounters[1].name == "Admin" then
-    return -- Admin encounter already exists
+    -- Patch existing Admin encounter: replace roles with fresh template if structure changed
+    local adminEnc = raid.encounters[1]
+    local template = ADMIN_ENCOUNTER_TEMPLATE
+    local needsRebuild = false
+    
+    -- Detect structure mismatch: wrong role count, missing flags, or wrong column layout
+    if not adminEnc.roles or table.getn(adminEnc.roles) ~= table.getn(template.roles) then
+      needsRebuild = true
+    else
+      for i = 1, table.getn(template.roles) do
+        local existing = adminEnc.roles[i]
+        local tmpl = template.roles[i]
+        if not existing
+          or existing.name ~= tmpl.name
+          or existing.column ~= tmpl.column
+          or existing.roleId ~= tmpl.roleId
+          or (tmpl.textSlots and existing.textSlots ~= tmpl.textSlots) then
+          needsRebuild = true
+          break
+        end
+      end
+    end
+    
+    if needsRebuild then
+      -- Preserve user data by name before replacing
+      local savedData = {}
+      if adminEnc.roles then
+        for i = 1, table.getn(adminEnc.roles) do
+          local r = adminEnc.roles[i]
+          if r.name then
+            savedData[r.name] = {
+              assignedPlayers = r.assignedPlayers,
+              textValues = r.textValues,
+              textValue = r.textValue,  -- backward compat: old single-string field
+              lootMethod = r.lootMethod,
+              autoSwitch = r.autoSwitch,
+              threshold = r.threshold,
+              -- BuffManager data
+              buffRoles = r.buffRoles,
+              settings = r.settings,
+              enabled = r.enabled
+            }
+          end
+        end
+      end
+      
+      -- Deep copy fresh template roles
+      local newRoles = DeepCopy(template.roles)
+      
+      -- Restore user data where names match
+      for i = 1, table.getn(newRoles) do
+        local saved = savedData[newRoles[i].name]
+        if saved then
+          if newRoles[i].isTextField then
+            if saved.textValues then
+              newRoles[i].textValues = saved.textValues
+            elseif saved.textValue and saved.textValue ~= "" then
+              -- Migrate old single textValue into textValues[1]
+              newRoles[i].textValues = { saved.textValue }
+            end
+          end
+          if newRoles[i].isLootSettings then
+            if saved.lootMethod then newRoles[i].lootMethod = saved.lootMethod end
+            if saved.autoSwitch ~= nil then newRoles[i].autoSwitch = saved.autoSwitch end
+            if saved.threshold then newRoles[i].threshold = saved.threshold end
+          end
+          if newRoles[i].isBuffManager then
+            if saved.buffRoles then newRoles[i].buffRoles = saved.buffRoles end
+            if saved.settings then newRoles[i].settings = saved.settings end
+            if saved.enabled ~= nil then newRoles[i].enabled = saved.enabled end
+          end
+          if newRoles[i].assignedPlayers and saved.assignedPlayers then
+            newRoles[i].assignedPlayers = saved.assignedPlayers
+          end
+        end
+      end
+      
+      adminEnc.roles = newRoles
+      adminEnc.displayName = template.displayName
+      OGRH.SVM.SetPath("encounterMgmt.raids[" .. raidIdx .. "]", raid)
+      if OGRH.EncounterAdmin.debug then
+        OGRH.Msg("|cff00ff00[RH-Admin]|r Rebuilt Admin encounter roles for raid: " .. tostring(raid.name))
+      end
+    else
+      -- Structure matches but merge any NEW template flags/fields into existing
+      -- roles so upgrades (e.g. adding isBuffManager) propagate without a rebuild.
+      for i = 1, table.getn(template.roles) do
+        local existing = adminEnc.roles[i]
+        local tmpl = template.roles[i]
+        for k, v in pairs(tmpl) do
+          if existing[k] == nil then
+            existing[k] = DeepCopy(v)
+          end
+        end
+      end
+    end
+    return
   end
   
   -- Create and insert Admin encounter at index 1
@@ -163,7 +241,6 @@ function OGRH.EnsureAdminEncounter(raidIdx)
   
   -- Write back to SVM
   OGRH.SVM.SetPath("encounterMgmt.raids[" .. raidIdx .. "]", raid)
-  OGRH.SVM.Save()
   
   if OGRH.EncounterAdmin.debug then
     OGRH.Msg("|cff00ff00[RH-Admin]|r Admin encounter added to raid: " .. tostring(raid.name))
@@ -171,18 +248,19 @@ function OGRH.EnsureAdminEncounter(raidIdx)
 end
 
 --- Prevents sorting encounters above Admin encounter (index 1)
+-- Admin must always stay at index 1; non-Admin encounters cannot move to index 1
 -- @param encounterIdx number Current encounter index
 -- @param newIndex number Target index for move
 -- @param encounter table Encounter to move
 -- @return boolean True if move is allowed, false if blocked
 function OGRH.CanMoveEncounterToIndex(encounterIdx, newIndex, encounter)
-  -- Allow Admin to stay at or move to index 1
-  if OGRH.IsAdminEncounter(encounter) and newIndex == 1 then
-    return true
+  -- Admin encounter must stay at index 1 — block all moves
+  if OGRH.IsAdminEncounter(encounter) then
+    return newIndex == 1
   end
   
   -- Block non-Admin encounters from moving to index 1
-  if newIndex == 1 and not OGRH.IsAdminEncounter(encounter) then
+  if newIndex == 1 then
     return false
   end
   
@@ -204,20 +282,13 @@ function OGRH.ApplyLootSettings(lootSettingsRole)
     return false
   end
   
-  if not IsRaidLeader() and not IsRaidOfficer() then
-    OGRH.Msg("|cffff6666[RH-Admin]|r Only Raid Leader or Assistants can change loot settings")
-    return false
-  end
-  
-  -- Apply loot method
+  -- Build the loot settings data to apply
   local method = lootSettingsRole.lootMethod or "master"
-  if method == "master" then
-    SetLootMethod("master")
-  else
-    SetLootMethod("group")
+  local mlName = UnitName("player")
+  if method == "master" and lootSettingsRole.assignedPlayers and lootSettingsRole.assignedPlayers[1] then
+    mlName = lootSettingsRole.assignedPlayers[1]
   end
   
-  -- Apply loot threshold
   local threshold = lootSettingsRole.threshold or "rare"
   local thresholdValue = 2 -- Default to Uncommon
   if threshold == "uncommon" then
@@ -227,12 +298,50 @@ function OGRH.ApplyLootSettings(lootSettingsRole)
   elseif threshold == "epic" then
     thresholdValue = 4
   end
-  SetLootThreshold(thresholdValue)
   
-  -- Note: Auto-switch is handled by encounter events, not here
+  if IsRaidLeader() == 1 then
+    -- We are raid leader, apply directly
+    OGRH.ExecuteLootSettings(method, mlName, thresholdValue)
+    return true
+  else
+    -- Delegate to raid leader via addon message
+    if OGRH.MessageRouter then
+      OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.LOOT_REQUEST, {
+        method = method,
+        mlName = mlName,
+        thresholdValue = thresholdValue
+      }, {
+        priority = "HIGH"
+      })
+      OGRH.Msg("|cff00ccff[RH-Admin]|r Loot settings request sent to raid leader.")
+      return true
+    else
+      OGRH.Msg("|cffff6666[RH-Admin]|r Cannot send loot request - MessageRouter not loaded")
+      return false
+    end
+  end
+end
+
+--- Actually execute the loot method/threshold changes (must be called by raid leader)
+-- Delays threshold by 1 second so the server processes the method change first.
+function OGRH.ExecuteLootSettings(method, mlName, thresholdValue)
+  if method == "master" then
+    SetLootMethod("master", mlName)
+  else
+    SetLootMethod("group")
+  end
   
-  OGRH.Msg("|cff00ff00[RH-Admin]|r Loot settings applied")
-  return true
+  -- Delay threshold change so server processes method change first
+  local thresholdFrame = CreateFrame("Frame")
+  thresholdFrame.elapsed = 0
+  thresholdFrame:SetScript("OnUpdate", function()
+    this.elapsed = this.elapsed + arg1
+    if this.elapsed >= 1.0 then
+      SetLootThreshold(thresholdValue)
+      OGRH.Msg("|cff00ff00[RH-Admin]|r Loot settings applied")
+      this:SetScript("OnUpdate", nil)
+    end
+  end)
 end
 
 --- Gets formatted text for Loot Settings role (for announcements)
@@ -307,78 +416,88 @@ function OGRH.RenderTextFieldRole(container, role, roleIndex, raidIdx, encounter
     return nil
   end
   
-  -- Create text input container
-  local textContainer = CreateFrame("Frame", nil, container)
-  textContainer:SetWidth(containerWidth - 10)
-  textContainer:SetHeight(30)
-  textContainer:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -25)
+  local textSlots = role.textSlots or 1
   
-  -- Create label
-  local label = textContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  label:SetPoint("TOPLEFT", textContainer, "TOPLEFT", 0, 0)
-  label:SetText(role.name .. ":")
-  label:SetTextColor(0.7, 0.7, 0.7)
-  
-  -- Create text input box
-  local textBox = CreateFrame("EditBox", nil, textContainer)
-  textBox:SetWidth(containerWidth - 20)
-  textBox:SetHeight(20)
-  textBox:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 2, -2)
-  textBox:SetBackdrop({
-    bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-    edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-    tile = true,
-    tileSize = 16,
-    edgeSize = 8,
-    insets = {left = 2, right = 2, top = 2, bottom = 2}
-  })
-  textBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-  textBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-  textBox:SetFontObject("GameFontHighlight")
-  textBox:SetAutoFocus(false)
-  textBox:SetMaxLetters(200)
-  textBox:SetText(role.textValue or "")
-  
-  -- Add padding for text
-  textBox:SetTextInsets(5, 5, 0, 0)
-  
-  -- Clear focus on escape
-  textBox:SetScript("OnEscapePressed", function()
-    this:ClearFocus()
-  end)
-  
-  -- Save on text change
-  textBox:SetScript("OnTextChanged", function()
-    if not this:HasFocus() then
-      return -- Ignore programmatic changes
+  -- Ensure textValues array exists (migrate old textValue if needed)
+  if not role.textValues then
+    role.textValues = {}
+    if role.textValue and role.textValue ~= "" then
+      role.textValues[1] = role.textValue
     end
-    
-    local newText = this:GetText()
-    role.textValue = newText
-    
-    -- Save to SVM
-    local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].textValue"
-    OGRH.SVM.SetPath(path, newText)
-    OGRH.SVM.Save()
-  end)
+  end
   
-  -- Enable mouse wheel for scrolling long text
-  textBox:SetScript("OnMouseWheel", function()
-    local cursorPos = this:GetCursorPosition()
-    if arg1 > 0 then
-      -- Scroll up
-      this:SetCursorPosition(math.max(0, cursorPos - 10))
-    else
-      -- Scroll down
-      this:SetCursorPosition(math.min(string.len(this:GetText()), cursorPos + 10))
-    end
-  end)
-  textBox:EnableMouseWheel()
+  for slotIdx = 1, textSlots do
+    -- Create text input container for this slot
+    local textContainer = CreateFrame("Frame", nil, container)
+    textContainer:SetWidth(containerWidth - 10)
+    textContainer:SetHeight(22)
+    textContainer:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -25 - ((slotIdx - 1) * 22))
+    
+    -- Tag label (T1, T2, etc.) to the left of the text box
+    local tagLabel = textContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    tagLabel:SetPoint("LEFT", textContainer, "LEFT", 2, 0)
+    tagLabel:SetText("|cff888888L" .. slotIdx .. "|r")
+    tagLabel:SetTextColor(0.5, 0.5, 0.5)
+    
+    -- Create text input box
+    local textBox = CreateFrame("EditBox", nil, textContainer)
+    textBox:SetWidth(containerWidth - 40)
+    textBox:SetHeight(20)
+    textBox:SetPoint("LEFT", tagLabel, "RIGHT", 3, 0)
+    textBox:SetBackdrop({
+      bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+      edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+      tile = true,
+      tileSize = 16,
+      edgeSize = 8,
+      insets = {left = 2, right = 2, top = 2, bottom = 2}
+    })
+    textBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    textBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    textBox:SetFontObject("GameFontHighlight")
+    textBox:SetAutoFocus(false)
+    textBox:SetMaxLetters(200)
+    textBox:SetText(role.textValues[slotIdx] or "")
+    
+    -- Add padding for text
+    textBox:SetTextInsets(5, 5, 0, 0)
+    
+    -- Track focus state (HasFocus() is not available in 1.12)
+    local hasFocus = false
+    textBox:SetScript("OnEditFocusGained", function()
+      hasFocus = true
+    end)
+    textBox:SetScript("OnEditFocusLost", function()
+      hasFocus = false
+    end)
+    
+    -- Clear focus on escape
+    textBox:SetScript("OnEscapePressed", function()
+      this:ClearFocus()
+    end)
+    
+    -- Save on text change (capture slotIdx for closure)
+    local capturedSlotIdx = slotIdx
+    textBox:SetScript("OnTextChanged", function()
+      if not hasFocus then
+        return -- Ignore programmatic changes
+      end
+      
+      local newText = this:GetText()
+      if not role.textValues then role.textValues = {} end
+      role.textValues[capturedSlotIdx] = newText
+      
+      -- Save to SVM
+      local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].textValues." .. capturedSlotIdx
+      OGRH.SVM.SetPath(path, newText)
+    end)
+  end
   
-  return textContainer
+  return container
 end
 
 --- Renders a Loot Settings role UI component
+-- Layout: Method button + Auto-Switch on same row, Threshold below, then 3 player slots
 -- @param container frame Parent frame for the loot settings
 -- @param role table Role data with isLootSettings flag
 -- @param roleIndex number Index of this role
@@ -394,61 +513,64 @@ function OGRH.RenderLootSettingsRole(container, role, roleIndex, raidIdx, encoun
   -- Create settings container
   local settingsContainer = CreateFrame("Frame", nil, container)
   settingsContainer:SetWidth(containerWidth - 10)
-  settingsContainer:SetHeight(90)
+  settingsContainer:SetHeight(135)
   settingsContainer:SetPoint("TOPLEFT", container, "TOPLEFT", 5, -25)
   
   local yOffset = 0
   
-  -- Loot Method dropdown
-  local methodLabel = settingsContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  methodLabel:SetPoint("TOPLEFT", settingsContainer, "TOPLEFT", 0, yOffset)
-  methodLabel:SetText("Method:")
-  methodLabel:SetTextColor(0.7, 0.7, 0.7)
+  -- Row 1: Method MenuButton + Auto-Switch checkbox
+  local methodBtn  -- forward declare for closure access
   
-  local methodBtn = CreateFrame("Button", nil, settingsContainer, "UIPanelButtonTemplate")
-  methodBtn:SetWidth(120)
-  methodBtn:SetHeight(20)
-  methodBtn:SetPoint("LEFT", methodLabel, "RIGHT", 5, 0)
-  methodBtn:SetText(role.lootMethod == "master" and "Master Looter" or "Group Loot")
-  OGRH.StyleButton(methodBtn)
+  local methodItems = {
+    {text = "Master", selected = (role.lootMethod == "master"), onClick = function()
+      role.lootMethod = "master"
+      methodBtn:SetText("Master")
+      local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].lootMethod"
+      OGRH.SVM.SetPath(path, "master")
+    end},
+    {text = "Group", selected = (role.lootMethod ~= "master"), onClick = function()
+      role.lootMethod = "group"
+      methodBtn:SetText("Group")
+      local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].lootMethod"
+      OGRH.SVM.SetPath(path, "group")
+    end}
+  }
   
-  methodBtn:SetScript("OnClick", function()
-    -- Toggle between master and group
-    local newMethod = (role.lootMethod == "master") and "group" or "master"
-    role.lootMethod = newMethod
-    this:SetText(newMethod == "master" and "Master Looter" or "Group Loot")
-    
-    -- Save to SVM
-    local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].lootMethod"
-    OGRH.SVM.SetPath(path, newMethod)
-    OGRH.SVM.Save()
-  end)
+  local methodContainer
+  methodContainer, methodBtn = OGST.CreateMenuButton(settingsContainer, {
+    label = "Method:",
+    labelWidth = 62,
+    labelColor = {r = 0.7, g = 0.7, b = 0.7},
+    buttonText = role.lootMethod == "master" and "Master" or "Group",
+    buttonWidth = 80,
+    buttonHeight = 20,
+    padding = 0,
+    gap = 4,
+    menuItems = methodItems,
+    singleSelect = true
+  })
+  methodContainer:SetPoint("TOPLEFT", settingsContainer, "TOPLEFT", 0, yOffset)
   
-  yOffset = yOffset - 25
-  
-  -- Auto Switch checkbox
-  local autoSwitchLabel = settingsContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  autoSwitchLabel:SetPoint("TOPLEFT", settingsContainer, "TOPLEFT", 0, yOffset)
-  autoSwitchLabel:SetText("Auto-Switch:")
-  autoSwitchLabel:SetTextColor(0.7, 0.7, 0.7)
-  
+  -- Auto-Switch checkbox to the right of Method
   local autoSwitchCheck = CreateFrame("CheckButton", nil, settingsContainer, "UICheckButtonTemplate")
-  autoSwitchCheck:SetPoint("LEFT", autoSwitchLabel, "RIGHT", 5, 0)
   autoSwitchCheck:SetWidth(20)
   autoSwitchCheck:SetHeight(20)
+  autoSwitchCheck:SetPoint("LEFT", methodContainer, "RIGHT", 4, 0)
   autoSwitchCheck:SetChecked(role.autoSwitch or false)
   
+  local autoSwitchLabel = settingsContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  autoSwitchLabel:SetPoint("LEFT", autoSwitchCheck, "RIGHT", 0, 0)
+  autoSwitchLabel:SetText("Auto-Switch")
+  autoSwitchLabel:SetTextColor(0.7, 0.7, 0.7)
+  
   autoSwitchCheck:SetScript("OnClick", function()
-    local checked = this:GetChecked()
+    local checked = (this:GetChecked() == 1) and true or false
     role.autoSwitch = checked
     
-    -- Save to SVM
     local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].autoSwitch"
     OGRH.SVM.SetPath(path, checked)
-    OGRH.SVM.Save()
   end)
   
-  -- Tooltip for Auto-Switch
   autoSwitchCheck:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
     GameTooltip:SetText("Auto-Switch", 1, 1, 1)
@@ -461,53 +583,205 @@ function OGRH.RenderLootSettingsRole(container, role, roleIndex, raidIdx, encoun
   
   yOffset = yOffset - 25
   
-  -- Threshold dropdown
-  local thresholdLabel = settingsContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  thresholdLabel:SetPoint("TOPLEFT", settingsContainer, "TOPLEFT", 0, yOffset)
-  thresholdLabel:SetText("Threshold:")
-  thresholdLabel:SetTextColor(0.7, 0.7, 0.7)
+  -- Row 2: Threshold MenuButton
+  local thresholdBtn  -- forward declare for closure access
   
-  local thresholdBtn = CreateFrame("Button", nil, settingsContainer, "UIPanelButtonTemplate")
-  thresholdBtn:SetWidth(120)
-  thresholdBtn:SetHeight(20)
-  thresholdBtn:SetPoint("LEFT", thresholdLabel, "RIGHT", 5, 0)
+  -- Helper: apply loot-rarity color to the threshold button text
+  local function ApplyThresholdColor(btn, threshold)
+    local colors = {
+      uncommon = {r = 0.12, g = 1.0, b = 0.0},   -- green
+      rare     = {r = 0.0,  g = 0.44, b = 0.87},  -- blue
+      epic     = {r = 0.64, g = 0.21, b = 0.93}   -- purple
+    }
+    local c = colors[threshold] or colors.rare
+    local fs = btn:GetFontString()
+    if fs then fs:SetTextColor(c.r, c.g, c.b) end
+  end
   
-  -- Format threshold text
-  local thresholdText = role.threshold or "rare"
-  thresholdText = string.upper(string.sub(thresholdText, 1, 1)) .. string.sub(thresholdText, 2)
-  thresholdBtn:SetText(thresholdText)
-  OGRH.StyleButton(thresholdBtn)
+  local thresholdItems = {
+    {text = "Uncommon", selected = (role.threshold == "uncommon"), onClick = function()
+      role.threshold = "uncommon"
+      thresholdBtn:SetText("Uncommon")
+      ApplyThresholdColor(thresholdBtn, "uncommon")
+      local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].threshold"
+      OGRH.SVM.SetPath(path, "uncommon")
+    end},
+    {text = "Rare", selected = (role.threshold == "rare"), onClick = function()
+      role.threshold = "rare"
+      thresholdBtn:SetText("Rare")
+      ApplyThresholdColor(thresholdBtn, "rare")
+      local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].threshold"
+      OGRH.SVM.SetPath(path, "rare")
+    end},
+    {text = "Epic", selected = (role.threshold == "epic"), onClick = function()
+      role.threshold = "epic"
+      thresholdBtn:SetText("Epic")
+      ApplyThresholdColor(thresholdBtn, "epic")
+      local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].threshold"
+      OGRH.SVM.SetPath(path, "epic")
+    end}
+  }
   
-  thresholdBtn:SetScript("OnClick", function()
-    -- Cycle through thresholds: uncommon -> rare -> epic -> uncommon
-    local current = role.threshold or "rare"
-    local newThreshold
-    if current == "uncommon" then
-      newThreshold = "rare"
-    elseif current == "rare" then
-      newThreshold = "epic"
-    else
-      newThreshold = "uncommon"
-    end
-    
-    role.threshold = newThreshold
-    local displayText = string.upper(string.sub(newThreshold, 1, 1)) .. string.sub(newThreshold, 2)
-    this:SetText(displayText)
-    
-    -- Save to SVM
-    local path = "encounterMgmt.raids[" .. raidIdx .. "].encounters[" .. encounterIdx .. "].roles[" .. roleIndex .. "].threshold"
-    OGRH.SVM.SetPath(path, newThreshold)
-    OGRH.SVM.Save()
-  end)
+  local thresholdContainer
+  thresholdContainer, thresholdBtn = OGST.CreateMenuButton(settingsContainer, {
+    label = "Threshold:",
+    labelWidth = 62,
+    labelColor = {r = 0.7, g = 0.7, b = 0.7},
+    buttonText = string.upper(string.sub(role.threshold or "rare", 1, 1)) .. string.sub(role.threshold or "rare", 2),
+    buttonWidth = 80,
+    buttonHeight = 20,
+    padding = 0,
+    gap = 4,
+    menuItems = thresholdItems,
+    singleSelect = true
+  })
+  thresholdContainer:SetPoint("TOPLEFT", settingsContainer, "TOPLEFT", 0, yOffset)
+  ApplyThresholdColor(thresholdBtn, role.threshold or "rare")
   
   yOffset = yOffset - 25
   
-  -- Apply button
+  -- Player assignment slots (3 slots: Master Looter, Disenchant, Bagspace Buffer)
+  local slotLabels = role.slotLabels or {"Master Looter", "Disenchant", "Bagspace Buffer"}
+  if not role.assignedPlayers then
+    role.assignedPlayers = {}
+  end
+  
+  container.slots = {}
+  for i = 1, 3 do
+    local slot = CreateFrame("Frame", nil, settingsContainer)
+    slot:SetWidth(containerWidth - 20)
+    slot:SetHeight(20)
+    slot:SetPoint("TOPLEFT", settingsContainer, "TOPLEFT", 0, yOffset)
+    
+    -- Background
+    local bg = slot:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    bg:SetVertexColor(0.1, 0.1, 0.1, 0.8)
+    slot.bg = bg
+    
+    -- Player tag label (P1/P2/P3)
+    local playerTag = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    playerTag:SetPoint("LEFT", slot, "LEFT", 5, 0)
+    playerTag:SetText("|cff888888P" .. i .. "|r")
+    playerTag:SetTextColor(0.5, 0.5, 0.5)
+    slot.playerTag = playerTag
+    
+    -- Player name text
+    local nameText = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    nameText:SetPoint("LEFT", playerTag, "RIGHT", 3, 0)
+    nameText:SetPoint("RIGHT", slot, "RIGHT", -5, 0)
+    nameText:SetJustifyH("LEFT")
+    slot.nameText = nameText
+    
+    -- Store slot info for drag/drop compatibility
+    slot.roleIndex = roleIndex
+    slot.slotIndex = i
+    
+    -- Show assigned player or placeholder with class color
+    local assignedPlayer = role.assignedPlayers[i]
+    if assignedPlayer and assignedPlayer ~= "" then
+      nameText:SetText(assignedPlayer)
+      local playerClass = OGRH.GetPlayerClass and OGRH.GetPlayerClass(assignedPlayer)
+      if playerClass and RAID_CLASS_COLORS[playerClass] then
+        local cc = RAID_CLASS_COLORS[playerClass]
+        nameText:SetTextColor(cc.r, cc.g, cc.b)
+      else
+        nameText:SetTextColor(1, 1, 1)
+      end
+    else
+      nameText:SetText(slotLabels[i] or ("Slot " .. i))
+      nameText:SetTextColor(0.53, 0.53, 0.53)
+    end
+    
+    -- Click handler: clicking cycles through raid members (simplified assignment)
+    local capturedSlotIndex = i
+    local capturedSlotLabel = slotLabels[i] or ("Slot " .. i)
+    
+    -- Create clickable button overlay for drop target and click-to-assign
+    local dropBtn = CreateFrame("Button", nil, slot)
+    dropBtn:SetAllPoints()
+    dropBtn:EnableMouse(true)
+    dropBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    
+    dropBtn:SetScript("OnClick", function()
+      local button = arg1 or "LeftButton"
+      if button == "RightButton" then
+        -- Right-click clears the assignment
+        role.assignedPlayers[capturedSlotIndex] = nil
+        nameText:SetText(capturedSlotLabel)
+        nameText:SetTextColor(0.53, 0.53, 0.53)
+        
+        OGRH.SVM.SetPath(
+          string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
+            raidIdx, encounterIdx, roleIndex, capturedSlotIndex),
+          nil
+        )
+        return
+      end
+      
+      -- Left-click: show player list from the players panel if available
+      -- For now, use a simple menu from raid members
+      if OGRH.ShowPlayerAssignmentMenu then
+        OGRH.ShowPlayerAssignmentMenu(slot, raidIdx, encounterIdx, roleIndex, capturedSlotIndex, function(playerName)
+          role.assignedPlayers[capturedSlotIndex] = playerName
+          nameText:SetText(playerName)
+          local pc = OGRH.GetPlayerClass and OGRH.GetPlayerClass(playerName)
+          if pc and RAID_CLASS_COLORS[pc] then
+            local cc = RAID_CLASS_COLORS[pc]
+            nameText:SetTextColor(cc.r, cc.g, cc.b)
+          else
+            nameText:SetTextColor(1, 1, 1)
+          end
+        end)
+      else
+        -- Fallback: cycle through "target" assignment
+        local targetName = UnitName("target")
+        if targetName then
+          role.assignedPlayers[capturedSlotIndex] = targetName
+          nameText:SetText(targetName)
+          local pc = OGRH.GetPlayerClass and OGRH.GetPlayerClass(targetName)
+          if pc and RAID_CLASS_COLORS[pc] then
+            local cc = RAID_CLASS_COLORS[pc]
+            nameText:SetTextColor(cc.r, cc.g, cc.b)
+          else
+            nameText:SetTextColor(1, 1, 1)
+          end
+          
+          OGRH.SVM.SetPath(
+            string.format("encounterMgmt.raids.%d.encounters.%d.roles.%d.assignedPlayers.%d",
+              raidIdx, encounterIdx, roleIndex, capturedSlotIndex),
+            targetName
+          )
+        end
+      end
+    end)
+    
+    -- Tooltip showing slot purpose
+    dropBtn:SetScript("OnEnter", function()
+      slot.bg:SetVertexColor(0.2, 0.2, 0.3, 0.8)
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText(capturedSlotLabel, 1, 1, 1)
+      GameTooltip:AddLine("Left-click: Assign from target", 0.8, 0.8, 0.8, 1)
+      GameTooltip:AddLine("Right-click: Clear assignment", 0.8, 0.8, 0.8, 1)
+      GameTooltip:Show()
+    end)
+    dropBtn:SetScript("OnLeave", function()
+      slot.bg:SetVertexColor(0.1, 0.1, 0.1, 0.8)
+      GameTooltip:Hide()
+    end)
+    
+    table.insert(container.slots, slot)
+    yOffset = yOffset - 22
+  end
+  
+  -- Apply Loot Settings button at bottom, centered
+  yOffset = yOffset - 5
   local applyBtn = CreateFrame("Button", nil, settingsContainer, "UIPanelButtonTemplate")
-  applyBtn:SetWidth(100)
+  applyBtn:SetWidth(130)
   applyBtn:SetHeight(20)
-  applyBtn:SetPoint("TOPLEFT", settingsContainer, "TOPLEFT", 0, yOffset)
-  applyBtn:SetText("Apply Settings")
+  applyBtn:SetPoint("TOP", settingsContainer, "TOP", 0, yOffset)
+  applyBtn:SetText("Apply Loot Settings")
   OGRH.StyleButton(applyBtn)
   
   applyBtn:SetScript("OnClick", function()
@@ -558,17 +832,3 @@ end)
 
 -- Debug toggle
 OGRH.EncounterAdmin.debug = false
-
--- Export functions for external use
-OGRH.CreateAdminEncounter = OGRH.CreateAdminEncounter
-OGRH.IsAdminEncounter = OGRH.IsAdminEncounter
-OGRH.EnsureAdminEncounter = OGRH.EnsureAdminEncounter
-OGRH.CanMoveEncounterToIndex = OGRH.CanMoveEncounterToIndex
-OGRH.ApplyLootSettings = OGRH.ApplyLootSettings
-OGRH.GetLootSettingsText = OGRH.GetLootSettingsText
-OGRH.RenderTextFieldRole = OGRH.RenderTextFieldRole
-OGRH.RenderLootSettingsRole = OGRH.RenderLootSettingsRole
-
-if OGRH.EncounterAdmin.debug then
-  OGRH.Msg("|cff00ff00[RH-Admin]|r EncounterAdmin module loaded")
-end

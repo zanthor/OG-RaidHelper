@@ -1,108 +1,33 @@
-[2026-02-13 09:32:37] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:32:37] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_SYNC_CHECKSUM_POLL, channel=RAID
-[2026-02-13 09:32:37] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:32:37] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:32:37] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_SYNC_CHECKSUM_POLL
-[2026-02-13 09:32:37] [OGRH] [RH-SyncChecksum] Structure: Hash=1423486965 for [AR] Onyxia
-[2026-02-13 09:32:37] [OGRH] [RH-SyncIntegrity][DEBUG] BroadcastChecksums() called, force=nil
-[2026-02-13 09:32:22] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:32:22] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:32:22] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:32:07] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:32:07] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_SYNC_CHECKSUM_POLL, channel=RAID
-[2026-02-13 09:32:07] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:32:07] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:32:07] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_SYNC_CHECKSUM_POLL
-[2026-02-13 09:32:07] [OGRH] [RH-SyncChecksum] Structure: Hash=1423486965 for [AR] Onyxia
-[2026-02-13 09:32:07] [OGRH] [RH-SyncIntegrity][DEBUG] BroadcastChecksums() called, force=nil
-[2026-02-13 09:31:52] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:31:52] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:31:52] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:31:39] [OGRH] Only raid leaders or assistants can select a raid admin.
-[2026-02-13 09:31:37] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:31:37] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_SYNC_CHECKSUM_POLL, channel=RAID
-[2026-02-13 09:31:37] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:31:37] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:31:37] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_SYNC_CHECKSUM_POLL
-[2026-02-13 09:31:37] [OGRH] [RH-SyncChecksum] Structure: Hash=1423486965 for [AR] Onyxia
-[2026-02-13 09:31:37] [OGRH] [RH-SyncIntegrity][DEBUG] BroadcastChecksums() called, force=nil
-[2026-02-13 09:31:22] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:31:22] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:31:22] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:31:10] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:31:10] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_SYNC_CHECKSUM_POLL, channel=RAID
-[2026-02-13 09:31:07] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:31:07] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:31:07] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_SYNC_CHECKSUM_POLL
-[2026-02-13 09:31:07] [OGRH] [RH-SyncChecksum] Structure: Hash=1423486965 for [AR] Onyxia
-[2026-02-13 09:31:07] [OGRH] [RH-SyncIntegrity][DEBUG] BroadcastChecksums() called, force=nil
-[2026-02-13 09:31:04] [AM] OGAddonMsg: Retry sent to Tankmedady (2 chunks, total: 8)
-[2026-02-13 09:31:04] [AM] [DEBUG] RetryBuffer lookup for msgId=4hr2: FOUND
-[2026-02-13 09:31:04] [AM] [DEBUG] Target matches, processing retry
-[2026-02-13 09:31:04] [AM] [DEBUG] Parsed: target='Gnuzmas' missingStr='1,2' myName='Gnuzmas'
-[2026-02-13 09:31:04] [AM] [DEBUG] OnRetryRequest: sender=Tankmedady msgId=4hr2 data='Gnuzmas:1,2'
-[2026-02-13 09:31:04] [AM] OGAddonMsg: Retry sent to Tankmedady (2 chunks, total: 7)
-[2026-02-13 09:31:04] [AM] [DEBUG] RetryBuffer lookup for msgId=4hr2: FOUND
-[2026-02-13 09:31:04] [AM] [DEBUG] Target matches, processing retry
-[2026-02-13 09:31:04] [AM] [DEBUG] Parsed: target='Gnuzmas' missingStr='1,2' myName='Gnuzmas'
-[2026-02-13 09:31:04] [AM] [DEBUG] OnRetryRequest: sender=Tankmedady msgId=4hr2 data='Gnuzmas:1,2'
-[2026-02-13 09:31:04] [AM] OGAddonMsg: Retry sent to Tankmedady (2 chunks, total: 6)
-[2026-02-13 09:31:04] [AM] [DEBUG] RetryBuffer lookup for msgId=8g0x: FOUND
-[2026-02-13 09:31:04] [AM] [DEBUG] Target matches, processing retry
-[2026-02-13 09:31:04] [AM] [DEBUG] Parsed: target='Gnuzmas' missingStr='1,2' myName='Gnuzmas'
-[2026-02-13 09:31:04] [AM] [DEBUG] OnRetryRequest: sender=Tankmedady msgId=8g0x data='Gnuzmas:1,2'
-[2026-02-13 09:31:04] [AM] OGAddonMsg: Retry sent to Tankmedady (2 chunks, total: 5)
-[2026-02-13 09:31:04] [AM] [DEBUG] RetryBuffer lookup for msgId=8g0x: FOUND
-[2026-02-13 09:31:04] [AM] [DEBUG] Target matches, processing retry
-[2026-02-13 09:31:04] [AM] [DEBUG] Parsed: target='Gnuzmas' missingStr='1,2' myName='Gnuzmas'
-[2026-02-13 09:31:04] [AM] [DEBUG] OnRetryRequest: sender=Tankmedady msgId=8g0x data='Gnuzmas:1,2'
-[2026-02-13 09:31:04] [AM] OGAddonMsg: Retry sent to Tankmedady (2 chunks, total: 4)
-[2026-02-13 09:31:04] [AM] [DEBUG] RetryBuffer lookup for msgId=4hr2: FOUND
-[2026-02-13 09:31:04] [AM] [DEBUG] Target matches, processing retry
-[2026-02-13 09:31:04] [AM] [DEBUG] Parsed: target='Gnuzmas' missingStr='1,2' myName='Gnuzmas'
-[2026-02-13 09:31:04] [AM] [DEBUG] OnRetryRequest: sender=Tankmedady msgId=4hr2 data='Gnuzmas:1,2'
-[2026-02-13 09:31:04] [AM] OGAddonMsg: Retry sent to Tankmedady (2 chunks, total: 3)
-[2026-02-13 09:31:04] [AM] [DEBUG] RetryBuffer lookup for msgId=4hr2: FOUND
-[2026-02-13 09:31:04] [AM] [DEBUG] Target matches, processing retry
-[2026-02-13 09:31:04] [AM] [DEBUG] Parsed: target='Gnuzmas' missingStr='1,2' myName='Gnuzmas'
-[2026-02-13 09:31:04] [AM] [DEBUG] OnRetryRequest: sender=Tankmedady msgId=4hr2 data='Gnuzmas:1,2'
-[2026-02-13 09:31:04] [AM] OGAddonMsg: Retry sent to Tankmedady (2 chunks, total: 2)
-[2026-02-13 09:31:04] [AM] [DEBUG] RetryBuffer lookup for msgId=8g0x: FOUND
-[2026-02-13 09:31:04] [AM] [DEBUG] Target matches, processing retry
-[2026-02-13 09:31:04] [AM] [DEBUG] Parsed: target='Gnuzmas' missingStr='1,2' myName='Gnuzmas'
-[2026-02-13 09:31:04] [AM] [DEBUG] OnRetryRequest: sender=Tankmedady msgId=8g0x data='Gnuzmas:1,2'
-[2026-02-13 09:31:04] [AM] OGAddonMsg: Retry sent to Tankmedady (2 chunks, total: 1)
-[2026-02-13 09:31:04] [AM] [DEBUG] RetryBuffer lookup for msgId=8g0x: FOUND
-[2026-02-13 09:31:04] [AM] [DEBUG] Target matches, processing retry
-[2026-02-13 09:31:04] [AM] [DEBUG] Parsed: target='Gnuzmas' missingStr='1,2' myName='Gnuzmas'
-[2026-02-13 09:31:04] [AM] [DEBUG] OnRetryRequest: sender=Tankmedady msgId=8g0x data='Gnuzmas:1,2'
-[2026-02-13 09:30:52] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:30:52] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:30:52] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:30:37] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_SYNC_CHECKSUM_POLL, channel=RAID
-[2026-02-13 09:30:37] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:30:37] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:30:37] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:30:37] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_SYNC_CHECKSUM_POLL
-[2026-02-13 09:30:37] [OGRH] [RH-SyncChecksum] Structure: Hash=1423486965 for [AR] Onyxia
-[2026-02-13 09:30:37] [OGRH] [RH-SyncIntegrity][DEBUG] BroadcastChecksums() called, force=nil
-[2026-02-13 09:30:22] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_ENCOUNTER, channel=RAID
-[2026-02-13 09:30:22] [OGRH] [RH-SyncIntegrity][DEBUG] Broadcast encounter selection: raid=1, encounter=1
-[2026-02-13 09:30:22] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_ENCOUNTER
-[2026-02-13 09:30:07] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_SYNC_CHECKSUM_POLL, channel=RAID
-[2026-02-13 09:30:07] [OGRH] [RH-SyncIntegrity][DEBUG] Encounter broadcast started (every 15s)
-[2026-02-13 09:30:07] [OGRH] [RH-SyncIntegrity][DEBUG] Active Raid checksum polling started (broadcasts every 30s)
-[2026-02-13 09:30:07] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_SYNC_CHECKSUM_POLL
-[2026-02-13 09:30:07] [OGRH] [RH-SyncChecksum] Structure: Hash=1423486965 for [AR] Onyxia
-[2026-02-13 09:30:07] [OGRH] [RH-SyncIntegrity][DEBUG] BroadcastChecksums() called, force=true
-[2026-02-13 09:30:02] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_STATE_CHANGE_LEAD, channel=RAID
-[2026-02-13 09:30:02] [OGRH] [RH] Temporarily assigned Gnuzmas as admin (no L/A with OGRH)
-[2026-02-13 09:30:02] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_STATE_CHANGE_LEAD
-[2026-02-13 09:30:02] [OGRH] [RH-SyncIntegrity][DEBUG] Admin confirmed, delaying first broadcast by 5 seconds
-[2026-02-13 09:30:02] [OGRH] [RH-AdminDiscovery][DEBUG] Resolving with 1 responses
-[2026-02-13 09:29:57] [OGRH] [RH-MessageRouter][DEBUG] Wildcard received: sender=Tankmedady, prefix=OGRH00_ADMIN_QUERY, channel=RAID
-[2026-02-13 09:29:57] [OGRH] [RH-MessageRouter][DEBUG] Broadcast: messageType=OGRH_ADMIN_QUERY
-[2026-02-13 09:29:57] [OGRH] [RH-AdminDiscovery][DEBUG] Response: Gnuzmas (rank=0, isAdmin=false)
-[2026-02-13 09:29:57] [OGRH] [RH-AdminDiscovery][DEBUG] Broadcasting ADMIN.QUERY for roll call
-[2026-02-13 09:29:52] [OGRH] [RH-AdminDiscovery][DEBUG] Starting admin discovery (5s passive listen)
-[2026-02-13 09:29:52] [OGRH] [RH-AdminDiscovery][DEBUG] Starting admin discovery (5s passive listen)
+[2026-02-17 13:42:33] [OGRH] [RH-SyncRepair] Repair session completed successfully
+[2026-02-17 13:42:33] [OGRH] [RH-SyncRepair] Validation checksums sent to admin
+[2026-02-17 13:42:33] [OGRH] [RH-SyncChecksum] Structure: Hash=534103879 for [AR] Molten Core
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER:   Verify role 5: name='Buff Manager', column=2, slots=nil, fillOrder=nil
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER:   Verify role 4: name='SR Link', column=1, slots=nil, fillOrder=nil
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER:   Verify role 3: name='Discord', column=1, slots=nil, fillOrder=nil
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER:   Verify role 2: name='Loot Rules', column=2, slots=nil, fillOrder=nil
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER:   Verify role 1: name='Loot Settings', column=1, slots=nil, fillOrder=nil
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Successfully applied 5 roles to encounter 1
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Created role 5: 'Buff Manager' with 0 players
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Received role 5 data: name='Buff Manager', column=2, slots=nil, players=0
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Created role 4: 'SR Link' with 0 players
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Received role 4 data: name='SR Link', column=1, slots=nil, players=0
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Created role 3: 'Discord' with 0 players
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Received role 3 data: name='Discord', column=1, slots=nil, players=0
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Created role 2: 'Loot Rules' with 0 players
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Received role 2 data: name='Loot Rules', column=2, slots=nil, players=0
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Created role 1: 'Loot Settings' with 3 players
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Received role 1 data: name='Loot Settings', column=1, slots=nil, players=3
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] ENCOUNTER: Packet has 5 roles for encounter 1 (Raid Admin)
+[2026-02-17 13:42:31] [OGRH] [RH-SyncRepair] Repair Received: ENCOUNTER (Raid Admin)
+[2026-02-17 13:42:31] [AM] OGAddonMsg: Timeout failure (total: 180)
+[2026-02-17 13:42:27] [OGRH] [RH-SyncRepair] Repair session started by Tankmedady
+[2026-02-17 13:42:25] [OGRH] [RH-SyncIntegrity] Requesting repair: encounter (Enc 1)
+[2026-02-17 13:42:25] [OGRH] [RH-SyncIntegrity] 1 checksum mismatch(es) detected - requesting repairs from admin
+[2026-02-17 13:42:25] [OGRH] [RH-SyncChecksum] Structure: Hash=534103879 for [AR] Molten Core
+[2026-02-17 13:42:25] [OGRH] [RH-SyncIntegrity] Received checksum broadcast from admin Tankmedady
+[2026-02-17 13:42:25] [AM] OGAddonMsg: Timeout failure (total: 179)
+[2026-02-17 13:42:12] [AM] OGAddonMsg: Timeout failure (total: 178)
+[2026-02-17 13:41:55] [OGRH] [RH-SyncIntegrity] All checksums validated successfully - data in sync
+[2026-02-17 13:41:55] [OGRH] [RH-SyncChecksum] Structure: Hash=534103879 for [AR] Molten Core
+[2026-02-17 13:41:55] [OGRH] [RH-SyncIntegrity] Received checksum broadcast from admin Tankmedady
+[2026-02-17 13:41:55] [AM] OGAddonMsg: Timeout failure (total: 177)
