@@ -26,32 +26,30 @@ local function FindMatchingEncounter(bigwigsModuleName)
     return nil, nil
   end
   
-  -- Iterate through all raids
-  for i = 1, table.getn(encounterMgmt.raids) do
-    local raid = encounterMgmt.raids[i]
+  -- Only check the active raid (index 1)
+  local raid = encounterMgmt.raids[1]
+  if not raid or not raid.encounters then
+    return nil, nil
+  end
+  
+  -- Iterate through all encounters in the active raid
+  for j = 1, table.getn(raid.encounters) do
+    local encounter = raid.encounters[j]
     
-    -- Ensure raid has encounters
-    if raid.encounters then
-      -- Iterate through all encounters in this raid
-      for j = 1, table.getn(raid.encounters) do
-        local encounter = raid.encounters[j]
-        
-        -- Ensure encounter has advanced settings with BigWigs config
-        if encounter.advancedSettings and 
-           encounter.advancedSettings.bigwigs and 
-           encounter.advancedSettings.bigwigs.enabled then
-          
-          -- Get the array of configured BigWigs encounters for this OGRH encounter
-          local encounterIds = encounter.advancedSettings.bigwigs.encounterIds
-          
-          -- Check if BigWigs module name is in the configured list
-          if encounterIds and table.getn(encounterIds) > 0 then
-            for k = 1, table.getn(encounterIds) do
-              if encounterIds[k] == bigwigsModuleName then
-                -- Found a match!
-                return raid.name, encounter.name
-              end
-            end
+    -- Ensure encounter has advanced settings with BigWigs config
+    if encounter.advancedSettings and 
+       encounter.advancedSettings.bigwigs and 
+       encounter.advancedSettings.bigwigs.enabled then
+      
+      -- Get the array of configured BigWigs encounters for this OGRH encounter
+      local encounterIds = encounter.advancedSettings.bigwigs.encounterIds
+      
+      -- Check if BigWigs module name is in the configured list
+      if encounterIds and table.getn(encounterIds) > 0 then
+        for k = 1, table.getn(encounterIds) do
+          if encounterIds[k] == bigwigsModuleName then
+            -- Found a match!
+            return raid.name, encounter.name
           end
         end
       end
