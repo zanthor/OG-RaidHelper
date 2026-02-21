@@ -420,6 +420,7 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             playerName = playerName,
             rank = rank,
             isCurrentAdmin = (currentAdmin ~= nil and currentAdmin == playerName),
+            knownAdmin = currentAdmin,  -- Who this client believes is admin (may differ from self)
             version = OGRH.VERSION
         }, {priority = "HIGH"})
     end)
@@ -439,16 +440,26 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
                 OGRH.AdminDiscovery.AddResponse(
                     data.playerName or sender,
                     data.rank or 0,
-                    data.isCurrentAdmin or false
+                    data.isCurrentAdmin or false,
+                    data.knownAdmin  -- Who this responder believes is admin
                 )
             end
             
             -- If sender claims to be current admin, accept immediately
-            -- This short-circuits discovery for the common case (joining existing raid)
+            -- This short-circuits discovery for the common case (self is admin)
             if data.isCurrentAdmin then
                 local adminName = data.playerName or sender
                 OGRH.SetRaidAdmin(adminName, true)  -- suppress broadcast (we received it)
-                -- Cancel discovery since we found admin
+                if OGRH.AdminDiscovery then
+                    OGRH.AdminDiscovery.Cancel()
+                end
+                return
+            end
+            
+            -- If sender reports who they believe is admin (e.g., Conrii knows Tankmedady is admin),
+            -- accept that as well — short-circuits for the common case (admin reloaded)
+            if data.knownAdmin and data.knownAdmin ~= "" then
+                OGRH.SetRaidAdmin(data.knownAdmin, true)  -- suppress broadcast
                 if OGRH.AdminDiscovery then
                     OGRH.AdminDiscovery.Cancel()
                 end

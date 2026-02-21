@@ -119,7 +119,7 @@ function OGRH.AdminDiscovery.Cancel()
 end
 
 -- Add a roll-call response (called from ADMIN.RESPONSE handler)
-function OGRH.AdminDiscovery.AddResponse(playerName, rank, isCurrentAdmin)
+function OGRH.AdminDiscovery.AddResponse(playerName, rank, isCurrentAdmin, knownAdmin)
     if not OGRH.AdminDiscovery.active then return end
     
     -- Deduplicate
@@ -131,12 +131,13 @@ function OGRH.AdminDiscovery.AddResponse(playerName, rank, isCurrentAdmin)
     table.insert(OGRH.AdminDiscovery.responses, {
         name = playerName,
         rank = rank,
-        isCurrentAdmin = isCurrentAdmin
+        isCurrentAdmin = isCurrentAdmin,
+        knownAdmin = knownAdmin  -- Who this responder believes is admin
     })
     
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State and OGRH.SyncIntegrity.State.debug then
-        OGRH.Msg(string.format("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Response: %s (rank=%d, isAdmin=%s)", 
-            playerName, rank, tostring(isCurrentAdmin)))
+        OGRH.Msg(string.format("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Response: %s (rank=%d, isAdmin=%s, knownAdmin=%s)", 
+            playerName, rank, tostring(isCurrentAdmin), tostring(knownAdmin or "nil")))
     end
 end
 
@@ -167,11 +168,20 @@ function OGRH.AdminDiscovery.Resolve()
         -- Check if any response claimed to be admin
         for i = 1, table.getn(responses) do
             if responses[i].isCurrentAdmin then
-                OGRH.SetRaidAdmin(responses[i].name, false)
+                OGRH.SetRaidAdmin(responses[i].name, true)  -- suppress broadcast
                 return
             end
         end
-        -- Other OGRH users exist but no one claimed admin.
+        -- Check if any responder knows who admin is (e.g., admin reloaded,
+        -- other clients still know who was admin)
+        for i = 1, table.getn(responses) do
+            if responses[i].knownAdmin and responses[i].knownAdmin ~= "" then
+                OGRH.SetRaidAdmin(responses[i].knownAdmin, true)  -- suppress broadcast
+                OGRH.Msg("|cff00ccff[RH]|r Restored admin " .. responses[i].knownAdmin .. " (reported by " .. responses[i].name .. ")")
+                return
+            end
+        end
+        -- Other OGRH users exist but nobody knows who admin is.
         -- Admin must be set manually — do not auto-assign.
         OGRH.Msg("|cff00ccff[RH]|r No admin found in raid. Use the Admin button to designate one.")
         return
