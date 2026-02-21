@@ -424,7 +424,7 @@ function OGRH.BuffManager.ShowWindow(raidIdx, encounterIdx, roleIndex)
       OGRH.BuffManager.window.encounterIdx = encounterIdx
       OGRH.BuffManager.window.roleIndex = roleIndex
       OGRH.BuffManager.window:Show()
-      OGRH.BuffManager.RefreshWindow()
+      OGRH.BuffManager.RefreshWindowNow()
       return
     end
   end
@@ -540,8 +540,8 @@ function OGRH.BuffManager.ShowWindow(raidIdx, encounterIdx, roleIndex)
 
   OGRH.BuffManager.window = window
 
-  -- Initial render
-  OGRH.BuffManager.RefreshWindow()
+  -- Initial render (synchronous — window must be populated before Show)
+  OGRH.BuffManager.RefreshWindowNow()
   window:Show()
 end
 
@@ -554,18 +554,70 @@ end
 local recyclingBin = CreateFrame("Frame")
 recyclingBin:Hide()
 
---- Recursively disable mouse interaction on a frame and all its children.
---- This ensures recycled frames don't participate in WoW's per-frame hit-testing.
+--- Recursively disable mouse interaction and strip ALL scripts from a frame
+--- and all its children.  This ensures recycled frames don't participate in
+--- WoW's per-frame hit-testing, callback dispatch, or event routing.
+--- Without this, hundreds of zombie frames with live OnClick/OnEnter/OnUpdate
+--- registrations accumulate and progressively degrade client performance.
 local function DisableMouseRecursive(frame)
   if frame.EnableMouse then frame:EnableMouse(false) end
+  -- Strip every script handler the frame actually supports.
+  -- WoW 1.12 errors if you SetScript on a handler the frame type doesn't have
+  -- (e.g. "OnClick" on a plain Frame), so we guard with HasScript().
+  if frame.HasScript then
+    local scripts = {
+      "OnUpdate", "OnClick", "OnEnter", "OnLeave", "OnEvent",
+      "OnShow", "OnHide", "OnMouseDown", "OnMouseUp",
+      "OnDragStart", "OnDragStop", "OnReceiveDrag",
+    }
+    for _, s in ipairs(scripts) do
+      if frame:HasScript(s) then
+        frame:SetScript(s, nil)
+      end
+    end
+  end
+  -- Unregister clicks (for CheckButtons / Buttons with RegisterForClicks)
+  if frame.RegisterForClicks then
+    frame:RegisterForClicks()
+  end
+  -- Unregister drag
+  if frame.RegisterForDrag then
+    frame:RegisterForDrag()
+  end
+  -- Unregister all events
+  if frame.UnregisterAllEvents then
+    frame:UnregisterAllEvents()
+  end
   local children = { frame:GetChildren() }
   for _, child in ipairs(children) do
     DisableMouseRecursive(child)
   end
 end
 
---- Rebuild the buff sections inside the window's scroll child.
+-- Debounce: coalesce multiple RefreshWindow requests into a single rebuild
+-- on the next OnUpdate frame.  This prevents cascading refreshes when batch
+-- operations (e.g. CycleAllBlessings) or inbound PP messages trigger multiple
+-- calls within the same frame.
+local refreshPending = false
+local refreshDebounceFrame = CreateFrame("Frame")
+-- NOTE: frame must remain shown so OnUpdate fires; the script is nil when idle.
+
+--- Schedule a deferred RefreshWindow.  Multiple calls within the same frame
+--- are coalesced into one actual rebuild on the next OnUpdate.
 function OGRH.BuffManager.RefreshWindow()
+  if refreshPending then return end
+  refreshPending = true
+  refreshDebounceFrame:SetScript("OnUpdate", function()
+    this:SetScript("OnUpdate", nil)
+    refreshPending = false
+    OGRH.BuffManager.RefreshWindowNow()
+  end)
+end
+
+--- Immediate (synchronous) rebuild of the buff sections.
+--- Use this only when the UI must be ready before the current frame ends
+--- (e.g. initial window open, after a timed callback).
+function OGRH.BuffManager.RefreshWindowNow()
   local window = OGRH.BuffManager.window
   if not window then return end
 
@@ -586,6 +638,8 @@ function OGRH.BuffManager.RefreshWindow()
 
   -- Reset drop slot registry
   OGRH.BuffManager.dropSlots = {}
+  -- Reset blessing button registry (will be re-populated by CreatePaladinBuffSection)
+  OGRH.BuffManager.blessingBtns = {}
 
   local yOffset = 0
   local sectionWidth = window.buffContentWidth or 445
@@ -753,9 +807,18 @@ end
 --- Cycle all class blessings for a paladin slot to the next mass-assign blessing.
 -- Might/Wisdom combined: melee classes get Might, casters get Wisdom.
 -- Skips blessings already mass-assigned by other paladin slots.
+--
+-- Batched: writes the full assignments table to SVM in a single call instead of
+-- calling SetPaladinBlessing 9 times (which triggers 9 SVM deltas + 9 PP messages).
+
+-- Forward declarations — actual bodies defined after PALADIN BLESSING SECTION header.
+local UpdateBlessingButton
+local UpdateAllBlessingButtons
+
 local function CycleAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleIndex)
   local window = OGRH.BuffManager.window
   if not window then return end
+  if not OGRH.BuffManager.CanEdit(raidIdx) then return end
   local role = OGRH.BuffManager.GetRole(raidIdx)
   if not role then return end
   OGRH.BuffManager.EnsureBuffRoles(role)
@@ -777,31 +840,65 @@ local function CycleAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleInde
   if nextIdx > table.getn(cycle) then nextIdx = 1 end
   local nextKey = cycle[nextIdx]
 
-  -- Apply the blessing
+  -- Build the full assignments table in one pass (no per-class SetPaladinBlessing)
+  if not br.paladinAssignments then br.paladinAssignments = {} end
+  if not br.paladinAssignments[slotIdx] then br.paladinAssignments[slotIdx] = {} end
+
+  local assignments = br.paladinAssignments[slotIdx]
   if nextKey == "might/wisdom" then
-    -- Split assignment: melee → Might, casters → Wisdom
     for _, cls in ipairs(PALADIN_CLASSES) do
       if MIGHT_CLASSES[cls] then
-        OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, "might", raidIdx, encounterIdx, roleIndex)
+        assignments[cls] = "might"
       else
-        OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, "wisdom", raidIdx, encounterIdx, roleIndex)
+        assignments[cls] = "wisdom"
       end
     end
   else
-    -- Uniform assignment (nil = clear, or a single blessing for all)
     for _, cls in ipairs(PALADIN_CLASSES) do
-      OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, nextKey, raidIdx, encounterIdx, roleIndex)
+      assignments[cls] = nextKey  -- nil for "None"
     end
   end
-  OGRH.BuffManager.RefreshWindow()
+
+  -- Single SVM write for the entire slot's assignments table
+  local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
+  OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. slotIdx,
+    assignments, BuildSyncMeta(raidIdx))
+
+  -- Notify PP bridge once (instead of 9 individual SendBlessing calls)
+  if OGRH.BuffManagerPP and OGRH.BuffManagerPP.NotifySlotChanged then
+    OGRH.BuffManagerPP.NotifySlotChanged(brIdx, slotIdx, raidIdx)
+  end
+
+  -- Lightweight in-place icon update — no frame creation
+  UpdateAllBlessingButtons(slotIdx, assignments)
 end
 
 --- Clear all class blessings for a paladin slot.
+-- Batched: single SVM write + single PP notification.
 local function ClearAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleIndex)
-  for _, cls in ipairs(PALADIN_CLASSES) do
-    OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, nil, raidIdx, encounterIdx, roleIndex)
+  if not OGRH.BuffManager.CanEdit(raidIdx) then return end
+  local role = OGRH.BuffManager.GetRole(raidIdx)
+  if not role then return end
+  OGRH.BuffManager.EnsureBuffRoles(role)
+  local br = role.buffRoles[brIdx]
+  if not br then return end
+
+  -- Clear all assignments for this slot
+  if not br.paladinAssignments then br.paladinAssignments = {} end
+  br.paladinAssignments[slotIdx] = {}
+
+  -- Single SVM write
+  local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
+  OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. slotIdx,
+    {}, BuildSyncMeta(raidIdx))
+
+  -- Notify PP bridge once
+  if OGRH.BuffManagerPP and OGRH.BuffManagerPP.NotifySlotChanged then
+    OGRH.BuffManagerPP.NotifySlotChanged(brIdx, slotIdx, raidIdx)
   end
-  OGRH.BuffManager.RefreshWindow()
+
+  -- Lightweight in-place icon update — no frame creation
+  UpdateAllBlessingButtons(slotIdx, nil)
 end
 
 -- ============================================
@@ -951,6 +1048,36 @@ end
 -- PALADIN BLESSING SECTION
 -- ============================================
 
+-- Registry of blessing icon buttons for in-place texture updates.
+-- Avoids full RefreshWindow (and the ~200 frame allocation it causes) when
+-- only blessing assignment data changes (shift-click cycle, menu pick, etc.).
+-- Keyed: blessingBtns[slotIdx][className] = { btn=, spellTex= }
+OGRH.BuffManager.blessingBtns = {}
+
+--- Update a single blessing icon button in-place (texture + stored data).
+UpdateBlessingButton = function(slotIdx, className, newKey)
+  local reg = OGRH.BuffManager.blessingBtns
+  if not reg or not reg[slotIdx] or not reg[slotIdx][className] then return end
+  local entry = reg[slotIdx][className]
+  local blessing = GetBlessingByKey(newKey)
+  entry.btn.currentBlessingKey = newKey
+  if blessing then
+    entry.spellTex:SetTexture(blessing.icon)
+    entry.spellTex:Show()
+  else
+    entry.spellTex:Hide()
+  end
+end
+
+--- Update ALL blessing icon buttons for a specific slot.
+--- Called from CycleAllBlessings / ClearAllBlessings instead of RefreshWindow.
+UpdateAllBlessingButtons = function(slotIdx, assignments)
+  for _, cls in ipairs(PALADIN_CLASSES) do
+    local key = assignments and assignments[cls] or nil
+    UpdateBlessingButton(slotIdx, cls, key)
+  end
+end
+
 -- (Talent menu removed — talent indicators are now direct toggle buttons)
 
 --- Show a popup menu to pick a blessing for a given paladin slot + class.
@@ -1061,7 +1188,8 @@ local function ShowBlessingMenu(anchorBtn, brIdx, slotIdx, className, raidIdx, e
     btn:SetScript("OnClick", function()
       OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, className, capturedKey, raidIdx, encounterIdx, roleIndex)
       menuFrame:Hide()
-      OGRH.BuffManager.RefreshWindow()
+      -- Lightweight update: just swap the icon texture, no full rebuild
+      UpdateBlessingButton(slotIdx, className, capturedKey)
     end)
   end
 
@@ -1303,6 +1431,15 @@ local function CreatePaladinBuffSection(parent, buffRole, brIdx, width, raidIdx,
         spellTex:Hide()
       end
 
+      -- Store current key on the button for dynamic tooltip lookup
+      blessBtn.currentBlessingKey = currentKey
+
+      -- Register in the blessing button registry for in-place updates
+      if not OGRH.BuffManager.blessingBtns[slotIdx] then
+        OGRH.BuffManager.blessingBtns[slotIdx] = {}
+      end
+      OGRH.BuffManager.blessingBtns[slotIdx][cls] = { btn = blessBtn, spellTex = spellTex }
+
       -- Highlight
       local hlTex = blessBtn:CreateTexture(nil, "HIGHLIGHT")
       hlTex:SetAllPoints()
@@ -1326,13 +1463,15 @@ local function CreatePaladinBuffSection(parent, buffRole, brIdx, width, raidIdx,
         end
       end)
 
-      -- Tooltip
-      local capturedBlessing = blessing
+      -- Tooltip: reads from this.currentBlessingKey so it stays correct
+      -- after in-place icon updates (no stale closure capture).
       blessBtn:SetScript("OnEnter", function()
         GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
         local clsName = PALADIN_CLASS_DISPLAY[capturedCls] or capturedCls
-        if capturedBlessing then
-          GameTooltip:SetText(clsName .. ": " .. capturedBlessing.name, 1, 1, 1)
+        local bk = this.currentBlessingKey
+        local bl = GetBlessingByKey(bk)
+        if bl then
+          GameTooltip:SetText(clsName .. ": " .. bl.name, 1, 1, 1)
         else
           GameTooltip:SetText(clsName .. ": (none)", 0.6, 0.6, 0.6)
         end
