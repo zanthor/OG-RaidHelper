@@ -191,30 +191,36 @@ function OGRH.AdminDiscovery.Resolve()
         end
     end
     
+    -- NOTE: All self-assignments use suppressBroadcast=true.
+    -- If we truly are the sole OGRH user, there's no one to broadcast to.
+    -- If we're wrong (responses were just delayed by network congestion),
+    -- broadcasting STATE.CHANGE_LEAD would override the real admin on other clients.
+    -- Late-arriving ADMIN.RESPONSE with isCurrentAdmin=true will still correct us.
+    
     -- Tier 1: Check if we are the lastAdmin (persisted)
     local lastAdmin = OGRH.GetLastAdmin and OGRH.GetLastAdmin()
     if lastAdmin and lastAdmin == selfName then
-        OGRH.SetRaidAdmin(selfName, false)
+        OGRH.SetRaidAdmin(selfName, true)
         OGRH.Msg("|cff00ccff[RH]|r Restored as admin (last admin, sole OGRH user)")
         return
     end
     
     -- Tier 2: Raid Leader
     if selfRank == 2 then
-        OGRH.SetRaidAdmin(selfName, false)
+        OGRH.SetRaidAdmin(selfName, true)
         OGRH.Msg("|cff00ccff[RH]|r Assigned self as admin (raid leader, sole OGRH user)")
         return
     end
     
     -- Tier 3: Assistant
     if selfRank == 1 then
-        OGRH.SetRaidAdmin(selfName, false)
+        OGRH.SetRaidAdmin(selfName, true)
         OGRH.Msg("|cff00ccff[RH]|r Assigned self as admin (assistant, sole OGRH user)")
         return
     end
     
     -- Tier 4: No rank, sole OGRH user — temp admin (no lastAdmin update)
-    OGRH.SetRaidAdmin(selfName, false, true)  -- skipLastAdminUpdate = true
+    OGRH.SetRaidAdmin(selfName, true, true)  -- suppressBroadcast + skipLastAdminUpdate
     OGRH.Msg("|cff00ccff[RH]|r Temporarily assigned self as admin (sole OGRH user, no L/A)")
 end
 
