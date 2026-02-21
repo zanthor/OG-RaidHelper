@@ -399,33 +399,29 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         -- AdminDiscovery.responses and prevent correct sole-user detection.
         if sender == UnitName("player") then return end
         
-        -- Add random delay (0-2s) to stagger responses from 40-man raids
-        local delay = math.random() * 2
-        OGRH.ScheduleTimer(function()
-            if GetNumRaidMembers() == 0 then return end
-            
-            local playerName = UnitName("player")
-            local rank = 0
-            for i = 1, GetNumRaidMembers() do
-                local name, r = GetRaidRosterInfo(i)
-                if name == playerName then
-                    rank = r
-                    break
-                end
+        -- Respond immediately (no stagger delay). ADMIN.RESPONSE is a small,
+        -- critical protocol message that must arrive within the 5s collection window.
+        if GetNumRaidMembers() == 0 then return end
+        
+        local playerName = UnitName("player")
+        local rank = 0
+        for i = 1, GetNumRaidMembers() do
+            local name, r = GetRaidRosterInfo(i)
+            if name == playerName then
+                rank = r
+                break
             end
-            
-            local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
-            
-            -- Broadcast response so ALL clients can build the same picture
-            -- (needed for deterministic alphabetical tie-breaking)
-            OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.RESPONSE, {
-                purpose = "discovery",
-                playerName = playerName,
-                rank = rank,
-                isCurrentAdmin = (currentAdmin ~= nil and currentAdmin == playerName),
-                version = OGRH.VERSION
-            }, {priority = "NORMAL"})
-        end, delay)
+        end
+        
+        local currentAdmin = OGRH.GetRaidAdmin and OGRH.GetRaidAdmin()
+        
+        OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.RESPONSE, {
+            purpose = "discovery",
+            playerName = playerName,
+            rank = rank,
+            isCurrentAdmin = (currentAdmin ~= nil and currentAdmin == playerName),
+            version = OGRH.VERSION
+        }, {priority = "HIGH"})
     end)
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.RESPONSE, function(sender, data, channel)
