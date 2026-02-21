@@ -393,7 +393,12 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
             -- so the querier knows we're running OGRH
         end
         
-        -- Part 2: Discovery roll-call - ALL OGRH clients respond
+        -- Part 2: Discovery roll-call - OTHER OGRH clients respond
+        -- Skip if this is our own echo (WoW echoes broadcasts back to sender).
+        -- The querier doesn't know who admin is, so self-responses would pollute
+        -- AdminDiscovery.responses and prevent correct sole-user detection.
+        if sender == UnitName("player") then return end
+        
         -- Add random delay (0-2s) to stagger responses from 40-man raids
         local delay = math.random() * 2
         OGRH.ScheduleTimer(function()
@@ -425,6 +430,11 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
     
     OGRH.MessageRouter.RegisterHandler(OGRH.MessageTypes.ADMIN.RESPONSE, function(sender, data, channel)
         if not data then return end
+        
+        -- Ignore our own echoed responses (WoW echoes broadcasts back)
+        -- Our own ADMIN.RESPONSE would have our name and our admin state,
+        -- which we already know. Only other clients' responses matter.
+        if sender == UnitName("player") then return end
         
         -- Handle discovery roll-call responses
         if data.purpose == "discovery" then
