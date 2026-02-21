@@ -554,10 +554,40 @@ end
 local recyclingBin = CreateFrame("Frame")
 recyclingBin:Hide()
 
---- Recursively disable mouse interaction on a frame and all its children.
---- This ensures recycled frames don't participate in WoW's per-frame hit-testing.
+--- Recursively disable mouse interaction and strip ALL scripts from a frame
+--- and all its children.  This ensures recycled frames don't participate in
+--- WoW's per-frame hit-testing, callback dispatch, or event routing.
+--- Without this, hundreds of zombie frames with live OnClick/OnEnter/OnUpdate
+--- registrations accumulate and progressively degrade client performance.
 local function DisableMouseRecursive(frame)
   if frame.EnableMouse then frame:EnableMouse(false) end
+  -- Strip every script handler the frame actually supports.
+  -- WoW 1.12 errors if you SetScript on a handler the frame type doesn't have
+  -- (e.g. "OnClick" on a plain Frame), so we guard with HasScript().
+  if frame.HasScript then
+    local scripts = {
+      "OnUpdate", "OnClick", "OnEnter", "OnLeave", "OnEvent",
+      "OnShow", "OnHide", "OnMouseDown", "OnMouseUp",
+      "OnDragStart", "OnDragStop", "OnReceiveDrag",
+    }
+    for _, s in ipairs(scripts) do
+      if frame:HasScript(s) then
+        frame:SetScript(s, nil)
+      end
+    end
+  end
+  -- Unregister clicks (for CheckButtons / Buttons with RegisterForClicks)
+  if frame.RegisterForClicks then
+    frame:RegisterForClicks()
+  end
+  -- Unregister drag
+  if frame.RegisterForDrag then
+    frame:RegisterForDrag()
+  end
+  -- Unregister all events
+  if frame.UnregisterAllEvents then
+    frame:UnregisterAllEvents()
+  end
   local children = { frame:GetChildren() }
   for _, child in ipairs(children) do
     DisableMouseRecursive(child)
@@ -570,7 +600,7 @@ end
 -- calls within the same frame.
 local refreshPending = false
 local refreshDebounceFrame = CreateFrame("Frame")
-refreshDebounceFrame:Hide()
+-- NOTE: frame must remain shown so OnUpdate fires; the script is nil when idle.
 
 --- Schedule a deferred RefreshWindow.  Multiple calls within the same frame
 --- are coalesced into one actual rebuild on the next OnUpdate.
@@ -608,6 +638,8 @@ function OGRH.BuffManager.RefreshWindowNow()
 
   -- Reset drop slot registry
   OGRH.BuffManager.dropSlots = {}
+  -- Reset blessing button registry (will be re-populated by CreatePaladinBuffSection)
+  OGRH.BuffManager.blessingBtns = {}
 
   local yOffset = 0
   local sectionWidth = window.buffContentWidth or 445
@@ -778,6 +810,11 @@ end
 --
 -- Batched: writes the full assignments table to SVM in a single call instead of
 -- calling SetPaladinBlessing 9 times (which triggers 9 SVM deltas + 9 PP messages).
+
+-- Forward declarations — actual bodies defined after PALADIN BLESSING SECTION header.
+local UpdateBlessingButton
+local UpdateAllBlessingButtons
+
 local function CycleAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleIndex)
   local window = OGRH.BuffManager.window
   if not window then return end
@@ -832,7 +869,8 @@ local function CycleAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleInde
     OGRH.BuffManagerPP.NotifySlotChanged(brIdx, slotIdx, raidIdx)
   end
 
-  OGRH.BuffManager.RefreshWindow()
+  -- Lightweight in-place icon update — no frame creation
+  UpdateAllBlessingButtons(slotIdx, assignments)
 end
 
 --- Clear all class blessings for a paladin slot.
@@ -859,7 +897,8 @@ local function ClearAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleInde
     OGRH.BuffManagerPP.NotifySlotChanged(brIdx, slotIdx, raidIdx)
   end
 
-  OGRH.BuffManager.RefreshWindow()
+  -- Lightweight in-place icon update — no frame creation
+  UpdateAllBlessingButtons(slotIdx, nil)
 end
 
 -- ============================================
@@ -1009,6 +1048,36 @@ end
 -- PALADIN BLESSING SECTION
 -- ============================================
 
+-- Registry of blessing icon buttons for in-place texture updates.
+-- Avoids full RefreshWindow (and the ~200 frame allocation it causes) when
+-- only blessing assignment data changes (shift-click cycle, menu pick, etc.).
+-- Keyed: blessingBtns[slotIdx][className] = { btn=, spellTex= }
+OGRH.BuffManager.blessingBtns = {}
+
+--- Update a single blessing icon button in-place (texture + stored data).
+UpdateBlessingButton = function(slotIdx, className, newKey)
+  local reg = OGRH.BuffManager.blessingBtns
+  if not reg or not reg[slotIdx] or not reg[slotIdx][className] then return end
+  local entry = reg[slotIdx][className]
+  local blessing = GetBlessingByKey(newKey)
+  entry.btn.currentBlessingKey = newKey
+  if blessing then
+    entry.spellTex:SetTexture(blessing.icon)
+    entry.spellTex:Show()
+  else
+    entry.spellTex:Hide()
+  end
+end
+
+--- Update ALL blessing icon buttons for a specific slot.
+--- Called from CycleAllBlessings / ClearAllBlessings instead of RefreshWindow.
+UpdateAllBlessingButtons = function(slotIdx, assignments)
+  for _, cls in ipairs(PALADIN_CLASSES) do
+    local key = assignments and assignments[cls] or nil
+    UpdateBlessingButton(slotIdx, cls, key)
+  end
+end
+
 -- (Talent menu removed — talent indicators are now direct toggle buttons)
 
 --- Show a popup menu to pick a blessing for a given paladin slot + class.
@@ -1119,7 +1188,8 @@ local function ShowBlessingMenu(anchorBtn, brIdx, slotIdx, className, raidIdx, e
     btn:SetScript("OnClick", function()
       OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, className, capturedKey, raidIdx, encounterIdx, roleIndex)
       menuFrame:Hide()
-      OGRH.BuffManager.RefreshWindow()
+      -- Lightweight update: just swap the icon texture, no full rebuild
+      UpdateBlessingButton(slotIdx, className, capturedKey)
     end)
   end
 
@@ -1361,6 +1431,15 @@ local function CreatePaladinBuffSection(parent, buffRole, brIdx, width, raidIdx,
         spellTex:Hide()
       end
 
+      -- Store current key on the button for dynamic tooltip lookup
+      blessBtn.currentBlessingKey = currentKey
+
+      -- Register in the blessing button registry for in-place updates
+      if not OGRH.BuffManager.blessingBtns[slotIdx] then
+        OGRH.BuffManager.blessingBtns[slotIdx] = {}
+      end
+      OGRH.BuffManager.blessingBtns[slotIdx][cls] = { btn = blessBtn, spellTex = spellTex }
+
       -- Highlight
       local hlTex = blessBtn:CreateTexture(nil, "HIGHLIGHT")
       hlTex:SetAllPoints()
@@ -1384,13 +1463,15 @@ local function CreatePaladinBuffSection(parent, buffRole, brIdx, width, raidIdx,
         end
       end)
 
-      -- Tooltip
-      local capturedBlessing = blessing
+      -- Tooltip: reads from this.currentBlessingKey so it stays correct
+      -- after in-place icon updates (no stale closure capture).
       blessBtn:SetScript("OnEnter", function()
         GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
         local clsName = PALADIN_CLASS_DISPLAY[capturedCls] or capturedCls
-        if capturedBlessing then
-          GameTooltip:SetText(clsName .. ": " .. capturedBlessing.name, 1, 1, 1)
+        local bk = this.currentBlessingKey
+        local bl = GetBlessingByKey(bk)
+        if bl then
+          GameTooltip:SetText(clsName .. ": " .. bl.name, 1, 1, 1)
         else
           GameTooltip:SetText(clsName .. ": (none)", 0.6, 0.6, 0.6)
         end

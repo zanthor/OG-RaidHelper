@@ -157,6 +157,7 @@ function RC.OnUnitHealth(unitId)
   if not unitId then return end
   if not UnitExists(unitId) then return end
   if not string.find(unitId, "^raid") then return end
+  if string.find(unitId, "^raidpet") then return end  -- Pets can't be Rebirthed
 
   local name = UnitName(unitId)
   if not name then return end

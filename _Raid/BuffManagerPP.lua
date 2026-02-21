@@ -523,7 +523,7 @@ local function HandlePPAssign(sender, msg)
   local basePath = string.format("encounterMgmt.raids.1.encounters.%d.roles.%d", encounterIdx, roleIndex)
   OGRH.SVM.SetPath(basePath .. ".buffRoles.1.paladinAssignments." .. slotIdx .. "." .. className, blessingKey, BuildSyncMeta(1))
 
-  if OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+  if not suppressRefresh and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
     OGRH.BuffManager.RefreshWindow()
   end
 end
@@ -581,7 +581,7 @@ local function HandlePPMassign(sender, msg)
   local basePath = string.format("encounterMgmt.raids.1.encounters.%d.roles.%d", encounterIdx, roleIndex)
   OGRH.SVM.SetPath(basePath .. ".buffRoles.1.paladinAssignments." .. slotIdx, assignments, BuildSyncMeta(1))
 
-  if OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+  if not suppressRefresh and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
     OGRH.BuffManager.RefreshWindow()
   end
 end
@@ -596,7 +596,7 @@ local function HandlePPClear(sender, msg)
   local basePath = string.format("encounterMgmt.raids.1.encounters.%d.roles.%d", encounterIdx, roleIndex)
   OGRH.SVM.SetPath(basePath .. ".buffRoles.1.paladinAssignments", {}, BuildSyncMeta(1))
 
-  if OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
+  if not suppressRefresh and OGRH.BuffManager.window and OGRH.BuffManager.window:IsShown() then
     OGRH.BuffManager.RefreshWindow()
   end
 end
@@ -617,9 +617,9 @@ local function SendPPRequest()
 end
 
 --- Send a blessing assignment change to PallyPower.
---- Called from SetPaladinBlessing.  Admin only.
+--- Called from SetPaladinBlessing.  Requires edit permission (admin or officer).
 function OGRH.BuffManagerPP.SendBlessing(paladinName, className, blessingKey)
-  if not IsLocalAdmin() then return end
+  if not OGRH.BuffManager.CanEdit(1) then return end
 
   local classId = BM_CLASS_TO_PP[className]
   if classId == nil then return end
@@ -649,7 +649,7 @@ end
 
 --- Send a CLEAR to PallyPower for a specific paladin slot (all classes → -1).
 function OGRH.BuffManagerPP.ClearBlessingsForPaladin(paladinName)
-  if not IsLocalAdmin() then return end
+  if not OGRH.BuffManager.CanEdit(1) then return end
 
   -- Update our internal assignment store
   if ppAssignments[paladinName] then
@@ -683,7 +683,7 @@ end
 --- @param raidIdx number Raid index (PP outbound only for raid 1)
 function OGRH.BuffManagerPP.NotifySlotChanged(brIdx, slotIdx, raidIdx)
   if raidIdx ~= 1 then return end
-  if not IsLocalAdmin() then return end
+  if not OGRH.BuffManager.CanEdit(1) then return end
 
   local role, roleIndex, encounterIdx, br = GetPaladinBuffRole()
   if not br then return end
@@ -921,18 +921,20 @@ eventFrame:SetScript("OnEvent", function()
   -- Gate: only process if local player is admin (we are the source of truth)
   if not IsLocalAdmin() then return end
 
-  -- Skip messages from self for ASSIGN/MASSIGN/CLEAR — we already updated
-  -- the data model before sending, so processing our own echo would create
-  -- a feedback loop (redundant RefreshWindow + SVM.SetPath calls).
+  -- Self-echo: still process data updates (needed for PP to stay in sync)
+  -- but suppress RefreshWindow since the original action already did an
+  -- in-place icon update.  This avoids creating ~120 zombie frames per click.
   local isFromSelf = (sender == UnitName("player"))
 
   -- Dispatch by message type
-  -- SELF = paladin announcing skills/talents — accept from any paladin
+  -- SELF = paladin announcing skills/talents — accept from any paladin (including self)
   if string.find(msg, "^SELF ") then
     HandlePPSelf(sender, msg)
   elseif string.find(msg, "^ASSIGN ") then
     if isFromSelf then
-      -- Own echo — already handled, skip
+      suppressRefresh = true
+      HandlePPAssign(sender, msg)
+      suppressRefresh = false
     elseif IsAdminOrLeader(sender) then
       HandlePPAssign(sender, msg)
     else
@@ -942,7 +944,9 @@ eventFrame:SetScript("OnEvent", function()
     end
   elseif string.find(msg, "^MASSIGN ") then
     if isFromSelf then
-      -- Own echo — already handled, skip
+      suppressRefresh = true
+      HandlePPMassign(sender, msg)
+      suppressRefresh = false
     elseif IsAdminOrLeader(sender) then
       HandlePPMassign(sender, msg)
     else
@@ -951,7 +955,9 @@ eventFrame:SetScript("OnEvent", function()
     end
   elseif msg == "CLEAR" then
     if isFromSelf then
-      -- Own echo — already handled, skip
+      suppressRefresh = true
+      HandlePPClear(sender, msg)
+      suppressRefresh = false
     elseif IsAdminOrLeader(sender) then
       HandlePPClear(sender, msg)
     else
