@@ -674,6 +674,82 @@ function OGRH.BuffManagerPP.ClearBlessingsForPaladin(paladinName)
   end
 end
 
+--- Notify PP that an entire paladin slot's assignments changed (batch operation).
+--- Called from CycleAllBlessings / ClearAllBlessings in BuffManager.lua which
+--- write the assignments table to SVM in a single call instead of calling
+--- SetPaladinBlessing 9 times.  This sends the consolidated PP messages.
+--- @param brIdx number   Buff role index (always 1 for paladin)
+--- @param slotIdx number Paladin slot
+--- @param raidIdx number Raid index (PP outbound only for raid 1)
+function OGRH.BuffManagerPP.NotifySlotChanged(brIdx, slotIdx, raidIdx)
+  if raidIdx ~= 1 then return end
+  if not IsLocalAdmin() then return end
+
+  local role, roleIndex, encounterIdx, br = GetPaladinBuffRole()
+  if not br then return end
+
+  local paladinName = br.assignedPlayers and br.assignedPlayers[slotIdx]
+  if not paladinName or paladinName == "" then return end
+
+  local assignments = br.paladinAssignments and br.paladinAssignments[slotIdx]
+
+  -- Check if all classes have the same blessing (or all nil/cleared)
+  local uniformKey = nil     -- tracks the common blessing (false = not uniform)
+  local first = true
+  if assignments then
+    for classId = 0, 8 do
+      local cls = PP_CLASS_TO_NAME[classId]
+      if cls then
+        local bk = assignments[cls]
+        if first then
+          uniformKey = bk  -- may be nil (= cleared)
+          first = false
+        elseif bk ~= uniformKey then
+          uniformKey = false  -- mixed blessings
+          break
+        end
+      end
+    end
+  end
+
+  -- Update our internal assignment store + PP table
+  if not ppAssignments[paladinName] then ppAssignments[paladinName] = {} end
+  if PallyPower_Assignments and not PallyPower_Assignments[paladinName] then
+    PallyPower_Assignments[paladinName] = {}
+  end
+
+  if uniformKey == false then
+    -- Mixed blessings (e.g. might/wisdom split) — send individual ASSIGN messages
+    for classId = 0, 8 do
+      local className = PP_CLASS_TO_NAME[classId]
+      if className then
+        local blessingKey = assignments and assignments[className]
+        local blessingId = blessingKey and BM_KEY_TO_PP[blessingKey] or -1
+        ppAssignments[paladinName][classId] = blessingId
+        if PallyPower_Assignments and PallyPower_Assignments[paladinName] then
+          PallyPower_Assignments[paladinName][classId] = blessingId
+        end
+        SendPPMessage("ASSIGN " .. paladinName .. " " .. classId .. " " .. blessingId)
+      end
+    end
+  else
+    -- Uniform blessing (all same, or all cleared) — send one MASSIGN
+    local blessingId = uniformKey and BM_KEY_TO_PP[uniformKey] or -1
+    for classId = 0, 8 do
+      ppAssignments[paladinName][classId] = blessingId
+      if PallyPower_Assignments and PallyPower_Assignments[paladinName] then
+        PallyPower_Assignments[paladinName][classId] = blessingId
+      end
+    end
+    SendPPMessage("MASSIGN " .. paladinName .. " " .. blessingId)
+  end
+
+  -- Trigger PP UI refresh once
+  if PP_NextScan ~= nil then
+    PP_NextScan = 0
+  end
+end
+
 --- Re-broadcast all current BM assignments for a specific paladin back to PP.
 --- Used to force-correct unauthorized changes from non-A/L players.
 local function RebroadcastPaladin(paladinName)

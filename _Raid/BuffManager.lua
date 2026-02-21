@@ -424,7 +424,7 @@ function OGRH.BuffManager.ShowWindow(raidIdx, encounterIdx, roleIndex)
       OGRH.BuffManager.window.encounterIdx = encounterIdx
       OGRH.BuffManager.window.roleIndex = roleIndex
       OGRH.BuffManager.window:Show()
-      OGRH.BuffManager.RefreshWindow()
+      OGRH.BuffManager.RefreshWindowNow()
       return
     end
   end
@@ -540,8 +540,8 @@ function OGRH.BuffManager.ShowWindow(raidIdx, encounterIdx, roleIndex)
 
   OGRH.BuffManager.window = window
 
-  -- Initial render
-  OGRH.BuffManager.RefreshWindow()
+  -- Initial render (synchronous — window must be populated before Show)
+  OGRH.BuffManager.RefreshWindowNow()
   window:Show()
 end
 
@@ -564,8 +564,30 @@ local function DisableMouseRecursive(frame)
   end
 end
 
---- Rebuild the buff sections inside the window's scroll child.
+-- Debounce: coalesce multiple RefreshWindow requests into a single rebuild
+-- on the next OnUpdate frame.  This prevents cascading refreshes when batch
+-- operations (e.g. CycleAllBlessings) or inbound PP messages trigger multiple
+-- calls within the same frame.
+local refreshPending = false
+local refreshDebounceFrame = CreateFrame("Frame")
+refreshDebounceFrame:Hide()
+
+--- Schedule a deferred RefreshWindow.  Multiple calls within the same frame
+--- are coalesced into one actual rebuild on the next OnUpdate.
 function OGRH.BuffManager.RefreshWindow()
+  if refreshPending then return end
+  refreshPending = true
+  refreshDebounceFrame:SetScript("OnUpdate", function()
+    this:SetScript("OnUpdate", nil)
+    refreshPending = false
+    OGRH.BuffManager.RefreshWindowNow()
+  end)
+end
+
+--- Immediate (synchronous) rebuild of the buff sections.
+--- Use this only when the UI must be ready before the current frame ends
+--- (e.g. initial window open, after a timed callback).
+function OGRH.BuffManager.RefreshWindowNow()
   local window = OGRH.BuffManager.window
   if not window then return end
 
@@ -753,9 +775,13 @@ end
 --- Cycle all class blessings for a paladin slot to the next mass-assign blessing.
 -- Might/Wisdom combined: melee classes get Might, casters get Wisdom.
 -- Skips blessings already mass-assigned by other paladin slots.
+--
+-- Batched: writes the full assignments table to SVM in a single call instead of
+-- calling SetPaladinBlessing 9 times (which triggers 9 SVM deltas + 9 PP messages).
 local function CycleAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleIndex)
   local window = OGRH.BuffManager.window
   if not window then return end
+  if not OGRH.BuffManager.CanEdit(raidIdx) then return end
   local role = OGRH.BuffManager.GetRole(raidIdx)
   if not role then return end
   OGRH.BuffManager.EnsureBuffRoles(role)
@@ -777,30 +803,62 @@ local function CycleAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleInde
   if nextIdx > table.getn(cycle) then nextIdx = 1 end
   local nextKey = cycle[nextIdx]
 
-  -- Apply the blessing
+  -- Build the full assignments table in one pass (no per-class SetPaladinBlessing)
+  if not br.paladinAssignments then br.paladinAssignments = {} end
+  if not br.paladinAssignments[slotIdx] then br.paladinAssignments[slotIdx] = {} end
+
+  local assignments = br.paladinAssignments[slotIdx]
   if nextKey == "might/wisdom" then
-    -- Split assignment: melee → Might, casters → Wisdom
     for _, cls in ipairs(PALADIN_CLASSES) do
       if MIGHT_CLASSES[cls] then
-        OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, "might", raidIdx, encounterIdx, roleIndex)
+        assignments[cls] = "might"
       else
-        OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, "wisdom", raidIdx, encounterIdx, roleIndex)
+        assignments[cls] = "wisdom"
       end
     end
   else
-    -- Uniform assignment (nil = clear, or a single blessing for all)
     for _, cls in ipairs(PALADIN_CLASSES) do
-      OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, nextKey, raidIdx, encounterIdx, roleIndex)
+      assignments[cls] = nextKey  -- nil for "None"
     end
   end
+
+  -- Single SVM write for the entire slot's assignments table
+  local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
+  OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. slotIdx,
+    assignments, BuildSyncMeta(raidIdx))
+
+  -- Notify PP bridge once (instead of 9 individual SendBlessing calls)
+  if OGRH.BuffManagerPP and OGRH.BuffManagerPP.NotifySlotChanged then
+    OGRH.BuffManagerPP.NotifySlotChanged(brIdx, slotIdx, raidIdx)
+  end
+
   OGRH.BuffManager.RefreshWindow()
 end
 
 --- Clear all class blessings for a paladin slot.
+-- Batched: single SVM write + single PP notification.
 local function ClearAllBlessings(brIdx, slotIdx, raidIdx, encounterIdx, roleIndex)
-  for _, cls in ipairs(PALADIN_CLASSES) do
-    OGRH.BuffManager.SetPaladinBlessing(brIdx, slotIdx, cls, nil, raidIdx, encounterIdx, roleIndex)
+  if not OGRH.BuffManager.CanEdit(raidIdx) then return end
+  local role = OGRH.BuffManager.GetRole(raidIdx)
+  if not role then return end
+  OGRH.BuffManager.EnsureBuffRoles(role)
+  local br = role.buffRoles[brIdx]
+  if not br then return end
+
+  -- Clear all assignments for this slot
+  if not br.paladinAssignments then br.paladinAssignments = {} end
+  br.paladinAssignments[slotIdx] = {}
+
+  -- Single SVM write
+  local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
+  OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. slotIdx,
+    {}, BuildSyncMeta(raidIdx))
+
+  -- Notify PP bridge once
+  if OGRH.BuffManagerPP and OGRH.BuffManagerPP.NotifySlotChanged then
+    OGRH.BuffManagerPP.NotifySlotChanged(brIdx, slotIdx, raidIdx)
   end
+
   OGRH.BuffManager.RefreshWindow()
 end
 
