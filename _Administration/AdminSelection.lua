@@ -18,18 +18,22 @@ OGRH.RaidLead = {
 --[[
     Admin Discovery System
     
-    Three-tier admin discovery with 5-second delays.
+    Query-based admin discovery with 5-second delays.
     Handles raid forming, joining, and late joining uniformly.
     
     Flow:
       1. Wait 5 seconds (passive listen for STATE.CHANGE_LEAD from existing admin)
       2. Broadcast ADMIN.QUERY (all OGRH clients respond with roll-call)
-      3. Wait 5 seconds to collect responses
-      4. Resolve with 3-tier logic:
-         Tier 1: lastAdmin (persisted) is among responders → restore as admin
-         Tier 2: Raid Leader with OGRH → assign as admin
-         Tier 3: Assistants with OGRH → alphabetically first
-         Tier 4: Any OGRH user → alphabetically first (temp, no lastAdmin update)
+         - The querying player does NOT add itself — it doesn't know who admin is
+      3. Wait 5 seconds to collect responses from other OGRH clients
+      4. Resolve:
+         - If any responder claimed isCurrentAdmin → accept them as admin
+         - If responders exist but none claimed admin → do nothing (manual selection needed)
+         - If NO responders (sole OGRH user) → self-assign with tier logic:
+           Tier 1: Self is lastAdmin (persisted) → restore
+           Tier 2: Self is Raid Leader → assign
+           Tier 3: Self is Assistant → assign
+           Tier 4: Self has no rank → temp admin (no lastAdmin update)
 ]]
 OGRH.AdminDiscovery = {
     active = false,              -- Whether discovery is in progress
@@ -83,17 +87,10 @@ function OGRH.AdminDiscovery.Start()
             OGRH.Msg("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Broadcasting ADMIN.QUERY for roll call")
         end
         
-        -- Add self to responses (we won't receive our own broadcast)
-        local selfName = UnitName("player")
-        local selfRank = 0
-        for i = 1, GetNumRaidMembers() do
-            local name, rank = GetRaidRosterInfo(i)
-            if name == selfName then
-                selfRank = rank
-                break
-            end
-        end
-        OGRH.AdminDiscovery.AddResponse(selfName, selfRank, false)
+        -- NOTE: Do NOT add self to responses. The joining/reloading player doesn't
+        -- know who admin is, so their vote should not count. Only responses from
+        -- OTHER OGRH clients matter. If no one else responds, we fall back to
+        -- self-assignment in Resolve().
         
         -- Broadcast query - all OGRH clients will respond via ADMIN.RESPONSE
         if OGRH.MessageRouter and OGRH.MessageTypes then
@@ -143,7 +140,9 @@ function OGRH.AdminDiscovery.AddResponse(playerName, rank, isCurrentAdmin)
     end
 end
 
--- Resolve admin from collected responses using 3-tier logic
+-- Resolve admin from collected responses
+-- Tier 1-4 fallback only runs when NO other OGRH users responded (sole user).
+-- If other users responded but none claimed admin, admin stays unset.
 function OGRH.AdminDiscovery.Resolve()
     OGRH.AdminDiscovery.active = false
     
@@ -158,67 +157,65 @@ function OGRH.AdminDiscovery.Resolve()
     end
     
     local responses = OGRH.AdminDiscovery.responses
-    if table.getn(responses) == 0 then
-        return
-    end
     
     if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State and OGRH.SyncIntegrity.State.debug then
         OGRH.Msg(string.format("|cff00ccff[RH-AdminDiscovery][DEBUG]|r Resolving with %d responses", table.getn(responses)))
     end
     
-    -- Defensive: check if any response claimed to be admin
-    for i = 1, table.getn(responses) do
-        if responses[i].isCurrentAdmin then
-            OGRH.SetRaidAdmin(responses[i].name, false)
-            return
-        end
-    end
-    
-    -- Tier 1: Check if lastAdmin (persisted) is among responders
-    local lastAdmin = OGRH.GetLastAdmin and OGRH.GetLastAdmin()
-    if lastAdmin then
+    -- If other OGRH users responded to the query
+    if table.getn(responses) > 0 then
+        -- Check if any response claimed to be admin
         for i = 1, table.getn(responses) do
-            if responses[i].name == lastAdmin then
-                OGRH.SetRaidAdmin(lastAdmin, false)
-                OGRH.Msg("|cff00ccff[RH]|r Last admin " .. lastAdmin .. " is in raid, restoring as admin")
+            if responses[i].isCurrentAdmin then
+                OGRH.SetRaidAdmin(responses[i].name, false)
                 return
             end
         end
-    end
-    
-    -- Tier 2: Leader with OGRH
-    for i = 1, table.getn(responses) do
-        if responses[i].rank == 2 then
-            OGRH.SetRaidAdmin(responses[i].name, false)
-            OGRH.Msg("|cff00ccff[RH]|r Assigned raid leader " .. responses[i].name .. " as admin")
-            return
-        end
-    end
-    
-    -- Tier 3: Assistants with OGRH (alphabetically first)
-    local assistants = {}
-    for i = 1, table.getn(responses) do
-        if responses[i].rank == 1 then
-            table.insert(assistants, responses[i].name)
-        end
-    end
-    if table.getn(assistants) > 0 then
-        table.sort(assistants)
-        OGRH.SetRaidAdmin(assistants[1], false)
-        OGRH.Msg("|cff00ccff[RH]|r Assigned assistant " .. assistants[1] .. " as admin")
+        -- Other OGRH users exist but no one claimed admin.
+        -- Admin must be set manually — do not auto-assign.
+        OGRH.Msg("|cff00ccff[RH]|r No admin found in raid. Use the Admin button to designate one.")
         return
     end
     
-    -- Tier 4: No L/A with OGRH. Alphabetically first = temp admin (no lastAdmin update)
-    local allNames = {}
-    for i = 1, table.getn(responses) do
-        table.insert(allNames, responses[i].name)
+    -- ================================================================
+    -- NO responses from other OGRH users — we are the sole addon user.
+    -- Fall back to self-assignment using tier logic.
+    -- ================================================================
+    local selfName = UnitName("player")
+    local selfRank = 0
+    for i = 1, GetNumRaidMembers() do
+        local name, rank = GetRaidRosterInfo(i)
+        if name == selfName then
+            selfRank = rank
+            break
+        end
     end
-    table.sort(allNames)
     
-    -- All clients independently agree on the same winner (deterministic)
-    OGRH.SetRaidAdmin(allNames[1], false, true)  -- skipLastAdminUpdate = true
-    OGRH.Msg("|cff00ccff[RH]|r Temporarily assigned " .. allNames[1] .. " as admin (no L/A with OGRH)")
+    -- Tier 1: Check if we are the lastAdmin (persisted)
+    local lastAdmin = OGRH.GetLastAdmin and OGRH.GetLastAdmin()
+    if lastAdmin and lastAdmin == selfName then
+        OGRH.SetRaidAdmin(selfName, false)
+        OGRH.Msg("|cff00ccff[RH]|r Restored as admin (last admin, sole OGRH user)")
+        return
+    end
+    
+    -- Tier 2: Raid Leader
+    if selfRank == 2 then
+        OGRH.SetRaidAdmin(selfName, false)
+        OGRH.Msg("|cff00ccff[RH]|r Assigned self as admin (raid leader, sole OGRH user)")
+        return
+    end
+    
+    -- Tier 3: Assistant
+    if selfRank == 1 then
+        OGRH.SetRaidAdmin(selfName, false)
+        OGRH.Msg("|cff00ccff[RH]|r Assigned self as admin (assistant, sole OGRH user)")
+        return
+    end
+    
+    -- Tier 4: No rank, sole OGRH user — temp admin (no lastAdmin update)
+    OGRH.SetRaidAdmin(selfName, false, true)  -- skipLastAdminUpdate = true
+    OGRH.Msg("|cff00ccff[RH]|r Temporarily assigned self as admin (sole OGRH user, no L/A)")
 end
 
 -- Check if local player can edit (is raid admin, or not in raid)
