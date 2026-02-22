@@ -2155,52 +2155,73 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
   local basePath = SVMBase(raidIdx, encounterIdx, roleIndex)
   local syncMeta = BuildSyncMeta(raidIdx)
 
-  -- Step 1: Fill paladin slots with all paladins in raid
+  -- Step 1: Ensure paladin slots are populated (add missing, keep existing)
   local paladins = GetRaidMembersByClass("PALADIN")
   if not paladins or not next(paladins) then return end
 
-  -- Clear existing assignments
-  if br.assignedPlayers then
-    for idx, _ in pairs(br.assignedPlayers) do
-      br.assignedPlayers[idx] = nil
-      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".assignedPlayers." .. idx, nil, syncMeta)
-    end
-  end
-  if br.paladinAssignments then
-    for idx, _ in pairs(br.paladinAssignments) do
-      br.paladinAssignments[idx] = nil
-      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. idx, nil, syncMeta)
-    end
-  end
-  -- Clear talents — slot→paladin mapping is about to change, stale data would show wrong icons.
-  -- Talents will be re-imported from PP data after new slot assignment below.
-  if br.paladinTalents then
-    for idx, _ in pairs(br.paladinTalents) do
-      br.paladinTalents[idx] = nil
-      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinTalents." .. idx, nil, syncMeta)
-    end
-  end
-
-  -- Assign paladins to slots
-  local pallyList = {}
-  for name, _ in pairs(paladins) do
-    table.insert(pallyList, name)
-  end
-  table.sort(pallyList)
-
+  -- Build set of paladins already in a slot
   if not br.assignedPlayers then br.assignedPlayers = {} end
-  for slotIdx, name in ipairs(pallyList) do
-    br.assignedPlayers[slotIdx] = name
-    OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".assignedPlayers." .. slotIdx, name, syncMeta)
+  local alreadyAssigned = {}
+  for idx, name in pairs(br.assignedPlayers) do
+    if name and name ~= "" then alreadyAssigned[name] = true end
   end
 
-  -- Re-import talents from PP data for the new slot→paladin mapping
+  -- Add any paladins from the raid that aren't in a slot yet
+  for name, _ in pairs(paladins) do
+    if not alreadyAssigned[name] then
+      -- Find next empty slot
+      local maxSlot = 0
+      for idx, _ in pairs(br.assignedPlayers) do
+        local n = tonumber(idx) or idx
+        if type(n) == "number" and n > maxSlot then maxSlot = n end
+      end
+      local newSlot = nil
+      for i = 1, math.max(maxSlot, 2) do
+        local p = br.assignedPlayers[i]
+        if not p or p == "" then newSlot = i; break end
+      end
+      if not newSlot then newSlot = maxSlot + 1 end
+
+      br.assignedPlayers[newSlot] = name
+      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".assignedPlayers." .. newSlot, name, syncMeta)
+      alreadyAssigned[name] = true
+    end
+  end
+
+  -- Build sorted paladin list from current slots (preserves existing slot order)
+  -- pallyList[i] = name, pallySlotMap[i] = actual slot index in br data
+  local pallyList = {}
+  local pallySlotMap = {}
+  local maxIdx = 0
+  for idx, _ in pairs(br.assignedPlayers) do
+    local n = tonumber(idx) or idx
+    if type(n) == "number" and n > maxIdx then maxIdx = n end
+  end
+  for i = 1, maxIdx do
+    local name = br.assignedPlayers[i]
+    if name and name ~= "" then
+      local pos = table.getn(pallyList) + 1
+      pallyList[pos] = name
+      pallySlotMap[pos] = i
+    end
+  end
+
+  -- Talent data is already in br.paladinTalents — do NOT clear it.
+  -- Optionally refresh from PP if available (fills gaps, doesn't wipe existing).
   if OGRH.BuffManagerPP and OGRH.BuffManagerPP.ImportTalentsForSlots then
     OGRH.BuffManagerPP.ImportTalentsForSlots(br, brIdx, raidIdx, encounterIdx, roleIndex, pallyList)
   end
 
   local numPallys = table.getn(pallyList)
   if numPallys == 0 then return end
+
+  -- Only clear blessing assignments — we're recalculating those now
+  if br.paladinAssignments then
+    for idx, _ in pairs(br.paladinAssignments) do
+      br.paladinAssignments[idx] = nil
+      OGRH.SVM.SetPath(basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. idx, nil, syncMeta)
+    end
+  end
 
   -- Step 2: Build raid composition data
   local allMembers = GetAllRaidMembers()
@@ -2279,8 +2300,18 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
   -- Check talents: kings requires talent, sanctuary requires talent, improved affects might/wisdom
   local pallyCapabilities = {}
   local pallyTalents = {}  -- raw talent data per slot
-  for slotIdx, pallyName in ipairs(pallyList) do
-    local talents = (br.paladinTalents and br.paladinTalents[slotIdx]) or {}
+  for i, pallyName in ipairs(pallyList) do
+    local realSlot = pallySlotMap[i]
+    local talents = (br.paladinTalents and br.paladinTalents[realSlot]) or {}
+    if OGRH.BuffManagerPP and OGRH.BuffManagerPP.debug then
+      OGRH.Msg("|cffccaaff[BM-AA]|r slot " .. realSlot .. " '" .. pallyName .. "'"
+        .. " kings=" .. tostring(talents.kings)
+        .. " sanc=" .. tostring(talents.sanctuary)
+        .. " impMight=" .. tostring(talents.improvedMight)
+        .. " impWis=" .. tostring(talents.improvedWisdom)
+        .. " mPts=" .. tostring(talents.mightPoints)
+        .. " wPts=" .. tostring(talents.wisdomPoints))
+    end
     local canGive = {
       wisdom = true,
       might = true,
@@ -2289,29 +2320,26 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
       kings = talents.kings and true or false,
       sanctuary = talents.sanctuary and true or false,
     }
-    pallyCapabilities[slotIdx] = canGive
-    pallyTalents[slotIdx] = talents
+    pallyCapabilities[i] = canGive
+    pallyTalents[i] = talents
   end
 
-  -- Step 4: Greedy assignment algorithm
-  -- For each class (by priority order: DPS classes first benefit from Salv),
-  -- assign the highest-priority blessing that a paladin can provide.
-  -- Each paladin can only give ONE blessing per class.
-  --
-  -- Special handling for Might/Wisdom:
-  --   1. Concentrate: prefer a paladin already giving that same blessing to other classes
-  --   2. Improved talent: prefer paladins with improvedMight for might, improvedWisdom for wisdom
+  -- Step 4: Assignment algorithm
+  -- Pre-pass: assign improved-talent blessings first (a paladin with improved Might
+  -- should always be THE Might paladin, and likewise for improved Wisdom).
+  -- Then a greedy pass fills in the remaining slots.
 
   if not br.paladinAssignments then br.paladinAssignments = {} end
-  for slotIdx = 1, numPallys do
-    br.paladinAssignments[slotIdx] = {}
+  for i = 1, numPallys do
+    local realSlot = pallySlotMap[i]
+    br.paladinAssignments[realSlot] = {}
   end
 
   -- Track what blessing each paladin is "known for" giving to help with distribution
-  -- pallyUsed[slotIdx][blessingKey] = count of classes assigned this blessing
+  -- pallyBlessingCount[i][blessingKey] = count of classes assigned this blessing (i = sequential index)
   local pallyBlessingCount = {}
-  for slotIdx = 1, numPallys do
-    pallyBlessingCount[slotIdx] = {}
+  for i = 1, numPallys do
+    pallyBlessingCount[i] = {}
   end
 
   -- Process classes in priority order: Salv-needing classes first
@@ -2322,16 +2350,69 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
     end
   end
 
-  -- For each priority tier (iterate through blessing priorities together)
-  -- Round 1: assign the #1 priority blessing for each class
-  -- Round 2: assign the #2 priority, etc.
-  -- This ensures highest-priority blessings are distributed first
-
-  local maxRounds = 6  -- max blessings per class
-  local assigned = {}  -- [cls] = { [slotIdx] = blessingKey }
+  local assigned = {}  -- [cls] = { [seqIdx] = blessingKey }
   for _, cls in ipairs(classOrder) do
     assigned[cls] = {}
   end
+
+  -- ---- Pre-pass: lock in improved-talent paladins for Might / Wisdom ----
+  -- Find the best paladin for each improved blessing (highest talent points wins ties)
+  local mightPaladin = nil   -- sequential index of the improved-Might paladin
+  local wisdomPaladin = nil  -- sequential index of the improved-Wisdom paladin
+  local bestMightPts = 0
+  local bestWisdomPts = 0
+  for i = 1, numPallys do
+    if pallyTalents[i].improvedMight then
+      local pts = pallyTalents[i].mightPoints or 1
+      if pts > bestMightPts then bestMightPts = pts; mightPaladin = i end
+    end
+    if pallyTalents[i].improvedWisdom then
+      local pts = pallyTalents[i].wisdomPoints or 1
+      if pts > bestWisdomPts then bestWisdomPts = pts; wisdomPaladin = i end
+    end
+  end
+
+  -- Pre-assign: the improved-Might paladin gives Might to every class that wants it
+  if mightPaladin then
+    if OGRH.BuffManagerPP and OGRH.BuffManagerPP.debug then
+      OGRH.Msg("|cffccaaff[BM-AA]|r Pre-assigning Might to paladin #" .. mightPaladin .. " '" .. pallyList[mightPaladin] .. "' (improved)")
+    end
+    for _, cls in ipairs(classOrder) do
+      -- Check this class actually wants Might somewhere in its priority list
+      local wantsMight = false
+      if classPriority[cls] then
+        for _, bk in ipairs(classPriority[cls]) do
+          if bk == "might" then wantsMight = true; break end
+        end
+      end
+      if wantsMight and not assigned[cls][mightPaladin] then
+        assigned[cls][mightPaladin] = "might"
+        pallyBlessingCount[mightPaladin]["might"] = (pallyBlessingCount[mightPaladin]["might"] or 0) + 1
+      end
+    end
+  end
+
+  -- Pre-assign: the improved-Wisdom paladin gives Wisdom to every class that wants it
+  if wisdomPaladin then
+    if OGRH.BuffManagerPP and OGRH.BuffManagerPP.debug then
+      OGRH.Msg("|cffccaaff[BM-AA]|r Pre-assigning Wisdom to paladin #" .. wisdomPaladin .. " '" .. pallyList[wisdomPaladin] .. "' (improved)")
+    end
+    for _, cls in ipairs(classOrder) do
+      local wantsWisdom = false
+      if classPriority[cls] then
+        for _, bk in ipairs(classPriority[cls]) do
+          if bk == "wisdom" then wantsWisdom = true; break end
+        end
+      end
+      if wantsWisdom and not assigned[cls][wisdomPaladin] then
+        assigned[cls][wisdomPaladin] = "wisdom"
+        pallyBlessingCount[wisdomPaladin]["wisdom"] = (pallyBlessingCount[wisdomPaladin]["wisdom"] or 0) + 1
+      end
+    end
+  end
+
+  -- ---- Main greedy pass: fill remaining slots round-by-round ----
+  local maxRounds = 6  -- max blessings per class
 
   for round = 1, maxRounds do
     for _, cls in ipairs(classOrder) do
@@ -2339,7 +2420,7 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
       if prioList and prioList[round] then
         local desiredBlessing = prioList[round]
 
-        -- Already have this blessing for this class from another paladin?
+        -- Already have this blessing for this class from another paladin (including pre-pass)?
         local alreadyHas = false
         for _, bk in pairs(assigned[cls]) do
           if bk == desiredBlessing then alreadyHas = true; break end
@@ -2350,7 +2431,6 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
           -- Scoring: lower is better.
           --   - Base: total assignment count (load balance)
           --   - Bonus -100: paladin already gives this same blessing to other classes (concentrate)
-          --   - Bonus -50:  paladin has improved talent for might/wisdom
           local bestSlot = nil
           local bestScore = 99999
           for slotIdx = 1, numPallys do
@@ -2365,13 +2445,6 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
               -- Concentration bonus: already giving this blessing to other classes
               if pallyBlessingCount[slotIdx][desiredBlessing] and pallyBlessingCount[slotIdx][desiredBlessing] > 0 then
                 score = score - 100
-              end
-
-              -- Improved talent bonus for might/wisdom
-              if desiredBlessing == "might" and pallyTalents[slotIdx].improvedMight then
-                score = score - 50
-              elseif desiredBlessing == "wisdom" and pallyTalents[slotIdx].improvedWisdom then
-                score = score - 50
               end
 
               if score < bestScore then
@@ -2390,12 +2463,14 @@ local function AutoAssignPaladin(br, brIdx, raidIdx, encounterIdx, roleIndex)
     end
   end
 
-  -- Step 5: Write assignments to data + SVM
+  -- Step 5: Write assignments to data + SVM (map sequential indices back to real slot indices)
   for _, cls in ipairs(classOrder) do
-    for slotIdx, blessingKey in pairs(assigned[cls]) do
-      br.paladinAssignments[slotIdx][cls] = blessingKey
+    for i, blessingKey in pairs(assigned[cls]) do
+      local realSlot = pallySlotMap[i]
+      if not br.paladinAssignments[realSlot] then br.paladinAssignments[realSlot] = {} end
+      br.paladinAssignments[realSlot][cls] = blessingKey
       OGRH.SVM.SetPath(
-        basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. slotIdx .. "." .. cls,
+        basePath .. ".buffRoles." .. brIdx .. ".paladinAssignments." .. realSlot .. "." .. cls,
         blessingKey, syncMeta)
     end
   end

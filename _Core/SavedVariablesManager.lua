@@ -716,6 +716,11 @@ function OGRH.SVM.OnDeltaReceived(sender, data, channel)
     local success = OGRH.SVM.SetPath(data.path, data.value, nil)  -- nil = no sync (we're receiving)
     
     if success then
+        -- Record delta received timestamp for checksum validation cooldown
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State then
+            OGRH.SyncIntegrity.State.lastDeltaReceived = GetTime()
+        end
+        
         -- Trigger UI updates - use same pattern as repair handler
         if OGRH.rolesFrame and OGRH.rolesFrame.UpdatePlayerLists then
             OGRH.rolesFrame.UpdatePlayerLists(false)
@@ -783,6 +788,11 @@ function OGRH.SVM.OnBatchReceived(sender, data, channel)
     
     -- Trigger UI updates if any succeeded - use same pattern as repair handler
     if successCount > 0 then
+        -- Record delta received timestamp for checksum validation cooldown
+        if OGRH.SyncIntegrity and OGRH.SyncIntegrity.State then
+            OGRH.SyncIntegrity.State.lastDeltaReceived = GetTime()
+        end
+        
         if OGRH.rolesFrame and OGRH.rolesFrame.UpdatePlayerLists then
             OGRH.rolesFrame.UpdatePlayerLists(false)
         elseif OGRH_RolesFrame and OGRH_RolesFrame:IsVisible() and OGRH.RenderRoles then
