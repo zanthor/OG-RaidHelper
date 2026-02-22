@@ -49,6 +49,10 @@ OGRH.SyncIntegrity.State = {
     -- Phase 5: Repair mode suppression
     repairModeActive = false,  -- Suppress broadcasts during active repairs
     bufferedRequests = {},  -- Buffer repair requests during active repairs
+    
+    -- Client-side delta sync cooldown (suppress validation while deltas arriving)
+    lastDeltaReceived = 0,  -- timestamp of last delta sync applied
+    deltaCooldown = 15,  -- seconds to wait after last delta before validating checksums
 }
 
 --[[
@@ -215,6 +219,18 @@ function OGRH.SyncIntegrity.OnChecksumBroadcast(sender, checksums)
         if elapsed < 30 then
             if OGRH.SyncIntegrity.State.debug then
                 OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping validation: post-repair cooldown (%.0fs remaining)", 30 - elapsed))
+            end
+            return
+        end
+    end
+    
+    -- Client-side delta sync cooldown: don't validate while delta syncs are still arriving
+    -- (auto-assign generates many SVM writes; they arrive as separate delta messages via CTL queue)
+    if OGRH.SyncIntegrity.State.lastDeltaReceived > 0 then
+        local elapsed = GetTime() - OGRH.SyncIntegrity.State.lastDeltaReceived
+        if elapsed < OGRH.SyncIntegrity.State.deltaCooldown then
+            if OGRH.SyncIntegrity.State.debug then
+                OGRH.Msg(string.format("|cff888888[RH-SyncIntegrity]|r Skipping validation: delta sync cooldown (%.0fs remaining)", OGRH.SyncIntegrity.State.deltaCooldown - elapsed))
             end
             return
         end

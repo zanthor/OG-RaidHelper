@@ -1031,6 +1031,8 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
         (OGRH.BigWigs and (OGRH.BigWigs.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
       OGRH.Msg("  |cff00ccff/ogrh debug ready|r - Toggle ReadynessDashboard debug messages " ..
         (OGRH.ReadynessDashboard and (OGRH.ReadynessDashboard.State.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
+      OGRH.Msg("  |cff00ccff/ogrh debug pp|r - Toggle PallyPower bridge debug messages " ..
+        (OGRH.BuffManagerPP and (OGRH.BuffManagerPP.debug and "|cff00ff00(ON)|r" or "|cffff0000(OFF)|r") or "|cff888888(not loaded)|r"))
       OGRH.Msg("|cff66ccff[RH][DEBUG]|r Use /ogrh debug [option] to toggle")
     elseif debugOption == "sync" then
       if OGRH.SyncIntegrity then
@@ -1087,6 +1089,14 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
         OGRH.Msg("ReadynessDashboard debug: " .. status)
       else
         OGRH.Msg("ReadynessDashboard not loaded.")
+      end
+    elseif debugOption == "pp" then
+      if OGRH.BuffManagerPP then
+        OGRH.BuffManagerPP.debug = not OGRH.BuffManagerPP.debug
+        local status = OGRH.BuffManagerPP.debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        OGRH.Msg("PallyPower bridge debug: " .. status)
+      else
+        OGRH.Msg("BuffManagerPP not loaded.")
       end
     else
       OGRH.Msg("|cffff0000[RH]|r Unknown debug option: " .. debugOption)
