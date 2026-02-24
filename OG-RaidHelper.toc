@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: OG-RaidHelper
 ## Author: Gnuzmas
-## Version: 2.1.12
+## Version: 2.1.13
 ## Notes: A comprehensive raid management addon for organizing encounters, assigning roles, managing trade distributions, coordinating raid activities, and validating soft-reserve integrity.
 ## SavedVariables: OGRH_SV, OGRH_ConsumeHelper_SV, OGAAL_SV
 ## OptionalDeps: _OGAddonMsg, _OGST, _OGAALogger 
