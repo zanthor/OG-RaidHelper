@@ -29,4 +29,23 @@ function OGRH.CancelScheduledFunc(frame)
   end
 end
 
+--[[
+    Table Utilities
+]]
+
+-- Deep copy a table (recursive)
+-- This is the canonical implementation — do not redefine elsewhere.
+function OGRH.DeepCopy(original)
+    local copy
+    if type(original) == 'table' then
+        copy = {}
+        for key, value in pairs(original) do
+            copy[OGRH.DeepCopy(key)] = OGRH.DeepCopy(value)
+        end
+    else
+        copy = original
+    end
+    return copy
+end
+
 OGRH.Msg("|cff66ff66[RH-Utilities]|r loaded")

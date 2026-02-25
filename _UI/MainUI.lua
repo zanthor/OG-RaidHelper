@@ -993,18 +993,6 @@ SlashCmdList[string.upper(OGRH.CMD)] = function(m)
     else
       OGRH.Msg("Permissions system not loaded.")
     end
-  elseif sub == "debug version" or sub == "version" then
-    if OGRH.Versioning and OGRH.Versioning.DebugPrintState then
-      OGRH.Versioning.DebugPrintState()
-    else
-      OGRH.Msg("Versioning system not loaded.")
-    end
-  elseif sub == "debug changes" or sub == "changes" then
-    if OGRH.Versioning and OGRH.Versioning.DebugPrintChanges then
-      OGRH.Versioning.DebugPrintChanges()
-    else
-      OGRH.Msg("Versioning system not loaded.")
-    end
   elseif sub == "debug handlers" or sub == "handlers" then
     if OGRH.MessageRouter and OGRH.MessageRouter.DebugPrintHandlers then
       OGRH.MessageRouter.DebugPrintHandlers()

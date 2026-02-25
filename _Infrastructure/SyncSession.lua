@@ -36,10 +36,6 @@ OGRH.SyncSession.State = {
     -- Post-repair change queue
     pendingChangesQueue = {},  -- Array of {changeType, data, timestamp}
     
-    -- Version tracking
-    highestVersion = nil,  -- string: "2.0.76"
-    versionWarningShown = false,  -- boolean: Have we warned this session?
-    
     -- Raid size tracking for reset detection
     lastRaidSize = 0,
     
@@ -388,81 +384,9 @@ function OGRH.SyncSession.ClearQueue()
     OGRH.SyncSession.State.pendingChangesQueue = {}
 end
 
---[[
-    ============================================================================
-    VERSION CHECKING
-    ============================================================================
-]]
-
--- Version Checking
-function OGRH.SyncSession.UpdateHighestVersion(version, playerName)
-    if not version then
-        return
-    end
-    
-    local current = OGRH.SyncSession.State.highestVersion
-    
-    if not current or OGRH.Versioning.CompareVersions(version, current.str) > 0 then
-        OGRH.SyncSession.State.highestVersion = {
-            str = version,
-            playerName = playerName,
-            timestamp = GetTime()
-        }
-    end
-end
-
-function OGRH.SyncSession.CheckOwnVersion()
-    local highestVer = OGRH.SyncSession.State.highestVersion
-    
-    if not highestVer then
-        return  -- No version info yet
-    end
-    
-    if OGRH.SyncSession.State.versionWarningShown then
-        return  -- Already warned this session
-    end
-    
-    local myVersion = OGRH.VERSION
-    
-    -- Compare versions
-    if OGRH.Versioning and OGRH.Versioning.CompareVersions then
-        local comparison = OGRH.Versioning.CompareVersions(myVersion, highestVer.str)
-        
-        if comparison < 0 then
-            -- My version is lower
-            OGRH.SyncSession.ShowVersionWarning()
-            OGRH.SyncSession.State.versionWarningShown = true
-        end
-    end
-end
-
-function OGRH.SyncSession.ShowVersionWarning()
-    local highestVer = OGRH.SyncSession.State.highestVersion
-    
-    if not highestVer then
-        return
-    end
-    
-    OGRH.Msg("|cffff9900[RH] Version Warning:|r")
-    OGRH.Msg(string.format("  Your version: |cffffaaaa%s|r", OGRH.VERSION))
-    OGRH.Msg(string.format("  Highest version in raid: |cff00ff00%s|r (%s)", 
-        highestVer.str, highestVer.playerName))
-    OGRH.Msg("  |cffaaaaaa Consider updating to avoid sync issues.|r")
-end
-
-function OGRH.SyncSession.ResetVersionTracking()
-    OGRH.SyncSession.State.highestVersion = nil
-    OGRH.SyncSession.State.versionWarningShown = false
-end
-
 function OGRH.SyncSession.OnRaidRosterUpdate()
     local currentSize = GetNumRaidMembers()
     local lastSize = OGRH.SyncSession.State.lastRaidSize
-    
-    -- Raid formed or disbanded
-    if (lastSize == 0 and currentSize > 0) or (lastSize > 0 and currentSize == 0) then
-        OGRH.SyncSession.ResetVersionTracking()
-    end
     
     -- Check if player left raid (not in raid anymore)
     if lastSize > 0 and currentSize == 0 then
