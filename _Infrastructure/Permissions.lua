@@ -249,8 +249,7 @@ function OGRH.RequestAdminRole()
             OGRH.MessageTypes.ADMIN.TAKEOVER,
             {
                 newAdmin = playerName,
-                timestamp = GetTime(),
-                version = OGRH.IncrementDataVersion and OGRH.IncrementDataVersion() or 1
+                timestamp = GetTime()
             },
             {
                 priority = "HIGH",
@@ -341,8 +340,7 @@ function OGRH.AssignAdminRole(targetPlayer)
         OGRH.MessageRouter.Broadcast(OGRH.MessageTypes.ADMIN.ASSIGN, {
             newAdmin = targetPlayer,
             assignedBy = playerName,
-            timestamp = GetTime(),
-            version = OGRH.IncrementDataVersion and OGRH.IncrementDataVersion() or 1
+            timestamp = GetTime()
         }, {
             priority = "HIGH",
             onSuccess = function()

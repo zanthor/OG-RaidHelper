@@ -1189,10 +1189,7 @@ OGRH.Deserialize = function(str)
     return OGRH.SyncChecksum.Deserialize(str)
 end
 
-OGRH.DeepCopy = function(tbl)
-    LogWrapperCall("OGRH.DeepCopy")
-    return OGRH.SyncChecksum.DeepCopy(tbl)
-end
+-- NOTE: OGRH.DeepCopy wrapper removed — canonical definition is in _Core/Utilities.lua
 
 --[[
     ============================================================================

@@ -49,7 +49,8 @@ local STATUS = {
   INVITED = "invited",
   DECLINED = "declined",
   OFFLINE = "offline",
-  IN_OTHER_GROUP = "in_other_group"
+  IN_OTHER_GROUP = "in_other_group",
+  NOT_FOUND = "not_found"
 }
 
 -- Helper function to normalize player names to title case (First letter uppercase, rest lowercase)
@@ -57,6 +58,20 @@ local function NormalizeName(name)
   if not name or name == "" then return name end
   local lower = string.lower(name)
   return string.upper(string.sub(lower, 1, 1)) .. string.sub(lower, 2)
+end
+
+-- Helper function to check if a player is in our guild
+local function IsPlayerInGuild(playerName)
+  if not playerName then return false end
+  playerName = NormalizeName(playerName)
+  local numGuild = GetNumGuildMembers(true)
+  for i = 1, numGuild do
+    local name = GetGuildRosterInfo(i)
+    if name and NormalizeName(name) == playerName then
+      return true
+    end
+  end
+  return false
 end
 
 -- Initialize saved variables for invite tracking
@@ -719,6 +734,16 @@ function OGRH.Invites.GetPlayerStatus(playerName)
     return STATUS.INVITED, false, nil
   end
   
+  -- Check if they were not found (offline/nonexistent)
+  if OGRH.Invites.playerStatuses[playerName] == STATUS.NOT_FOUND then
+    return STATUS.NOT_FOUND, false, nil
+  end
+  
+  -- Check if they are in another group
+  if OGRH.Invites.playerStatuses[playerName] == STATUS.IN_OTHER_GROUP then
+    return STATUS.IN_OTHER_GROUP, false, nil
+  end
+  
   -- Check if they declined
   local declinedPlayers = OGRH.SVM.GetPath("invites.declinedPlayers") or {}
   if declinedPlayers[playerName] then
@@ -803,6 +828,44 @@ function OGRH.Invites.WhisperPlayer(playerName, message)
   SendChatMessage(msg, "WHISPER", nil, playerName)
   
   OGRH.Msg("|cffffaa00[RH-Config]|r Whispered " .. playerName .. ".")
+end
+
+-- Throttled whisper: uses ChatThrottleLib if available, otherwise queues with delay
+-- Use this for automated whispers (invite mode) to avoid hitting server throttle
+function OGRH.Invites.ThrottledWhisper(playerName, message)
+  if not playerName or playerName == "" or not message then return end
+  
+  -- ChatThrottleLib supports SendChatMessage with priority queueing
+  if ChatThrottleLib and ChatThrottleLib.SendChatMessage then
+    ChatThrottleLib:SendChatMessage("NORMAL", "OGRH", message, "WHISPER", nil, playerName)
+    return
+  end
+  
+  -- Fallback: simple delay queue (0.5s between whispers)
+  if not OGRH.Invites.whisperQueue then
+    OGRH.Invites.whisperQueue = {}
+  end
+  table.insert(OGRH.Invites.whisperQueue, {player = playerName, message = message})
+  OGRH.Invites.ProcessWhisperQueue()
+end
+
+-- Process queued whispers one at a time with delay
+function OGRH.Invites.ProcessWhisperQueue()
+  if OGRH.Invites.whisperQueueRunning then return end
+  if not OGRH.Invites.whisperQueue or table.getn(OGRH.Invites.whisperQueue) == 0 then return end
+  
+  OGRH.Invites.whisperQueueRunning = true
+  local item = table.remove(OGRH.Invites.whisperQueue, 1)
+  SendChatMessage(item.message, "WHISPER", nil, item.player)
+  
+  if table.getn(OGRH.Invites.whisperQueue) > 0 then
+    OGRH.ScheduleTimer(function()
+      OGRH.Invites.whisperQueueRunning = false
+      OGRH.Invites.ProcessWhisperQueue()
+    end, 0.5, false)
+  else
+    OGRH.Invites.whisperQueueRunning = false
+  end
 end
 
 -- Clear declined status for a player
@@ -2168,6 +2231,7 @@ end
 function OGRH.Invites.InviteAllOnline()
   local players = OGRH.Invites.GetSoftResPlayers()
   local inviteCount = 0
+  local skippedOffline = 0
   local numRaid = GetNumRaidMembers()
   local numParty = GetNumPartyMembers()
   local wasSolo = (numRaid == 0 and numParty == 0)
@@ -2175,10 +2239,18 @@ function OGRH.Invites.InviteAllOnline()
   -- Enable auto-convert for 60 seconds
   OGRH.Invites.autoConvertExpiry = GetTime() + 60
   
+  -- Clear NOT_FOUND statuses so we retry all players
+  for name, status in pairs(OGRH.Invites.playerStatuses) do
+    if status == STATUS.NOT_FOUND or status == STATUS.IN_OTHER_GROUP then
+      OGRH.Invites.playerStatuses[name] = nil
+    end
+  end
+  
   for _, playerData in ipairs(players) do
     if not OGRH.Invites.IsPlayerInRaid(playerData.name) then
-      local status, online = OGRH.Invites.GetPlayerStatus(playerData.name)
-      if online and status ~= STATUS.INVITED and status ~= STATUS.DECLINED then
+      local status = OGRH.Invites.GetPlayerStatus(playerData.name)
+      -- Skip declined and confirmed-offline guild members; invite everyone else
+      if status ~= STATUS.DECLINED and status ~= STATUS.OFFLINE then
         -- If we started solo, only send 4 invites initially
         if wasSolo and inviteCount >= 4 then
           break
@@ -2186,19 +2258,25 @@ function OGRH.Invites.InviteAllOnline()
         
         OGRH.Invites.InvitePlayer(playerData.name)
         inviteCount = inviteCount + 1
+      else
+        skippedOffline = skippedOffline + 1
       end
     end
   end
   
   if inviteCount > 0 then
+    local extra = ""
+    if skippedOffline > 0 then
+      extra = " (" .. skippedOffline .. " skipped - offline)"
+    end
     if wasSolo and inviteCount >= 4 then
-      OGRH.Msg("Sent " .. inviteCount .. " invites. Will auto-convert to raid and invite rest when someone joins (60s window).")
+      OGRH.Msg("Sent " .. inviteCount .. " invites. Will auto-convert to raid and invite rest when someone joins (60s window)." .. extra)
     else
-      OGRH.Msg("Sent invites to " .. inviteCount .. " online players.")
+      OGRH.Msg("Sent invites to " .. inviteCount .. " players." .. extra)
     end
     OGRH.Invites.RefreshPlayerList()
   else
-    OGRH.Msg("No online players to invite.")
+    OGRH.Msg("No players to invite." .. (skippedOffline > 0 and (" (" .. skippedOffline .. " offline)") or ""))
   end
 end
 
@@ -2417,12 +2495,19 @@ function OGRH.Invites.DoInviteCycle(skipAnnouncement)
     return -- Let conversion complete, we'll invite next cycle
   end
   
-  -- Invite players who aren't in raid, aren't benched/absent, and are online
+  -- Clear NOT_FOUND and IN_OTHER_GROUP statuses so we retry all players each cycle
+  for name, status in pairs(OGRH.Invites.playerStatuses) do
+    if status == STATUS.NOT_FOUND or status == STATUS.IN_OTHER_GROUP then
+      OGRH.Invites.playerStatuses[name] = nil
+    end
+  end
+  
+  -- Invite all roster players who aren't in raid and aren't benched/absent
+  -- Skip only declined and confirmed-offline guild members
   for _, player in ipairs(players) do
     if not player.bench and not player.absent and not OGRH.Invites.IsPlayerInRaid(player.name) then
-      -- Check if player is online
-      local status, online = OGRH.Invites.GetPlayerStatus(player.name)
-      if online then
+      local status = OGRH.Invites.GetPlayerStatus(player.name)
+      if status ~= STATUS.DECLINED and status ~= STATUS.OFFLINE then
         InviteByName(player.name)
         invitedThisCycle = invitedThisCycle + 1
         
@@ -2447,7 +2532,7 @@ function OGRH.Invites.DoInviteCycle(skipAnnouncement)
     SendChatMessage("Inviting " .. invitedThisCycle .. " more for " .. raidName .. ". Whisper me if you're signed up and need an invite!", "GUILD")
   end
   
-  -- Schedule check for "already in group" messages after 1 second
+  -- Schedule check for "already in group" and "not found" messages after 2 seconds
   if invitedThisCycle > 0 then
     OGRH.ScheduleTimer(function()
       local history = OGRH.SVM.GetPath("invites.history") or {}
@@ -2464,10 +2549,29 @@ function OGRH.Invites.DoInviteCycle(skipAnnouncement)
       end
       
       if table.getn(alreadyInGroupPlayers) > 0 then
-        local playerList = table.concat(alreadyInGroupPlayers, ", ")
-        SendChatMessage(playerList .. " already in a group.", "GUILD")
+        -- Split into guild and non-guild members
+        local guildPlayers = {}
+        local nonGuildPlayers = {}
+        for _, name in ipairs(alreadyInGroupPlayers) do
+          if IsPlayerInGuild(name) then
+            table.insert(guildPlayers, name)
+          else
+            table.insert(nonGuildPlayers, name)
+          end
+        end
+        
+        -- Announce guild members in /guild
+        if table.getn(guildPlayers) > 0 then
+          local playerList = table.concat(guildPlayers, ", ")
+          SendChatMessage(playerList .. " already in a group.", "GUILD")
+        end
+        
+        -- Whisper non-guild members (throttled)
+        for _, name in ipairs(nonGuildPlayers) do
+          OGRH.Invites.ThrottledWhisper(name, "Hey, you're signed up for raid but appear to be in another group. Whisper me when you're free for an invite!")
+        end
       end
-    end, 1, false)
+    end, 2, false)
   end
   
   state.lastInviteTime = GetTime()
@@ -2686,12 +2790,41 @@ inviteEventFrame:SetScript("OnEvent", function()
     -- Note: WoW 1.12 doesn't have a specific "declined" event
     -- We'll track this indirectly
   elseif event == "CHAT_MSG_SYSTEM" then
-    -- Capture "X is already in a group" messages
     local message = arg1
+    
+    -- Capture "Cannot find 'Playername'." messages
+    if message then
+      local notFoundName = string.match(message, "Cannot find '(.+)'")
+      if notFoundName then
+        notFoundName = NormalizeName(notFoundName)
+        -- Update player status to NOT_FOUND
+        OGRH.Invites.playerStatuses[notFoundName] = STATUS.NOT_FOUND
+        
+        -- Log to history table
+        local history = OGRH.SVM.GetPath("invites.history") or {}
+        table.insert(history, {
+          player = notFoundName,
+          action = "not_found",
+          timestamp = time()
+        })
+        OGRH.SVM.SetPath("invites.history", history, {syncLevel = "MANUAL", componentType = "settings"})
+        
+        -- Refresh UI if open
+        if OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
+          OGRH.Invites.RefreshPlayerList()
+        end
+      end
+    end
+    
+    -- Capture "X is already in a group" messages
     if message and string.find(message, "is already in a group") then
       -- Extract player name from message
       local playerName = string.match(message, "(.+) is already in a group")
       if playerName then
+        playerName = NormalizeName(playerName)
+        -- Update player status to IN_OTHER_GROUP
+        OGRH.Invites.playerStatuses[playerName] = STATUS.IN_OTHER_GROUP
+        
         -- Log to history table
         local history = OGRH.SVM.GetPath("invites.history") or {}
         table.insert(history, {
@@ -2700,6 +2833,11 @@ inviteEventFrame:SetScript("OnEvent", function()
           timestamp = time()
         })
         OGRH.SVM.SetPath("invites.history", history, {syncLevel = "MANUAL", componentType = "settings"})
+        
+        -- Refresh UI if open
+        if OGRH_InvitesFrame and OGRH_InvitesFrame:IsVisible() then
+          OGRH.Invites.RefreshPlayerList()
+        end
       end
     end
   elseif event == "RAID_ROSTER_UPDATE" then

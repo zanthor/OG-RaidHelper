@@ -37,19 +37,7 @@ local PRIORITY = {
     Helper Functions
 ]]
 
--- Deep copy table (required for data sync)
-function OGRH.DeepCopy(original)
-    local copy
-    if type(original) == 'table' then
-        copy = {}
-        for key, value in pairs(original) do
-            copy[OGRH.DeepCopy(key)] = OGRH.DeepCopy(value)
-        end
-    else
-        copy = original
-    end
-    return copy
-end
+-- NOTE: OGRH.DeepCopy has been moved to _Core/Utilities.lua
 
 -- Set current UI context (called by UI when selection changes)
 function OGRH.SyncGranular.SetContext(raidName, encounterName)

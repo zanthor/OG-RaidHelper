@@ -481,8 +481,7 @@ function OGRH.MessageRouter.RegisterDefaultHandlers()
         -- Respond to version poll
         OGRH.MessageRouter.SendTo(sender, OGRH.MessageTypes.ADMIN.POLL_RESPONSE, {
             version = OGRH.VERSION,
-            dataVersion = OGRH.GetDataVersion(),
-            checksum = OGRH.ComputeChecksum and OGRH.ComputeChecksum(OGRH.GetCurrentEncounter and OGRH.GetCurrentEncounter() or {}) or "UNKNOWN"
+            checksum = OGRH.SyncChecksum and OGRH.SyncChecksum.CalculateAllStructureChecksum and tostring(OGRH.SyncChecksum.CalculateAllStructureChecksum()) or "UNKNOWN"
         }, {
             priority = "LOW"
         })

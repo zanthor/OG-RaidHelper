@@ -5,7 +5,7 @@ OGRH.CMD   = "ogrh"
 OGRH.ADDON_PREFIX = "OGRH"
 
 -- Code version: updated by bump.ps1, takes effect on /reload
-OGRH.CODE_VERSION = "2.1.12"
+OGRH.CODE_VERSION = "2.1.14"
 -- TOC version: only updates on full client restart
 OGRH.TOC_VERSION = GetAddOnMetadata("OG-RaidHelper", "Version") or "Unknown"
 -- Active version used for all version checks (code version = live reloadable)
@@ -258,10 +258,6 @@ OGRH.Msg("|cffffaa00[RH-Migration]|r Auto-activating v2 schema...")
   -- Initialize Phase 1 infrastructure systems
   if OGRH.Permissions and OGRH.Permissions.Initialize then
     OGRH.Permissions.Initialize()
-  end
-  
-  if OGRH.Versioning and OGRH.Versioning.Initialize then
-    OGRH.Versioning.Initialize()
   end
   
   if OGRH.MessageRouter and OGRH.MessageRouter.Initialize then
@@ -2419,10 +2415,6 @@ addonFrame:SetScript("OnEvent", function()
     -- Save Phase 1 infrastructure state
     if OGRH.Permissions and OGRH.Permissions.Save then
       OGRH.Permissions.Save()
-    end
-    
-    if OGRH.Versioning and OGRH.Versioning.Save then
-      OGRH.Versioning.Save()
     end
     
     -- Save Phase 2 sync state
