@@ -146,6 +146,86 @@ function OGRH.Invites.EnsureSV()
   -- Setting it to nil repeatedly causes spam in SVM debug output
 end
 
+-- Raid-Helper specName → WoW class lookup.
+-- Every spec in Raid-Helper's class definitions maps to exactly one WoW class.
+-- Used to infer class when className is a status (Tentative/Bench/Absence) or
+-- a role (Tank/Healer/Melee/Ranged) instead of an actual class.
+local SPEC_TO_CLASS = {
+  -- Warrior
+  Arms          = "WARRIOR",
+  Fury          = "WARRIOR",
+  Protection    = "WARRIOR",
+  -- Paladin (Raid-Helper appends "1" to disambiguate from Warrior specs)
+  Holy1         = "PALADIN",
+  Protection1   = "PALADIN",
+  Retribution   = "PALADIN",
+  -- Druid
+  Balance       = "DRUID",
+  Dreamstate    = "DRUID",
+  Feral         = "DRUID",
+  Restoration   = "DRUID",
+  Guardian       = "DRUID",
+  -- Rogue
+  Assassination = "ROGUE",
+  Combat        = "ROGUE",
+  Subtlety      = "ROGUE",
+  -- Hunter
+  Beastmastery  = "HUNTER",
+  Marksmanship  = "HUNTER",
+  Survival      = "HUNTER",
+  -- Priest
+  Discipline    = "PRIEST",
+  Holy          = "PRIEST",
+  Shadow        = "PRIEST",
+  Smite         = "PRIEST",
+  -- Mage
+  Arcane        = "MAGE",
+  Fire          = "MAGE",
+  Frost         = "MAGE",
+  -- Warlock
+  Affliction    = "WARLOCK",
+  Demonology    = "WARLOCK",
+  Destruction   = "WARLOCK",
+  -- Shaman (Raid-Helper appends "1" to disambiguate from Druid Restoration)
+  Elemental     = "SHAMAN",
+  Enhancement   = "SHAMAN",
+  Restoration1  = "SHAMAN",
+}
+
+-- Infer WoW class from Raid-Helper specName.
+-- Falls back to classEmoteId matching against the known class emote IDs.
+local CLASS_EMOTE_IDS = {
+  ["579532030153588739"] = "WARRIOR",
+  ["579532029675438081"] = "DRUID",
+  ["579532029906124840"] = "PALADIN",
+  ["579532030086217748"] = "ROGUE",
+  ["579532029880827924"] = "HUNTER",
+  ["579532029901799437"] = "PRIEST",
+  ["579532030161977355"] = "MAGE",
+  ["579532029851336716"] = "WARLOCK",
+  ["579532030056857600"] = "SHAMAN",
+}
+
+local function InferClassFromSpec(signup)
+  if signup.specName and SPEC_TO_CLASS[signup.specName] then
+    return SPEC_TO_CLASS[signup.specName]
+  end
+  -- specName may reference a class directly (e.g. "Warrior" for alt signups)
+  if signup.specName then
+    local upper = string.upper(signup.specName)
+    if upper == "WARRIOR" or upper == "PALADIN" or upper == "DRUID" or upper == "ROGUE"
+      or upper == "HUNTER" or upper == "PRIEST" or upper == "MAGE" or upper == "WARLOCK"
+      or upper == "SHAMAN" then
+      return upper
+    end
+  end
+  -- Fall back to classEmoteId
+  if signup.classEmoteId and CLASS_EMOTE_IDS[signup.classEmoteId] then
+    return CLASS_EMOTE_IDS[signup.classEmoteId]
+  end
+  return nil
+end
+
 -- Parse Raid-Helper JSON data
 function OGRH.Invites.ParseRaidHelperJSON(jsonString)
   if not jsonString or jsonString == "" then
@@ -194,17 +274,16 @@ function OGRH.Invites.ParseRaidHelperJSON(jsonString)
       
       if className == "Absence" then
         isAbsent = true
-        -- Will be looked up later from cache
-        actualClass = nil
+        actualClass = InferClassFromSpec(signup)
       elseif className == "Bench" then
         isBench = true
-        actualClass = nil
+        actualClass = InferClassFromSpec(signup)
       elseif className == "Tentative" then
         -- Tentative is active but uncertain - treat as active
-        actualClass = nil
+        actualClass = InferClassFromSpec(signup)
       elseif className == "Tank" or className == "Healer" or className == "Melee" or className == "Ranged" then
-        -- className is actually a role, not a class - need to look up actual class
-        actualClass = nil
+        -- className is actually a role, not a class - infer from spec
+        actualClass = InferClassFromSpec(signup)
       elseif className then
         -- This is an actual class name
         actualClass = string.upper(className)
@@ -390,20 +469,11 @@ function OGRH.Invites.ParseRaidHelperGroupsJSON(jsonString)
         local actualClass = nil
         if className and className ~= "Tank" then
           actualClass = string.upper(className)
-        elseif className == "Tank" then
-          -- Try to infer from spec
-          local specName = slot.specName
-          if specName then
-            if string.find(specName, "Protection") then
-              if string.find(specName, "Protection1") then
-                actualClass = "PALADIN"
-              else
-                actualClass = "WARRIOR"
-              end
-            elseif string.find(specName, "Guardian") then
-              actualClass = "DRUID"
-            end
-          end
+        end
+        
+        -- If className was Tank or didn't resolve, infer from spec
+        if not actualClass then
+          actualClass = InferClassFromSpec(slot)
         end
         
         -- Try to get class from OGRH cache if not available
@@ -458,6 +528,11 @@ function OGRH.Invites.ParseRaidHelperGroupsJSON(jsonString)
         local actualClass = nil
         if not isBenched and slot.class and slot.class ~= "Bench" then
           actualClass = string.upper(slot.class)
+        end
+        
+        -- If class is unknown, infer from spec
+        if not actualClass then
+          actualClass = InferClassFromSpec(slot)
         end
         
         -- Try to get class from OGRH cache if not available
@@ -576,6 +651,19 @@ function OGRH.Invites.GetSoftResPlayers()
     return players
   end
   
+  -- Build class map from raw decoded data
+  -- The raw softreserves entries include a "class" field that RollFor's
+  -- transformer discards (it groups by item, not by player).
+  local classMap = {}
+  local rawReserves = decodedData.softreserves
+  if rawReserves and type(rawReserves) == "table" then
+    for _, sr in ipairs(rawReserves) do
+      if sr and sr.name and sr.class then
+        classMap[NormalizeName(sr.name)] = string.upper(sr.class)
+      end
+    end
+  end
+
   -- Build player map from soft-res data
   -- softresData structure: { [itemId] = { rollers = { {name, role, sr_plus, rolls} }, quality } }
   local playerMap = {}
@@ -588,6 +676,7 @@ function OGRH.Invites.GetSoftResPlayers()
           if not playerMap[normalizedName] then
             playerMap[normalizedName] = {
               name = normalizedName,
+              class = classMap[normalizedName],
               role = roller.role or "Unknown",
               srPlus = roller.sr_plus or 0,
               itemCount = 0
@@ -889,6 +978,12 @@ end
 function OGRH.Invites.UpdatePlayerClass(playerData)
   if not playerData or not playerData.name then return playerData end
   
+  -- If import data already has class, seed the cache so other panels
+  -- (RosterPanel, RolesUI, etc.) pick it up without guild/raid lookup
+  if playerData.class and not OGRH.classCache[playerData.name] then
+    OGRH.classCache[playerData.name] = playerData.class
+  end
+  
   -- Use OGRH's existing class lookup system
   local class = OGRH.GetPlayerClass(playerData.name)
   if class then
@@ -1073,6 +1168,12 @@ function OGRH.Invites.GeneratePlanningRoster()
   for i = 1, table.getn(players) do
     local player = players[i]
     
+    -- Populate class cache from import data (signup class is authoritative
+    -- for players we haven't seen in guild/raid yet)
+    if player.class and player.name and not OGRH.classCache[player.name] then
+      OGRH.classCache[player.name] = player.class
+    end
+
     -- Exclude absent only (keep benched for planning)
     if not player.absent then
       local playerData = {
